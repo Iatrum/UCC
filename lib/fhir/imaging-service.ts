@@ -14,6 +14,9 @@ import type {
   DiagnosticReport,
   Patient as FHIRPatient,
 } from '@medplum/fhirtypes';
+import { createProvenanceForResource } from './provenance-service';
+import { validateAndCreate } from './fhir-helpers';
+import { applyMyCoreProfile } from './mycore';
 
 /**
  * Imaging modality codes (DICOM)
@@ -168,7 +171,7 @@ export async function createImagingOrder(order: ImagingOrderRequest): Promise<st
     const procedure = IMAGING_PROCEDURES[procedureCode];
     const modality = IMAGING_MODALITIES[procedure.modality as ModalityCode];
     
-    const serviceRequest = await medplum.createResource<ServiceRequest>({
+    const serviceRequest = await validateAndCreate<ServiceRequest>(medplum, {
       resourceType: 'ServiceRequest',
       status: 'active',
       intent: 'order',
@@ -195,9 +198,11 @@ export async function createImagingOrder(order: ImagingOrderRequest): Promise<st
         reference: `Encounter/${order.encounterId}`,
       } : undefined,
       authoredOn: new Date().toISOString(),
-      requester: order.orderedBy ? {
-        display: order.orderedBy,
-      } : undefined,
+      requester: order.orderedBy
+        ? order.orderedBy.startsWith('Practitioner/')
+          ? { reference: order.orderedBy }
+          : { display: order.orderedBy }
+        : undefined,
       reasonCode: order.clinicalIndication ? [{
         text: order.clinicalIndication,
       }] : undefined,
@@ -209,6 +214,22 @@ export async function createImagingOrder(order: ImagingOrderRequest): Promise<st
     
     serviceRequests.push(serviceRequest);
     console.log(`✅ Created imaging ServiceRequest: ${serviceRequest.id} for ${procedure.display}`);
+    
+    // Create Provenance for audit trail (non-blocking)
+    if (serviceRequest.id) {
+      try {
+        await createProvenanceForResource(
+          'ServiceRequest',
+          serviceRequest.id,
+          order.orderedBy?.startsWith('Practitioner/') ? order.orderedBy.split('/')[1] : undefined,
+          undefined,
+          'CREATE'
+        );
+        console.log(`✅ Created Provenance for ServiceRequest/${serviceRequest.id}`);
+      } catch (error) {
+        console.warn(`⚠️  Failed to create Provenance for ServiceRequest (non-blocking):`, error);
+      }
+    }
   }
 
   return serviceRequests[0]?.id || '';
@@ -233,7 +254,7 @@ export async function receiveImagingStudy(
   }
 
   // Create ImagingStudy resource
-  const imagingStudy = await medplum.createResource<ImagingStudy>({
+  const imagingStudy = await validateAndCreate<ImagingStudy>(medplum, {
     resourceType: 'ImagingStudy',
     status: 'available',
     subject: {
@@ -280,11 +301,29 @@ export async function receiveImagingStudy(
 
   console.log(`✅ Created ImagingStudy: ${imagingStudy.id}`);
 
+  // Create Provenance for audit trail (non-blocking)
+  if (imagingStudy.id) {
+    try {
+      await createProvenanceForResource(
+        'ImagingStudy',
+        imagingStudy.id,
+        undefined, // Could extract from serviceRequest.requester if needed
+        undefined,
+        'CREATE'
+      );
+      console.log(`✅ Created Provenance for ImagingStudy/${imagingStudy.id}`);
+    } catch (error) {
+      console.warn(`⚠️  Failed to create Provenance for ImagingStudy (non-blocking):`, error);
+    }
+  }
+
   // Update ServiceRequest status
-  await medplum.updateResource({
-    ...serviceRequest,
-    status: 'completed',
-  });
+  await medplum.updateResource(
+    applyMyCoreProfile({
+      ...serviceRequest,
+      status: 'completed',
+    })
+  );
 
   return imagingStudy.id!;
 }
@@ -307,7 +346,7 @@ export async function createImagingReport(
   const imagingStudy = await medplum.readResource('ImagingStudy', imagingStudyId);
 
   // Create DiagnosticReport
-  const report = await medplum.createResource<DiagnosticReport>({
+  const report = await validateAndCreate<DiagnosticReport>(medplum, {
     resourceType: 'DiagnosticReport',
     status,
     category: [{
@@ -340,6 +379,22 @@ export async function createImagingReport(
   });
 
   console.log(`✅ Created imaging DiagnosticReport: ${report.id}`);
+
+  // Create Provenance for audit trail (non-blocking)
+  if (report.id) {
+    try {
+      await createProvenanceForResource(
+        'DiagnosticReport',
+        report.id,
+        radiologist ? undefined : undefined, // Could parse radiologist ID if provided
+        undefined,
+        'CREATE'
+      );
+      console.log(`✅ Created Provenance for DiagnosticReport/${report.id}`);
+    } catch (error) {
+      console.warn(`⚠️  Failed to create Provenance for DiagnosticReport (non-blocking):`, error);
+    }
+  }
 
   return report.id!;
 }

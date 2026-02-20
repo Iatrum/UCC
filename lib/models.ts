@@ -18,8 +18,21 @@ import {
 import { safeToISOString } from "./utils";
 import { QueueStatus, BillableConsultation, TriageData } from "./types";
 import { getAllPatientsFromMedplum, getPatientFromMedplum, getMedplumClient } from "./fhir/patient-service";
-import { getTriageQueueForToday, getTriageForPatient, saveTriageEncounter, updateQueueStatusForPatient, updateTriageEncounter } from "./fhir/triage-service";
+import {
+  getTriageQueueForToday,
+  getTriageForPatient,
+  saveTriageEncounter,
+  updateQueueStatusForPatient,
+  updateTriageEncounter,
+  checkInPatientInTriage,
+} from "./fhir/triage-service";
 import { getPatientConsultationsFromMedplum, getConsultationFromMedplum, saveConsultationToMedplum } from "./fhir/consultation-service";
+import {
+  getPatientReferralsFromMedplum,
+  getReferralFromMedplum,
+  saveReferralToMedplum,
+  updateReferralInMedplum,
+} from "./fhir/referral-service";
 
 export interface Patient {
   id: string;
@@ -56,7 +69,7 @@ export interface Consultation {
   date: Date;
   type?: string;
   doctor?: string;
-  chiefComplaint: string;
+  chiefComplaint?: string;
   diagnosis: string;
   procedures: ProcedureRecord[];
   notes?: string;
@@ -117,8 +130,6 @@ export interface Appointment {
 
 const PATIENTS = "patients";
 const CONSULTATIONS = "consultations";
-const REFERRALS = "referrals";
-const APPOINTMENTS = "appointments";
 const PATIENT_DOCUMENTS = "documents";
 
 type TimestampInput = Timestamp | Date | string | null | undefined;
@@ -142,9 +153,6 @@ const TIMESTAMP_FIELDS = [
   "cancelledAt",
 ] as const;
 
-const APPOINTMENT_DATE_FIELDS = ["scheduledAt", "checkInTime", "completedAt", "cancelledAt"] as const;
-const APPOINTMENT_DATE_FIELD_SET = new Set<string>(APPOINTMENT_DATE_FIELDS);
-
 function coerceDate(value: TimestampInput): Date | null {
   if (!value) {
     return null;
@@ -164,11 +172,6 @@ function coerceDate(value: TimestampInput): Date | null {
   }
 
   return null;
-}
-
-function coerceTimestamp(value: TimestampInput): Timestamp | null {
-  const date = coerceDate(value);
-  return date ? Timestamp.fromDate(date) : null;
 }
 
 function convertTimestamps(data: DocumentData): DocumentData {
@@ -196,14 +199,6 @@ function mapDocument<T>(doc: DocWithData): T {
   return { id: doc.id, ...convertTimestamps(data) } as T;
 }
 
-function requireTimestamp(value: TimestampInput, field: string): Timestamp {
-  const timestamp = coerceTimestamp(value);
-  if (!timestamp) {
-    throw new Error(`Invalid ${field} provided for appointment.`);
-  }
-  return timestamp;
-}
-
 function toIsoIfPossible(value: Date | string | null | undefined) {
   if (value instanceof Date) {
     return value.toISOString();
@@ -214,6 +209,29 @@ function toIsoIfPossible(value: Date | string | null | undefined) {
   }
 
   return value;
+}
+
+function getApiBaseUrl() {
+  if (typeof window !== "undefined") {
+    return "";
+  }
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "http://localhost:3000";
+  return baseUrl.replace(/\/$/, "");
+}
+
+function normalizeAppointmentDates(appointment: Appointment): Appointment {
+  return {
+    ...appointment,
+    scheduledAt: coerceDate(appointment.scheduledAt) ?? appointment.scheduledAt,
+    createdAt: coerceDate(appointment.createdAt) ?? appointment.createdAt,
+    updatedAt: coerceDate(appointment.updatedAt) ?? appointment.updatedAt,
+    checkInTime: coerceDate(appointment.checkInTime) ?? appointment.checkInTime,
+    completedAt: coerceDate(appointment.completedAt) ?? appointment.completedAt,
+    cancelledAt: coerceDate(appointment.cancelledAt) ?? appointment.cancelledAt,
+  };
 }
 
 function serializeQueuePatient(patient: Patient): Patient {
@@ -283,27 +301,40 @@ export async function createPatient(data: Omit<Patient, "id" | "createdAt" | "up
 }
 
 export async function getAppointments(statuses?: AppointmentStatus[]): Promise<Appointment[]> {
-  const appointmentsQuery = query(collection(db, APPOINTMENTS), orderBy("scheduledAt", "asc"));
-  const snapshot = await getDocs(appointmentsQuery);
-  const appointments = snapshot.docs.map((docSnap) => mapDocument<Appointment>(docSnap));
-
+  const params = new URLSearchParams();
   if (statuses && statuses.length > 0) {
-    const allowed = new Set(statuses);
-    return appointments.filter((appointment) => appointment.status && allowed.has(appointment.status));
+    params.set("status", statuses.join(","));
+  }
+  const queryString = params.toString();
+  const baseUrl = getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/api/appointments${queryString ? `?${queryString}` : ""}`, {
+    cache: "no-store",
+  });
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || "Failed to load appointments");
   }
 
-  return appointments;
+  return (data.appointments as Appointment[]).map((appointment) => normalizeAppointmentDates(appointment));
 }
 
 export async function getAppointmentById(id: string): Promise<Appointment | null> {
-  const docRef = doc(db, APPOINTMENTS, id);
-  const docSnap = await getDoc(docRef);
+  const baseUrl = getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/api/appointments?id=${encodeURIComponent(id)}`, {
+    cache: "no-store",
+  });
+  const data = await response.json();
 
-  if (!docSnap.exists()) {
+  if (response.status === 404) {
     return null;
   }
 
-  return mapDocument<Appointment>(docSnap);
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || "Failed to get appointment");
+  }
+
+  return normalizeAppointmentDates(data.appointment as Appointment);
 }
 
 export interface CreateAppointmentInput {
@@ -321,71 +352,53 @@ export interface CreateAppointmentInput {
 }
 
 export async function createAppointment(appointment: CreateAppointmentInput): Promise<string> {
-  const now = Timestamp.now();
-  const scheduledTimestamp = requireTimestamp(appointment.scheduledAt, "scheduledAt");
+  const baseUrl = getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/api/appointments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...appointment,
+      status: appointment.status ?? "scheduled",
+    }),
+  });
+  const data = await response.json();
 
-  const payload: Record<string, unknown> = {
-    patientId: appointment.patientId,
-    patientName: appointment.patientName,
-    patientContact: appointment.patientContact ?? "",
-    clinician: appointment.clinician,
-    reason: appointment.reason,
-    type: appointment.type ?? "",
-    location: appointment.location ?? "",
-    notes: appointment.notes ?? "",
-    durationMinutes: appointment.durationMinutes ?? null,
-    status: appointment.status ?? "scheduled",
-    scheduledAt: scheduledTimestamp,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const docRef = await addDoc(collection(db, APPOINTMENTS), payload);
-
-  try {
-    const patientRef = doc(db, PATIENTS, appointment.patientId);
-    await updateDoc(patientRef, {
-      upcomingAppointment: scheduledTimestamp,
-      updatedAt: Timestamp.now(),
-    });
-  } catch (error) {
-    console.error("Failed to update patient upcoming appointment after scheduling:", error);
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || "Failed to save appointment");
   }
 
-  return docRef.id;
+  return data.appointmentId as string;
 }
 
 export async function updateAppointment(id: string, data: Partial<Appointment>): Promise<void> {
-  const docRef = doc(db, APPOINTMENTS, id);
-  const updatePayload: Record<string, unknown> = {};
+  const baseUrl = getApiBaseUrl();
+  const payload: Record<string, unknown> = {
+    appointmentId: id,
+  };
 
-  for (const [key, value] of Object.entries(data)) {
-    if (value === undefined || key === "id" || key === "createdAt") {
-      continue;
-    }
-
-    if (APPOINTMENT_DATE_FIELD_SET.has(key)) {
-      if (value === null) {
-        updatePayload[key] = null;
-        continue;
-      }
-
-      const timestamp = coerceTimestamp(value as TimestampInput);
-      if (!timestamp) {
-        console.warn(`Skipping invalid date field ${key} when updating appointment ${id}`);
-        continue;
-      }
-
-      updatePayload[key] = timestamp;
-      continue;
-    }
-
-    updatePayload[key] = value;
+  if (data.status) {
+    payload.status = data.status;
+  }
+  if (data.checkInTime !== undefined) {
+    payload.checkInTime = toIsoIfPossible(data.checkInTime as Date | string | null | undefined);
+  }
+  if (data.completedAt !== undefined) {
+    payload.completedAt = toIsoIfPossible(data.completedAt as Date | string | null | undefined);
+  }
+  if (data.cancelledAt !== undefined) {
+    payload.cancelledAt = toIsoIfPossible(data.cancelledAt as Date | string | null | undefined);
   }
 
-  updatePayload.updatedAt = Timestamp.now();
+  const response = await fetch(`${baseUrl}/api/appointments`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const dataResponse = await response.json();
 
-  await updateDoc(docRef, updatePayload as Record<string, unknown>);
+  if (!response.ok || !dataResponse.success) {
+    throw new Error(dataResponse.error || "Failed to update appointment");
+  }
 }
 
 export async function getConsultationsByPatientId(patientId: string): Promise<Consultation[]> {
@@ -568,42 +581,88 @@ export interface Referral {
   facility: string;
   department?: string;
   doctorName?: string;
-  urgency?: "routine" | "urgent" | "emergency";
+  urgency?: "routine" | "urgent" | "stat" | "asap";
   reason?: string;
   clinicalInfo?: string;
-  letterText: string;
+  letterText?: string;
+  status?: "draft" | "active" | "on-hold" | "revoked" | "completed" | "entered-in-error" | "unknown";
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 export async function createReferral(referral: Omit<Referral, "id" | "createdAt" | "updatedAt">): Promise<string> {
-  const now = Timestamp.now();
-  const dataToSave = { ...referral, createdAt: now, updatedAt: now };
-  if (!dataToSave.date) {
-    dataToSave.date = now.toDate();
-  }
-  const docRef = await addDoc(collection(db, REFERRALS), dataToSave);
-  return docRef.id;
+  const now = new Date();
+  const date = referral.date ?? now;
+
+  return saveReferralToMedplum({
+    patientId: referral.patientId,
+    specialty: referral.specialty,
+    facility: referral.facility,
+    department: referral.department,
+    doctorName: referral.doctorName,
+    urgency: referral.urgency,
+    reason: referral.reason,
+    clinicalInfo: referral.clinicalInfo,
+    letterText: referral.letterText,
+    date,
+  });
 }
 
 export async function getReferralsByPatientId(patientId: string): Promise<Referral[]> {
-  const referralQuery = query(collection(db, REFERRALS), where("patientId", "==", patientId));
-  const snapshot = await getDocs(referralQuery);
-  return snapshot.docs.map((docSnap) => mapDocument<Referral>(docSnap));
+  const referrals = await getPatientReferralsFromMedplum(patientId);
+  return referrals.map((referral) => ({
+    id: referral.id,
+    patientId: referral.patientId,
+    date: referral.date instanceof Date ? referral.date : new Date(referral.date),
+    specialty: referral.specialty,
+    facility: referral.facility,
+    department: referral.department,
+    doctorName: referral.doctorName,
+    urgency: referral.urgency as Referral["urgency"],
+    reason: referral.reason,
+    clinicalInfo: referral.clinicalInfo,
+    letterText: referral.letterText,
+    status: referral.status,
+    createdAt: referral.createdAt,
+  }));
 }
 
 export async function getReferralById(id: string): Promise<Referral | null> {
-  const docRef = doc(db, REFERRALS, id);
-  const docSnap = await getDoc(docRef);
-  if (!docSnap.exists()) {
+  const referral = await getReferralFromMedplum(id);
+  if (!referral) {
     return null;
   }
-  return mapDocument<Referral>(docSnap);
+  return {
+    id: referral.id,
+    patientId: referral.patientId,
+    date: referral.date instanceof Date ? referral.date : new Date(referral.date),
+    specialty: referral.specialty,
+    facility: referral.facility,
+    department: referral.department,
+    doctorName: referral.doctorName,
+    urgency: referral.urgency as Referral["urgency"],
+    reason: referral.reason,
+    clinicalInfo: referral.clinicalInfo,
+    letterText: referral.letterText,
+    status: referral.status,
+    createdAt: referral.createdAt,
+  };
 }
 
 export async function updateReferral(id: string, data: Partial<Referral>): Promise<void> {
-  const docRef = doc(db, REFERRALS, id);
-  await updateDoc(docRef, { ...data, updatedAt: Timestamp.now() });
+  await updateReferralInMedplum(id, {
+    patientId: data.patientId,
+    specialty: data.specialty,
+    facility: data.facility,
+    department: data.department,
+    doctorName: data.doctorName,
+    urgency: data.urgency,
+    reason: data.reason,
+    clinicalInfo: data.clinicalInfo,
+    letterText: data.letterText,
+    date: data.date,
+    status: data.status,
+  });
 }
 
 export interface PatientDocument {
@@ -645,4 +704,8 @@ export async function updateTriageData(patientId: string, triageData: Partial<Tr
 export async function getTriagedPatientsQueue(): Promise<Patient[]> {
   const patients = await getTriageQueueForToday();
   return patients as unknown as Patient[];
+}
+
+export async function checkInPatient(patientId: string, chiefComplaint?: string): Promise<string> {
+  return checkInPatientInTriage(patientId, chiefComplaint);
 }

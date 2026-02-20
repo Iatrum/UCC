@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
@@ -9,108 +9,81 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast";
 import { updateAppointment, type AppointmentStatus } from "@/lib/models";
 
-const statusOptions: AppointmentStatus[] = [
-  "scheduled",
-  "checked_in",
-  "in_progress",
-  "completed",
-  "cancelled",
-  "no_show",
+const STATUS_OPTIONS: { value: AppointmentStatus; label: string }[] = [
+  { value: "scheduled", label: "Scheduled" },
+  { value: "checked_in", label: "Checked in" },
+  { value: "in_progress", label: "In progress" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "no_show", label: "No show" },
 ];
 
-const statusLabels: Record<AppointmentStatus, string> = {
-  scheduled: "Scheduled",
-  checked_in: "Checked in",
-  in_progress: "In progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  no_show: "No show",
-};
-
-interface AppointmentStatusFormProps {
+interface Props {
   appointmentId: string;
   currentStatus: AppointmentStatus;
   hasCheckIn?: boolean;
   hasCompleted?: boolean;
 }
 
-export default function AppointmentStatusForm({
-  appointmentId,
-  currentStatus,
-  hasCheckIn,
-  hasCompleted,
-}: AppointmentStatusFormProps) {
+export default function AppointmentStatusForm({ appointmentId, currentStatus, hasCheckIn, hasCompleted }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [selectedStatus, setSelectedStatus] = useState<AppointmentStatus>(currentStatus);
   const [isPending, startTransition] = useTransition();
 
-  const disabledOptions = useMemo(() => {
-    const map: Partial<Record<AppointmentStatus, boolean>> = {};
-    if (hasCompleted) {
-      map.completed = true;
-    }
-    return map;
-  }, [hasCompleted]);
-
-  const handleSubmit = () => {
+  function handleSubmit() {
     startTransition(async () => {
       try {
-        const updatePayload: Record<string, unknown> = {
-          status: selectedStatus,
-        };
+        const payload: Record<string, unknown> = { status: selectedStatus };
 
-        if (selectedStatus === "checked_in") {
-          updatePayload.checkInTime = new Date();
-        } else if (selectedStatus === "in_progress") {
-          updatePayload.checkInTime = hasCheckIn ? undefined : new Date();
-        } else if (selectedStatus === "completed") {
-          updatePayload.completedAt = new Date();
-        } else if (selectedStatus === "cancelled" || selectedStatus === "no_show") {
-          updatePayload.cancelledAt = new Date();
-        } else if (selectedStatus === "scheduled") {
-          updatePayload.checkInTime = null;
-          updatePayload.completedAt = null;
-          updatePayload.cancelledAt = null;
+        switch (selectedStatus) {
+          case "checked_in":
+            payload.checkInTime = new Date();
+            break;
+          case "in_progress":
+            if (!hasCheckIn) payload.checkInTime = new Date();
+            break;
+          case "completed":
+            payload.completedAt = new Date();
+            break;
+          case "cancelled":
+          case "no_show":
+            payload.cancelledAt = new Date();
+            break;
+          case "scheduled":
+            payload.checkInTime = null;
+            payload.completedAt = null;
+            payload.cancelledAt = null;
+            break;
         }
 
-        await updateAppointment(appointmentId, updatePayload as any);
-        toast({ title: "Appointment updated", description: `Status set to ${statusLabels[selectedStatus]}.` });
+        await updateAppointment(appointmentId, payload as any);
+        const label = STATUS_OPTIONS.find((o) => o.value === selectedStatus)?.label ?? selectedStatus;
+        toast({ title: "Status updated", description: `Appointment set to ${label}.` });
         router.refresh();
       } catch (error) {
         console.error("Failed to update appointment", error);
-        toast({
-          title: "Unable to update",
-          description: "Something went wrong while updating the appointment.",
-          variant: "destructive",
-        });
+        toast({ title: "Unable to update", description: "Something went wrong.", variant: "destructive" });
       }
     });
-  };
+  }
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as AppointmentStatus)}>
+      <Select value={selectedStatus} onValueChange={(v) => setSelectedStatus(v as AppointmentStatus)}>
         <SelectTrigger className="w-full sm:w-48">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {statusOptions.map((status) => (
-            <SelectItem key={status} value={status} disabled={disabledOptions[status] ?? false}>
-              {statusLabels[status]}
+          {STATUS_OPTIONS.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value} disabled={opt.value === "completed" && hasCompleted}>
+              {opt.label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Button type="button" onClick={handleSubmit} disabled={isPending}>
-        {isPending ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Updating
-          </>
-        ) : (
-          "Update status"
-        )}
+      <Button type="button" onClick={handleSubmit} disabled={isPending || selectedStatus === currentStatus}>
+        {isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Updating</> : "Update status"}
       </Button>
     </div>
   );

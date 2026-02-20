@@ -16,24 +16,44 @@ import { savePatient } from "@/lib/fhir/patient-client";
 import { useRouter } from "next/navigation";
 import React from "react";
 
-const patientFormSchema = z.object({
-  fullName: z.string().min(2, "Name must be at least 2 characters"),
-  nric: z.string().regex(/^\d{6}-\d{2}-\d{4}$/, "Invalid NRIC format (e.g., 880705-56-5975)"),
-  dateOfBirth: z.string().optional(),
-  gender: z.enum(["male", "female", "other"]),
-  email: z.string().email("Invalid email address").optional().or(z.literal("")),
-  phone: z.string().regex(/^\+?[0-9]{8,15}$/, "Invalid phone number"),
-  address: z.string().optional().or(z.literal("")),
-  postalCode: z.string().regex(/^\d{5}$/, "Postal code must be 5 digits").optional().or(z.literal("")),
-  emergencyContact: z.object({
-    name: z.string().optional().or(z.literal("")),
-    relationship: z.string().optional().or(z.literal("")),
-    phone: z.string().regex(/^\+?[0-9]{8,15}$/, "Invalid phone number").optional().or(z.literal("")),
-  }).optional(),
-  medicalHistory: z.object({
-    allergies: z.string().optional().or(z.literal("")),
-  }).optional(),
-});
+const patientFormSchema = z
+  .object({
+    fullName: z.string().min(2, "Name must be at least 2 characters"),
+    identifierType: z.enum(["nric", "non_malaysian_ic", "passport"]),
+    identifierValue: z.string().min(3, "ID number is required"),
+    dateOfBirth: z.string().optional().or(z.literal("")),
+    gender: z.enum(["male", "female", "other"]),
+    email: z.string().email("Invalid email address").optional().or(z.literal("")),
+    phone: z.string().regex(/^\+?[0-9]{8,15}$/, "Invalid phone number"),
+    address: z.string().optional().or(z.literal("")),
+    postalCode: z.string().regex(/^\d{5}$/, "Postal code must be 5 digits").optional().or(z.literal("")),
+    emergencyContact: z.object({
+      name: z.string().optional().or(z.literal("")),
+      relationship: z.string().optional().or(z.literal("")),
+      phone: z.string().regex(/^\+?[0-9]{8,15}$/, "Invalid phone number").optional().or(z.literal("")),
+    }).optional(),
+    medicalHistory: z.object({
+      allergies: z.string().optional().or(z.literal("")),
+    }).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.identifierType === "nric") {
+      if (!/^\d{6}-\d{2}-\d{4}$/.test(data.identifierValue)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["identifierValue"],
+          message: "Invalid NRIC format (e.g., 880705-56-5975)",
+        });
+      }
+    }
+    if (!data.dateOfBirth) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dateOfBirth"],
+        message: "Date of Birth is required",
+      });
+    }
+  });
 
 type PatientFormValues = z.infer<typeof patientFormSchema>;
 
@@ -56,7 +76,8 @@ export default function NewPatientForm({ initialFullName = "", initialNric = "" 
     resolver: zodResolver(patientFormSchema),
     defaultValues: {
       fullName: initialFullName,
-      nric: initialNric,
+      identifierType: "nric",
+      identifierValue: initialNric,
       dateOfBirth: "",
       gender: undefined,
       email: "",
@@ -96,14 +117,18 @@ export default function NewPatientForm({ initialFullName = "", initialNric = "" 
     return `${fullYear}-${formattedMonth}-${formattedDay}`;
   };
 
-  const nric = form.watch('nric');
+  const identifierType = form.watch('identifierType');
+  const identifierValue = form.watch('identifierValue');
 
   React.useEffect(() => {
-    if (nric && nric.length >= 6) {
-      const birthDate = getNRICDate(nric.replace(/[^0-9]/g, ''));
+    if (identifierType !== "nric") {
+      return;
+    }
+    if (identifierValue && identifierValue.length >= 6) {
+      const birthDate = getNRICDate(identifierValue.replace(/[^0-9]/g, ''));
       form.setValue('dateOfBirth', birthDate);
     }
-  }, [nric, form]);
+  }, [identifierType, identifierValue, form]);
 
   async function onSubmit(data: PatientFormValues) {
     try {
@@ -134,7 +159,9 @@ export default function NewPatientForm({ initialFullName = "", initialNric = "" 
         email: data.email || undefined,
         address: data.address || "",
         postalCode: data.postalCode || undefined,
-        nric: data.nric,
+        identifierType: data.identifierType,
+        identifierValue: data.identifierValue,
+        nric: data.identifierValue,
         emergencyContact: (data.emergencyContact?.name || data.emergencyContact?.phone) ? {
           name: data.emergencyContact.name || "",
           relationship: data.emergencyContact.relationship || "",
@@ -196,30 +223,54 @@ export default function NewPatientForm({ initialFullName = "", initialNric = "" 
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <FormField control={form.control} name="nric" render={({ field }) => (
+                  <FormField control={form.control} name="identifierType" render={({ field }) => (
                     <FormItem>
-                      <RequiredLabel>NRIC</RequiredLabel>
+                      <RequiredLabel>ID Type</RequiredLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select ID type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="nric">Malaysian NRIC</SelectItem>
+                          <SelectItem value="non_malaysian_ic">Non-Malaysian IC</SelectItem>
+                          <SelectItem value="passport">Passport</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="identifierValue" render={({ field }) => (
+                    <FormItem>
+                      <RequiredLabel>ID Number</RequiredLabel>
                       <FormControl>
                         <div className="flex gap-2">
-                          <Input placeholder="YYMMDD-SS-NNNN" {...field} onChange={(e) => {
-                            const formatted = formatNRIC(e.target.value);
-                            field.onChange(formatted);
-                          }} />
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="whitespace-nowrap"
-                            onClick={() => {
-                              const current = form.getValues();
-                              const q = new URLSearchParams({
-                                fullName: current.fullName || "",
-                                nric: current.nric || "",
-                              }).toString();
-                              router.push(`/patients/new/scan?${q}`);
+                          <Input
+                            placeholder={identifierType === "passport" ? "Enter passport number" : "YYMMDD-SS-NNNN"}
+                            {...field}
+                            onChange={(e) => {
+                              const value = identifierType === "nric" ? formatNRIC(e.target.value) : e.target.value;
+                              field.onChange(value);
                             }}
-                          >
-                            <Camera className="mr-1.5 h-4 w-4" /> Scan NRIC
-                          </Button>
+                          />
+                          {identifierType === "nric" && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="whitespace-nowrap"
+                              onClick={() => {
+                                const current = form.getValues();
+                                const q = new URLSearchParams({
+                                  fullName: current.fullName || "",
+                                  nric: current.identifierValue || "",
+                                }).toString();
+                                router.push(`/patients/new/scan?${q}`);
+                              }}
+                            >
+                              <Camera className="mr-1.5 h-4 w-4" /> Scan NRIC
+                            </Button>
+                          )}
                         </div>
                       </FormControl>
                       <FormMessage />
@@ -229,7 +280,13 @@ export default function NewPatientForm({ initialFullName = "", initialNric = "" 
                     <FormItem>
                       <FormLabel>Date of Birth</FormLabel>
                       <FormControl>
-                        <Input type="date" placeholder="Auto-filled from NRIC" {...field} disabled className="bg-muted" />
+                        <Input
+                          type="date"
+                          placeholder={identifierType === "nric" ? "Auto-filled from NRIC" : "Select date of birth"}
+                          {...field}
+                          disabled={identifierType === "nric"}
+                          className={identifierType === "nric" ? "bg-muted" : undefined}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

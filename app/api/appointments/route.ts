@@ -7,8 +7,10 @@ import {
   saveAppointmentToMedplum,
   getAppointmentFromMedplum,
   getPatientAppointmentsFromMedplum,
+  getAppointmentsFromMedplum,
   updateAppointmentStatus,
 } from '@/lib/fhir/appointment-service';
+import type { AppointmentStatus } from '@/lib/models';
 
 /**
  * POST - Create a new appointment
@@ -53,6 +55,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const appointmentId = searchParams.get('id');
     const patientId = searchParams.get('patientId');
+    const statusParam = searchParams.get('status');
+    const statuses = statusParam
+      ? (statusParam.split(',').map((status) => status.trim()).filter(Boolean) as AppointmentStatus[])
+      : undefined;
 
     // Get specific appointment
     if (appointmentId) {
@@ -73,7 +79,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: 'Missing query parameter: id or patientId' }, { status: 400 });
+    const appointments = await getAppointmentsFromMedplum(statuses);
+    return NextResponse.json({
+      success: true,
+      count: appointments.length,
+      appointments,
+    });
   } catch (error: any) {
     console.error('❌ Failed to get appointments:', error);
     return NextResponse.json(
@@ -91,13 +102,17 @@ export async function GET(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const { appointmentId, status } = await request.json();
+    const { appointmentId, status, checkInTime, completedAt, cancelledAt } = await request.json();
 
     if (!appointmentId || !status) {
       return NextResponse.json({ error: 'Missing appointmentId or status' }, { status: 400 });
     }
 
-    await updateAppointmentStatus(appointmentId, status);
+    await updateAppointmentStatus(appointmentId, status, {
+      checkInTime,
+      completedAt,
+      cancelledAt,
+    });
 
     return NextResponse.json({
       success: true,
@@ -114,10 +129,6 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
-
-
-
-
 
 
 

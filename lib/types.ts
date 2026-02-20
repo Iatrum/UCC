@@ -2,7 +2,8 @@
 import type { Consultation } from "./models"; // type-only import to avoid runtime cycles
 
 // Shared type for queue status across different modules
-export type QueueStatus = 'waiting' | 'in_consultation' | 'completed' | 'meds_and_bills' | null;
+// arrived = checked in, pending triage
+export type QueueStatus = 'arrived' | 'waiting' | 'in_consultation' | 'completed' | 'meds_and_bills' | null;
 
 // Type for combining consultation data with patient details for billing/orders page
 export type BillableConsultation = Omit<Consultation, 'date' | 'createdAt' | 'updatedAt'> & {

@@ -11,6 +11,8 @@ import {
   getRecentConsultationsFromMedplum,
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { getClinicIdFromRequest } from '@/lib/server/clinic';
+import { getCurrentProfile } from '@/lib/server/medplum-auth';
 
 /**
  * POST - Create a new consultation in Medplum
@@ -19,19 +21,49 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { patientId, chiefComplaint, diagnosis, procedures, notes, progressNote, prescriptions } = body;
+    let clinicId = await getClinicIdFromRequest(request);
+
+    // For development/localhost, use default clinic ID if not provided
+    if (!clinicId && process.env.NODE_ENV !== 'production') {
+      clinicId = process.env.NEXT_PUBLIC_DEFAULT_CLINIC_ID || 'default';
+      console.warn('⚠️  No clinicId found, using default for development:', clinicId);
+    }
+
+    if (!clinicId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Missing clinicId. Please set NEXT_PUBLIC_DEFAULT_CLINIC_ID for development or access via clinic subdomain.',
+        },
+        { status: 400 }
+      );
+    }
 
     // Validate required fields
-    if (!patientId || !chiefComplaint || !diagnosis) {
+    const soapNote = notes || chiefComplaint;
+    if (!patientId || !soapNote || !diagnosis) {
       return NextResponse.json(
-        { error: 'Missing required fields: patientId, chiefComplaint, diagnosis' },
+        { error: 'Missing required fields: patientId, SOAP note, diagnosis' },
         { status: 400 }
       );
     }
 
     // 🎯 Get patient data from MEDPLUM (FHIR) - Source of Truth
-    const patient = await getPatientFromMedplum(patientId);
+    const patient = await getPatientFromMedplum(patientId, clinicId);
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found in FHIR' }, { status: 404 });
+    }
+
+    // Resolve practitioner ID from the authenticated user's profile
+    let practitionerId: string | undefined;
+    try {
+      const profile = await getCurrentProfile(request);
+      if (profile.resourceType === 'Practitioner' && profile.id) {
+        practitionerId = profile.id;
+      }
+    } catch {
+      // Non-blocking: consultation can still be saved without practitioner
     }
 
     // Save to Medplum as FHIR
@@ -41,9 +73,10 @@ export async function POST(request: NextRequest) {
         chiefComplaint,
         diagnosis,
         procedures,
-        notes,
+        notes: soapNote,
         progressNote,
         prescriptions,
+        practitionerId,
         date: new Date(),
       },
       {
@@ -54,7 +87,8 @@ export async function POST(request: NextRequest) {
         gender: (patient as any).gender || '',
         phone: (patient as any).phoneNumber || (patient as any).phone || '',
         address: (patient as any).address || '',
-      }
+      },
+      clinicId
     );
 
     console.log(`✅ Consultation saved to Medplum: ${encounterId}`);
@@ -89,10 +123,28 @@ export async function GET(request: NextRequest) {
     const patientId = searchParams.get('patientId');
     const consultationId = searchParams.get('id');
     const recent = searchParams.get('recent');
+    let clinicId = await getClinicIdFromRequest(request);
+
+    // For development/localhost, use default clinic ID if not provided
+    if (!clinicId && process.env.NODE_ENV !== 'production') {
+      clinicId = process.env.NEXT_PUBLIC_DEFAULT_CLINIC_ID || 'default';
+      console.warn('⚠️  No clinicId found, using default for development:', clinicId);
+    }
+
+    if (!clinicId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Missing clinicId. Please set NEXT_PUBLIC_DEFAULT_CLINIC_ID for development or access via clinic subdomain.',
+        },
+        { status: 400 }
+      );
+    }
 
     // Get specific consultation
     if (consultationId) {
-      const consultation = await getConsultationFromMedplum(consultationId);
+      const consultation = await getConsultationFromMedplum(consultationId, clinicId);
       if (!consultation) {
         return NextResponse.json({ error: 'Consultation not found' }, { status: 404 });
       }
@@ -101,7 +153,7 @@ export async function GET(request: NextRequest) {
 
     // Get consultations for a patient
     if (patientId) {
-      const consultations = await getPatientConsultationsFromMedplum(patientId);
+      const consultations = await getPatientConsultationsFromMedplum(patientId, clinicId);
       return NextResponse.json({
         success: true,
         count: consultations.length,
@@ -112,7 +164,7 @@ export async function GET(request: NextRequest) {
     // Get recent consultations
     if (recent) {
       const limit = parseInt(recent) || 10;
-      const consultations = await getRecentConsultationsFromMedplum(limit);
+      const consultations = await getRecentConsultationsFromMedplum(limit, clinicId);
       return NextResponse.json({
         success: true,
         count: consultations.length,

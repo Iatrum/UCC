@@ -5,7 +5,9 @@
 
 export interface PatientInput {
   fullName: string;
-  nric: string;
+  identifierType?: "nric" | "non_malaysian_ic" | "passport";
+  identifierValue?: string;
+  nric?: string;
   dateOfBirth: Date | string;
   gender: 'male' | 'female' | 'other';
   email?: string;
@@ -56,14 +58,24 @@ export async function savePatient(patient: PatientInput, clinicId?: string): Pro
  * Get a patient by ID from Medplum
  */
 export async function getPatient(patientId: string, clinicId?: string): Promise<Patient | null> {
+  // Get clinicId from cookie if not provided
+  const finalClinicId = clinicId || getClinicIdFromCookie();
+  
   const response = await fetch(`/api/patients?id=${patientId}`, {
-    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+    headers: finalClinicId ? { 'X-Clinic-Id': finalClinicId } : undefined,
   });
   const data = await response.json();
 
   if (!response.ok) {
     if (response.status === 404) return null;
-    throw new Error(data.error || 'Failed to get patient');
+    const errorMessage = data.error || 'Failed to get patient';
+    console.error('Failed to get patient:', {
+      status: response.status,
+      error: errorMessage,
+      patientId,
+      clinicId: finalClinicId,
+    });
+    throw new Error(errorMessage);
   }
 
   const patient = data.patient;
@@ -76,16 +88,35 @@ export async function getPatient(patientId: string, clinicId?: string): Promise<
 }
 
 /**
+ * Get clinic ID from cookie (set by proxy middleware)
+ */
+function getClinicIdFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const cookies = document.cookie.split(';');
+  const clinicCookie = cookies.find(c => c.trim().startsWith('medplum-clinic='));
+  return clinicCookie ? clinicCookie.split('=')[1] : null;
+}
+
+/**
  * Get all patients from Medplum
  */
 export async function getAllPatients(limit = 100, clinicId?: string): Promise<Patient[]> {
+  // Get clinicId from cookie if not provided
+  const finalClinicId = clinicId || getClinicIdFromCookie();
+  
   const response = await fetch(`/api/patients?limit=${limit}`, {
-    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+    headers: finalClinicId ? { 'X-Clinic-Id': finalClinicId } : undefined,
   });
   const data = await response.json();
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to get patients');
+    const errorMessage = data.error || 'Failed to get patients';
+    console.error('Failed to get patients:', {
+      status: response.status,
+      error: errorMessage,
+      clinicId: finalClinicId,
+    });
+    throw new Error(errorMessage);
   }
 
   return data.patients.map((p: any) => ({
@@ -100,13 +131,23 @@ export async function getAllPatients(limit = 100, clinicId?: string): Promise<Pa
  * Search patients by name or NRIC
  */
 export async function searchPatients(query: string, clinicId?: string): Promise<Patient[]> {
+  // Get clinicId from cookie if not provided
+  const finalClinicId = clinicId || getClinicIdFromCookie();
+  
   const response = await fetch(`/api/patients?search=${encodeURIComponent(query)}`, {
-    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+    headers: finalClinicId ? { 'X-Clinic-Id': finalClinicId } : undefined,
   });
   const data = await response.json();
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to search patients');
+    const errorMessage = data.error || 'Failed to search patients';
+    console.error('Failed to search patients:', {
+      status: response.status,
+      error: errorMessage,
+      query,
+      clinicId: finalClinicId,
+    });
+    throw new Error(errorMessage);
   }
 
   return data.patients.map((p: any) => ({

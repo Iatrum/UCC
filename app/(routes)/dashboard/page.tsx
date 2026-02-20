@@ -143,7 +143,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{queue.length}</div>
             <p className="text-xs text-muted-foreground">
-              {queue.filter(p => p.queueStatus === 'waiting').length} waiting patients
+              {queue.filter(p => p.queueStatus === 'waiting' || p.queueStatus === 'arrived').length} waiting/arrived patients
             </p>
           </CardContent>
         </Card>

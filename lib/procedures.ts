@@ -1,16 +1,3 @@
-import { db } from './firebase';
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  Timestamp,
-  type DocumentData,
-} from 'firebase/firestore';
-
 export interface ProcedureItem {
   id: string;
   name: string;
@@ -25,40 +12,58 @@ export interface ProcedureItem {
   updatedAt?: Date;
 }
 
-const PROCEDURES = 'procedures';
-
-function convertTimestamps(data: DocumentData) {
-  const result = { ...data } as any;
-  if (result.createdAt?.toDate) result.createdAt = result.createdAt.toDate();
-  if (result.updatedAt?.toDate) result.updatedAt = result.updatedAt.toDate();
-  return result;
-}
-
 export async function getProcedures(): Promise<ProcedureItem[]> {
-  const snap = await getDocs(collection(db, PROCEDURES));
-  return snap.docs.map(d => ({ id: d.id, ...convertTimestamps(d.data()) } as ProcedureItem));
+  const response = await fetch('/api/procedures', { cache: 'no-store' });
+  const data = await response.json();
+  if (!response.ok || !data?.success) {
+    throw new Error(data?.error || 'Failed to get procedures');
+  }
+  return data.procedures ?? [];
 }
 
 export async function createProcedure(data: Omit<ProcedureItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-  const now = Timestamp.now();
-  const docRef = await addDoc(collection(db, PROCEDURES), { ...data, createdAt: now, updatedAt: now });
-  return docRef.id;
+  const response = await fetch('/api/procedures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || 'Failed to create procedure');
+  }
+  return payload.procedureId;
 }
 
 export async function updateProcedure(id: string, data: Partial<ProcedureItem>): Promise<void> {
-  const ref = doc(db, PROCEDURES, id);
-  await updateDoc(ref, { ...data, updatedAt: Timestamp.now() });
+  const response = await fetch('/api/procedures', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ procedureId: id, ...data }),
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || 'Failed to update procedure');
+  }
 }
 
 export async function deleteProcedure(id: string): Promise<void> {
-  await deleteDoc(doc(db, PROCEDURES, id));
+  const response = await fetch(`/api/procedures?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || 'Failed to delete procedure');
+  }
 }
 
 export async function getProcedureById(id: string): Promise<ProcedureItem | null> {
-  const ref = doc(db, PROCEDURES, id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...convertTimestamps(snap.data()) } as ProcedureItem;
+  const response = await fetch(`/api/procedures?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+  const data = await response.json();
+  if (!response.ok) {
+    if (response.status === 404) return null;
+    throw new Error(data?.error || 'Failed to get procedure');
+  }
+  return data.procedure ?? null;
 }
 
 

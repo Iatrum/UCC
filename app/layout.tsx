@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ThemeProvider } from '@/components/theme-provider';
 import Toaster from '@/components/ui/toaster';
 import Sidebar from '@/components/sidebar';
-import { AuthProvider } from '@/lib/auth';
+import { MedplumAuthProvider } from '@/lib/auth-medplum';
 import { listActiveModules } from '@/lib/module-registry';
 
 export const metadata: Metadata = {
@@ -27,7 +27,7 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider>
+          <MedplumAuthProvider>
             <div className="relative flex min-h-screen flex-col">
               <div className="flex flex-1">
                 <Sidebar
@@ -46,7 +46,7 @@ export default async function RootLayout({
               </div>
             </div>
             <Toaster />
-          </AuthProvider>
+          </MedplumAuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -12,12 +12,22 @@ import type {
   MedicationStatement,
 } from '@medplum/fhirtypes';
 import { QueueStatus, TriageData, VitalSigns } from '../types';
+import { TRIAGE_EXTENSION_URL } from './structure-definitions';
+import { createProvenanceForResource } from './provenance-service';
+import { validateAndCreate } from './fhir-helpers';
+import { applyMyCoreProfile, MY_CORE_IDENTIFIERS, MY_CORE_EXTENSIONS } from './mycore';
 
 // Local Patient interface that matches your app
+export type IdentifierType = 'nric' | 'non_malaysian_ic' | 'passport';
+
 export interface PatientData {
   id?: string;
   fullName: string;
-  nric: string;
+  identifierType?: IdentifierType;
+  identifierValue?: string;
+  nric?: string;
+  mrn?: string;
+  ethnicity?: string;
   dateOfBirth: Date | string;
   gender: 'male' | 'female' | 'other';
   email?: string;
@@ -49,9 +59,29 @@ export interface SavedPatient extends PatientData {
 let medplumClient: MedplumClient | undefined;
 let medplumInitPromise: Promise<MedplumClient> | undefined;
 
-// Custom extension URL to store triage/queue data on Patient
-const TRIAGE_EXTENSION_URL = 'https://ucc.emr/triage';
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+const IDENTIFIER_SYSTEMS: Record<IdentifierType, string> = {
+  nric: MY_CORE_IDENTIFIERS.MYKAD,
+  non_malaysian_ic: 'http://fhir.hie.moh.gov.my/sid/non-my-ic',
+  passport: 'http://hl7.org/fhir/sid/passport-MYS',
+};
+const IDENTIFIER_TYPE_CODING: Record<IdentifierType, { system: string; code: string; display: string }> = {
+  nric: {
+    system: 'http://terminology.hl7.org/CodeSystem/v2-0203',
+    code: 'NI',
+    display: 'National unique individual identifier',
+  },
+  non_malaysian_ic: {
+    system: 'http://terminology.hl7.org/CodeSystem/v2-0203',
+    code: 'NI',
+    display: 'National unique individual identifier',
+  },
+  passport: {
+    system: 'http://terminology.hl7.org/CodeSystem/v2-0203',
+    code: 'PPN',
+    display: 'Passport number',
+  },
+};
 
 type Extension = { url: string;[key: string]: any };
 
@@ -65,9 +95,20 @@ function addClinicIdentifier(identifiers: { system?: string; value?: string }[] 
   return nextIdentifiers;
 }
 
-function matchesClinic(resource: { identifier?: { system?: string; value?: string }[] }, clinicId?: string) {
+function matchesClinic(resource: { identifier?: { system?: string; value?: string }[]; managingOrganization?: { reference?: string } }, clinicId?: string) {
   if (!clinicId) return true;
-  return resource.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId);
+  const identifierMatch = resource.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId);
+  const orgRef = resource.managingOrganization?.reference;
+  const organizationMatch = orgRef ? orgRef === `Organization/${clinicId}` : false;
+  return Boolean(identifierMatch || organizationMatch);
+}
+
+function addManagingOrganization<T extends { [key: string]: any }>(resource: T, clinicId?: string): T {
+  if (!clinicId) return resource;
+  return {
+    ...resource,
+    managingOrganization: { reference: `Organization/${clinicId}` },
+  };
 }
 
 /**
@@ -106,7 +147,30 @@ function fhirPatientToPatientData(fhirPatient: FHIRPatient): SavedPatient {
   const name = fhirPatient.name?.[0];
   const fullName = name?.text || [name?.given?.join(' '), name?.family].filter(Boolean).join(' ') || 'Unknown';
 
-  const nricIdentifier = fhirPatient.identifier?.find(id => id.system === 'nric' || id.system === 'ic');
+  const identifiers = fhirPatient.identifier ?? [];
+  const passportIdentifier = identifiers.find(
+    (id) => id.type?.coding?.some((coding) => coding.code === 'PPN') || id.system?.includes('passport')
+  );
+  const nonMyIdentifier = identifiers.find((id) => id.system === IDENTIFIER_SYSTEMS.non_malaysian_ic);
+  const nricIdentifier = identifiers.find(
+    (id) =>
+      id.system === IDENTIFIER_SYSTEMS.nric ||
+      id.system === 'nric' ||
+      id.system === 'ic'
+  );
+  const pickedIdentifier = passportIdentifier ?? nonMyIdentifier ?? nricIdentifier ?? identifiers[0];
+
+  let identifierType: IdentifierType = 'nric';
+  if (passportIdentifier || pickedIdentifier?.type?.coding?.some((coding) => coding.code === 'PPN')) {
+    identifierType = 'passport';
+  } else if (pickedIdentifier?.system === IDENTIFIER_SYSTEMS.non_malaysian_ic) {
+    identifierType = 'non_malaysian_ic';
+  }
+
+  const identifierValue = pickedIdentifier?.value || '';
+  const mrnIdentifier = identifiers.find((id) => id.system === MY_CORE_IDENTIFIERS.PATIENT_MRN);
+  const ethnicityExt = fhirPatient.extension?.find((ext) => ext.url === MY_CORE_EXTENSIONS.ETHNICITY);
+
   const phoneContact = fhirPatient.telecom?.find(t => t.system === 'phone');
   const emailContact = fhirPatient.telecom?.find(t => t.system === 'email');
   const emergencyContact = fhirPatient.contact?.[0];
@@ -115,7 +179,11 @@ function fhirPatientToPatientData(fhirPatient: FHIRPatient): SavedPatient {
   return {
     id: fhirPatient.id!,
     fullName,
-    nric: nricIdentifier?.value || '',
+    identifierType,
+    identifierValue,
+    nric: identifierValue,
+    mrn: mrnIdentifier?.value,
+    ethnicity: (ethnicityExt as any)?.valueString ?? undefined,
     dateOfBirth: fhirPatient.birthDate || '',
     gender: (fhirPatient.gender as 'male' | 'female' | 'other') || 'other',
     email: emailContact?.value,
@@ -137,6 +205,28 @@ function fhirPatientToPatientData(fhirPatient: FHIRPatient): SavedPatient {
     triage: triageInfo.triage,
     queueStatus: triageInfo.queueStatus ?? null,
     queueAddedAt: triageInfo.queueAddedAt ?? null,
+  };
+}
+
+function normalizeIdentifier(patientData: PatientData): { type: IdentifierType; value: string } {
+  const value = patientData.identifierValue ?? patientData.nric ?? '';
+  const type = patientData.identifierType ?? 'nric';
+  return { type, value };
+}
+
+function buildIdentifier(type: IdentifierType, value: string) {
+  return {
+    system: IDENTIFIER_SYSTEMS[type],
+    value,
+    type: {
+      coding: [IDENTIFIER_TYPE_CODING[type]],
+      text:
+        type === 'nric'
+          ? 'NRIC'
+          : type === 'non_malaysian_ic'
+          ? 'Non-Malaysian IC'
+          : 'Passport',
+    },
   };
 }
 
@@ -250,13 +340,22 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
 
   console.log(`💾 Saving patient to Medplum FHIR...`);
 
-  // Check if patient already exists by NRIC
+  const { type: identifierType, value: identifierValue } = normalizeIdentifier(patientData);
+
+  // Check if patient already exists by identifier
   let existingPatient: FHIRPatient | undefined;
-  if (patientData.nric) {
-    existingPatient = await medplum.searchOne('Patient', {
-      identifier: `nric|${patientData.nric}`,
-    });
-    if (existingPatient && !matchesClinic(existingPatient, clinicId)) {
+  if (identifierValue) {
+    const searchValues = [
+      `${IDENTIFIER_SYSTEMS[identifierType]}|${identifierValue}`,
+      ...(identifierType === 'nric'
+        ? [`nric|${identifierValue}`, `ic|${identifierValue}`]
+        : []),
+    ];
+    for (const identifier of searchValues) {
+      existingPatient = await medplum.searchOne('Patient', { identifier });
+      if (existingPatient && matchesClinic(existingPatient, clinicId)) {
+        break;
+      }
       existingPatient = undefined;
     }
   }
@@ -281,12 +380,30 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
     }
   }
 
-  const fhirPatient: FHIRPatient = {
+  const identifiers = [buildIdentifier(identifierType, identifierValue)];
+  if (patientData.mrn) {
+    identifiers.push({
+      system: MY_CORE_IDENTIFIERS.PATIENT_MRN,
+      value: patientData.mrn,
+      type: {
+        coding: [{ system: 'http://terminology.hl7.org/CodeSystem/v2-0203', code: 'MR', display: 'Medical Record Number' }],
+        text: 'MRN',
+      },
+    });
+  }
+
+  const extensions: FHIRPatient['extension'] = [];
+  if (patientData.ethnicity) {
+    extensions.push({
+      url: MY_CORE_EXTENSIONS.ETHNICITY,
+      valueString: patientData.ethnicity,
+    });
+  }
+
+  const basePatient: FHIRPatient = {
     resourceType: 'Patient',
-    active: true,  // FHIR compliance: mark patient as active
-    identifier: addClinicIdentifier([
-      { system: 'nric', value: patientData.nric },
-    ], clinicId),
+    active: true,
+    identifier: addClinicIdentifier(identifiers, clinicId),
     name: [
       {
         text: patientData.fullName,
@@ -313,20 +430,57 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
         telecom: [{ system: 'phone', value: patientData.emergencyContact.phone }],
       },
     ] : undefined,
+    ...(extensions.length > 0 ? { extension: extensions } : {}),
   };
+
+  const fhirPatient = applyMyCoreProfile(addManagingOrganization(basePatient, clinicId));
 
   let savedPatient: FHIRPatient;
   if (existingPatient) {
     // Update existing patient
-    savedPatient = await medplum.updateResource({
-      ...fhirPatient,
-      id: existingPatient.id,
-    });
+    savedPatient = await medplum.updateResource(
+      applyMyCoreProfile({
+        ...fhirPatient,
+        id: existingPatient.id,
+      })
+    );
     console.log(`✅ Updated FHIR Patient: ${savedPatient.id}`);
+    
+    // Create Provenance for update (non-blocking)
+    if (savedPatient.id) {
+      try {
+        await createProvenanceForResource(
+          'Patient',
+          savedPatient.id,
+          undefined,
+          clinicId,
+          'UPDATE'
+        );
+        console.log(`✅ Created Provenance for Patient/${savedPatient.id} (UPDATE)`);
+      } catch (error) {
+        console.warn(`⚠️  Failed to create Provenance for Patient (non-blocking):`, error);
+      }
+    }
   } else {
     // Create new patient
-    savedPatient = await medplum.createResource(fhirPatient);
+    savedPatient = await validateAndCreate<FHIRPatient>(medplum, fhirPatient);
     console.log(`✅ Created FHIR Patient: ${savedPatient.id}`);
+    
+    // Create Provenance for audit trail (non-blocking)
+    if (savedPatient.id) {
+      try {
+        await createProvenanceForResource(
+          'Patient',
+          savedPatient.id,
+          undefined,
+          clinicId,
+          'CREATE'
+        );
+        console.log(`✅ Created Provenance for Patient/${savedPatient.id}`);
+      } catch (error) {
+        console.warn(`⚠️  Failed to create Provenance for Patient (non-blocking):`, error);
+      }
+    }
   }
 
   // Save allergies as AllergyIntolerance resources
@@ -334,7 +488,7 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
     for (const allergy of patientData.medicalHistory.allergies) {
       if (!allergy.trim()) continue;
 
-      await medplum.createResource<AllergyIntolerance>({
+      const allergyResource = await validateAndCreate<AllergyIntolerance>(medplum, {
         resourceType: 'AllergyIntolerance',
         patient: { reference: `Patient/${savedPatient.id}` },
         code: { text: allergy },
@@ -345,6 +499,21 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
           coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: 'confirmed' }],
         },
       });
+      
+      // Create Provenance for audit trail (non-blocking)
+      if (allergyResource.id) {
+        try {
+          await createProvenanceForResource(
+            'AllergyIntolerance',
+            allergyResource.id,
+            undefined,
+            clinicId,
+            'CREATE'
+          );
+        } catch (error) {
+          console.warn(`⚠️  Failed to create Provenance for AllergyIntolerance (non-blocking):`, error);
+        }
+      }
     }
     console.log(`✅ Saved ${patientData.medicalHistory.allergies.length} allergies`);
   }
@@ -354,7 +523,7 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
     for (const condition of patientData.medicalHistory.conditions) {
       if (!condition.trim()) continue;
 
-      await medplum.createResource<Condition>({
+      const conditionResource = await validateAndCreate<Condition>(medplum, {
         resourceType: 'Condition',
         subject: { reference: `Patient/${savedPatient.id}` },
         code: { text: condition },
@@ -362,6 +531,21 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
           coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-clinical', code: 'active' }],
         },
       });
+      
+      // Create Provenance for audit trail (non-blocking)
+      if (conditionResource.id) {
+        try {
+          await createProvenanceForResource(
+            'Condition',
+            conditionResource.id,
+            undefined,
+            clinicId,
+            'CREATE'
+          );
+        } catch (error) {
+          console.warn(`⚠️  Failed to create Provenance for Condition (non-blocking):`, error);
+        }
+      }
     }
     console.log(`✅ Saved ${patientData.medicalHistory.conditions.length} conditions`);
   }
@@ -371,12 +555,27 @@ export async function savePatientToMedplum(patientData: PatientData, clinicId?: 
     for (const medication of patientData.medicalHistory.medications) {
       if (!medication.trim()) continue;
 
-      await medplum.createResource<MedicationStatement>({
+      const medicationResource = await validateAndCreate<MedicationStatement>(medplum, {
         resourceType: 'MedicationStatement',
         status: 'active',
         subject: { reference: `Patient/${savedPatient.id}` },
         medicationCodeableConcept: { text: medication },
       });
+      
+      // Create Provenance for audit trail (non-blocking)
+      if (medicationResource.id) {
+        try {
+          await createProvenanceForResource(
+            'MedicationStatement',
+            medicationResource.id,
+            undefined,
+            clinicId,
+            'CREATE'
+          );
+        } catch (error) {
+          console.warn(`⚠️  Failed to create Provenance for MedicationStatement (non-blocking):`, error);
+        }
+      }
     }
     console.log(`✅ Saved ${patientData.medicalHistory.medications.length} medications`);
   }
@@ -445,11 +644,13 @@ export async function saveTriageToMedplum(
   const existingExtensions = existingPatient.extension || [];
   const filteredExtensions = existingExtensions.filter((ext: any) => ext.url !== TRIAGE_EXTENSION_URL);
 
-  await medplum.updateResource({
-    ...existingPatient,
-    identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
-    extension: [...filteredExtensions, newExtension],
-  });
+  await medplum.updateResource(
+    applyMyCoreProfile({
+      ...existingPatient,
+      identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
+      extension: [...filteredExtensions, newExtension],
+    })
+  );
 }
 
 /**
@@ -500,11 +701,13 @@ export async function updateQueueStatusInMedplum(patientId: string, status: Queu
     newExtensions.push(triageExt);
   }
 
-  await medplum.updateResource({
-    ...existingPatient,
-    identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
-    extension: newExtensions,
-  });
+  await medplum.updateResource(
+    applyMyCoreProfile({
+      ...existingPatient,
+      identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
+      extension: newExtensions,
+    })
+  );
 }
 
 /**
@@ -517,7 +720,7 @@ export async function searchPatientsInMedplum(query: string, clinicId?: string):
     const patients = await medplum.searchResources('Patient', {
       _query: query,
       _count: '50',
-      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`, organization: `Organization/${clinicId}` } : {}),
     });
 
     return patients
@@ -539,15 +742,27 @@ export async function getAllPatientsFromMedplum(limit = 100, clinicId?: string):
     const patients = await medplum.searchResources('Patient', {
       _count: String(limit),
       _sort: '-_lastUpdated',
-      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`, organization: `Organization/${clinicId}` } : {}),
     });
 
     return patients
       .filter((patient) => matchesClinic(patient as any, clinicId))
       .map(fhirPatientToPatientData);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to get patients from Medplum:', error);
-    return [];
+    
+    // Provide more specific error information
+    if (error?.message?.includes('credentials') || error?.message?.includes('not configured')) {
+      throw new Error('Medplum credentials not configured. Please set MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET environment variables.');
+    }
+    if (error?.outcome?.issue?.[0]?.code === 'forbidden' || error?.message?.includes('Unauthorized')) {
+      throw new Error('Unauthorized access to Medplum. Please check your credentials and permissions.');
+    }
+    if (error?.message?.includes('Token expired')) {
+      throw new Error('Medplum authentication token expired. Please refresh your session.');
+    }
+    
+    throw new Error(error?.message || 'Failed to get patients from Medplum');
   }
 }
 
@@ -563,10 +778,15 @@ export async function updatePatientInMedplum(patientId: string, updates: Partial
   }
 
   // Merge updates
-  const updatedPatient: FHIRPatient = {
-    ...existingPatient,
-    identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
-  };
+  const updatedPatient: FHIRPatient = applyMyCoreProfile(
+    addManagingOrganization(
+      {
+        ...existingPatient,
+        identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
+      },
+      clinicId
+    )
+  );
 
   if (updates.fullName) {
     const nameParts = updates.fullName.split(' ');

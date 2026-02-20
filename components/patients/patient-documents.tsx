@@ -1,18 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { db } from "@/lib/firebase";
-import { 
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  Timestamp,
-} from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getStorage,
   ref as storageRef,
@@ -22,7 +10,6 @@ import {
 } from "firebase/storage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -36,13 +23,13 @@ import { FileText, Loader2, Trash2, Upload } from "lucide-react";
 
 type PatientDocument = {
   id: string;
-  fileName: string;
-  contentType: string;
-  size: number;
-  storagePath: string;
-  downloadUrl: string;
+  title: string;
+  contentType?: string;
+  size?: number;
+  url: string;
   uploadedAt?: Date | string | null;
   uploadedBy?: string | null;
+  storagePath?: string; // used only client-side for bucket deletion
 };
 
 interface Props {
@@ -52,34 +39,41 @@ interface Props {
 export default function PatientDocuments({ patientId }: Props) {
   const [docs, setDocs] = useState<PatientDocument[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
+  const fetchDocs = useCallback(async () => {
     if (!patientId) return;
-    const col = collection(db, "patients", patientId, "documents");
-    const q = query(col, orderBy("uploadedAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const items: PatientDocument[] = snap.docs.map((d) => {
-        const data = d.data() as any;
-        let uploadedAt: Date | string | null = null;
-        const raw = data.uploadedAt;
-        if (raw && typeof raw?.toDate === "function") uploadedAt = raw.toDate();
-        else if (typeof raw === "string") uploadedAt = raw;
-        return {
-          id: d.id,
-          fileName: data.fileName,
-          contentType: data.contentType,
-          size: data.size || 0,
-          storagePath: data.storagePath,
-          downloadUrl: data.downloadUrl,
-          uploadedAt,
-          uploadedBy: data.uploadedBy || null,
-        };
-      });
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/documents?patientId=${encodeURIComponent(patientId)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || "Failed to load documents");
+      }
+      const data = await res.json();
+      const items: PatientDocument[] = (data.documents || []).map((doc: any) => ({
+        id: doc.id,
+        title: doc.title,
+        url: doc.url,
+        contentType: doc.contentType,
+        size: doc.size,
+        uploadedAt: doc.uploadedAt,
+        uploadedBy: doc.uploadedBy,
+        storagePath: doc.storagePath,
+      }));
       setDocs(items);
-    });
-    return () => unsub();
-  }, [patientId]);
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: "Unable to load documents", description: err?.message || "Please try again", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [patientId, toast]);
+
+  useEffect(() => {
+    fetchDocs();
+  }, [fetchDocs]);
 
   const onSelectFiles: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const files = e.target.files;
@@ -99,17 +93,26 @@ export default function PatientDocuments({ patientId }: Props) {
         await uploadBytes(ref, file, { contentType: file.type });
         const url = await getDownloadURL(ref);
 
-        // Save metadata in Firestore
-        await addDoc(collection(db, "patients", patientId, "documents"), {
-          fileName: file.name,
-          contentType: file.type,
-          size: file.size,
-          storagePath: path,
-          downloadUrl: url,
-          uploadedAt: serverTimestamp(),
+        const res = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patientId,
+            title: file.name,
+            contentType: file.type,
+            size: file.size,
+            url,
+            storagePath: path,
+          }),
         });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error || 'Failed to register document in FHIR');
+        }
       }
       toast({ title: "Upload complete" });
+      fetchDocs();
     } catch (err: any) {
       console.error(err);
       toast({ title: "Upload failed", description: err?.message || "Please try again", variant: "destructive" });
@@ -120,14 +123,25 @@ export default function PatientDocuments({ patientId }: Props) {
   };
 
   const onDelete = async (docItem: PatientDocument) => {
-    const ok = confirm(`Delete ${docItem.fileName}? This cannot be undone.`);
+    const ok = confirm(`Delete ${docItem.title}? This cannot be undone.`);
     if (!ok) return;
     try {
       // Delete from Storage
       const storage = getStorage();
-      await deleteObject(storageRef(storage, docItem.storagePath));
-      // Delete Firestore doc
-      await deleteDoc(doc(db, "patients", patientId, "documents", docItem.id));
+      if (docItem.storagePath) {
+        await deleteObject(storageRef(storage, docItem.storagePath));
+      }
+      // Delete DocumentReference in Medplum
+      const res = await fetch('/api/documents', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: docItem.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to delete document');
+      }
+      setDocs((prev) => prev.filter((d) => d.id !== docItem.id));
       toast({ title: "Document deleted" });
     } catch (err: any) {
       console.error(err);
@@ -172,7 +186,9 @@ export default function PatientDocuments({ patientId }: Props) {
         </div>
       </CardHeader>
       <CardContent>
-        {docs.length === 0 ? (
+        {loading ? (
+          <div className="text-sm text-muted-foreground">Loading documents...</div>
+        ) : docs.length === 0 ? (
           <div className="text-sm text-muted-foreground">No documents uploaded.</div>
         ) : (
           <div className="relative border rounded-lg overflow-hidden">
@@ -191,8 +207,8 @@ export default function PatientDocuments({ patientId }: Props) {
                     <TableCell className="font-medium">
                       <div className="inline-flex items-center gap-2">
                         <FileText className="h-4 w-4 text-muted-foreground" />
-                        <a className="hover:underline" href={d.downloadUrl} target="_blank" rel="noreferrer">
-                          {d.fileName}
+                        <a className="hover:underline" href={d.url} target="_blank" rel="noreferrer">
+                          {d.title}
                         </a>
                       </div>
                     </TableCell>
@@ -201,7 +217,7 @@ export default function PatientDocuments({ patientId }: Props) {
                     <TableCell className="text-right">
                       <div className="inline-flex items-center gap-2">
                         <Button asChild variant="outline" size="sm">
-                          <a href={d.downloadUrl} target="_blank" rel="noreferrer">View</a>
+                          <a href={d.url} target="_blank" rel="noreferrer">View</a>
                         </Button>
                         <Button variant="destructive" size="sm" onClick={() => onDelete(d)}>
                           <Trash2 className="h-4 w-4" />
@@ -218,4 +234,3 @@ export default function PatientDocuments({ patientId }: Props) {
     </Card>
   );
 }
-

@@ -3,6 +3,8 @@ import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
 import { getPatients, getConsultationsByPatientId } from "@/lib/models";
 import AnalyticsCharts from "@/components/analytics/analytics-charts";
 
+export const dynamic = "force-dynamic";
+
 export default async function AnalyticsPage() {
   const patients = await getPatients();
   // Fetch consultations for all patients (simple approach; can be optimized with an aggregate collection)

@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { getConsultationById, getPatientById } from "@/lib/models";
 import { toFhirPatient, toFhirEncounter, toFhirCondition, toFhirMedicationRequest, toFhirServiceRequest } from "@/lib/fhir/mappers";
-import { adminAuth } from "@/lib/firebase-admin";
 import { z } from "zod";
 import { writeServerAuditLog } from "@/lib/server/logging";
+import { AUTH_DISABLED } from "@/lib/auth-config";
+import { getCurrentProfile } from "@/lib/server/medplum-auth";
 
 const exportBodySchema = z.object({
   consultationId: z.string().min(1),
@@ -11,20 +12,15 @@ const exportBodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth: require valid Firebase session cookie
-    const session = req.cookies.get('emr_session')?.value;
-    if (!session) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    let decoded: any;
-    try {
-      decoded = await adminAuth.verifySessionCookie(session, true);
-    } catch {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
+    let userId = 'system';
 
-    // Optional: GP-only app, but keep a simple claim gate if present
-    const role: string | undefined = decoded?.role;
-    if (role && !["admin", "doctor"].includes(role)) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+    if (!AUTH_DISABLED) {
+      try {
+        const profile = await getCurrentProfile(req);
+        userId = profile.id ?? 'unknown';
+      } catch {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      }
     }
 
     const body = await req.json();
@@ -40,7 +36,6 @@ export async function POST(req: NextRequest) {
     const patient = await getPatientById(consultation.patientId);
     if (!patient) return new Response(JSON.stringify({ error: 'Patient not found' }), { status: 404 });
 
-    // Create minimal FHIR resources and link
     const { reference: patientRef } = await toFhirPatient(patient);
     const { reference: encounterRef } = await toFhirEncounter(patientRef, consultation);
 
@@ -66,7 +61,7 @@ export async function POST(req: NextRequest) {
       action: 'fhir_export',
       subjectType: 'consultation',
       subjectId: consultation.id!,
-      userId: decoded.uid,
+      userId,
       metadata: { createdRefs: created },
     });
 
@@ -76,5 +71,3 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'Unexpected error' }), { status: 500 });
   }
 }
-
-

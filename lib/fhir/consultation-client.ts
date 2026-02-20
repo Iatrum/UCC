@@ -5,10 +5,10 @@
 
 export interface ConsultationInput {
   patientId: string;
-  chiefComplaint: string;
   diagnosis: string;
   procedures?: Array<{ name: string; price?: number }>;
   notes?: string;
+  chiefComplaint?: string;
   progressNote?: string;
   prescriptions?: Array<{
     medication: { id: string; name: string };
@@ -29,10 +29,13 @@ export interface Consultation extends ConsultationInput {
 /**
  * Save a consultation to Medplum (replaces createConsultation from Firebase)
  */
-export async function saveConsultation(consultation: ConsultationInput): Promise<string> {
+export async function saveConsultation(consultation: ConsultationInput, clinicId?: string): Promise<string> {
   const response = await fetch('/api/consultations', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...(clinicId ? { 'X-Clinic-Id': clinicId } : {}),
+    },
     body: JSON.stringify(consultation),
   });
 
@@ -48,8 +51,10 @@ export async function saveConsultation(consultation: ConsultationInput): Promise
 /**
  * Get consultations for a patient from Medplum
  */
-export async function getPatientConsultations(patientId: string): Promise<Consultation[]> {
-  const response = await fetch(`/api/consultations?patientId=${patientId}`);
+export async function getPatientConsultations(patientId: string, clinicId?: string): Promise<Consultation[]> {
+  const response = await fetch(`/api/consultations?patientId=${patientId}`, {
+    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+  });
   const data = await response.json();
 
   if (!response.ok || !data.success) {
@@ -67,8 +72,10 @@ export async function getPatientConsultations(patientId: string): Promise<Consul
 /**
  * Get a specific consultation by ID
  */
-export async function getConsultation(consultationId: string): Promise<Consultation | null> {
-  const response = await fetch(`/api/consultations?id=${consultationId}`);
+export async function getConsultation(consultationId: string, clinicId?: string): Promise<Consultation | null> {
+  const response = await fetch(`/api/consultations?id=${consultationId}`, {
+    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+  });
   const data = await response.json();
 
   if (!response.ok) {
@@ -87,8 +94,10 @@ export async function getConsultation(consultationId: string): Promise<Consultat
 /**
  * Get recent consultations
  */
-export async function getRecentConsultations(limit = 10): Promise<Consultation[]> {
-  const response = await fetch(`/api/consultations?recent=${limit}`);
+export async function getRecentConsultations(limit = 10, clinicId?: string): Promise<Consultation[]> {
+  const response = await fetch(`/api/consultations?recent=${limit}`, {
+    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+  });
   const data = await response.json();
 
   if (!response.ok || !data.success) {
@@ -101,7 +110,6 @@ export async function getRecentConsultations(limit = 10): Promise<Consultation[]
     createdAt: new Date(c.createdAt),
   }));
 }
-
 
 
 

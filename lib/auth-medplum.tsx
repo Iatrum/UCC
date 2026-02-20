@@ -3,8 +3,11 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { MedplumClient } from '@medplum/core';
 import type { Resource } from '@medplum/fhirtypes';
+import { AUTH_DISABLED } from './auth-config';
 
 const MEDPLUM_BASE_URL = process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103';
+const MEDPLUM_CLIENT_ID = process.env.NEXT_PUBLIC_MEDPLUM_CLIENT_ID || '';
+const MEDPLUM_PROJECT_ID = process.env.NEXT_PUBLIC_MEDPLUM_PROJECT_ID || '';
 
 interface MedplumAuthContextType {
   medplum: MedplumClient;
@@ -23,6 +26,7 @@ const MedplumAuthContext = createContext<MedplumAuthContextType | null>(null);
 export function MedplumAuthProvider({ children }: { children: React.ReactNode }) {
   const [medplum] = useState(() => new MedplumClient({
     baseUrl: MEDPLUM_BASE_URL,
+    clientId: MEDPLUM_CLIENT_ID || undefined,
     onUnauthenticated: () => {
       setProfile(null);
       // Clear stored token
@@ -59,91 +63,85 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  // Check for existing session on mount
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        // Try to restore session from localStorage
-        const storedToken = localStorage.getItem('medplum-access-token');
-        const storedClinic = localStorage.getItem('clinic-id');
-        if (storedClinic) {
-          setClinicIdState(storedClinic);
-        }
-        if (storedToken) {
-          medplum.setAccessToken(storedToken);
-          const profile = await medplum.getProfile();
-          setProfile(profile as Resource | null);
-        }
-      } catch (error) {
-        console.error('Failed to restore session:', error);
-        localStorage.removeItem('medplum-access-token');
-      } finally {
-        setLoading(false);
-      }
-    };
+    const storedClinic = localStorage.getItem('clinic-id');
+    if (storedClinic) {
+      setClinicIdState(storedClinic);
+    }
 
-    checkAuth();
+    if (AUTH_DISABLED) {
+      setProfile({ resourceType: 'Practitioner', id: 'dev' } as Resource);
+      setLoading(false);
+      return;
+    }
+
+    const storedToken = localStorage.getItem('medplum-access-token');
+    if (!storedToken) {
+      setLoading(false);
+      return;
+    }
+
+    medplum.setAccessToken(storedToken);
+    setProfile({ resourceType: 'Practitioner', id: 'token-auth' } as Resource);
+    setLoading(false);
+
+    medplum.getProfile()
+      .then((p) => { if (p) setProfile(p as Resource); })
+      .catch(() => {
+        localStorage.removeItem('medplum-access-token');
+        setProfile(null);
+      });
   }, [medplum]);
 
   const signIn = async (email: string, password: string) => {
+    if (AUTH_DISABLED) return;
     try {
-      console.log('🔐 [EMR] Starting login...');
-      console.log('📧 [EMR] Email:', email);
-      console.log('🌐 [EMR] Medplum URL:', MEDPLUM_BASE_URL);
-      // Sign in with Medplum - if this succeeds, we consider the user logged in.
-      console.log('🔐 [EMR] Calling medplum.startLogin...');
-      const loginResponse = await medplum.startLogin({ email, password });
-      console.log('✅ [EMR] Login response received');
+      const loginResponse = await medplum.startLogin({
+        email,
+        password,
+        projectId: MEDPLUM_PROJECT_ID || undefined,
+      });
 
-      // We no longer hard‑require a profile here. Some Medplum setups allow
-      // a user to exist without a linked Practitioner/Patient, and that's OK
-      // for basic EMR access as long as we have a valid access token.
+      // If startLogin returned a code but the SDK didn't auto-process it,
+      // explicitly process it to complete the token exchange.
+      if (loginResponse?.code && !medplum.getAccessToken()) {
+        await medplum.processCode(loginResponse.code);
+      }
+
+      // Try to load the user profile
       try {
         const maybeProfile = await medplum.getProfile();
         if (maybeProfile) {
-          console.log('✅ [EMR] Profile loaded:', maybeProfile.resourceType, maybeProfile.id);
           setProfile(maybeProfile as Resource | null);
-        } else {
-          console.warn('⚠️ [EMR] getProfile() returned null/undefined – proceeding with token‑only auth');
-          setProfile(null);
         }
-      } catch (profileError) {
-        console.warn('⚠️ [EMR] Failed to load profile – proceeding with token‑only auth:', profileError);
+      } catch {
         setProfile(null);
       }
 
-      // Store access token
       const accessToken = medplum.getAccessToken();
-      console.log('🔐 [EMR] Access token:', accessToken ? 'EXISTS' : 'MISSING');
-
-      if (accessToken) {
-        localStorage.setItem('medplum-access-token', accessToken);
-        console.log('✅ [EMR] Token stored in localStorage');
-
-        // Also create session cookie for server-side auth
-        try {
-          const sessionResponse = await fetch('/api/auth/medplum-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken }),
-          });
-          console.log('✅ [EMR] Session cookie created:', sessionResponse.ok);
-        } catch (sessionError) {
-          console.warn('⚠️  [EMR] Failed to create session cookie:', sessionError);
-          // Not critical, continue anyway
-        }
+      if (!accessToken) {
+        throw new Error('Login succeeded but no access token was returned');
       }
 
-      console.log('🎉 [EMR] Login successful!');
+      localStorage.setItem('medplum-access-token', accessToken);
+
+      await fetch('/api/auth/medplum-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+      });
     } catch (error: any) {
-      console.error('❌ [EMR] Login failed:', error);
-      console.error('❌ [EMR] Error message:', error.message);
-      console.error('❌ [EMR] Error details:', error);
       throw new Error(error.message || 'Login failed');
     }
   };
 
   const signOut = async () => {
+    if (AUTH_DISABLED) {
+      setProfile(null);
+      setClinicIdState(null);
+      localStorage.removeItem('clinic-id');
+      return;
+    }
     try {
       // Clear Medplum session
       medplum.signOut();
@@ -172,7 +170,7 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
     medplum,
     profile,
     loading,
-    isAuthenticated: profile !== null,
+    isAuthenticated: AUTH_DISABLED ? true : profile !== null,
     clinicId,
     signIn,
     signOut,

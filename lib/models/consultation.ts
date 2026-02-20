@@ -2,6 +2,15 @@ import { Consultation } from '@/lib/models'; // Import canonical types
 import { getMedplumClient } from '../fhir/patient-service';
 import { getConsultationFromMedplum, getPatientConsultationsFromMedplum } from '../fhir/consultation-service';
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Removed local Prescription interface definition
 /*
 export interface Prescription {
@@ -75,13 +84,23 @@ export async function updateConsultation(id: string, consultation: Partial<Consu
   try {
     if (consultation.notes) {
       const medplum = await getMedplumClient();
+      const encounter = await medplum.readResource('Encounter', id);
+      const safeNotes = escapeHtml(consultation.notes).replace(/\r\n/g, '\n').replace(/\n/g, '<br/>');
       await medplum.createResource({
-        resourceType: 'Observation',
-        status: 'final',
+        resourceType: 'Composition',
+        status: 'amended',
+        type: {
+          coding: [{ system: 'http://loinc.org', code: '11506-3', display: 'Progress note' }],
+          text: 'SOAP note',
+        },
+        title: 'SOAP Note (Amendment)',
+        subject: encounter.subject,
         encounter: { reference: `Encounter/${id}` },
-        code: { text: 'Clinical Notes' },
-        valueString: consultation.notes,
-        effectiveDateTime: new Date().toISOString(),
+        date: new Date().toISOString(),
+        text: {
+          status: 'generated',
+          div: `<div xmlns="http://www.w3.org/1999/xhtml">${safeNotes}</div>`,
+        },
       });
     }
     return true;

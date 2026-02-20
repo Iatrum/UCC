@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getMedications, Medication } from "@/lib/inventory";
+import { getMedications, getBuiltInMedicationList, Medication } from "@/lib/inventory";
 import { Prescription, ProcedureRecord } from "@/lib/models";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -72,21 +72,17 @@ export function OrderComposer({
   onProceduresChange,
 }: OrderComposerProps) {
   const [open, setOpen] = React.useState(false);
-  const [medications, setMedications] = React.useState<Medication[]>([]);
-  const [loadingMeds, setLoadingMeds] = React.useState(true);
+  const [medications, setMedications] = React.useState<Medication[]>(() => getBuiltInMedicationList());
+  const [loadingMeds] = React.useState(false);
   const [prescriptions, setPrescriptions] = React.useState<Prescription[]>(initialPrescriptions);
   const [procedures, setProcedures] = React.useState<ProcedureRecord[]>(initialProcedures);
 
   React.useEffect(() => {
-    (async () => {
-      try {
-        setLoadingMeds(true);
-        const meds = await getMedications();
-        setMedications(meds);
-      } finally {
-        setLoadingMeds(false);
-      }
-    })();
+    let active = true;
+    getMedications().then(meds => {
+      if (active && meds.length > 0) setMedications(meds);
+    }).catch(() => {});
+    return () => { active = false; };
   }, []);
 
   React.useEffect(() => onPrescriptionsChange(prescriptions), [prescriptions, onPrescriptionsChange]);
@@ -178,7 +174,7 @@ export function OrderComposer({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-          <Command>
+          <Command shouldFilter={false}>
             <CommandInput placeholder="Search to order (MedicationRequest/ServiceRequest)..." onValueChange={setQuery} />
             <CommandList>
               {!hasQuery ? (

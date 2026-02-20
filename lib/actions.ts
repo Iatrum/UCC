@@ -1,10 +1,31 @@
 import { QueueStatus } from './types';
 import { z } from 'zod';
 import { getPatientFromMedplum } from './fhir/patient-service';
-import { getTriageForPatient, updateQueueStatusForPatient } from './fhir/triage-service';
+import { checkInPatientInTriage, getTriageForPatient, updateQueueStatusForPatient } from './fhir/triage-service';
 
 const idSchema = z.string().min(1);
-const statusSchema = z.enum(['waiting', 'in_consultation', 'completed', 'meds_and_bills']).nullable().or(z.literal('waiting')).or(z.literal('in_consultation')).or(z.literal('completed')).or(z.literal('meds_and_bills')) as any;
+const statusSchema = z
+  .enum(['arrived', 'waiting', 'in_consultation', 'completed', 'meds_and_bills'])
+  .nullable()
+  .or(z.literal('arrived'))
+  .or(z.literal('waiting'))
+  .or(z.literal('in_consultation'))
+  .or(z.literal('completed'))
+  .or(z.literal('meds_and_bills')) as any;
+
+export async function checkInPatient(patientId: string, chiefComplaint?: string) {
+  try {
+    idSchema.parse(patientId);
+    const patient = await getPatientFromMedplum(patientId);
+    if (!patient) {
+      throw new Error('Patient not found');
+    }
+    await checkInPatientInTriage(patientId, chiefComplaint);
+  } catch (error) {
+    console.error('Error checking patient in:', error);
+    throw error;
+  }
+}
 
 export async function addPatientToQueue(patientId: string) {
   try {
@@ -69,8 +90,8 @@ export async function updateQueueStatus(patientId: string, status: QueueStatus) 
 export async function getQueueStatus(patientId: string): Promise<QueueStatus> {
   try {
     const triage = await getTriageForPatient(patientId);
-    if (!triage.triage) {
-      throw new Error('Patient not triaged');
+    if (!triage.triage && !triage.queueStatus) {
+      throw new Error('Patient not in queue');
     }
 
     return triage.queueStatus ?? null;

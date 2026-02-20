@@ -152,6 +152,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
 
   const getStatusBadge = (status: QueueStatus | undefined) => {
     switch (status) {
+      case 'arrived':
+        return (
+          <Badge variant="outline" className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            Arrived (awaiting triage)
+          </Badge>
+        );
       case 'waiting':
         return (
           <Badge variant="secondary" className="flex items-center gap-1">
@@ -229,8 +236,12 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
           </TableRow>
         </TableHeader>
         <TableBody>
-          {patients.map((patient, index) => (
-            <TableRow key={patient.id}>
+          {patients.map((patient, index) => {
+            // Use a combination of patient.id and index to ensure unique keys
+            // This handles edge cases where duplicate IDs might still exist
+            const uniqueKey = `${patient.id}-${index}`;
+            return (
+            <TableRow key={uniqueKey}>
               <TableCell className="font-medium text-center">{(index + 1).toString().padStart(3, '0')}</TableCell>
               <TableCell className="font-medium">
                 <Link
@@ -288,7 +299,8 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
                 </DropdownMenu>
               </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
           {patients.length === 0 && (
             <TableRow>
               <TableCell colSpan={9} className="text-center py-4">

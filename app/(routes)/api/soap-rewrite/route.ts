@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
 import { isRateLimited } from "@/lib/rate-limit";
 import { soapRewriteBodySchema } from "@/lib/validation";
 import { createChatCompletion, type ChatMessage } from "@/lib/server/openrouter";
 import { SOAP_REWRITE_ENABLED } from "@/lib/features";
+import { AUTH_DISABLED } from "@/lib/auth-config";
+import { requireAuth } from "@/lib/server/medplum-auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,15 +12,12 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
     }
 
-    const session = req.cookies.get("emr_session")?.value;
-    if (!session) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-
-    try {
-      await adminAuth.verifySessionCookie(session, true);
-    } catch {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    if (!AUTH_DISABLED) {
+      try {
+        await requireAuth(req);
+      } catch {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      }
     }
 
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

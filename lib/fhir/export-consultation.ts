@@ -4,8 +4,26 @@
  */
 
 import { MedplumClient } from '@medplum/core';
-import type { Observation } from '@medplum/fhirtypes';
+import type { Composition, Condition, MedicationRequest, Observation, Procedure } from '@medplum/fhirtypes';
 import type { Consultation } from '@/lib/models';
+import { applyMyCoreProfile } from './mycore';
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toNarrative(text: string | undefined) {
+  const safe = escapeHtml(text ?? '').replace(/\r\n/g, '\n').replace(/\n/g, '<br/>');
+  return {
+    status: 'generated',
+    div: `<div xmlns="http://www.w3.org/1999/xhtml">${safe}</div>`,
+  };
+}
 
 /**
  * Get authenticated Medplum client
@@ -67,7 +85,8 @@ export async function exportConsultationToMedplum(
     }
 
     if (!patient) {
-      patient = await medplum.createResource({
+      patient = await medplum.createResource(
+        applyMyCoreProfile({
         resourceType: 'Patient',
         identifier: patientData.ic
           ? [{ system: 'urn:ic', value: patientData.ic }]
@@ -85,7 +104,8 @@ export async function exportConsultationToMedplum(
           ? [{ system: 'phone', value: patientData.phone }]
           : undefined,
         address: patientData.address ? [{ text: patientData.address }] : undefined,
-      });
+        })
+      );
       console.log(`✅ Created Patient: ${(patient as any).id}`);
     } else {
       console.log(`✅ Found existing Patient: ${(patient as any).id}`);
@@ -96,7 +116,8 @@ export async function exportConsultationToMedplum(
       ? new Date(consultation.date).toISOString()
       : new Date().toISOString();
 
-    const encounter = await medplum.createResource({
+    const encounter = await medplum.createResource(
+      applyMyCoreProfile({
       resourceType: 'Encounter',
       status: 'finished',
       class: {
@@ -118,12 +139,19 @@ export async function exportConsultationToMedplum(
           value: consultation.id,
         },
       ],
-    });
+      })
+    );
     console.log(`✅ Created Encounter: ${(encounter as any).id}`);
+
+    const createdConditions: Condition[] = [];
+    const createdProcedures: Procedure[] = [];
+    const createdMedications: MedicationRequest[] = [];
+    let chiefComplaintObservation: Observation | undefined;
 
     // 3. Create Condition (Diagnosis)
     if (consultation.diagnosis) {
-      const condition = await medplum.createResource({
+      const condition = await medplum.createResource(
+        applyMyCoreProfile({
         resourceType: 'Condition',
         subject: {
           reference: `Patient/${(patient as any).id}`,
@@ -135,13 +163,16 @@ export async function exportConsultationToMedplum(
           text: consultation.diagnosis,
         },
         recordedDate: encounterDate,
-      });
+        })
+      );
       console.log(`✅ Created Condition: ${(condition as any).id}`);
+      createdConditions.push(condition as Condition);
     }
 
     // 4. Create Observation for Chief Complaint
     if (consultation.chiefComplaint) {
-      const observation = await medplum.createResource<Observation>({
+      const observation = await medplum.createResource<Observation>(
+        applyMyCoreProfile({
         resourceType: 'Observation',
         status: 'final',
         subject: {
@@ -155,34 +186,17 @@ export async function exportConsultationToMedplum(
         },
         valueString: consultation.chiefComplaint,
         effectiveDateTime: encounterDate,
-      });
+        }) as Observation
+      );
       console.log(`✅ Created Chief Complaint Observation: ${(observation as any).id}`);
+      chiefComplaintObservation = observation;
     }
-
-    // 5. Create Observation for Clinical Notes
-    if (consultation.notes) {
-      const notesObs = await medplum.createResource<Observation>({
-        resourceType: 'Observation',
-        status: 'final',
-        subject: {
-          reference: `Patient/${(patient as any).id}`,
-        },
-        encounter: {
-          reference: `Encounter/${(encounter as any).id}`,
-        },
-        code: {
-          text: 'Clinical Notes',
-        },
-        valueString: consultation.notes,
-        effectiveDateTime: encounterDate,
-      });
-      console.log(`✅ Created Clinical Notes Observation: ${notesObs.id}`);
-    }
-
-    // 6. Create Procedures
+    
+    // 5. Create Procedures
     if (consultation.procedures && consultation.procedures.length > 0) {
       for (const proc of consultation.procedures) {
-        const procedure = await medplum.createResource({
+        const procedure = await medplum.createResource(
+          applyMyCoreProfile({
           resourceType: 'Procedure',
           status: 'completed',
           subject: {
@@ -195,15 +209,18 @@ export async function exportConsultationToMedplum(
             text: typeof proc === 'string' ? proc : (proc as any).name || 'Procedure',
           },
           performedDateTime: encounterDate,
-        });
+          })
+        );
         console.log(`✅ Created Procedure: ${(procedure as any).id}`);
+        createdProcedures.push(procedure as Procedure);
       }
     }
 
-    // 7. Create MedicationRequests (Prescriptions)
+    // 6. Create MedicationRequests (Prescriptions)
     if (consultation.prescriptions && consultation.prescriptions.length > 0) {
       for (const rx of consultation.prescriptions) {
-        const medicationRequest = await medplum.createResource({
+        const medicationRequest = await medplum.createResource(
+          applyMyCoreProfile({
           resourceType: 'MedicationRequest',
           status: 'active',
           intent: 'order',
@@ -229,9 +246,57 @@ export async function exportConsultationToMedplum(
             },
           ],
           authoredOn: encounterDate,
-        });
+          })
+        );
         console.log(`✅ Created MedicationRequest: ${(medicationRequest as any).id}`);
+        createdMedications.push(medicationRequest as MedicationRequest);
       }
+    }
+
+    // 7. Create SOAP Note (Composition)
+    if (consultation.notes) {
+      const planEntries = [
+        ...createdProcedures.filter((proc) => proc.id).map((proc) => ({ reference: `Procedure/${proc.id}` })),
+        ...createdMedications.filter((med) => med.id).map((med) => ({ reference: `MedicationRequest/${med.id}` })),
+      ];
+
+      const assessmentEntries = createdConditions
+        .filter((condition) => condition.id)
+        .map((condition) => ({ reference: `Condition/${condition.id}` }));
+
+      const subjectiveEntries = chiefComplaintObservation?.id
+        ? [{ reference: `Observation/${chiefComplaintObservation.id}` }]
+        : [];
+
+      const allEntries = [...subjectiveEntries, ...assessmentEntries, ...planEntries];
+
+      await medplum.createResource<Composition>(
+        applyMyCoreProfile({
+          resourceType: 'Composition',
+          status: 'final',
+          type: {
+            coding: [{ system: 'http://loinc.org', code: '11506-3', display: 'Progress note' }],
+            text: 'SOAP note',
+          },
+          title: 'SOAP Note',
+          subject: {
+            reference: `Patient/${(patient as any).id}`,
+          },
+          encounter: {
+            reference: `Encounter/${(encounter as any).id}`,
+          },
+          date: encounterDate,
+          text: toNarrative(consultation.notes),
+          section: [
+            {
+              title: 'SOAP Note',
+              text: toNarrative(consultation.notes),
+              ...(allEntries.length ? { entry: allEntries } : {}),
+            },
+          ],
+        }) as Composition
+      );
+      console.log(`✅ Created SOAP Composition`);
     }
 
     console.log(`✅ Successfully exported consultation ${consultation.id} to Medplum`);

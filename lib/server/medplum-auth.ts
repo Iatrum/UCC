@@ -6,6 +6,7 @@
 import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
+import { AUTH_DISABLED } from '@/lib/auth-config';
 
 const MEDPLUM_BASE_URL = process.env.MEDPLUM_BASE_URL || 'http://localhost:8103';
 const MEDPLUM_CLIENT_ID = process.env.MEDPLUM_CLIENT_ID;
@@ -16,6 +17,13 @@ const MEDPLUM_CLIENT_SECRET = process.env.MEDPLUM_CLIENT_SECRET;
  * Reads access token from cookie or Authorization header
  */
 export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumClient> {
+  if (AUTH_DISABLED) {
+    if (MEDPLUM_CLIENT_ID && MEDPLUM_CLIENT_SECRET) {
+      return await getAdminMedplum();
+    }
+    const medplum = new MedplumClient({ baseUrl: MEDPLUM_BASE_URL });
+    return medplum;
+  }
   const medplum = new MedplumClient({ baseUrl: MEDPLUM_BASE_URL });
 
   // Try to get token from Authorization header first

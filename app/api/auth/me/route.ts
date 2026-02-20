@@ -1,41 +1,31 @@
 /**
  * GET /api/auth/me
- * Returns current user based on Firebase session cookie.
- * Falls back to Medplum profile if available.
+ * Returns current user profile from Medplum.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth } from '@/lib/firebase-admin';
 import { getCurrentProfile, getProfileRole } from '@/lib/server/medplum-auth';
+import { AUTH_DISABLED } from '@/lib/auth-config';
 
 export async function GET(req: NextRequest) {
-  const firebaseSession = req.cookies.get('emr_session')?.value;
-
-  // Try Firebase session first (primary auth)
-  if (firebaseSession) {
-    try {
-      const decoded = await adminAuth.verifySessionCookie(firebaseSession, true);
-      return NextResponse.json({
-        id: decoded.uid,
-        resourceType: 'User',
-        name: decoded.email || decoded.uid,
-        email: decoded.email || null,
-        role: (decoded as any).role || 'user',
-        provider: 'firebase',
-      });
-    } catch {
-      // fallthrough to Medplum below
-    }
+  if (AUTH_DISABLED) {
+    return NextResponse.json({
+      id: 'dev',
+      resourceType: 'User',
+      name: 'Dev User',
+      email: 'dev@local',
+      role: 'user',
+      provider: 'disabled',
+    });
   }
 
-  // Fallback to Medplum session if present
   try {
     const profile = await getCurrentProfile(req);
-    
+
     return NextResponse.json({
       id: profile.id,
       resourceType: profile.resourceType,
-      name: profile.resourceType === 'Practitioner' 
+      name: profile.resourceType === 'Practitioner'
         ? (profile as any).name?.[0]?.text || 'Unknown'
         : (profile as any).name?.[0]?.text || 'Patient',
       email: profile.resourceType === 'Practitioner'
@@ -51,10 +41,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
-
-
-
-
-
-

@@ -2,17 +2,16 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth";
+import { useMedplumAuth } from "@/lib/auth-medplum";
 
 export default function LogoutPage() {
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut } = useMedplumAuth();
 
   useEffect(() => {
     (async () => {
       try {
         await signOut();
-        await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
       } catch (error) {
         console.error('Logout error:', error);
       }

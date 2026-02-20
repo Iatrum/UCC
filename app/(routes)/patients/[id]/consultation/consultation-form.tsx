@@ -48,13 +48,13 @@ export default function ConsultationForm({
   } | null>(null);
   
   // Form state
-  const [clinicalNotes, setClinicalNotes] = useState(initialConsultation?.chiefComplaint ?? "");
+  const [clinicalNotes, setClinicalNotes] = useState(
+    initialConsultation?.notes ?? initialConsultation?.chiefComplaint ?? ""
+  );
   const [diagnosis, setDiagnosis] = useState(initialConsultation?.diagnosis ?? "");
-  const [progressNote, setProgressNote] = useState(initialConsultation?.progressNote ?? "");
   const [procedureEntries, setProcedureEntries] = useState<ProcedureRecord[]>(
     initialConsultation?.procedures ? [...initialConsultation.procedures] : []
   );
-  const [additionalNotes, setAdditionalNotes] = useState(initialConsultation?.notes ?? "");
   const [prescriptions, setPrescriptions] = useState<Prescription[]>(
     initialConsultation?.prescriptions ? [...initialConsultation.prescriptions] : []
   );
@@ -330,7 +330,7 @@ export default function ConsultationForm({
     if (!clinicalNotes.trim() || !diagnosis.trim()) {
       toast({
         title: "Validation Error",
-        description: "Please fill in Chief Complaint and Diagnosis",
+        description: "Please fill in SOAP note and Diagnosis",
         variant: "destructive"
       });
       return;
@@ -340,11 +340,9 @@ export default function ConsultationForm({
       setSubmitting(true);
       const consultationData = {
         patientId,
-        chiefComplaint: clinicalNotes,
         diagnosis,
         procedures: procedureEntries, // From order composer
-        notes: additionalNotes,
-        progressNote,
+        notes: clinicalNotes,
         prescriptions: prescriptions // Assuming prescriptions state already holds objects with price?
       };
 
@@ -375,7 +373,7 @@ export default function ConsultationForm({
               encounterId: newConsultationId,
               tests: labSelections,
               priority: 'routine',
-              clinicalNotes: additionalNotes || clinicalNotes,
+              clinicalNotes: clinicalNotes,
             }),
           });
           if (!res.ok) {
@@ -399,7 +397,7 @@ export default function ConsultationForm({
               procedures: imagingSelections,
               priority: 'routine',
               clinicalIndication: diagnosis || clinicalNotes,
-              clinicalQuestion: additionalNotes || undefined,
+              clinicalQuestion: undefined,
               orderedBy: undefined,
             }),
           });
@@ -419,17 +417,24 @@ export default function ConsultationForm({
 
       console.log(`✅ Consultation saved to Medplum FHIR: ${newConsultationId}`);
 
-      // Update queue status AFTER successful consultation save
-      await updateQueueStatus(patientId, "meds_and_bills");
+      let queueUpdateFailed = false;
+      try {
+        // Update queue status AFTER successful consultation save
+        await updateQueueStatus(patientId, "meds_and_bills");
+      } catch (queueError) {
+        queueUpdateFailed = true;
+        console.error('Queue status update failed:', queueError);
+      }
 
       const orderMessage = orderErrors.length
         ? `Consultation saved. Orders with issues: ${orderErrors.join(', ')}.`
         : "Consultation has been successfully recorded to FHIR and orders placed.";
+      const queueMessage = queueUpdateFailed ? " Queue status update failed." : "";
 
       toast({
         title: "Consultation Saved",
-        description: orderMessage,
-        variant: orderErrors.length ? "destructive" : "default",
+        description: `${orderMessage}${queueMessage}`,
+        variant: orderErrors.length || queueUpdateFailed ? "destructive" : "default",
       });
 
       router.push(`/patients/${patientId}`);
@@ -543,12 +548,12 @@ export default function ConsultationForm({
             </Card>
           </div>
 
-          {/* Middle: Chief Complaint & Diagnosis (largest column) */}
+          {/* Middle: SOAP Note & Diagnosis (largest column) */}
           <div className="md:col-span-6 space-y-3">
             <div className="space-y-1">
               <Textarea
-                placeholder="Clinical notes"
-                className="min-h-[200px]"
+                placeholder="SOAP note (Subjective, Objective, Assessment, Plan)"
+                className="min-h-[260px]"
                 value={clinicalNotes}
                 onChange={(e) => setClinicalNotes(e.target.value)}
                 onKeyDown={handleSmartTextKeyDown("clinicalNotes", setClinicalNotes)}
@@ -571,7 +576,7 @@ export default function ConsultationForm({
                 </Button>
               ) : null}
               <ReferralLetterButton
-                sourceText={[clinicalNotes, diagnosis, additionalNotes].filter(Boolean).join("\n\n")}
+                sourceText={[clinicalNotes, diagnosis].filter(Boolean).join("\n\n")}
                 patient={patient}
               />
             </div>
@@ -581,26 +586,6 @@ export default function ConsultationForm({
               value={diagnosis}
               onChange={(e) => setDiagnosis(e.target.value)}
             />
-            <div className="space-y-1">
-              <Textarea
-                placeholder="Progress note"
-                className="min-h-[120px]"
-                value={progressNote}
-                onChange={(e) => setProgressNote(e.target.value)}
-                onKeyDown={handleSmartTextKeyDown("progressNote", setProgressNote)}
-              />
-              {smartTextMessage("progressNote")}
-            </div>
-            <div className="space-y-1">
-              <Textarea
-                placeholder="Additional notes"
-                className="min-h-[160px]"
-                value={additionalNotes}
-                onChange={(e) => setAdditionalNotes(e.target.value)}
-                onKeyDown={handleSmartTextKeyDown("additionalNotes", setAdditionalNotes)}
-              />
-              {smartTextMessage("additionalNotes")}
-            </div>
           </div>
 
           {/* Right: Orders (Meds + Procedures) */}

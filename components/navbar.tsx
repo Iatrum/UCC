@@ -7,10 +7,10 @@ import {
   Settings, 
   Users 
 } from "lucide-react";
-import { useAuth } from "@/lib/auth";
+import { useMedplumAuth } from "@/lib/auth-medplum";
 
 export default function Navbar() {
-  const { user, signOut } = useAuth();
+  const { profile, signOut } = useMedplumAuth();
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Activity },
     { name: "Patients", href: "/patients", icon: Users },
@@ -37,14 +37,11 @@ export default function Navbar() {
           ))}
         </nav>
         <div className="ml-auto flex items-center space-x-4">
-          {user ? (
+          {profile ? (
             <Button
               variant="outline"
               size="sm"
               onClick={async () => {
-                try {
-                  await fetch('/api/auth/session', { method: 'DELETE' });
-                } catch {}
                 await signOut();
                 if (typeof window !== 'undefined') window.location.assign('/login');
               }}
