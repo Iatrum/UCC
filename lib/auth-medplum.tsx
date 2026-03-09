@@ -3,7 +3,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { MedplumClient } from '@medplum/core';
 import type { Resource } from '@medplum/fhirtypes';
-import { AUTH_DISABLED } from './auth-config';
 
 const MEDPLUM_BASE_URL = process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103';
 const MEDPLUM_CLIENT_ID = process.env.NEXT_PUBLIC_MEDPLUM_CLIENT_ID || '';
@@ -14,8 +13,9 @@ interface MedplumAuthContextType {
   profile: Resource | null;
   loading: boolean;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   clinicId: string | null;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<{ isAdmin: boolean }>;
   signOut: () => Promise<void>;
   getAccessToken: () => string | undefined;
   setClinicId: (clinicId: string | null) => Promise<void>;
@@ -29,28 +29,17 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
     clientId: MEDPLUM_CLIENT_ID || undefined,
     onUnauthenticated: () => {
       setProfile(null);
-      // Clear stored token
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('medplum-access-token');
-        sessionStorage.removeItem('medplum-access-token');
-      }
+      setIsAdmin(false);
     },
   }));
 
   const [profile, setProfile] = useState<Resource | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [clinicId, setClinicIdState] = useState<string | null>(null);
 
   const persistClinicId = async (nextClinicId: string | null) => {
     setClinicIdState(nextClinicId);
-    if (typeof window !== 'undefined') {
-      if (nextClinicId) {
-        localStorage.setItem('clinic-id', nextClinicId);
-      } else {
-        localStorage.removeItem('clinic-id');
-      }
-    }
-
     try {
       const accessToken = medplum.getAccessToken();
       await fetch('/api/auth/medplum-session', {
@@ -59,42 +48,40 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
         body: JSON.stringify({ accessToken, clinicId: nextClinicId }),
       });
     } catch (error) {
-      console.warn('⚠️ [EMR] Failed to persist clinicId to session cookie:', error);
+      console.warn('Warning: Failed to persist clinicId to session cookie:', error);
     }
   };
 
+  // Restore session from MedplumClient internal storage on mount
   useEffect(() => {
-    const storedClinic = localStorage.getItem('clinic-id');
-    if (storedClinic) {
-      setClinicIdState(storedClinic);
-    }
+    // Read clinic from cookie (set by middleware)
+    const clinicCookie = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('medplum-clinic='))
+      ?.split('=')[1];
+    if (clinicCookie) setClinicIdState(decodeURIComponent(clinicCookie));
 
-    if (AUTH_DISABLED) {
-      setProfile({ resourceType: 'Practitioner', id: 'dev' } as Resource);
-      setLoading(false);
-      return;
-    }
-
-    const storedToken = localStorage.getItem('medplum-access-token');
-    if (!storedToken) {
-      setLoading(false);
-      return;
-    }
-
-    medplum.setAccessToken(storedToken);
-    setProfile({ resourceType: 'Practitioner', id: 'token-auth' } as Resource);
-    setLoading(false);
-
+    // MedplumClient persists its own session via @medplum:* localStorage keys
     medplum.getProfileAsync()
-      .then((p) => { if (p) setProfile(p as Resource); })
+      .then(async (p) => {
+        if (p) {
+          setProfile(p as Resource);
+          try {
+            const me = await medplum.get('auth/me');
+            setIsAdmin(me?.membership?.admin === true);
+          } catch {
+            setIsAdmin(false);
+          }
+        }
+      })
       .catch(() => {
-        localStorage.removeItem('medplum-access-token');
         setProfile(null);
-      });
+        setIsAdmin(false);
+      })
+      .finally(() => setLoading(false));
   }, [medplum]);
 
-  const signIn = async (email: string, password: string) => {
-    if (AUTH_DISABLED) return;
+  const signIn = async (email: string, password: string): Promise<{ isAdmin: boolean }> => {
     try {
       const loginResponse = await medplum.startLogin({
         email,
@@ -102,75 +89,63 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
         projectId: MEDPLUM_PROJECT_ID || undefined,
       });
 
-      // If startLogin returned a code but the SDK didn't auto-process it,
-      // explicitly process it to complete the token exchange.
       if (loginResponse?.code && !medplum.getAccessToken()) {
         await medplum.processCode(loginResponse.code);
       }
 
-      // Try to load the user profile
       try {
-        const maybeProfile = await medplum.getProfile();
-        if (maybeProfile) {
-          setProfile(maybeProfile as Resource | null);
-        }
+        const maybeProfile = await medplum.getProfileAsync();
+        if (maybeProfile) setProfile(maybeProfile as Resource);
       } catch {
         setProfile(null);
       }
 
       const accessToken = medplum.getAccessToken();
-      if (!accessToken) {
-        throw new Error('Login succeeded but no access token was returned');
+      if (!accessToken) throw new Error('Login succeeded but no access token was returned');
+
+      // Check admin status
+      let adminStatus = false;
+      try {
+        const me = await medplum.get('auth/me');
+        adminStatus = me?.membership?.admin === true;
+        setIsAdmin(adminStatus);
+      } catch {
+        setIsAdmin(false);
       }
 
-      localStorage.setItem('medplum-access-token', accessToken);
-
+      // Persist to server-side session cookie (shared across subdomains via COOKIE_DOMAIN)
       await fetch('/api/auth/medplum-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accessToken }),
       });
+
+      return { isAdmin: adminStatus };
     } catch (error: any) {
       throw new Error(error.message || 'Login failed');
     }
   };
 
   const signOut = async () => {
-    if (AUTH_DISABLED) {
-      setProfile(null);
-      setClinicIdState(null);
-      localStorage.removeItem('clinic-id');
-      return;
-    }
     try {
-      // Clear Medplum session
       medplum.signOut();
       setProfile(null);
+      setIsAdmin(false);
       setClinicIdState(null);
-
-      // Clear stored tokens
-      localStorage.removeItem('medplum-access-token');
-      sessionStorage.removeItem('medplum-access-token');
-      localStorage.removeItem('clinic-id');
-
-      // Clear server session cookie
-      await fetch('/api/auth/medplum-session', {
-        method: 'DELETE',
-      });
+      await fetch('/api/auth/medplum-session', { method: 'DELETE' });
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
 
-  const getAccessToken = () => {
-    return medplum.getAccessToken();
-  };
+  const getAccessToken = () => medplum.getAccessToken();
 
   const value: MedplumAuthContextType = {
     medplum,
     profile,
     loading,
-    isAuthenticated: AUTH_DISABLED ? true : profile !== null,
+    isAuthenticated: profile !== null,
+    isAdmin,
     clinicId,
     signIn,
     signOut,
@@ -193,35 +168,6 @@ export function useMedplumAuth() {
   return context;
 }
 
-// Helper to get user role from profile
-export function getUserRole(profile: Resource | null): string | null {
-  if (!profile) return null;
-
-  // Profile can be Practitioner, Patient, RelatedPerson, etc.
-  const resourceType = profile.resourceType;
-
-  // For practitioners, check their role
-  if (resourceType === 'Practitioner') {
-    // Role would come from PractitionerRole or custom extension
-    // For now, return a default or check extensions
-    return 'practitioner';
-  }
-
-  if (resourceType === 'Patient') {
-    return 'patient';
-  }
-
-  // Check for admin role (typically in extensions or project membership)
-  return 'user';
-}
-
-// Check if user has specific role
-export function hasRole(profile: Resource | null, roles: string[]): boolean {
-  const userRole = getUserRole(profile);
-  return userRole ? roles.includes(userRole) : false;
-}
-
-// Shortcut hook to access clinic context without exposing full auth details
 export function useClinic() {
   const { clinicId, setClinicId } = useMedplumAuth();
   return { clinicId, setClinicId };

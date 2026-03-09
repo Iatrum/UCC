@@ -1,14 +1,15 @@
-import './globals.css';
-import type { Metadata } from 'next';
-import { ThemeProvider } from '@/components/theme-provider';
-import Toaster from '@/components/ui/toaster';
-import Sidebar from '@/components/sidebar';
-import { MedplumAuthProvider } from '@/lib/auth-medplum';
-import { listActiveModules } from '@/lib/module-registry';
+import "./globals.css";
+import type { Metadata } from "next";
+import { ThemeProvider } from "@/components/theme-provider";
+import Toaster from "@/components/ui/toaster";
+import Sidebar from "@/components/sidebar";
+import { MedplumAuthProvider } from "@/lib/auth-medplum";
+import { listActiveModules } from "@/lib/module-registry";
+import { cookies, headers } from "next/headers";
 
 export const metadata: Metadata = {
-  title: 'EMR System',
-  description: 'Modern Electronic Medical Records System',
+  title: "UCC EMR",
+  description: "Modern Electronic Medical Records System",
 };
 
 export default async function RootLayout({
@@ -17,6 +18,10 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const modules = await listActiveModules();
+
+  // Detect admin subdomain via cookie set by middleware
+  const cookieStore = await cookies();
+  const isAdminContext = cookieStore.get("medplum-is-admin")?.value === "true";
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -30,18 +35,23 @@ export default async function RootLayout({
           <MedplumAuthProvider>
             <div className="relative flex min-h-screen flex-col">
               <div className="flex flex-1">
-                <Sidebar
-                  modules={modules.map((module) => ({
-                    id: module.id,
-                    label: module.label,
-                    routePath: module.routePath,
-                    icon: module.icon,
-                  }))}
-                />
+                {/* Only show clinic sidebar on non-admin subdomains */}
+                {!isAdminContext && (
+                  <Sidebar
+                    modules={modules.map((module) => ({
+                      id: module.id,
+                      label: module.label,
+                      routePath: module.routePath,
+                      icon: module.icon,
+                    }))}
+                  />
+                )}
                 <main className="flex-1 overflow-y-auto">
-                  <div className="container p-8">
-                    {children}
-                  </div>
+                  {isAdminContext ? (
+                    children
+                  ) : (
+                    <div className="container p-8">{children}</div>
+                  )}
                 </main>
               </div>
             </div>

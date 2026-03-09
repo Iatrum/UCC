@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMedplumAuth } from "@/lib/auth-medplum";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,23 +15,32 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const { signIn } = useMedplumAuth();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
     try {
-      await signIn(email, password);
-      // Replace to avoid back navigation to login
-      const next = searchParams.get('next');
-      const safeNext = next && next.startsWith('/') ? next : '/dashboard';
-      router.replace(safeNext);
-    } catch (error: any) {
+      const { isAdmin } = await signIn(email, password);
+      if (isAdmin) {
+        const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+        if (baseDomain && typeof window !== "undefined") {
+          const currentHost = window.location.hostname;
+          if (currentHost === `admin.${baseDomain}`) {
+            router.replace("/admin");
+          } else {
+            window.location.href = `${window.location.protocol}//admin.${baseDomain}/admin`;
+          }
+        } else {
+          router.replace("/admin");
+        }
+      } else {
+        router.replace("/dashboard");
+      }
+    } catch (error) {
       toast({
-        title: "Error",
-        description: error?.message || "Invalid credentials. Please try again.",
+        title: "Sign in failed",
+        description: "Invalid email or password. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -53,7 +62,7 @@ export default function Login() {
               <Input
                 id="email"
                 type="email"
-                placeholder="doctor@hospital.com"
+                placeholder="doctor@clinic.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -72,11 +81,7 @@ export default function Login() {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>
-            <Button type="button" variant="ghost" className="w-full" disabled>
-              Forgot password? (not available)
-            </Button>
           </form>
-          {/* Signup disabled */}
         </CardContent>
       </Card>
     </div>
