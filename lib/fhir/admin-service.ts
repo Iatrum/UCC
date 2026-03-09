@@ -45,13 +45,47 @@ export interface PractitionerSummary {
   id: string;
   name: string;
   email?: string;
+  organizations?: Array<{ id: string; name: string }>;
+}
+
+export interface InvitePractitionerInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  clinicId: string;
+  sendEmail?: boolean;
+}
+
+function getIdFromReference(reference?: string): string | undefined {
+  if (!reference) return undefined;
+  const [resourceType, id] = reference.split("/");
+  if (!resourceType || !id) return undefined;
+  return id;
 }
 
 export async function getPractitionersFromMedplum(): Promise<PractitionerSummary[]> {
   const medplum = await getMedplumClient();
-  const practitioners = await medplum.searchResources("Practitioner", {
-    _count: "200",
-  });
+  const [practitioners, roles, organizations] = await Promise.all([
+    medplum.searchResources("Practitioner", { _count: "200" }),
+    medplum.searchResources("PractitionerRole", { _count: "500" }),
+    medplum.searchResources("Organization", { _count: "200" }),
+  ]);
+
+  const orgById = new Map<string, { id: string; name: string }>();
+  for (const org of organizations ?? []) {
+    if (!org.id) continue;
+    orgById.set(org.id, { id: org.id, name: org.name ?? "Unnamed clinic" });
+  }
+
+  const orgIdsByPractitioner = new Map<string, Set<string>>();
+  for (const role of roles ?? []) {
+    const practitionerId = getIdFromReference(role.practitioner?.reference);
+    const orgId = getIdFromReference(role.organization?.reference);
+    if (!practitionerId || !orgId) continue;
+    const set = orgIdsByPractitioner.get(practitionerId) ?? new Set<string>();
+    set.add(orgId);
+    orgIdsByPractitioner.set(practitionerId, set);
+  }
 
   return (practitioners ?? []).map((p) => {
     const name =
@@ -61,6 +95,76 @@ export async function getPractitionersFromMedplum(): Promise<PractitionerSummary
         .join(" ") ??
       "Unknown";
     const email = p.telecom?.find((t) => t.system === "email")?.value;
-    return { id: p.id ?? "", name, email };
+    const orgIds = p.id ? Array.from(orgIdsByPractitioner.get(p.id) ?? []) : [];
+    const practitionerOrgs = orgIds
+      .map((id) => orgById.get(id))
+      .filter((value): value is { id: string; name: string } => Boolean(value));
+    return { id: p.id ?? "", name, email, organizations: practitionerOrgs };
   });
+}
+
+export async function invitePractitionerToMedplum(input: InvitePractitionerInput): Promise<void> {
+  const medplum = await getMedplumClient();
+  const projectId =
+    process.env.MEDPLUM_PROJECT_ID ||
+    process.env.NEXT_PUBLIC_MEDPLUM_PROJECT_ID ||
+    medplum.getProject()?.id;
+
+  if (!projectId) {
+    throw new Error("Medplum project ID not configured");
+  }
+
+  const outcome = await medplum.invite(projectId, {
+    resourceType: "Practitioner",
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email,
+    sendEmail: input.sendEmail ?? true,
+    upsert: true,
+  });
+
+  if ((outcome as any)?.resourceType === "OperationOutcome") {
+    const issue = (outcome as any)?.issue?.[0];
+    const details = issue?.details?.text || issue?.diagnostics || "Invite failed";
+    throw new Error(details);
+  }
+
+  let practitionerId: string | undefined;
+  const profileRef = (outcome as any)?.profile?.reference as string | undefined;
+  if (profileRef?.startsWith("Practitioner/")) {
+    practitionerId = getIdFromReference(profileRef);
+  }
+
+  if (!practitionerId) {
+    const matches = await medplum.searchResources("Practitioner", {
+      telecom: input.email,
+      _count: "10",
+    });
+    const matched = (matches ?? []).find((p) =>
+      p.telecom?.some((t) => t.system === "email" && t.value?.toLowerCase() === input.email.toLowerCase())
+    );
+    practitionerId = matched?.id;
+  }
+
+  if (!practitionerId) {
+    throw new Error(
+      "Invitation created, but practitioner record was not found for clinic assignment yet. Ask user to accept invite, then re-assign."
+    );
+  }
+
+  const practitionerRef = `Practitioner/${practitionerId}`;
+  const clinicRef = `Organization/${input.clinicId}`;
+  const existingRole = await medplum.searchOne("PractitionerRole", {
+    practitioner: practitionerRef,
+    organization: clinicRef,
+  });
+
+  if (!existingRole) {
+    await medplum.createResource({
+      resourceType: "PractitionerRole",
+      active: true,
+      practitioner: { reference: practitionerRef },
+      organization: { reference: clinicRef },
+    });
+  }
 }

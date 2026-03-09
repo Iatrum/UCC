@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Moon, Sun } from "lucide-react";
+import { Moon, Sparkles, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const { theme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   // useEffect only runs on the client, so now we can safely show the UI
@@ -15,41 +15,33 @@ export function ThemeToggle({ className }: { className?: string }) {
   }, []);
 
   if (!mounted) {
-    // Render a placeholder or null on the server and initial client render
-    // to avoid mismatch
-    return <div className={cn("inline-flex items-center bg-muted rounded-full p-1 h-[40px] w-[72px]", className)} />; 
+    return <div className={cn("inline-flex items-center bg-muted rounded-full p-1 h-[40px] w-[112px]", className)} />;
   }
 
-  const isDark = theme === "dark";
-
-  const toggleTheme = () => {
-    setTheme(isDark ? "light" : "dark");
-  };
+  const activeTheme = theme === "system" ? resolvedTheme ?? "light" : theme;
+  const options: Array<{ key: "light" | "dark" | "v3"; icon: React.ReactNode; label: string }> = [
+    { key: "light", icon: <Sun className="h-4 w-4" />, label: "Light" },
+    { key: "dark", icon: <Moon className="h-4 w-4" />, label: "Dark" },
+    { key: "v3", icon: <Sparkles className="h-4 w-4" />, label: "V3" },
+  ];
 
   return (
-    <div 
-      className={cn(
-        "inline-flex items-center bg-muted rounded-full p-1 cursor-pointer",
-        className
-      )}
-      onClick={toggleTheme}
-    >
-      <div 
-        className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300",
-          !isDark ? "bg-primary text-primary-foreground" : "bg-transparent"
-        )}
-      >
-        <Sun className="h-5 w-5" />
-      </div>
-      <div 
-        className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300",
-          isDark ? "bg-primary text-primary-foreground" : "bg-transparent"
-        )}
-      >
-        <Moon className="h-5 w-5" />
-      </div>
+    <div className={cn("inline-flex items-center bg-muted rounded-full p-1", className)}>
+      {options.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => setTheme(option.key)}
+          className={cn(
+            "h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200",
+            activeTheme === option.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+          title={option.label}
+          aria-label={`Switch to ${option.label} theme`}
+        >
+          {option.icon}
+        </button>
+      ))}
     </div>
   );
 }

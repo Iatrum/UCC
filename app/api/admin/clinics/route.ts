@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getOrganizationsFromMedplum } from "@/lib/fhir/admin-service";
 import { saveOrganizationDetailsToMedplum } from "@/lib/fhir/organization-service";
+
+/**
+ * GET /api/admin/clinics
+ * List clinics (Organisations) for admin flows.
+ */
+export async function GET() {
+  try {
+    const clinics = await getOrganizationsFromMedplum();
+    return NextResponse.json({ clinics });
+  } catch (error: any) {
+    console.error("Failed to list clinics:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to list clinics" },
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * POST /api/admin/clinics

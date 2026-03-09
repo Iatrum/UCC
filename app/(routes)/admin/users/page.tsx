@@ -54,6 +54,11 @@ export default async function UsersPage() {
                       {p.email && (
                         <p className="text-xs text-muted-foreground">{p.email}</p>
                       )}
+                      {p.organizations && p.organizations.length > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Clinic: {p.organizations.map((o) => o.name).join(", ")}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <Badge variant="secondary">Practitioner</Badge>
