@@ -11,6 +11,8 @@ export interface OrganizationDetails {
   name?: string | null;
   address?: string | null;
   phone?: string | null;
+  /** ID of the parent Organization (clinic) this branch belongs to, if any. */
+  parentClinicId?: string | null;
 }
 
 const CLINIC_IDENTIFIER_SYSTEM = "clinic";
@@ -52,11 +54,16 @@ function addClinicIdentifier(
 function mapOrganizationToDetails(org: Organization): OrganizationDetails {
   const phone = org.telecom?.find((t) => t.system === "phone")?.value;
   const address = org.address?.[0]?.text;
+  const parentRef = org.partOf?.reference; // e.g. "Organization/clinic1"
+  const parentClinicId = parentRef?.startsWith("Organization/")
+    ? parentRef.slice("Organization/".length)
+    : null;
   return {
     logoUrl: getLogoUrl(org),
     name: org.name ?? null,
     address: address ?? null,
     phone: phone ?? null,
+    parentClinicId: parentClinicId ?? null,
   };
 }
 
@@ -119,6 +126,13 @@ export async function saveOrganizationDetailsToMedplum(
         ? otherTelecom
         : undefined;
 
+  const parentClinicId =
+    details.parentClinicId === undefined
+      ? (existing?.partOf?.reference?.startsWith("Organization/")
+          ? existing.partOf.reference.slice("Organization/".length)
+          : null)
+      : details.parentClinicId;
+
   const nextOrg: Organization = applyMyCoreProfile({
     ...(existing ?? { resourceType: "Organization", id: clinicId, active: true }),
     id: existing?.id ?? clinicId,
@@ -127,7 +141,19 @@ export async function saveOrganizationDetailsToMedplum(
     telecom,
     address: address ? [{ text: address }] : undefined,
     extension: upsertLogoExtension(existing?.extension, logoUrl),
+    partOf: parentClinicId ? { reference: `Organization/${parentClinicId}` } : undefined,
   });
 
   await medplum.updateResource(nextOrg);
+}
+
+/**
+ * Get all branch Organizations that belong to the given parent clinic.
+ */
+export async function getBranchesForOrg(parentClinicId: string): Promise<OrganizationDetails[]> {
+  const medplum = await getMedplumClient();
+  const branches = await medplum.searchResources("Organization", {
+    partof: `Organization/${parentClinicId}`,
+  });
+  return (branches ?? []).map(mapOrganizationToDetails);
 }

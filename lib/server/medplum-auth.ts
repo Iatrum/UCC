@@ -170,10 +170,16 @@ export async function hasRole(req: NextRequest, allowedRoles: string[]): Promise
 }
 
 /**
- * Get user's role from profile
+ * Get user's role from profile.
+ * An "owner" is a Practitioner with a "clinic-owner" identifier,
+ * granting cross-branch visibility for the parent organisation.
  */
 export function getProfileRole(profile: ProfileResource): string {
   if (profile.resourceType === 'Practitioner') {
+    const isOwner = (profile as any).identifier?.some(
+      (id: any) => id.system === 'clinic-owner'
+    );
+    if (isOwner) return 'owner';
     return 'practitioner';
   }
   if (profile.resourceType === 'Patient') {
