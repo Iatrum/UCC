@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   try {
     const { accessToken, clinicId } = await req.json();
 
-    if (\!accessToken && clinicId === undefined) {
+    if (!accessToken && clinicId === undefined) {
       return NextResponse.json(
         { error: "Missing access token or clinicId" },
         { status: 400 }
@@ -88,7 +88,7 @@ export async function GET() {
     const sessionCookie = cookieStore.get(COOKIE_NAME);
     const clinicCookie = cookieStore.get(CLINIC_COOKIE_NAME);
 
-    if (\!sessionCookie) {
+    if (!sessionCookie) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
