@@ -34,8 +34,8 @@ export default async function RootLayout({
           disableTransitionOnChange
         >
           <MedplumAuthProvider>
-            <div className="relative flex min-h-screen flex-col">
-              <div className="flex flex-1">
+        <div className="flex h-screen flex-col">
+          <div className="flex flex-1 min-h-0">
                 {/* Only show clinic sidebar on non-admin subdomains */}
                 {!isAdminContext && (
                   <Sidebar

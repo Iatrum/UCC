@@ -395,8 +395,8 @@ export default function TriageForm({ patient }: TriageFormProps) {
         </CardContent>
       </Card>
 
-      {/* Submit */}
-      <div className="flex justify-end gap-3">
+      {/* Submit — sticky footer so it's always reachable without scrolling */}
+      <div className="sticky bottom-0 z-10 bg-background border-t py-4 -mx-8 px-8 flex justify-end gap-3">
         <Button
           type="button"
           variant="outline"
