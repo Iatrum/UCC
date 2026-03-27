@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveOrganizationDetailsToMedplum } from "@/lib/fhir/organization-service";
+import { saveOrganizationDetailsToMedplum } from "@/lib/fhir/admin-service";
 
 /**
  * POST /api/admin/clinics

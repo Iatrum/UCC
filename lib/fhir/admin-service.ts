@@ -47,6 +47,37 @@ export interface PractitionerSummary {
   email?: string;
 }
 
+export interface OrganizationInput {
+  name: string;
+  phone?: string;
+  address?: string;
+  logoUrl?: string;
+}
+
+export async function saveOrganizationDetailsToMedplum(
+  input: OrganizationInput,
+  subdomain: string
+): Promise<void> {
+  const medplum = await getMedplumClient();
+
+  const org = {
+    resourceType: "Organization" as const,
+    name: input.name,
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: subdomain }],
+    ...(input.phone && {
+      telecom: [{ system: "phone", value: input.phone }],
+    }),
+    ...(input.address && {
+      address: [{ text: input.address }],
+    }),
+    ...(input.logoUrl && {
+      extension: [{ url: ORG_LOGO_EXTENSION_URL, valueUrl: input.logoUrl }],
+    }),
+  };
+
+  await medplum.createResource(org);
+}
+
 export async function getPractitionersFromMedplum(): Promise<PractitionerSummary[]> {
   const medplum = await getMedplumClient();
   const practitioners = await medplum.searchResources("Practitioner", {
