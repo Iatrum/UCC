@@ -1,0 +1,122 @@
+# Deployment Runbook
+
+This file is the operational source of truth for deploying and verifying UCC EMR.
+
+## Topology
+
+- Frontend: Next.js app
+- Hosting: Vercel
+- FHIR backend: self-hosted Medplum
+- Admin portal: `admin.<base-domain>`
+- Clinic portals: `<clinic-subdomain>.<base-domain>`
+- Browser auth: Medplum login from the frontend
+- Server auth bridge: `medplum-session` cookie
+
+## Required Environment Variables
+
+Validate the environment before building or promoting:
+
+```bash
+npm run validate-env
+```
+
+Required:
+
+- `MEDPLUM_BASE_URL`
+- `NEXT_PUBLIC_MEDPLUM_BASE_URL`
+- `NEXT_PUBLIC_MEDPLUM_PROJECT_ID`
+- `MEDPLUM_CLIENT_ID`
+- `NEXT_PUBLIC_MEDPLUM_CLIENT_ID`
+- `MEDPLUM_CLIENT_SECRET`
+- `NEXT_PUBLIC_BASE_DOMAIN`
+
+Important optional variables:
+
+- `COOKIE_DOMAIN`
+- `MEDPLUM_BULK_EXPORT_SECRET`
+- `OPENROUTER_API_KEY`
+
+## Production References
+
+Production/self-hosted Medplum details live in:
+
+- [`MEDPLUM_SELF_HOSTED_DETAILS.md`](/Users/hidayat/Documents/Projects/UCC/MEDPLUM_SELF_HOSTED_DETAILS.md)
+
+Keep that file updated whenever:
+
+- Medplum host changes
+- Medplum OAuth client changes
+- project ID changes
+- documented admin or clinic credentials change
+
+## Domain Contract
+
+Expected routing model:
+
+- landing page: `https://drhidayat.com`
+- admin: `https://admin.drhidayat.com`
+- clinics: `https://<clinic>.drhidayat.com`
+
+Recommended env values:
+
+```env
+NEXT_PUBLIC_BASE_DOMAIN=drhidayat.com
+COOKIE_DOMAIN=.drhidayat.com
+```
+
+Why this matters:
+
+- `NEXT_PUBLIC_BASE_DOMAIN` is used by subdomain routing and login redirects
+- `COOKIE_DOMAIN` allows auth cookies to work across admin and clinic subdomains
+
+## Browser Auth And CORS
+
+This app performs browser login directly against Medplum.
+That means Medplum must allow the frontend origin.
+
+Origins that must be allowed in Medplum:
+
+- production frontend origin(s)
+- admin subdomain
+- clinic subdomains in use
+- local dev origin such as `http://localhost:3000` if local browser login is expected
+
+If CORS is wrong, valid credentials will still fail in the browser.
+
+Typical symptom:
+
+- browser console shows blocked request to `https://<medplum-host>/auth/login`
+- UI shows generic sign-in failure
+
+## Pre-Deployment Checklist
+
+1. Run `npm run validate-env`
+2. Run `npm run test:e2e`
+3. Confirm `MEDPLUM_BASE_URL` and `NEXT_PUBLIC_MEDPLUM_BASE_URL` point to the same intended Medplum instance
+4. Confirm `NEXT_PUBLIC_BASE_DOMAIN` matches real DNS
+5. Confirm `COOKIE_DOMAIN` matches the deployment strategy
+6. Confirm Medplum CORS allows the frontend origin(s)
+7. Confirm one admin credential works
+8. Confirm one clinic credential works
+9. Confirm `/api/health` returns `200`
+10. Confirm `/api/health/deep` returns `200`
+
+## Post-Deployment Verification
+
+1. Open `https://drhidayat.com`
+2. Open `https://admin.drhidayat.com/login`
+3. Open one clinic login page such as `https://klinikputeri.drhidayat.com/login`
+4. Verify admin login succeeds
+5. Verify one clinic login succeeds
+6. Verify `/api/health`
+7. Verify `/api/health/deep`
+
+## Operational Rules
+
+When deployment assumptions change, update both:
+
+- [`DEPLOYMENT.md`](/Users/hidayat/Documents/Projects/UCC/DEPLOYMENT.md)
+- [`MEDPLUM_SELF_HOSTED_DETAILS.md`](/Users/hidayat/Documents/Projects/UCC/MEDPLUM_SELF_HOSTED_DETAILS.md)
+
+That keeps the code, infra assumptions, and operator workflow aligned.
+

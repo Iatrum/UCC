@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 🎯 Get patient data from MEDPLUM (FHIR) - Source of Truth
-    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    const patient = await getPatientFromMedplum(patientId, clinicId ?? undefined, medplum);
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found in FHIR' }, { status: 404 });
     }
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         phone: (patient as any).phoneNumber || (patient as any).phone || '',
         address: (patient as any).address || '',
       },
-      clinicId,
+      clinicId ?? undefined,
       medplum
     );
 

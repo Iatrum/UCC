@@ -20,7 +20,7 @@ import { executeSmartTextCommand, type SmartTextContext } from "@/lib/smart-text
 import type { SerializedConsultation } from "@/lib/types";
 import { SOAP_REWRITE_ENABLED, TRANSCRIBE_ENABLED } from "@/lib/features";
 import { getPatient } from "@/lib/fhir/patient-client";
-import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-service";
+import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-constants";
 import { IMAGING_PROCEDURES, type ImagingProcedureCode } from "@/lib/fhir/imaging-service";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 

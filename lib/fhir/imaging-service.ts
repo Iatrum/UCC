@@ -1,13 +1,11 @@
 /**
- * Imaging Service - PACS (Picture Archiving and Communication System) Integration
- * 
- * Handles imaging orders and results using FHIR resources:
- * - ServiceRequest: Imaging orders
- * - ImagingStudy: DICOM study information
- * - DiagnosticReport: Imaging report/interpretation
+ * Imaging Service - PACS Integration
+ * Server-only. Do NOT import in Client Components.
+ * Use lib/fhir/imaging-constants.ts for static constants and types.
  */
 
 import { MedplumClient } from '@medplum/core';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type {
   ServiceRequest,
   ImagingStudy,
@@ -16,10 +14,22 @@ import type {
 } from '@medplum/fhirtypes';
 import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
+import {
+  IMAGING_PROCEDURES,
+  type ImagingProcedureCode,
+  type ImagingReportSummary,
+  type ImagingStudyData,
+  type DICOMSeries,
+} from './imaging-constants';
 
-/**
- * Imaging modality codes (DICOM)
- */
+export {
+  IMAGING_PROCEDURES,
+  type ImagingProcedureCode,
+  type ImagingReportSummary,
+  type ImagingStudyData,
+  type DICOMSeries,
+};
+
 export const IMAGING_MODALITIES = {
   CR: { code: 'CR', display: 'Computed Radiography', system: 'http://dicom.nema.org/resources/ontology/DCM' },
   CT: { code: 'CT', display: 'Computed Tomography', system: 'http://dicom.nema.org/resources/ontology/DCM' },
@@ -32,47 +42,11 @@ export const IMAGING_MODALITIES = {
   XA: { code: 'XA', display: 'X-Ray Angiography', system: 'http://dicom.nema.org/resources/ontology/DCM' },
 } as const;
 
-/**
- * Common imaging procedures with LOINC codes
- */
-export const IMAGING_PROCEDURES = {
-  // X-Ray
-  CHEST_XRAY: { code: '36643-5', display: 'Chest X-ray', modality: 'DX', system: 'http://loinc.org' },
-  CHEST_XRAY_2V: { code: '30746-2', display: 'Chest X-ray 2 views', modality: 'DX', system: 'http://loinc.org' },
-  ABDOMEN_XRAY: { code: '36558-5', display: 'Abdomen X-ray', modality: 'DX', system: 'http://loinc.org' },
-  SPINE_LUMBAR_XRAY: { code: '36567-6', display: 'Lumbar Spine X-ray', modality: 'DX', system: 'http://loinc.org' },
-  KNEE_XRAY: { code: '37362-1', display: 'Knee X-ray', modality: 'DX', system: 'http://loinc.org' },
-  
-  // CT Scan
-  HEAD_CT: { code: '30799-1', display: 'Head CT without contrast', modality: 'CT', system: 'http://loinc.org' },
-  HEAD_CT_CONTRAST: { code: '24727-0', display: 'Head CT with contrast', modality: 'CT', system: 'http://loinc.org' },
-  CHEST_CT: { code: '30800-7', display: 'Chest CT without contrast', modality: 'CT', system: 'http://loinc.org' },
-  ABDOMEN_CT: { code: '30807-2', display: 'Abdomen CT without contrast', modality: 'CT', system: 'http://loinc.org' },
-  CTPA: { code: '42273-8', display: 'CT Pulmonary Angiography', modality: 'CT', system: 'http://loinc.org' },
-  
-  // MRI
-  BRAIN_MRI: { code: '24556-3', display: 'Brain MRI', modality: 'MR', system: 'http://loinc.org' },
-  SPINE_MRI: { code: '24604-1', display: 'Spine MRI', modality: 'MR', system: 'http://loinc.org' },
-  KNEE_MRI: { code: '24610-8', display: 'Knee MRI', modality: 'MR', system: 'http://loinc.org' },
-  
-  // Ultrasound
-  ABDOMEN_US: { code: '24626-4', display: 'Abdomen Ultrasound', modality: 'US', system: 'http://loinc.org' },
-  PELVIS_US: { code: '24638-9', display: 'Pelvis Ultrasound', modality: 'US', system: 'http://loinc.org' },
-  OBSTETRIC_US: { code: '11525-3', display: 'Obstetric Ultrasound', modality: 'US', system: 'http://loinc.org' },
-  THYROID_US: { code: '24651-2', display: 'Thyroid Ultrasound', modality: 'US', system: 'http://loinc.org' },
-  ECHO: { code: '18752-6', display: 'Echocardiography', modality: 'US', system: 'http://loinc.org' },
-  
-  // Mammography
-  MAMMOGRAM: { code: '37027-2', display: 'Mammography', modality: 'MG', system: 'http://loinc.org' },
-  MAMMOGRAM_BILATERAL: { code: '24604-1', display: 'Bilateral Mammography', modality: 'MG', system: 'http://loinc.org' },
-} as const;
-
-export type ImagingProcedureCode = keyof typeof IMAGING_PROCEDURES;
 export type ModalityCode = keyof typeof IMAGING_MODALITIES;
 
 export interface ImagingOrderRequest {
-  patientId: string; // FHIR Patient ID
-  encounterId?: string; // FHIR Encounter ID
+  patientId: string;
+  encounterId?: string;
   procedures: ImagingProcedureCode[];
   priority?: 'routine' | 'urgent' | 'asap' | 'stat';
   clinicalIndication?: string;
@@ -80,81 +54,7 @@ export interface ImagingOrderRequest {
   orderedBy?: string;
 }
 
-export interface DICOMSeries {
-  uid: string; // Series Instance UID
-  number: number;
-  modality: string;
-  description?: string;
-  numberOfInstances: number;
-  bodySite?: string;
-  started?: Date;
-  endpoint?: string; // WADO-RS endpoint to view images
-}
-
-export interface ImagingStudyData {
-  studyUid: string; // Study Instance UID
-  accessionNumber?: string;
-  modality: string;
-  description?: string;
-  numberOfSeries: number;
-  numberOfInstances: number;
-  started?: Date;
-  series: DICOMSeries[];
-  pacsUrl?: string; // URL to view in PACS viewer
-}
-
-export interface ImagingReportSummary {
-  id: string;
-  patientId: string;
-  patientName?: string;
-  encounterId?: string;
-  procedure: string;
-  modality: string;
-  status: 'registered' | 'available' | 'cancelled';
-  orderedAt: Date;
-  performedAt?: Date;
-  study?: ImagingStudyData;
-  report?: {
-    id: string;
-    status: 'partial' | 'preliminary' | 'final' | 'amended' | 'corrected' | 'cancelled';
-    findings?: string;
-    impression?: string;
-    radiologist?: string;
-    issuedAt?: Date;
-  };
-}
-
-let medplumClient: MedplumClient | undefined;
-let medplumInitPromise: Promise<MedplumClient> | undefined;
-
-/**
- * Get authenticated Medplum client (singleton)
- */
-async function getMedplumClient(): Promise<MedplumClient> {
-  if (medplumClient) return medplumClient;
-  if (medplumInitPromise) return medplumInitPromise;
-
-  const baseUrl = process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103';
-  const clientId = process.env.MEDPLUM_CLIENT_ID;
-  const clientSecret = process.env.MEDPLUM_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Medplum credentials not configured');
-  }
-
-  medplumInitPromise = (async () => {
-    const medplum = new MedplumClient({
-      baseUrl,
-      clientId,
-      clientSecret,
-    });
-    await medplum.startClientLogin(clientId, clientSecret);
-    medplumClient = medplum;
-    return medplum;
-  })();
-
-  return medplumInitPromise;
-}
+const getMedplumClient = getAdminMedplum;
 
 /**
  * Create an imaging order (ServiceRequest)

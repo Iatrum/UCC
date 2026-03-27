@@ -8,6 +8,7 @@
  */
 
 import { MedplumClient } from '@medplum/core';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type {
   ServiceRequest,
   DiagnosticReport,
@@ -17,83 +18,20 @@ import type {
 import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
+import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 
-/**
- * Lab test catalog (restricted to required panels)
- * LOINC panels chosen for FHIR ServiceRequest coding.
- */
-export const LAB_TESTS = {
-  CBC: { code: '58410-2', display: 'Complete Blood Count (CBC) panel', system: 'http://loinc.org' },
-  RENAL_PROFILE: { code: '24323-8', display: 'Basic metabolic/renal panel', system: 'http://loinc.org' },
-  LFT: { code: '24325-3', display: 'Hepatic function (LFT) panel', system: 'http://loinc.org' },
-} as const;
-
-export type LabTestCode = keyof typeof LAB_TESTS;
+export { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult };
 
 export interface LabOrderRequest {
-  patientId: string; // FHIR Patient ID
-  encounterId?: string; // FHIR Encounter ID
+  patientId: string;
+  encounterId?: string;
   tests: LabTestCode[];
   priority?: 'routine' | 'urgent' | 'asap' | 'stat';
   clinicalNotes?: string;
   orderedBy?: string;
 }
 
-export interface LabResult {
-  testCode: string;
-  testName: string;
-  value: string | number;
-  unit?: string;
-  referenceRange?: string;
-  interpretation?: 'normal' | 'high' | 'low' | 'critical';
-  status: 'preliminary' | 'final' | 'corrected' | 'cancelled';
-  performedAt?: Date;
-}
-
-export interface LabReportSummary {
-  id: string;
-  patientId: string;
-  patientName?: string;
-  encounterId?: string;
-  status: 'registered' | 'partial' | 'preliminary' | 'final' | 'amended' | 'corrected' | 'cancelled';
-  orderedAt: Date;
-  issuedAt?: Date;
-  results: LabResult[];
-  conclusion?: string;
-  orderingPhysician?: string;
-}
-
-let medplumClient: MedplumClient | undefined;
-let medplumInitPromise: Promise<MedplumClient> | undefined;
-
-/**
- * Get authenticated Medplum client (singleton)
- */
-async function getMedplumClient(): Promise<MedplumClient> {
-  if (medplumClient) return medplumClient;
-  if (medplumInitPromise) return medplumInitPromise;
-
-  const baseUrl = process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103';
-  const clientId = process.env.MEDPLUM_CLIENT_ID;
-  const clientSecret = process.env.MEDPLUM_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Medplum credentials not configured');
-  }
-
-  medplumInitPromise = (async () => {
-    const medplum = new MedplumClient({
-      baseUrl,
-      clientId,
-      clientSecret,
-    });
-    await medplum.startClientLogin(clientId, clientSecret);
-    medplumClient = medplum;
-    return medplum;
-  })();
-
-  return medplumInitPromise;
-}
+const getMedplumClient = getAdminMedplum;
 
 /**
  * Create a lab order (ServiceRequest)

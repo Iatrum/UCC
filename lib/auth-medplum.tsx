@@ -52,6 +52,35 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  // Keep the server-side session cookie in sync with the client-side access
+  // token. MedplumClient manages its own token refresh via localStorage; when
+  // it refreshes (typically at ~55 min for a 1-hour token), we need to push
+  // the new token back to the httpOnly cookie so server routes keep working.
+  useEffect(() => {
+    const syncServerCookie = async () => {
+      const token = medplum.getAccessToken();
+      if (!token) return;
+      try {
+        await fetch('/api/auth/medplum-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: token }),
+        });
+      } catch {
+        // Non-fatal — cookie will eventually expire naturally
+      }
+    };
+
+    // Sync immediately on mount (picks up any token that was refreshed while
+    // the tab was in the background)
+    syncServerCookie();
+
+    // Re-sync every 10 minutes so the server cookie is always within 10
+    // minutes of the latest client-side token.
+    const syncInterval = setInterval(syncServerCookie, 10 * 60 * 1000);
+    return () => clearInterval(syncInterval);
+  }, [medplum]);
+
   // Restore session from MedplumClient internal storage on mount
   useEffect(() => {
     // Read clinic from cookie (set by middleware)

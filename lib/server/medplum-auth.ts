@@ -9,14 +9,8 @@ import { NextRequest } from 'next/server';
 import { SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import { AuthError } from '@/lib/server/route-helpers';
 import { env } from '@/lib/env';
-
-// ---------------------------------------------------------------------------
-// Admin client singleton — one connection shared across the whole process.
-// All FHIR service files that need admin access must use getAdminMedplum()
-// rather than creating their own MedplumClient instances.
-// ---------------------------------------------------------------------------
-let _adminClient: MedplumClient | undefined;
-let _adminClientPromise: Promise<MedplumClient> | undefined;
+// Re-export so callers can import getAdminMedplum from either file.
+export { getAdminMedplum } from './medplum-admin';
 
 /**
  * Decode a JWT payload without verifying the signature — only used to read
@@ -89,37 +83,6 @@ export async function getCurrentProfile(req?: NextRequest): Promise<ProfileResou
   return profile as ProfileResource;
 }
 
-/**
- * Get admin Medplum client (client-credentials grant).
- * Singleton — the same MedplumClient instance is reused for the lifetime of
- * the Node.js process. Use for background tasks, migrations, and any
- * operation that must run without a user token.
- */
-export async function getAdminMedplum(): Promise<MedplumClient> {
-  if (_adminClient) return _adminClient;
-  if (_adminClientPromise) return _adminClientPromise;
-
-  const { MEDPLUM_CLIENT_ID, MEDPLUM_CLIENT_SECRET } = env;
-  if (!MEDPLUM_CLIENT_ID || !MEDPLUM_CLIENT_SECRET) {
-    throw new Error(
-      'Admin Medplum credentials not configured. Set MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET.'
-    );
-  }
-
-  _adminClientPromise = (async () => {
-    const medplum = new MedplumClient({
-      baseUrl: env.MEDPLUM_BASE_URL,
-      clientId: MEDPLUM_CLIENT_ID,
-      clientSecret: MEDPLUM_CLIENT_SECRET,
-    });
-    await medplum.startClientLogin(MEDPLUM_CLIENT_ID, MEDPLUM_CLIENT_SECRET);
-    console.log('✅ Connected to Medplum');
-    _adminClient = medplum;
-    return medplum;
-  })();
-
-  return _adminClientPromise;
-}
 
 /**
  * Check if user has a specific role.
@@ -147,6 +110,21 @@ export function getProfileRole(profile: ProfileResource): string {
 /** Require authentication — throws AuthError if not authenticated. */
 export async function requireAuth(req?: NextRequest): Promise<MedplumClient> {
   return getMedplumForRequest(req);
+}
+
+/**
+ * Convenience helper used by clinical routes: authenticates the request AND
+ * resolves the clinic ID from header/cookie in a single call.
+ */
+export async function requireClinicAuth(
+  req: NextRequest
+): Promise<{ medplum: MedplumClient; clinicId: string | null }> {
+  const { getClinicIdFromRequest } = await import('@/lib/server/clinic');
+  const [medplum, clinicId] = await Promise.all([
+    getMedplumForRequest(req),
+    getClinicIdFromRequest(req),
+  ]);
+  return { medplum, clinicId };
 }
 
 /** Optional authentication — returns null if not authenticated. */

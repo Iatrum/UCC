@@ -5,7 +5,7 @@
  */
 
 import { MedplumClient } from '@medplum/core';
-import { getAdminMedplum } from '@/lib/server/medplum-auth';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type {
   Patient as FHIRPatient,
   AllergyIntolerance,
@@ -50,9 +50,10 @@ export interface SavedPatient extends PatientData {
   queueAddedAt?: Date | string | null;
 }
 
-// Re-export so all existing importers (triage-service, admin-service, models.ts, etc.)
-// continue to work without changes — all go through the single admin singleton.
-export { getAdminMedplum as getMedplumClient } from '@/lib/server/medplum-auth';
+// Exported alias — used within this file AND by existing importers
+// (triage-service, admin-service, models.ts, etc.) so they all go through
+// the single process-level admin singleton in medplum-admin.ts.
+export const getMedplumClient = getAdminMedplum;
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
@@ -500,19 +501,19 @@ export async function getPatientFromMedplum(
     const allergies = await client.searchResources('AllergyIntolerance', {
       patient: `Patient/${patientId}`,
     });
-    patientData.medicalHistory!.allergies = allergies.map(a => (a as any).code?.text || 'Unknown allergy');
+    patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
 
     // Get conditions
     const conditions = await client.searchResources('Condition', {
       subject: `Patient/${patientId}`,
     });
-    patientData.medicalHistory!.conditions = conditions.map(c => (c as any).code?.text || 'Unknown condition');
+    patientData.medicalHistory!.conditions = conditions.map((c: Condition) => (c as any).code?.text || 'Unknown condition');
 
     // Get medications
     const medications = await client.searchResources('MedicationStatement', {
       subject: `Patient/${patientId}`,
     });
-    patientData.medicalHistory!.medications = medications.map(m => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
+    patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
 
     return patientData;
   } catch (error) {

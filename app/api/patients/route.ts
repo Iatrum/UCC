@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const patientId = await savePatientToMedplum(patientData, clinicId, medplum);
+    const patientId = await savePatientToMedplum(patientData, clinicId ?? undefined, medplum);
 
     return NextResponse.json({
       success: true,

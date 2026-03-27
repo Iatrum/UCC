@@ -6,31 +6,13 @@
 import { MedplumClient } from '@medplum/core';
 import type { Observation } from '@medplum/fhirtypes';
 import type { Consultation } from '@/lib/models';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
-/**
- * Get authenticated Medplum client
- */
 async function getMedplumClient(): Promise<MedplumClient | null> {
   try {
-    const baseUrl = process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL;
-    const clientId = process.env.MEDPLUM_CLIENT_ID;
-    const clientSecret = process.env.MEDPLUM_CLIENT_SECRET;
-
-    if (!baseUrl || !clientId || !clientSecret) {
-      console.warn('⚠️  Medplum not configured, skipping export');
-      return null;
-    }
-
-    const medplum = new MedplumClient({
-      baseUrl,
-      clientId,
-      clientSecret,
-    });
-
-    await medplum.startClientLogin(clientId, clientSecret);
-    return medplum;
+    return await getAdminMedplum();
   } catch (error) {
-    console.error('❌ Failed to initialize Medplum client:', error);
+    console.error('❌ Failed to get Medplum admin client:', error);
     return null;
   }
 }
