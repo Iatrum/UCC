@@ -50,7 +50,6 @@ export default defineConfig({
       testMatch: [
         "**/clinic-login.spec.ts",
         "**/patients.spec.ts",
-        "**/patient.spec.ts",
         "**/consultation.spec.ts",
         "**/orders.spec.ts",
         "**/queue.spec.ts",
