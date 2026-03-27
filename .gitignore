@@ -10,6 +10,11 @@
 /coverage
 /test-results
 /playwright-report
+/tests/e2e/.auth
+tests/e2e/.auth/
+
+# credentials / docs with secrets
+MEDPLUM_SELF_HOSTED_DETAILS.md
 
 # next.js
 /.next/

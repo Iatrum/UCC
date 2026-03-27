@@ -3,6 +3,30 @@ import { MedplumClient } from '@medplum/core';
 import { getMedplumClient, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
 
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+
+/** Build the identifiers + serviceProvider fields that tag a triage Encounter to a clinic. */
+function clinicEncounterScope(clinicId?: string): Record<string, any> {
+  if (!clinicId) return {};
+  return {
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
+    serviceProvider: { reference: `Organization/${clinicId}` },
+  };
+}
+
+/** Verify an Encounter belongs to the given clinic. Throws if it does not. */
+function assertEncounterBelongsToClinic(encounter: any, clinicId?: string): void {
+  if (!clinicId) return; // no scope → no assertion (backward-compat with admin callers)
+  const identifierMatch = encounter.identifier?.some(
+    (id: any) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
+  );
+  const serviceProviderMatch =
+    encounter.serviceProvider?.reference === `Organization/${clinicId}`;
+  if (!identifierMatch && !serviceProviderMatch) {
+    throw new Error(`Access denied: encounter does not belong to clinic '${clinicId}'`);
+  }
+}
+
 const TRIAGE_ENCOUNTER_EXTENSION_URL = 'https://ucc.emr/triage-encounter';
 
 type Extension = { url: string; [key: string]: any };
@@ -235,7 +259,8 @@ async function createVitalsObservations(
 export async function saveTriageEncounter(
   patientId: string,
   triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  clinicId?: string
 ): Promise<void> {
   const client = medplum ?? (await getMedplumClient());
   const triageAtIso = new Date().toISOString();
@@ -261,6 +286,7 @@ export async function saveTriageEncounter(
       ],
     },
     extension: [buildTriageExtension(triageData, triageAtIso, queueStatus)],
+    ...clinicEncounterScope(clinicId),
   });
 
   await createChiefComplaintObservation(client, encounter.id!, `Patient/${patientId}`, triageData.chiefComplaint);
@@ -270,12 +296,13 @@ export async function saveTriageEncounter(
 export async function checkInPatientInTriage(
   patientId: string,
   chiefComplaint?: string,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  clinicId?: string
 ): Promise<string> {
   const client = medplum ?? (await getMedplumClient());
-  const existing = await getActiveTriageEncounter(patientId, client);
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
   if (existing) {
-    await updateQueueStatusForPatient(patientId, 'arrived', client);
+    await updateQueueStatusForPatient(patientId, 'arrived', client, clinicId);
     return existing.id;
   }
 
@@ -291,6 +318,7 @@ export async function checkInPatientInTriage(
     subject: { reference: `Patient/${patientId}` },
     period: { start: queueAddedAtIso },
     extension: [buildQueueOnlyExtension('arrived', queueAddedAtIso)],
+    ...clinicEncounterScope(clinicId),
   });
 
   if (chiefComplaint) {
@@ -303,16 +331,18 @@ export async function checkInPatientInTriage(
 export async function updateTriageEncounter(
   patientId: string,
   triageData: Partial<TriageData>,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  clinicId?: string
 ): Promise<void> {
   const client = medplum ?? (await getMedplumClient());
-  const existing = await getActiveTriageEncounter(patientId, client);
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
     throw new Error('No active triage encounter found to update');
   }
 
   const encounter = await client.readResource('Encounter', existing.id);
+  assertEncounterBelongsToClinic(encounter, clinicId);
   const triageExt = buildTriageExtension(
     {
       triageLevel: triageData.triageLevel ?? existing.triage?.triageLevel ?? 3,
@@ -337,20 +367,22 @@ export async function updateTriageEncounter(
 export async function updateQueueStatusForPatient(
   patientId: string,
   status: QueueStatus | null,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  clinicId?: string
 ): Promise<void> {
   const client = medplum ?? (await getMedplumClient());
-  const existing = await getActiveTriageEncounter(patientId, client);
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
     if (status === 'arrived') {
-      await checkInPatientInTriage(patientId, undefined, client);
+      await checkInPatientInTriage(patientId, undefined, client, clinicId);
       return;
     }
     throw new Error('No active triage encounter found');
   }
 
   const encounter = await client.readResource('Encounter', existing.id) as any;
+  assertEncounterBelongsToClinic(encounter, clinicId);
   const newStatus = encounterStatusFromQueue(status);
   if (!newStatus) {
     // If clearing status, mark encounter finished and drop queue extension fields
@@ -411,7 +443,8 @@ export async function updateQueueStatusForPatient(
 
 export async function getActiveTriageEncounter(
   patientId: string,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  clinicId?: string
 ): Promise<TriageSummary & { id: string } | null> {
   const client = medplum ?? (await getMedplumClient());
   const encounters = await client.searchResources('Encounter', {
@@ -419,6 +452,7 @@ export async function getActiveTriageEncounter(
     status: 'arrived,triaged,in-progress',
     _count: '1',
     _sort: '-_lastUpdated',
+    ...(clinicId ? { 'service-provider': `Organization/${clinicId}` } : {}),
   });
 
   if (!encounters?.length) return null;
@@ -438,13 +472,21 @@ export async function getActiveTriageEncounter(
   };
 }
 
-export async function getTriageForPatient(patientId: string, medplum?: MedplumClient): Promise<TriageSummary> {
-  const existing = await getActiveTriageEncounter(patientId, medplum);
+export async function getTriageForPatient(
+  patientId: string,
+  medplum?: MedplumClient,
+  clinicId?: string
+): Promise<TriageSummary> {
+  const existing = await getActiveTriageEncounter(patientId, medplum, clinicId);
   if (!existing) return {};
   return existing;
 }
 
-export async function getTriageQueueForToday(limit = 200, medplum?: MedplumClient): Promise<SavedPatient[]> {
+export async function getTriageQueueForToday(
+  limit = 200,
+  medplum?: MedplumClient,
+  clinicId?: string
+): Promise<SavedPatient[]> {
   const client = medplum ?? (await getMedplumClient());
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -453,18 +495,37 @@ export async function getTriageQueueForToday(limit = 200, medplum?: MedplumClien
 
   const startIso = start.toISOString();
   const endIso = end.toISOString();
-  const query = `status=arrived,triaged,in-progress,finished&date=ge${startIso}&date=lt${endIso}&_count=${limit}&_sort=date`;
+
+  // Always scope by clinic. If clinicId is absent, return empty rather than
+  // leaking all clinics' data — callers must supply a clinic scope.
+  if (!clinicId) {
+    console.warn('[getTriageQueueForToday] called without clinicId — returning empty to prevent cross-clinic leak');
+    return [];
+  }
+
+  const query =
+    `status=arrived,triaged,in-progress,finished` +
+    `&date=ge${startIso}&date=lt${endIso}` +
+    `&_count=${limit}&_sort=date` +
+    `&service-provider=Organization/${clinicId}`;
 
   const encounters = (await client.searchResources('Encounter', query)) as any[];
 
   const patients: SavedPatient[] = [];
 
   for (const encounter of encounters) {
+    // Double-check ownership at the application layer (defence-in-depth)
+    try {
+      assertEncounterBelongsToClinic(encounter, clinicId);
+    } catch {
+      continue; // skip encounters that don't belong to this clinic
+    }
+
     const subjectRef: string = encounter.subject?.reference || '';
     const patientId = subjectRef.replace('Patient/', '');
     if (!patientId) continue;
 
-    const patient = await getPatientFromMedplum(patientId, undefined, client);
+    const patient = await getPatientFromMedplum(patientId, clinicId, client);
     if (!patient) continue;
 
     const parsed = parseTriageExtension(encounter.extension);

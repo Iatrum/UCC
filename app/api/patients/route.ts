@@ -5,7 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { getMedplumForRequest, requireClinicAuth } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 import {
   savePatientToMedplum,
   getPatientFromMedplum,
@@ -19,9 +20,8 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const patientData = await request.json();
-    const clinicId = await getClinicIdFromRequest(request);
 
     // Validate required fields
     if (!patientData.fullName || !patientData.nric || !patientData.dateOfBirth || !patientData.gender) {
@@ -31,10 +31,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!clinicId) {
-      return NextResponse.json({ error: 'Missing clinicId' }, { status: 400 });
-    }
-
     const patientId = await savePatientToMedplum(patientData, clinicId, medplum);
 
     return NextResponse.json({
@@ -42,15 +38,8 @@ export async function POST(request: NextRequest) {
       patientId,
       message: 'Patient saved to FHIR successfully',
     });
-  } catch (error: any) {
-    console.error('❌ Failed to save patient:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to save patient',
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/patients');
   }
 }
 
@@ -101,15 +90,8 @@ export async function GET(request: NextRequest) {
       count: patients.length,
       patients,
     });
-  } catch (error: any) {
-    console.error('❌ Failed to get patients:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get patients',
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'GET /api/patients');
   }
 }
 
@@ -136,15 +118,8 @@ export async function PATCH(request: NextRequest) {
       success: true,
       message: 'Patient updated successfully',
     });
-  } catch (error: any) {
-    console.error('❌ Failed to update patient:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to update patient',
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/patients');
   }
 }
 

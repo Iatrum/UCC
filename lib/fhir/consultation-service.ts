@@ -59,12 +59,35 @@ function addClinicIdentifier(identifiers: { system?: string; value?: string }[] 
   return nextIdentifiers;
 }
 
-function matchesClinic(resource: { identifier?: { system?: string; value?: string }[]; serviceProvider?: { reference?: string }; managingOrganization?: { reference?: string } }, clinicId?: string) {
+function matchesClinic(
+  resource: {
+    identifier?: { system?: string; value?: string }[];
+    serviceProvider?: { reference?: string };
+    managingOrganization?: { reference?: string };
+  },
+  clinicId?: string
+): boolean {
   if (!clinicId) return true;
-  const identifierMatch = resource.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId);
+  const identifierMatch = resource.identifier?.some(
+    (id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
+  );
   const serviceProviderMatch = resource.serviceProvider?.reference === `Organization/${clinicId}`;
   const managingOrgMatch = resource.managingOrganization?.reference === `Organization/${clinicId}`;
   return Boolean(identifierMatch || serviceProviderMatch || managingOrgMatch);
+}
+
+/**
+ * Like matchesClinic, but throws on mismatch.
+ * Use on write paths where a mismatch is a security violation.
+ */
+function assertMatchesClinic(
+  resource: Parameters<typeof matchesClinic>[0],
+  clinicId: string,
+  resourceLabel = 'resource'
+): void {
+  if (!matchesClinic(resource, clinicId)) {
+    throw new Error(`Access denied: ${resourceLabel} does not belong to clinic '${clinicId}'`);
+  }
 }
 
 function withClinicIdentifiers<T extends { [key: string]: any }>(resource: T, clinicId?: string): T {
@@ -532,6 +555,213 @@ export async function getPatientConsultationsFromMedplum(
   } catch (error) {
     console.error('Failed to get patient consultations from Medplum:', error);
     return [];
+  }
+}
+
+/**
+ * Update an existing consultation in Medplum (FHIR).
+ *
+ * Strategy:
+ *  - Encounter itself is left in place (audit trail preserved).
+ *  - Chief Complaint / Clinical Notes / Progress Note Observations are found
+ *    and updated in-place via updateResource.
+ *  - Diagnosis Condition: existing one updated in-place.
+ *  - Procedures / MedicationRequests: old resources deleted, new ones created
+ *    (simplest approach for small clinic; keeps things clean).
+ */
+export async function updateConsultationInMedplum(
+  encounterId: string,
+  updates: Partial<ConsultationData>,
+  clinicId?: string,
+  medplum?: MedplumClient
+): Promise<void> {
+  const client = medplum ?? (await getMedplumClient());
+
+  // 1. Verify encounter exists and belongs to this clinic
+  let encounter: Encounter;
+  try {
+    encounter = await client.readResource('Encounter', encounterId);
+  } catch {
+    throw new Error('Consultation not found');
+  }
+  if (clinicId) {
+    assertMatchesClinic(encounter as any, clinicId, `Encounter/${encounterId}`);
+  }
+
+  const patientReference = encounter.subject?.reference;
+  const encounterRef = `Encounter/${encounterId}`;
+  const now = new Date().toISOString();
+
+  // Fetch all linked resources once
+  const [conditions, observations, procedures, medications] = await Promise.all([
+    client.searchResources('Condition', { encounter: encounterRef }),
+    client.searchResources('Observation', { encounter: encounterRef }),
+    client.searchResources('Procedure', { encounter: encounterRef }),
+    client.searchResources('MedicationRequest', { encounter: encounterRef }),
+  ]);
+
+  // 2. Update Chief Complaint Observation
+  if (updates.chiefComplaint !== undefined) {
+    const existing = observations.find((o) => (o as any).code?.text === 'Chief Complaint');
+    if (existing) {
+      await client.updateResource({
+        ...(existing as any),
+        valueString: updates.chiefComplaint,
+        effectiveDateTime: now,
+      });
+    } else {
+      await validateAndCreate(client, withClinicIdentifiers({
+        resourceType: 'Observation',
+        status: 'final',
+        subject: { reference: patientReference },
+        encounter: { reference: encounterRef },
+        code: {
+          coding: [{ system: 'http://loinc.org', code: '8661-1', display: 'Chief Complaint' }],
+          text: 'Chief Complaint',
+        },
+        valueString: updates.chiefComplaint,
+        effectiveDateTime: now,
+      }, clinicId));
+    }
+  }
+
+  // 3. Update Clinical Notes Observation
+  if (updates.notes !== undefined) {
+    const existing = observations.find((o) => (o as any).code?.text === 'Clinical Notes');
+    if (existing) {
+      await client.updateResource({
+        ...(existing as any),
+        valueString: updates.notes,
+        effectiveDateTime: now,
+      });
+    } else if (updates.notes) {
+      await validateAndCreate(client, withClinicIdentifiers({
+        resourceType: 'Observation',
+        status: 'final',
+        subject: { reference: patientReference },
+        encounter: { reference: encounterRef },
+        code: { text: 'Clinical Notes' },
+        valueString: updates.notes,
+        effectiveDateTime: now,
+      }, clinicId));
+    }
+  }
+
+  // 4. Update Progress Note Observation
+  if (updates.progressNote !== undefined) {
+    const existing = observations.find((o) => (o as any).code?.text === 'Progress Note');
+    if (existing) {
+      await client.updateResource({
+        ...(existing as any),
+        valueString: updates.progressNote,
+        effectiveDateTime: now,
+      });
+    } else if (updates.progressNote) {
+      await validateAndCreate(client, withClinicIdentifiers({
+        resourceType: 'Observation',
+        status: 'final',
+        subject: { reference: patientReference },
+        encounter: { reference: encounterRef },
+        code: { text: 'Progress Note' },
+        valueString: updates.progressNote,
+        effectiveDateTime: now,
+      }, clinicId));
+    }
+  }
+
+  // 5. Update Diagnosis Condition
+  if (updates.diagnosis !== undefined) {
+    const diagnosisCode = findDiagnosisByText(updates.diagnosis);
+    const code: any = { text: updates.diagnosis };
+    if (diagnosisCode) {
+      code.coding = [];
+      if (diagnosisCode.icd10) {
+        code.coding.push({
+          system: 'http://hl7.org/fhir/sid/icd-10',
+          code: diagnosisCode.icd10.code,
+          display: diagnosisCode.icd10.display,
+        });
+      }
+      if (diagnosisCode.snomed) {
+        code.coding.push({
+          system: 'http://snomed.info/sct',
+          code: diagnosisCode.snomed.code,
+          display: diagnosisCode.snomed.display,
+        });
+      }
+    }
+
+    const existingCondition = conditions[0];
+    if (existingCondition) {
+      await client.updateResource({ ...(existingCondition as any), code, recordedDate: now });
+    } else {
+      await validateAndCreate(client, withClinicIdentifiers({
+        resourceType: 'Condition',
+        subject: { reference: patientReference },
+        encounter: { reference: encounterRef },
+        code,
+        recordedDate: now,
+        clinicalStatus: {
+          coding: [{
+            system: 'http://terminology.hl7.org/CodeSystem/condition-clinical',
+            code: 'active',
+            display: 'Active',
+          }],
+        },
+        verificationStatus: {
+          coding: [{
+            system: 'http://terminology.hl7.org/CodeSystem/condition-ver-status',
+            code: 'confirmed',
+            display: 'Confirmed',
+          }],
+        },
+      }, clinicId));
+    }
+  }
+
+  // 6. Replace Procedures (delete old, create new)
+  if (updates.procedures !== undefined) {
+    await Promise.all(procedures.map((p) => client.deleteResource('Procedure', p.id!)));
+    for (const proc of updates.procedures as any[]) {
+      await validateAndCreate(client, withClinicIdentifiers({
+        resourceType: 'Procedure',
+        status: 'completed',
+        subject: { reference: patientReference },
+        encounter: { reference: encounterRef },
+        code: { text: proc.name },
+        performedDateTime: now,
+      }, clinicId));
+    }
+  }
+
+  // 7. Replace MedicationRequests (delete old, create new)
+  if (updates.prescriptions !== undefined) {
+    await Promise.all(medications.map((m) => client.deleteResource('MedicationRequest', m.id!)));
+    for (const rx of updates.prescriptions as any[]) {
+      const medicationCode = findMedicationByName(rx.medication.name);
+      const medicationCodeableConcept: any = {
+        text: `${rx.medication.name}${rx.medication.strength ? ` ${rx.medication.strength}` : ''}`,
+      };
+      if (medicationCode?.rxnorm) {
+        medicationCodeableConcept.coding = [{
+          system: 'http://www.nlm.nih.gov/research/umls/rxnorm',
+          code: medicationCode.rxnorm.code,
+          display: medicationCode.rxnorm.display,
+        }];
+      }
+      await validateAndCreate(client, withClinicIdentifiers({
+        resourceType: 'MedicationRequest',
+        status: 'active',
+        intent: 'order',
+        subject: { reference: patientReference },
+        encounter: { reference: encounterRef },
+        medicationCodeableConcept,
+        dosageInstruction: [{
+          text: `${rx.dosage || ''} ${rx.frequency || ''} for ${rx.duration || ''}`.trim(),
+        }],
+        authoredOn: now,
+      }, clinicId));
+    }
   }
 }
 

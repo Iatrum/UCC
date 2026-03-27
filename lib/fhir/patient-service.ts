@@ -5,6 +5,7 @@
  */
 
 import { MedplumClient } from '@medplum/core';
+import { getAdminMedplum } from '@/lib/server/medplum-auth';
 import type {
   Patient as FHIRPatient,
   AllergyIntolerance,
@@ -49,8 +50,9 @@ export interface SavedPatient extends PatientData {
   queueAddedAt?: Date | string | null;
 }
 
-let medplumClient: MedplumClient | undefined;
-let medplumInitPromise: Promise<MedplumClient> | undefined;
+// Re-export so all existing importers (triage-service, admin-service, models.ts, etc.)
+// continue to work without changes — all go through the single admin singleton.
+export { getAdminMedplum as getMedplumClient } from '@/lib/server/medplum-auth';
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
@@ -66,12 +68,33 @@ function addClinicIdentifier(identifiers: { system?: string; value?: string }[] 
   return nextIdentifiers;
 }
 
-function matchesClinic(resource: { identifier?: { system?: string; value?: string }[]; managingOrganization?: { reference?: string } }, clinicId?: string) {
+function matchesClinic(
+  resource: { identifier?: { system?: string; value?: string }[]; managingOrganization?: { reference?: string } },
+  clinicId?: string
+): boolean {
+  // Explicitly no clinic scope: allow (used by admin-level callers only).
+  // All user-facing code paths must supply a clinicId.
   if (!clinicId) return true;
-  const identifierMatch = resource.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId);
+  const identifierMatch = resource.identifier?.some(
+    (id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
+  );
   const orgRef = resource.managingOrganization?.reference;
   const organizationMatch = orgRef ? orgRef === `Organization/${clinicId}` : false;
   return Boolean(identifierMatch || organizationMatch);
+}
+
+/**
+ * Like matchesClinic, but throws instead of returning false.
+ * Use this on write paths (update, delete) where a mismatch is a security violation.
+ */
+function assertMatchesClinic(
+  resource: Parameters<typeof matchesClinic>[0],
+  clinicId: string,
+  resourceLabel = 'resource'
+): void {
+  if (!matchesClinic(resource, clinicId)) {
+    throw new Error(`Access denied: ${resourceLabel} does not belong to clinic '${clinicId}'`);
+  }
 }
 
 function addManagingOrganization<T extends { [key: string]: any }>(resource: T, clinicId?: string): T {
@@ -82,34 +105,6 @@ function addManagingOrganization<T extends { [key: string]: any }>(resource: T, 
   };
 }
 
-/**
- * Get authenticated Medplum client (singleton)
- */
-export async function getMedplumClient(): Promise<MedplumClient> {
-  if (medplumClient) return medplumClient;
-  if (medplumInitPromise) return medplumInitPromise;
-
-  const baseUrl = process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103';
-  const clientId = process.env.MEDPLUM_CLIENT_ID;
-  const clientSecret = process.env.MEDPLUM_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Medplum credentials not configured');
-  }
-
-  medplumInitPromise = (async () => {
-    const medplum = new MedplumClient({
-      baseUrl,
-      clientId,
-      clientSecret,
-    });
-    await medplum.startClientLogin(clientId, clientSecret);
-    medplumClient = medplum;
-    return medplum;
-  })();
-
-  return medplumInitPromise;
-}
 
 /**
  * Convert FHIR Patient to app PatientData format
@@ -536,9 +531,7 @@ export async function saveTriageToMedplum(
 ): Promise<void> {
   const medplum = await getMedplumClient();
   const existingPatient = await medplum.readResource('Patient', patientId);
-  if (!matchesClinic(existingPatient, clinicId)) {
-    throw new Error('Patient does not belong to this clinic');
-  }
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
 
   const newExtension = buildTriageExtension({
     ...triageData,
@@ -562,9 +555,7 @@ export async function saveTriageToMedplum(
 export async function updateQueueStatusInMedplum(patientId: string, status: QueueStatus | null, clinicId?: string): Promise<void> {
   const medplum = await getMedplumClient();
   const existingPatient = await medplum.readResource('Patient', patientId);
-  if (!matchesClinic(existingPatient, clinicId)) {
-    throw new Error('Patient does not belong to this clinic');
-  }
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
   const extensions = existingPatient.extension || [];
   const nowIso = new Date().toISOString();
 
@@ -675,9 +666,7 @@ export async function updatePatientInMedplum(
   const client = medplum ?? (await getMedplumClient());
 
   const existingPatient = await client.readResource('Patient', patientId);
-  if (!matchesClinic(existingPatient, clinicId)) {
-    throw new Error('Patient does not belong to this clinic');
-  }
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
 
   // Merge updates
   const updatedPatient: FHIRPatient = addManagingOrganization({

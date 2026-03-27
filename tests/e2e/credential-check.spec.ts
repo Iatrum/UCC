@@ -1,127 +1,84 @@
 import { test, expect } from "@playwright/test";
+import {
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
+  CLINIC_USERS,
+  EMR_URL,
+  MEDPLUM_UI_URL,
+  missingEnvVars,
+} from "./support/env";
+import { annotateMissingEnv, loginToMedplumUi } from "./support/auth";
 
-const MEDPLUM_UI_URL =
-  process.env.MEDPLUM_UI_URL || "https://app.31-97-70-30.sslip.io";
-const EMR_URL = process.env.EMR_URL || "https://drhidayat.com";
+test.describe("Production credential and site checks", () => {
+  test("drhidayat.com landing page loads", async ({ page }, testInfo) => {
+    const missing = missingEnvVars({ EMR_URL });
+    if (missing.length) {
+      annotateMissingEnv(testInfo, missing);
+      test.skip();
+    }
 
-const ADMIN_EMAIL =
-  process.env.MEDPLUM_ADMIN_EMAIL || "support@drhidayat.com";
-const ADMIN_PASSWORD =
-  process.env.MEDPLUM_ADMIN_PASSWORD || "UccMedplum!2026#";
-
-const CLINIC_USERS = [
-  {
-    email: "klinikputeri.1773494478187@drhidayat.com",
-    password: process.env.KLINIK_PUTERI_PASSWORD || "KlinikPuteri!2026",
-    label: "Klinik Puteri Admin",
-  },
-  {
-    email: "apex-group-admin@drhidayat.com",
-    password: process.env.CLINIC_USER_PASSWORD || "ClinicUser!2026#",
-    label: "Apex Group Admin",
-  },
-  {
-    email: "beacon-group-admin@drhidayat.com",
-    password: process.env.CLINIC_USER_PASSWORD || "ClinicUser!2026#",
-    label: "Beacon Group Admin",
-  },
-];
-
-// ─── 1. Site health ───────────────────────────────────────────────────────────
-
-test("drhidayat.com landing page loads", async ({ page }) => {
-  const response = await page.goto(EMR_URL, { waitUntil: "domcontentloaded" });
-  expect(response?.status()).toBeLessThan(400);
-  await expect(page).toHaveTitle(/UCC EMR/i);
-  await page.screenshot({ path: "test-results/site-landing.png" });
-});
-
-// ─── 2. EMR Staff login ───────────────────────────────────────────────────────
-
-test("EMR staff login page is accessible", async ({ page }) => {
-  await page.goto(`${EMR_URL}/login`, { waitUntil: "domcontentloaded" });
-  // Accept either a login form or a redirect to /landing (unauthenticated redirect is fine)
-  const url = page.url();
-  expect(url).toMatch(/drhidayat\.com/);
-  await page.screenshot({ path: "test-results/emr-login-page.png" });
-});
-
-// ─── 3. Medplum self-hosted UI ────────────────────────────────────────────────
-
-test("Medplum self-hosted UI loads", async ({ page }) => {
-  const response = await page.goto(`${MEDPLUM_UI_URL}/signin`, {
-    waitUntil: "domcontentloaded",
-    timeout: 30_000,
-  });
-  expect(response?.status()).toBeLessThan(400);
-  await page.screenshot({ path: "test-results/medplum-signin-page.png" });
-});
-
-test("Medplum admin login: support@drhidayat.com", async ({ page }) => {
-  await page.goto(`${MEDPLUM_UI_URL}/signin`, {
-    waitUntil: "networkidle",
-    timeout: 30_000,
+    const response = await page.goto(EMR_URL, { waitUntil: "domcontentloaded" });
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page).toHaveTitle(/UCC EMR/i);
   });
 
-  // Fill email
-  const emailInput = page.locator('input[name="email"], input[type="email"]').first();
-  await emailInput.waitFor({ state: "visible" });
-  await emailInput.fill(ADMIN_EMAIL);
+  test("EMR staff login page is accessible", async ({ page }, testInfo) => {
+    const missing = missingEnvVars({ EMR_URL });
+    if (missing.length) {
+      annotateMissingEnv(testInfo, missing);
+      test.skip();
+    }
 
-  // Fill password
-  const passwordInput = page
-    .locator('input[name="password"], input[type="password"]')
-    .first();
-  await passwordInput.fill(ADMIN_PASSWORD);
-
-  await page.screenshot({ path: "test-results/medplum-admin-filled.png" });
-
-  // Submit
-  await page.locator('button[type="submit"]').click();
-
-  // Wait for navigation away from signin
-  await page.waitForURL((url) => !url.href.includes("/signin"), {
-    timeout: 15_000,
+    await page.goto(`${EMR_URL}/login`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator('input[type="email"]')).toBeVisible();
+    await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
-  await page.screenshot({ path: "test-results/medplum-admin-logged-in.png" });
-  expect(page.url()).not.toContain("/signin");
-});
+  test("Medplum self-hosted UI loads", async ({ page }, testInfo) => {
+    const missing = missingEnvVars({ MEDPLUM_UI_URL });
+    if (missing.length) {
+      annotateMissingEnv(testInfo, missing);
+      test.skip();
+    }
 
-// ─── 4. Clinic user logins ────────────────────────────────────────────────────
-
-for (const user of CLINIC_USERS) {
-  test(`Medplum clinic user login: ${user.label}`, async ({ page }) => {
-    await page.goto(`${MEDPLUM_UI_URL}/signin`, {
-      waitUntil: "networkidle",
+    const response = await page.goto(`${MEDPLUM_UI_URL}/signin`, {
+      waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-
-    const emailInput = page
-      .locator('input[name="email"], input[type="email"]')
-      .first();
-    await emailInput.waitFor({ state: "visible" });
-    await emailInput.fill(user.email);
-
-    const passwordInput = page
-      .locator('input[name="password"], input[type="password"]')
-      .first();
-    await passwordInput.fill(user.password);
-
-    await page.screenshot({
-      path: `test-results/medplum-${user.label.replace(/\s+/g, "-").toLowerCase()}-filled.png`,
-    });
-
-    await page.locator('button[type="submit"]').click();
-
-    await page.waitForURL((url) => !url.href.includes("/signin"), {
-      timeout: 15_000,
-    });
-
-    await page.screenshot({
-      path: `test-results/medplum-${user.label.replace(/\s+/g, "-").toLowerCase()}-logged-in.png`,
-    });
-
-    expect(page.url()).not.toContain("/signin");
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page.locator('input[type="email"]')).toBeVisible();
   });
-}
+
+  test("Medplum admin login", async ({ page }, testInfo) => {
+    const missing = missingEnvVars({ MEDPLUM_UI_URL, ADMIN_EMAIL, ADMIN_PASSWORD });
+    if (missing.length) {
+      annotateMissingEnv(testInfo, missing);
+      test.skip();
+    }
+
+    await loginToMedplumUi(page, {
+      medplumUiUrl: MEDPLUM_UI_URL,
+      email: ADMIN_EMAIL,
+      password: ADMIN_PASSWORD,
+    });
+  });
+
+  for (const user of CLINIC_USERS) {
+    test(`Medplum clinic user login: ${user.label}`, async ({ page }, testInfo) => {
+      const missing = missingEnvVars({
+        MEDPLUM_UI_URL,
+        clinic_user_password: user.password,
+      });
+      if (missing.length) {
+        annotateMissingEnv(testInfo, missing);
+        test.skip();
+      }
+
+      await loginToMedplumUi(page, {
+        medplumUiUrl: MEDPLUM_UI_URL,
+        email: user.email,
+        password: user.password,
+      });
+    });
+  }
+});

@@ -47,7 +47,7 @@ export function middleware(req: NextRequest) {
 
     const res = shouldRewrite
       ? NextResponse.rewrite(url)
-      : NextResponse.next();
+      : NextResponse.next({ request: { headers: withPathname(req, pathname) } });
 
     res.cookies.set(IS_ADMIN_COOKIE, "true", {
       httpOnly: false,
@@ -59,7 +59,9 @@ export function middleware(req: NextRequest) {
 
   // ── Clinic subdomain ─────────────────────────────────────────
   if (context.type === "clinic") {
-    const res = NextResponse.next();
+    const res = NextResponse.next({
+      request: { headers: withPathname(req, pathname) },
+    });
     const existing = req.cookies.get(CLINIC_COOKIE)?.value;
     if (existing !== context.clinicId) {
       res.cookies.set(CLINIC_COOKIE, context.clinicId, {
@@ -71,7 +73,16 @@ export function middleware(req: NextRequest) {
     return res;
   }
 
-  return NextResponse.next();
+  return NextResponse.next({
+    request: { headers: withPathname(req, pathname) },
+  });
+}
+
+/** Forward the current pathname to Server Components via a request header. */
+function withPathname(req: NextRequest, pathname: string): Headers {
+  const headers = new Headers(req.headers);
+  headers.set("x-pathname", pathname);
+  return headers;
 }
 
 export const config = {

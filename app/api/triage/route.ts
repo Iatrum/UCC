@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveTriageEncounter } from "@/lib/fhir/triage-service";
 import { TriageLevel, VitalSigns } from "@/lib/types";
 import { getCurrentProfile, getMedplumForRequest } from "@/lib/server/medplum-auth";
+import { getClinicIdFromRequest } from "@/lib/server/clinic";
+import { handleRouteError } from "@/lib/server/route-helpers";
 
 export async function POST(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const [medplum, clinicId] = await Promise.all([
+      getMedplumForRequest(request),
+      getClinicIdFromRequest(request),
+    ]);
+
+    if (!clinicId) {
+      return NextResponse.json({ error: "Missing clinicId" }, { status: 400 });
+    }
+
     const body = await request.json();
     
     const {
@@ -45,7 +55,6 @@ export async function POST(request: NextRequest) {
       // non-blocking
     }
 
-    // Perform triage against Medplum (no Firestore dependency)
     await saveTriageEncounter(patientId, {
       triageLevel: triageLevel as TriageLevel,
       chiefComplaint,
@@ -53,15 +62,11 @@ export async function POST(request: NextRequest) {
       triageNotes,
       redFlags: redFlags || [],
       triageBy,
-    }, medplum);
+    }, medplum, clinicId);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error in triage API:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, 'POST /api/triage');
   }
 }
 

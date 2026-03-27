@@ -348,20 +348,33 @@ export default function ConsultationForm({
         prescriptions: prescriptions // Assuming prescriptions state already holds objects with price?
       };
 
-      if (isEditMode && initialConsultation?.id) {
-        // Note: In FHIR, Encounters are typically immutable
-        // Best practice is to create amendment Observations rather than updating
-        toast({
-          title: "Edit Mode",
-          description: "FHIR Encounters are immutable. Please create a new consultation for changes.",
-          variant: "destructive",
-        });
-        return;
-      }
+      let newConsultationId: string;
 
-      // 🎯 SAVE TO MEDPLUM (FHIR) - Source of Truth
-      const { saveConsultation } = await import('@/lib/fhir/consultation-client');
-      const newConsultationId = await saveConsultation(consultationData);
+      if (isEditMode && initialConsultation?.id) {
+        // PATCH the existing consultation via the API
+        const res = await fetch('/api/consultations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            consultationId: initialConsultation.id,
+            chiefComplaint: clinicalNotes,
+            diagnosis,
+            notes: additionalNotes,
+            progressNote,
+            procedures: procedureEntries,
+            prescriptions,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to update consultation');
+        }
+        newConsultationId = initialConsultation.id;
+      } else {
+        // 🎯 SAVE TO MEDPLUM (FHIR) - Source of Truth
+        const { saveConsultation } = await import('@/lib/fhir/consultation-client');
+        newConsultationId = await saveConsultation(consultationData);
+      }
 
       const orderErrors: string[] = [];
 
@@ -417,19 +430,24 @@ export default function ConsultationForm({
         throw new Error("Failed to save consultation");
       }
 
-      console.log(`✅ Consultation saved to Medplum FHIR: ${newConsultationId}`);
+      console.log(`✅ Consultation ${isEditMode ? 'updated' : 'saved'} in Medplum FHIR: ${newConsultationId}`);
 
-      // Update queue status AFTER successful consultation save
-      await updateQueueStatus(patientId, "meds_and_bills");
+      // Only advance queue status for new consultations
+      if (!isEditMode) {
+        await updateQueueStatus(patientId, "meds_and_bills");
+      }
 
+      const actionLabel = isEditMode ? 'updated' : 'saved';
       const orderMessage = orderErrors.length
-        ? `Consultation saved. Orders with issues: ${orderErrors.join(', ')}.`
-        : "Consultation has been successfully recorded to FHIR and orders placed.";
+        ? `Consultation ${actionLabel}. Orders with issues: ${orderErrors.join(', ')}.`
+        : isEditMode
+          ? 'Consultation updated successfully.'
+          : 'Consultation recorded to FHIR and orders placed.';
 
       toast({
-        title: "Consultation Saved",
+        title: isEditMode ? 'Consultation Updated' : 'Consultation Saved',
         description: orderMessage,
-        variant: orderErrors.length ? "destructive" : "default",
+        variant: orderErrors.length ? 'destructive' : 'default',
       });
 
       router.push(`/patients/${patientId}`);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPatientDocument, deletePatientDocument, listPatientDocuments } from '@/lib/fhir/document-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,9 +14,8 @@ export async function GET(request: NextRequest) {
 
     const docs = await listPatientDocuments(medplum, patientId);
     return NextResponse.json({ success: true, documents: docs });
-  } catch (error: any) {
-    console.error('Failed to list documents:', error);
-    return NextResponse.json({ error: error?.message || 'Failed to list documents' }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'GET /api/documents');
   }
 }
 
@@ -31,9 +31,8 @@ export async function POST(request: NextRequest) {
 
     const id = await createPatientDocument(medplum, { patientId, title, url, contentType, size, uploadedBy, storagePath });
     return NextResponse.json({ success: true, id });
-  } catch (error: any) {
-    console.error('Failed to save document:', error);
-    return NextResponse.json({ error: error?.message || 'Failed to save document' }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/documents');
   }
 }
 
@@ -48,8 +47,7 @@ export async function DELETE(request: NextRequest) {
 
     await deletePatientDocument(medplum, id);
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Failed to delete document:', error);
-    return NextResponse.json({ error: error?.message || 'Failed to delete document' }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/documents');
   }
 }

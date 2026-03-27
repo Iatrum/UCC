@@ -3,6 +3,7 @@ import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,8 +32,7 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, patient, consultation });
-  } catch (error: any) {
-    console.error('[orders] Failed to load details:', error);
-    return NextResponse.json({ success: false, error: error?.message || 'Failed to load details' }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'GET /api/orders');
   }
 }

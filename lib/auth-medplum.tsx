@@ -122,7 +122,7 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
 
       return { isAdmin: adminStatus };
     } catch (error: any) {
-      throw new Error(error.message || 'Login failed');
+      throw classifyAuthError(error);
     }
   };
 
@@ -158,6 +158,50 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       {children}
     </MedplumAuthContext.Provider>
   );
+}
+
+// ── Error classification ────────────────────────────────────────────────────
+
+/**
+ * Maps low-level fetch / Medplum errors to clear, user-facing messages.
+ * Distinguishes network/CORS issues from wrong credentials so the UI can
+ * show the right guidance instead of a single "Invalid email or password."
+ */
+function classifyAuthError(error: unknown): Error {
+  const msg =
+    error instanceof Error ? error.message : String(error ?? '');
+  const lower = msg.toLowerCase();
+
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('load failed') ||
+    lower.includes('cors')
+  ) {
+    return new Error(
+      'AUTH_NETWORK: Unable to reach the authentication server. ' +
+      'Check your internet connection or contact support.'
+    );
+  }
+
+  if (
+    lower.includes('401') ||
+    lower.includes('invalid') ||
+    lower.includes('unauthorized') ||
+    lower.includes('bad credentials') ||
+    lower.includes('incorrect password')
+  ) {
+    return new Error('AUTH_CREDENTIALS: Incorrect email or password. Please try again.');
+  }
+
+  if (lower.includes('no access token')) {
+    return new Error(
+      'AUTH_CONFIG: Login completed but no session was created. ' +
+      'This is usually a server configuration issue — please contact support.'
+    );
+  }
+
+  return new Error(`AUTH_UNKNOWN: ${msg || 'An unexpected error occurred. Please try again.'}`);
 }
 
 export function useMedplumAuth() {

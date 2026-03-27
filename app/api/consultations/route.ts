@@ -9,24 +9,21 @@ import {
   getConsultationFromMedplum,
   getPatientConsultationsFromMedplum,
   getRecentConsultationsFromMedplum,
+  updateConsultationInMedplum,
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { getMedplumForRequest, requireClinicAuth } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 
 /**
  * POST - Create a new consultation in Medplum
  */
 export async function POST(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { patientId, chiefComplaint, diagnosis, procedures, notes, progressNote, prescriptions } = body;
-    const clinicId = await getClinicIdFromRequest(request);
-
-    if (!clinicId) {
-      return NextResponse.json({ error: 'Missing clinicId' }, { status: 400 });
-    }
 
     // Validate required fields
     if (!patientId || !chiefComplaint || !diagnosis) {
@@ -74,15 +71,8 @@ export async function POST(request: NextRequest) {
       consultationId: encounterId,
       message: 'Consultation saved successfully',
     });
-  } catch (error: any) {
-    console.error('❌ Failed to save consultation:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to save consultation',
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/consultations');
   }
 }
 
@@ -137,48 +127,37 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Missing query parameter: patientId, id, or recent' }, { status: 400 });
-  } catch (error: any) {
-    console.error('❌ Failed to get consultations:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get consultations',
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'GET /api/consultations');
   }
 }
 
 /**
- * PATCH - Update a consultation
- * Note: FHIR resources are typically immutable, but we can update status or add amendments
+ * PATCH - Update an existing consultation
+ * Body: { consultationId, chiefComplaint?, diagnosis?, notes?, progressNote?, procedures?, prescriptions? }
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const { consultationId, updates } = await request.json();
+    const medplum = await getMedplumForRequest(request);
+    const body = await request.json();
+    const { consultationId, ...updates } = body;
+    const clinicId = await getClinicIdFromRequest(request);
 
     if (!consultationId) {
       return NextResponse.json({ error: 'Missing consultationId' }, { status: 400 });
     }
 
-    // For now, we'll create amendment observations rather than updating the encounter
-    // This is more FHIR-compliant (maintaining audit trail)
-    console.log('⚠️  Consultation updates should be handled via amendments in FHIR');
-    console.log('Consider creating new Observation resources for amendments');
+    if (!clinicId) {
+      return NextResponse.json({ error: 'Missing clinicId' }, { status: 400 });
+    }
+
+    await updateConsultationInMedplum(consultationId, updates, clinicId, medplum);
 
     return NextResponse.json({
       success: true,
-      message: 'Consultation amendment recorded',
-      note: 'FHIR encounters are typically immutable; amendments recorded as new Observations',
+      message: 'Consultation updated successfully',
     });
-  } catch (error: any) {
-    console.error('❌ Failed to update consultation:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to update consultation',
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/consultations');
   }
 }

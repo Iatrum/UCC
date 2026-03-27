@@ -38,9 +38,22 @@ export default function Login() {
         router.replace("/dashboard");
       }
     } catch (error) {
+      const raw = error instanceof Error ? error.message : "";
+      let description = "Unable to sign in. Please try again.";
+
+      if (raw.startsWith("AUTH_CREDENTIALS")) {
+        description = "Incorrect email or password. Please check and try again.";
+      } else if (raw.startsWith("AUTH_NETWORK")) {
+        description =
+          "Could not reach the authentication server. Check your internet connection or try again shortly.";
+      } else if (raw.startsWith("AUTH_CONFIG")) {
+        description =
+          "Login succeeded but no session was created. This is a configuration issue — please contact support.";
+      }
+
       toast({
         title: "Sign in failed",
-        description: "Invalid email or password. Please try again.",
+        description,
         variant: "destructive",
       });
     } finally {

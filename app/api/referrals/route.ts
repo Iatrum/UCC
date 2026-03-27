@@ -9,6 +9,7 @@ import {
   getPatientReferralsFromMedplum,
 } from '@/lib/fhir/referral-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 
 /**
  * POST - Create a new referral
@@ -32,12 +33,8 @@ export async function POST(request: NextRequest) {
       referralId,
       message: 'Referral saved to FHIR successfully',
     });
-  } catch (error: any) {
-    console.error('❌ Failed to save referral:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to save referral' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/referrals');
   }
 }
 
@@ -65,11 +62,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Missing query parameter: id or patientId' }, { status: 400 });
-  } catch (error: any) {
-    console.error('❌ Failed to get referrals:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to get referrals' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'GET /api/referrals');
   }
 }

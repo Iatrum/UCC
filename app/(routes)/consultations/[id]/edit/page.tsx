@@ -1,9 +1,13 @@
-import { notFound } from "next/navigation";
-import { getConsultationById, getPatientById } from "@/lib/models";
-import ConsultationForm from "@/app/(routes)/patients/[id]/consultation/consultation-form";
-import { safeToISOString } from "@/lib/utils";
-import type { SerializedPatient } from "@/components/patients/patient-card";
-import type { SerializedConsultation } from "@/lib/types";
+import { cookies } from 'next/headers';
+import { notFound, redirect } from 'next/navigation';
+import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
+import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { CLINIC_COOKIE } from '@/lib/server/cookie-constants';
+import ConsultationForm from '@/app/(routes)/patients/[id]/consultation/consultation-form';
+import { safeToISOString } from '@/lib/utils';
+import type { SerializedPatient } from '@/components/patients/patient-card';
+import type { SerializedConsultation } from '@/lib/types';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -11,32 +15,42 @@ type Props = {
 
 export default async function EditConsultationPage({ params }: Props) {
   const { id } = await params;
-  const consultation = await getConsultationById(id);
 
+  let medplum;
+  try {
+    medplum = await getMedplumForRequest();
+  } catch {
+    redirect('/login');
+  }
+
+  const cookieStore = await cookies();
+  const clinicId = cookieStore.get(CLINIC_COOKIE)?.value ?? undefined;
+
+  const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
   if (!consultation) {
     notFound();
   }
 
-  const patient = await getPatientById(consultation.patientId);
+  const patient = await getPatientFromMedplum(consultation.patientId, clinicId, medplum);
   if (!patient) {
     notFound();
   }
 
   const initialPatient: SerializedPatient = {
-    ...patient,
-    dateOfBirth: safeToISOString(patient.dateOfBirth),
-    lastVisit: safeToISOString(patient.lastVisit),
-    upcomingAppointment: safeToISOString(patient.upcomingAppointment),
-    createdAt: safeToISOString(patient.createdAt),
-    updatedAt: safeToISOString(patient.updatedAt),
-    queueAddedAt: safeToISOString(patient.queueAddedAt),
+    ...(patient as any),
+    dateOfBirth: safeToISOString((patient as any).dateOfBirth),
+    lastVisit: safeToISOString((patient as any).lastVisit),
+    upcomingAppointment: safeToISOString((patient as any).upcomingAppointment),
+    createdAt: safeToISOString((patient as any).createdAt),
+    updatedAt: safeToISOString((patient as any).updatedAt),
+    queueAddedAt: safeToISOString((patient as any).queueAddedAt),
   };
 
   const initialConsultation: SerializedConsultation = {
-    ...consultation,
+    ...(consultation as any),
     date: safeToISOString(consultation.date),
     createdAt: safeToISOString(consultation.createdAt),
-    updatedAt: safeToISOString(consultation.updatedAt),
+    updatedAt: safeToISOString((consultation as any).updatedAt),
   };
 
   return (

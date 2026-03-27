@@ -11,6 +11,7 @@ import {
   updateAppointmentStatus,
 } from '@/lib/fhir/appointment-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 
 /**
  * POST - Create a new appointment
@@ -32,12 +33,8 @@ export async function POST(request: NextRequest) {
       appointmentId,
       message: 'Appointment saved to FHIR successfully',
     });
-  } catch (error: any) {
-    console.error('❌ Failed to save appointment:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to save appointment' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/appointments');
   }
 }
 
@@ -67,12 +64,8 @@ export async function GET(request: NextRequest) {
     // No filter — return upcoming appointments for the dashboard
     const appointments = await getUpcomingAppointments(medplum);
     return NextResponse.json({ success: true, count: appointments.length, appointments });
-  } catch (error: any) {
-    console.error('❌ Failed to get appointments:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to get appointments' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'GET /api/appointments');
   }
 }
 
@@ -91,11 +84,7 @@ export async function PATCH(request: NextRequest) {
     await updateAppointmentStatus(medplum, appointmentId, status);
 
     return NextResponse.json({ success: true, message: 'Appointment updated successfully' });
-  } catch (error: any) {
-    console.error('❌ Failed to update appointment:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to update appointment' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/appointments');
   }
 }
