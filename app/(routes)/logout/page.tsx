@@ -12,7 +12,7 @@ export default function LogoutPage() {
     (async () => {
       try {
         await signOut();
-        await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
+        await fetch('/api/auth/medplum-session', { method: 'DELETE' }).catch(() => {});
       } catch (error) {
         console.error('Logout error:', error);
       }

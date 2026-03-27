@@ -149,7 +149,7 @@ export default function SettingsPage() {
           <CardDescription>Session controls</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="outline" onClick={async () => { try { await fetch('/api/auth/session', { method: 'DELETE' }); } catch {}; await signOut(); if (typeof window !== 'undefined') window.location.assign('/login'); }}>Sign out</Button>
+          <Button variant="outline" onClick={async () => { try { await fetch('/api/auth/medplum-session', { method: 'DELETE' }); } catch {}; await signOut(); if (typeof window !== 'undefined') window.location.assign('/login'); }}>Sign out</Button>
         </CardContent>
       </Card>
 

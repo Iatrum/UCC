@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { isRateLimited } from "@/lib/rate-limit";
 import { ocrBodySchema } from "@/lib/validation";
 import { recognizeIC } from "@/lib/ocr";
@@ -9,11 +9,9 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     const allowDev = process.env.NODE_ENV !== 'production' && process.env.OCR_ALLOW_DEV === 'true';
-    // Require a valid session cookie unless explicitly allowed in development
+    // Require a valid Medplum session unless explicitly allowed in development
     if (!allowDev) {
-      const session = req.cookies.get('emr_session')?.value;
-      if (!session) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-      try { await adminAuth.verifySessionCookie(session, true); } catch { return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }); }
+      try { await getMedplumForRequest(req); } catch { return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }); }
     }
 
     // Rate limit by IP

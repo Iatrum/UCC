@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { isRateLimited } from "@/lib/rate-limit";
 import { getConsultationsByPatientIdAdmin, getPatientByIdAdmin } from "@/lib/server/models";
 import { createChatCompletion, type ChatMessage } from "@/lib/server/openrouter";
@@ -8,13 +8,8 @@ const DEFAULT_LIMIT = 5;
 
 export async function POST(req: NextRequest) {
   try {
-    const session = req.cookies.get("emr_session")?.value;
-    if (!session) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-
     try {
-      await adminAuth.verifySessionCookie(session, true);
+      await getMedplumForRequest(req);
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }

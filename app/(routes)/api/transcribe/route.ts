@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { isRateLimited } from "@/lib/rate-limit";
 
 // Using Groq for Whisper (fast and free tier available)
@@ -17,13 +17,8 @@ if (!GROQ_API_KEY && !OPENAI_API_KEY) {
 export async function POST(req: NextRequest) {
   try {
     // Authentication
-    const session = req.cookies.get("emr_session")?.value;
-    if (!session) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-
     try {
-      await adminAuth.verifySessionCookie(session, true);
+      await getMedplumForRequest(req);
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }

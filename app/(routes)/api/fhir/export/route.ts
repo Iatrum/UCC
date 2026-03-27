@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { getConsultationFromMedplum } from "@/lib/fhir/consultation-service";
 import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
 import { toFhirPatient, toFhirEncounter, toFhirCondition, toFhirMedicationRequest, toFhirServiceRequest } from "@/lib/fhir/mappers";
-import { adminAuth } from "@/lib/firebase-admin";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { getClinicIdFromRequest } from "@/lib/server/clinic";
 import { z } from "zod";
@@ -14,21 +13,15 @@ const exportBodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth: require valid Firebase session cookie
-    const session = req.cookies.get('emr_session')?.value;
-    if (!session) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    let decoded: any;
+    // Auth: require valid Medplum session (practitioner token)
+    let medplum: Awaited<ReturnType<typeof getMedplumForRequest>>;
     try {
-      decoded = await adminAuth.verifySessionCookie(session, true);
+      medplum = await getMedplumForRequest(req);
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
-
-    // Optional: GP-only app, but keep a simple claim gate if present
-    const role: string | undefined = decoded?.role;
-    if (role && !["admin", "doctor"].includes(role)) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
-    }
+    const practitionerProfile = medplum.getProfile();
+    const actorId = practitionerProfile?.id ?? 'unknown';
 
     const body = await req.json();
     const parsed = exportBodySchema.safeParse(body);
@@ -37,7 +30,6 @@ export async function POST(req: NextRequest) {
     }
     const { consultationId } = parsed.data;
 
-    const medplum = await getMedplumForRequest(req);
     const clinicId = await getClinicIdFromRequest(req);
 
     const consultation = await getConsultationFromMedplum(consultationId, clinicId ?? undefined, medplum);
@@ -72,7 +64,7 @@ export async function POST(req: NextRequest) {
       action: 'fhir_export',
       subjectType: 'consultation',
       subjectId: consultation.id!,
-      userId: decoded.uid,
+      userId: actorId,
       metadata: { createdRefs: created },
     });
 
