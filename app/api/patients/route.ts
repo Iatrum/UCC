@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
+import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import {
   savePatientToMedplum,
   getPatientFromMedplum,
@@ -18,6 +19,7 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const patientData = await request.json();
     const clinicId = await getClinicIdFromRequest(request);
 
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing clinicId' }, { status: 400 });
     }
 
-    const patientId = await savePatientToMedplum(patientData, clinicId);
+    const patientId = await savePatientToMedplum(patientData, clinicId, medplum);
 
     return NextResponse.json({
       success: true,
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get('id');
     const searchQuery = searchParams.get('search');
@@ -73,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     // Get specific patient
     if (patientId) {
-      const patient = await getPatientFromMedplum(patientId, clinicId);
+      const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
@@ -82,7 +85,7 @@ export async function GET(request: NextRequest) {
 
     // Search patients
     if (searchQuery) {
-      const patients = await searchPatientsInMedplum(searchQuery, clinicId);
+      const patients = await searchPatientsInMedplum(searchQuery, clinicId, medplum);
       return NextResponse.json({
         success: true,
         count: patients.length,
@@ -92,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     // Get all patients
     const limitNum = limit ? parseInt(limit) : 100;
-    const patients = await getAllPatientsFromMedplum(limitNum, clinicId);
+    const patients = await getAllPatientsFromMedplum(limitNum, clinicId, medplum);
     return NextResponse.json({
       success: true,
       count: patients.length,
@@ -115,6 +118,7 @@ export async function GET(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const { patientId, ...updates } = await request.json();
     const clinicId = await getClinicIdFromRequest(request);
 
@@ -126,7 +130,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing clinicId' }, { status: 400 });
     }
 
-    await updatePatientInMedplum(patientId, updates, clinicId);
+    await updatePatientInMedplum(patientId, updates, clinicId, medplum);
 
     return NextResponse.json({
       success: true,

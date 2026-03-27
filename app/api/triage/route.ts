@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { triagePatient } from "@/lib/models";
+import { saveTriageEncounter } from "@/lib/fhir/triage-service";
 import { TriageLevel, VitalSigns } from "@/lib/types";
-import { getCurrentProfile } from "@/lib/server/medplum-auth";
+import { getCurrentProfile, getMedplumForRequest } from "@/lib/server/medplum-auth";
 
 export async function POST(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const body = await request.json();
     
     const {
@@ -45,14 +46,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Perform triage against Medplum (no Firestore dependency)
-    await triagePatient(patientId, {
+    await saveTriageEncounter(patientId, {
       triageLevel: triageLevel as TriageLevel,
       chiefComplaint,
       vitalSigns: vitalSigns as VitalSigns,
       triageNotes,
       redFlags: redFlags || [],
       triageBy,
-    });
+    }, medplum);
 
     return NextResponse.json({ success: true });
   } catch (error) {

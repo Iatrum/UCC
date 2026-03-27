@@ -12,12 +12,14 @@ import {
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
+import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 
 /**
  * POST - Create a new consultation in Medplum
  */
 export async function POST(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const body = await request.json();
     const { patientId, chiefComplaint, diagnosis, procedures, notes, progressNote, prescriptions } = body;
     const clinicId = await getClinicIdFromRequest(request);
@@ -35,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 🎯 Get patient data from MEDPLUM (FHIR) - Source of Truth
-    const patient = await getPatientFromMedplum(patientId, clinicId);
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found in FHIR' }, { status: 404 });
     }
@@ -61,7 +63,8 @@ export async function POST(request: NextRequest) {
         phone: (patient as any).phoneNumber || (patient as any).phone || '',
         address: (patient as any).address || '',
       },
-      clinicId
+      clinicId,
+      medplum
     );
 
     console.log(`✅ Consultation saved to Medplum: ${encounterId}`);
@@ -92,6 +95,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get('patientId');
     const consultationId = searchParams.get('id');
@@ -104,7 +108,7 @@ export async function GET(request: NextRequest) {
 
     // Get specific consultation
     if (consultationId) {
-      const consultation = await getConsultationFromMedplum(consultationId, clinicId);
+      const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
       if (!consultation) {
         return NextResponse.json({ error: 'Consultation not found' }, { status: 404 });
       }
@@ -113,7 +117,7 @@ export async function GET(request: NextRequest) {
 
     // Get consultations for a patient
     if (patientId) {
-      const consultations = await getPatientConsultationsFromMedplum(patientId, clinicId);
+      const consultations = await getPatientConsultationsFromMedplum(patientId, clinicId, medplum);
       return NextResponse.json({
         success: true,
         count: consultations.length,
@@ -124,7 +128,7 @@ export async function GET(request: NextRequest) {
     // Get recent consultations
     if (recent) {
       const limit = parseInt(recent) || 10;
-      const consultations = await getRecentConsultationsFromMedplum(limit, clinicId);
+      const consultations = await getRecentConsultationsFromMedplum(limit, clinicId, medplum);
       return NextResponse.json({
         success: true,
         count: consultations.length,
