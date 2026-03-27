@@ -3,21 +3,29 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Clock, RefreshCw } from "lucide-react";
+import { Clock, RefreshCw, Users, CalendarDays, Activity } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Patient } from "@/lib/models";
 import QueueTable from "@/components/queue-table";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/use-toast";
 import { addPatientToQueue, removePatientFromQueue } from "@/lib/actions";
 
+interface Appointment {
+  id: string;
+  patientName: string;
+  date: string;
+  status: string;
+  reason?: string;
+}
+
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState('queue');
   const [queue, setQueue] = useState<Patient[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [apptLoading, setApptLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadQueue = async () => {
@@ -25,9 +33,7 @@ export default function Dashboard() {
     setError(null);
     try {
       const response = await fetch('/api/queue');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch queue: ${response.statusText}`);
-      }
+      if (!response.ok) throw new Error(`Failed to fetch queue: ${response.statusText}`);
       const result = await response.json();
       setQueue(result.patients || []);
     } catch (err) {
@@ -38,77 +44,50 @@ export default function Dashboard() {
     }
   };
 
+  const loadAppointments = async () => {
+    setApptLoading(true);
+    try {
+      const response = await fetch('/api/appointments');
+      if (!response.ok) throw new Error(`Failed to fetch appointments`);
+      const result = await response.json();
+      setAppointments(result.appointments || []);
+    } catch (err) {
+      console.error('Error loading appointments:', err);
+    } finally {
+      setApptLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Initial load
     loadQueue();
-
-    // Set up refresh interval (every 30 seconds)
+    loadAppointments();
     const interval = setInterval(loadQueue, 30000);
-
-    // Cleanup interval on unmount
     return () => clearInterval(interval);
   }, []);
 
   const handleRefresh = async () => {
-    await loadQueue();
-    toast({
-      title: "Queue Updated",
-      description: "Patient queue has been refreshed.",
-    });
+    await Promise.all([loadQueue(), loadAppointments()]);
+    toast({ title: "Dashboard Updated", description: "Queue and appointments refreshed." });
   };
 
-  const handleStartConsultation = async (patient: Patient) => {
-    try {
-      await addPatientToQueue(patient.id);
-      toast({
-        title: "Consultation Started",
-        description: `${patient.fullName}'s consultation has been started.`,
-      });
-      await loadQueue();
-    } catch (error) {
-      console.error('Error starting consultation:', error);
-      toast({
-        title: "Error",
-        description: "Failed to start consultation. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleCompleteConsultation = async (patient: Patient) => {
-    try {
-      await removePatientFromQueue(patient.id);
-      toast({
-        title: "Consultation Completed",
-        description: `${patient.fullName}'s consultation has been completed.`,
-      });
-      await loadQueue();
-    } catch (error) {
-      console.error('Error completing consultation:', error);
-      toast({
-        title: "Error",
-        description: "Failed to complete consultation. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
+  const waiting = queue.filter(p => p.queueStatus === 'waiting' || p.queueStatus === 'arrived');
+  const inProgress = queue.filter(p => p.queueStatus === 'in_consultation');
+  const todayAppts = appointments.filter(a => {
+    const d = new Date(a.date);
+    const now = new Date();
+    return d.toDateString() === now.toDateString();
+  });
 
   return (
     <div className="flex flex-col space-y-6">
-      {/* Header */}
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={handleRefresh}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          {/* Notifications button removed per request */}
-        </div>
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <Button variant="outline" size="icon" onClick={handleRefresh}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </div>
 
-      {/* Stats Overview */}
+      {/* Stats row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -117,23 +96,50 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{queue.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {queue.filter(p => p.queueStatus === 'waiting' || p.queueStatus === 'arrived').length} waiting/arrived patients
-            </p>
+            <p className="text-xs text-muted-foreground">{waiting.length} waiting</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">In Consultation</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{inProgress.length}</div>
+            <p className="text-xs text-muted-foreground">active now</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Today&apos;s Appointments</CardTitle>
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{todayAppts.length}</div>
+            <p className="text-xs text-muted-foreground">scheduled today</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Total Appointments</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{appointments.length}</div>
+            <p className="text-xs text-muted-foreground">all upcoming</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Content - Simplified to only show Queue Tab */}
       <Tabs defaultValue="queue" className="space-y-4">
         <TabsList>
           <TabsTrigger value="queue">Today&apos;s Queue</TabsTrigger>
-          {/* REMOVED: Overview, Appointments, Patients, Analytics TabsTrigger */}
-          {/* <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
-          <TabsTrigger value="patients">Patients</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger> */}
         </TabsList>
+
         <TabsContent value="queue" className="space-y-4">
           <Card>
             <CardHeader>
@@ -142,23 +148,62 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="text-center py-4">Loading queue...</div>
+                <div className="text-center py-4 text-muted-foreground">Loading queue…</div>
               ) : error ? (
                 <div className="text-center py-4 text-red-500">{error}</div>
               ) : (
-                <QueueTable 
-                  patients={queue} 
-                  onQueueUpdate={loadQueue}
-                />
+                <QueueTable patients={queue} onQueueUpdate={loadQueue} />
               )}
             </CardContent>
           </Card>
         </TabsContent>
-        {/* REMOVED: Overview, Appointments, Patients, Analytics TabsContent */}
-        {/* <TabsContent value="overview" className="space-y-4"> ... </TabsContent> */}
-        {/* <TabsContent value="appointments"> ... </TabsContent> */}
-        {/* <TabsContent value="patients"> ... </TabsContent> */}
-        {/* <TabsContent value="analytics"> ... </TabsContent> */}
+
+        <TabsContent value="appointments" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Appointments</CardTitle>
+              <CardDescription>
+                Upcoming scheduled appointments.{" "}
+                <Link href="/appointments" className="underline text-primary">View all</Link>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {apptLoading ? (
+                <div className="text-center py-4 text-muted-foreground">Loading appointments…</div>
+              ) : appointments.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No upcoming appointments.{" "}
+                  <Link href="/appointments/new" className="underline text-primary">Schedule one</Link>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {appointments.slice(0, 20).map((appt) => (
+                      <TableRow key={appt.id}>
+                        <TableCell className="font-medium">{appt.patientName || '—'}</TableCell>
+                        <TableCell>{appt.date ? new Date(appt.date).toLocaleString() : '—'}</TableCell>
+                        <TableCell className="text-muted-foreground">{appt.reason || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant={appt.status === 'booked' ? 'default' : 'secondary'}>
+                            {appt.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );

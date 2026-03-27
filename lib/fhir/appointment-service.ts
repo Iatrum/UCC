@@ -125,6 +125,29 @@ export async function getPatientAppointmentsFromMedplum(medplum: MedplumClient, 
 }
 
 /**
+ * List upcoming appointments (clinic-wide, sorted by date, limited to next 50)
+ */
+export async function getUpcomingAppointments(medplum: MedplumClient, limit = 50): Promise<SavedAppointment[]> {
+  try {
+    const now = new Date().toISOString();
+    const appointments = await medplum.searchResources('Appointment', {
+      date: `ge${now}`,
+      _sort: 'date',
+      _count: String(limit),
+    });
+
+    const mapped = await Promise.all(
+      appointments.map(appt => getAppointmentFromMedplum(medplum, appt.id!))
+    );
+
+    return mapped.filter((a): a is SavedAppointment => a !== null);
+  } catch (error) {
+    console.error('Failed to list upcoming appointments:', error);
+    return [];
+  }
+}
+
+/**
  * Update appointment status
  */
 export async function updateAppointmentStatus(

@@ -7,6 +7,7 @@ import {
   saveAppointmentToMedplum,
   getAppointmentFromMedplum,
   getPatientAppointmentsFromMedplum,
+  getUpcomingAppointments,
   updateAppointmentStatus,
 } from '@/lib/fhir/appointment-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
@@ -63,7 +64,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, count: appointments.length, appointments });
     }
 
-    return NextResponse.json({ error: 'Missing query parameter: id or patientId' }, { status: 400 });
+    // No filter — return upcoming appointments for the dashboard
+    const appointments = await getUpcomingAppointments(medplum);
+    return NextResponse.json({ success: true, count: appointments.length, appointments });
   } catch (error: any) {
     console.error('❌ Failed to get appointments:', error);
     return NextResponse.json(

@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
 import React, { useState } from 'react';
 import { storage } from '@/lib/firebase';
-import { useAuth } from '@/lib/auth';
+import { useMedplumAuth } from '@/lib/auth-medplum';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
@@ -24,7 +24,8 @@ interface UserSettings {
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const { user, signOut } = useAuth();
+  const { profile, signOut } = useMedplumAuth();
+  const profileEmail = (profile as any)?.telecom?.find((t: any) => t.system === 'email')?.value ?? (profile as any)?.name?.[0]?.text ?? profile?.id ?? 'Unknown';
   // Placeholder state - connect to user data later
   const [settings, setSettings] = useState<UserSettings>({
     fullName: 'Dr. John Doe', // Example data
@@ -99,7 +100,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">Settings</h1>
-      <div className="text-sm text-muted-foreground">Signed in as: {user?.email || user?.uid}</div>
+      <div className="text-sm text-muted-foreground">Signed in as: {profileEmail}</div>
 
       <Card>
         <CardHeader>
