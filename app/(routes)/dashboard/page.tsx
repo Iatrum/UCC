@@ -3,15 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Activity, 
-  Users, 
-  Calendar, 
-  Clock, 
-  Heart,
-  MoreHorizontal,
-  RefreshCw
-} from "lucide-react";
+import { Clock, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Patient } from "@/lib/models";
 import QueueTable from "@/components/queue-table";
@@ -111,7 +103,6 @@ export default function Dashboard() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back, Dr. Smith</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={handleRefresh}>
@@ -125,18 +116,6 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">1,234</div>
-            <p className="text-xs text-muted-foreground">
-              +20.1% from last month
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Today&apos;s Queue</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -147,7 +126,6 @@ export default function Dashboard() {
             </p>
           </CardContent>
         </Card>
-        
       </div>
 
       {/* Main Content - Simplified to only show Queue Tab */}

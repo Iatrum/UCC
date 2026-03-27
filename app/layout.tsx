@@ -6,6 +6,7 @@ import Sidebar from "@/components/sidebar";
 import { MedplumAuthProvider } from "@/lib/auth-medplum";
 import { listActiveModules } from "@/lib/module-registry";
 import { cookies, headers } from "next/headers";
+import { IS_ADMIN_COOKIE } from "@/lib/server/cookie-constants";
 
 export const metadata: Metadata = {
   title: "UCC EMR",
@@ -21,7 +22,7 @@ export default async function RootLayout({
 
   // Detect admin subdomain via cookie set by middleware
   const cookieStore = await cookies();
-  const isAdminContext = cookieStore.get("medplum-is-admin")?.value === "true";
+  const isAdminContext = cookieStore.get(IS_ADMIN_COOKIE)?.value === "true";
 
   return (
     <html lang="en" suppressHydrationWarning>

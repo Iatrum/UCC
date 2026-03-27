@@ -9,24 +9,22 @@ import {
   getPatientAppointmentsFromMedplum,
   updateAppointmentStatus,
 } from '@/lib/fhir/appointment-service';
+import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 
 /**
  * POST - Create a new appointment
  */
 export async function POST(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const appointmentData = await request.json();
 
-    // Validate required fields
-    if (!appointmentData.patientId || !appointmentData.patientName || !appointmentData.clinician || 
+    if (!appointmentData.patientId || !appointmentData.patientName || !appointmentData.clinician ||
         !appointmentData.reason || !appointmentData.scheduledAt) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const appointmentId = await saveAppointmentToMedplum(appointmentData);
+    const appointmentId = await saveAppointmentToMedplum(medplum, appointmentData);
 
     return NextResponse.json({
       success: true,
@@ -36,10 +34,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Failed to save appointment:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to save appointment',
-      },
+      { success: false, error: error.message || 'Failed to save appointment' },
       { status: 500 }
     );
   }
@@ -50,37 +45,29 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const { searchParams } = new URL(request.url);
     const appointmentId = searchParams.get('id');
     const patientId = searchParams.get('patientId');
 
-    // Get specific appointment
     if (appointmentId) {
-      const appointment = await getAppointmentFromMedplum(appointmentId);
+      const appointment = await getAppointmentFromMedplum(medplum, appointmentId);
       if (!appointment) {
         return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
       }
       return NextResponse.json({ success: true, appointment });
     }
 
-    // Get patient appointments
     if (patientId) {
-      const appointments = await getPatientAppointmentsFromMedplum(patientId);
-      return NextResponse.json({
-        success: true,
-        count: appointments.length,
-        appointments,
-      });
+      const appointments = await getPatientAppointmentsFromMedplum(medplum, patientId);
+      return NextResponse.json({ success: true, count: appointments.length, appointments });
     }
 
     return NextResponse.json({ error: 'Missing query parameter: id or patientId' }, { status: 400 });
   } catch (error: any) {
     console.error('❌ Failed to get appointments:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get appointments',
-      },
+      { success: false, error: error.message || 'Failed to get appointments' },
       { status: 500 }
     );
   }
@@ -91,34 +78,21 @@ export async function GET(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const { appointmentId, status } = await request.json();
 
     if (!appointmentId || !status) {
       return NextResponse.json({ error: 'Missing appointmentId or status' }, { status: 400 });
     }
 
-    await updateAppointmentStatus(appointmentId, status);
+    await updateAppointmentStatus(medplum, appointmentId, status);
 
-    return NextResponse.json({
-      success: true,
-      message: 'Appointment updated successfully',
-    });
+    return NextResponse.json({ success: true, message: 'Appointment updated successfully' });
   } catch (error: any) {
     console.error('❌ Failed to update appointment:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to update appointment',
-      },
+      { success: false, error: error.message || 'Failed to update appointment' },
       { status: 500 }
     );
   }
 }
-
-
-
-
-
-
-
-

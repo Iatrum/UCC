@@ -8,15 +8,16 @@ import {
   getReferralFromMedplum,
   getPatientReferralsFromMedplum,
 } from '@/lib/fhir/referral-service';
+import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 
 /**
  * POST - Create a new referral
  */
 export async function POST(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const referralData = await request.json();
 
-    // Validate required fields
     if (!referralData.patientId || !referralData.specialty || !referralData.facility || !referralData.reason) {
       return NextResponse.json(
         { error: 'Missing required fields: patientId, specialty, facility, reason' },
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const referralId = await saveReferralToMedplum(referralData);
+    const referralId = await saveReferralToMedplum(medplum, referralData);
 
     return NextResponse.json({
       success: true,
@@ -34,10 +35,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Failed to save referral:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to save referral',
-      },
+      { success: false, error: error.message || 'Failed to save referral' },
       { status: 500 }
     );
   }
@@ -48,46 +46,30 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const medplum = await getMedplumForRequest(request);
     const { searchParams } = new URL(request.url);
     const referralId = searchParams.get('id');
     const patientId = searchParams.get('patientId');
 
-    // Get specific referral
     if (referralId) {
-      const referral = await getReferralFromMedplum(referralId);
+      const referral = await getReferralFromMedplum(medplum, referralId);
       if (!referral) {
         return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
       }
       return NextResponse.json({ success: true, referral });
     }
 
-    // Get patient referrals
     if (patientId) {
-      const referrals = await getPatientReferralsFromMedplum(patientId);
-      return NextResponse.json({
-        success: true,
-        count: referrals.length,
-        referrals,
-      });
+      const referrals = await getPatientReferralsFromMedplum(medplum, patientId);
+      return NextResponse.json({ success: true, count: referrals.length, referrals });
     }
 
     return NextResponse.json({ error: 'Missing query parameter: id or patientId' }, { status: 400 });
   } catch (error: any) {
     console.error('❌ Failed to get referrals:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get referrals',
-      },
+      { success: false, error: error.message || 'Failed to get referrals' },
       { status: 500 }
     );
   }
 }
-
-
-
-
-
-
-
-

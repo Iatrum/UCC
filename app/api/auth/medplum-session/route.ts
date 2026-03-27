@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { SESSION_COOKIE, CLINIC_COOKIE } from "@/lib/server/cookie-constants";
 
-const COOKIE_NAME = "medplum-session";
-const CLINIC_COOKIE_NAME = "medplum-clinic";
 const MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
 const isProd = process.env.NODE_ENV === "production";
 // Set cookie domain to share session across all subdomains (e.g. .drhidayat.com)
@@ -26,7 +25,7 @@ export async function POST(req: NextRequest) {
     const cookieStore = await cookies();
 
     if (typeof accessToken === "string" && accessToken.length > 0) {
-      cookieStore.set(COOKIE_NAME, accessToken, {
+      cookieStore.set(SESSION_COOKIE, accessToken, {
         httpOnly: true,
         secure: isProd,
         sameSite: "lax",
@@ -37,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (typeof clinicId === "string" && clinicId.trim().length > 0) {
-      cookieStore.set(CLINIC_COOKIE_NAME, clinicId, {
+      cookieStore.set(CLINIC_COOKIE, clinicId, {
         httpOnly: false,
         secure: isProd,
         sameSite: "lax",
@@ -46,7 +45,7 @@ export async function POST(req: NextRequest) {
         domain: COOKIE_DOMAIN,
       });
     } else if (clinicId === null) {
-      cookieStore.delete(CLINIC_COOKIE_NAME);
+      cookieStore.delete(CLINIC_COOKIE);
     }
 
     return NextResponse.json({ success: true });
@@ -66,8 +65,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE() {
   try {
     const cookieStore = await cookies();
-    cookieStore.delete(COOKIE_NAME);
-    cookieStore.delete(CLINIC_COOKIE_NAME);
+    cookieStore.delete(SESSION_COOKIE);
+    cookieStore.delete(CLINIC_COOKIE);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Error deleting Medplum session:", error);
@@ -85,8 +84,8 @@ export async function DELETE() {
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get(COOKIE_NAME);
-    const clinicCookie = cookieStore.get(CLINIC_COOKIE_NAME);
+    const sessionCookie = cookieStore.get(SESSION_COOKIE);
+    const clinicCookie = cookieStore.get(CLINIC_COOKIE);
 
     if (\!sessionCookie) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
