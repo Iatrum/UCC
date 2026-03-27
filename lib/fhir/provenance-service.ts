@@ -33,7 +33,7 @@ export async function createProvenance(medplum: MedplumClient, data: ProvenanceD
     target: data.target,
     recorded: data.recorded,
     agent: data.agent.filter(agent => agent.who || agent.onBehalfOf).map(agent => ({
-      who: agent.who,
+      who: agent.who!,
       onBehalfOf: agent.onBehalfOf,
     })),
     activity: data.activity,

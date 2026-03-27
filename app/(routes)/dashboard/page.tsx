@@ -64,9 +64,7 @@ export default function Dashboard() {
         title: "Consultation Started",
         description: `${patient.fullName}'s consultation has been started.`,
       });
-      // Refresh the queue
-      const data = await getTriagedPatientsQueue();
-      setQueue(data);
+      await loadQueue();
     } catch (error) {
       console.error('Error starting consultation:', error);
       toast({
@@ -84,9 +82,7 @@ export default function Dashboard() {
         title: "Consultation Completed",
         description: `${patient.fullName}'s consultation has been completed.`,
       });
-      // Refresh the queue
-      const data = await getTriagedPatientsQueue();
-      setQueue(data);
+      await loadQueue();
     } catch (error) {
       console.error('Error completing consultation:', error);
       toast({

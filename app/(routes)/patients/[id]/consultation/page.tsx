@@ -64,7 +64,7 @@ export default async function ConsultationPage({ params, searchParams }: Props) 
     ...patient,
     dateOfBirth: safeToISOString(patient.dateOfBirth),
     lastVisit: safeToISOString(patient.lastVisit),
-    upcomingAppointment: safeToISOString(patient.upcomingAppointment),
+    upcomingAppointment: safeToISOString((patient as any).upcomingAppointment),
     createdAt: safeToISOString(patient.createdAt),
     updatedAt: safeToISOString(patient.updatedAt),
     queueAddedAt: safeToISOString(patient.queueAddedAt),

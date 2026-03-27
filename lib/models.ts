@@ -554,7 +554,7 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
           } satisfies BillableConsultation;
         })
       )
-    ).filter((c): c is BillableConsultation => Boolean(c));
+    ).filter(Boolean) as BillableConsultation[];
 
     return consultations.sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;

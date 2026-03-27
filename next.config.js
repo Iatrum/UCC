@@ -1,10 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    // ⚠️ TEMPORARY: Ignore type errors during build
-    // TODO: Fix Medplum FHIR type incompatibilities
-    ignoreBuildErrors: true,
-  },
   outputFileTracingRoot: __dirname,
   experimental: {
     optimizePackageImports: [

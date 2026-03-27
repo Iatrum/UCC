@@ -2,6 +2,7 @@
  * Admin Service - Server-side helpers for admin portal
  * Uses Medplum client credentials to access all organisations.
  */
+import type { Organization } from "@medplum/fhirtypes";
 import { getMedplumClient } from "./patient-service";
 
 export interface ClinicSummary {
@@ -60,12 +61,12 @@ export async function saveOrganizationDetailsToMedplum(
 ): Promise<void> {
   const medplum = await getMedplumClient();
 
-  const org = {
-    resourceType: "Organization" as const,
+  const org: Organization = {
+    resourceType: "Organization",
     name: input.name,
     identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: subdomain }],
     ...(input.phone && {
-      telecom: [{ system: "phone", value: input.phone }],
+      telecom: [{ system: "phone" as const, value: input.phone }],
     }),
     ...(input.address && {
       address: [{ text: input.address }],

@@ -535,7 +535,7 @@ export async function saveTriageToMedplum(
   clinicId?: string
 ): Promise<void> {
   const medplum = await getMedplumClient();
-  const existingPatient = await medplum.readResource<FHIRPatient>('Patient', patientId);
+  const existingPatient = await medplum.readResource('Patient', patientId);
   if (!matchesClinic(existingPatient, clinicId)) {
     throw new Error('Patient does not belong to this clinic');
   }
@@ -561,7 +561,7 @@ export async function saveTriageToMedplum(
  */
 export async function updateQueueStatusInMedplum(patientId: string, status: QueueStatus | null, clinicId?: string): Promise<void> {
   const medplum = await getMedplumClient();
-  const existingPatient = await medplum.readResource<FHIRPatient>('Patient', patientId);
+  const existingPatient = await medplum.readResource('Patient', patientId);
   if (!matchesClinic(existingPatient, clinicId)) {
     throw new Error('Patient does not belong to this clinic');
   }

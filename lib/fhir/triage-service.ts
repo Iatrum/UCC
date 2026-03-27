@@ -350,7 +350,7 @@ export async function updateQueueStatusForPatient(
     throw new Error('No active triage encounter found');
   }
 
-  const encounter = await client.readResource<any>('Encounter', existing.id);
+  const encounter = await client.readResource('Encounter', existing.id) as any;
   const newStatus = encounterStatusFromQueue(status);
   if (!newStatus) {
     // If clearing status, mark encounter finished and drop queue extension fields
@@ -455,7 +455,7 @@ export async function getTriageQueueForToday(limit = 200, medplum?: MedplumClien
   const endIso = end.toISOString();
   const query = `status=arrived,triaged,in-progress,finished&date=ge${startIso}&date=lt${endIso}&_count=${limit}&_sort=date`;
 
-  const encounters = await client.searchResources<any>('Encounter', query);
+  const encounters = (await client.searchResources('Encounter', query)) as any[];
 
   const patients: SavedPatient[] = [];
 

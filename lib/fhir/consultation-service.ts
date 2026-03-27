@@ -67,7 +67,7 @@ function matchesClinic(resource: { identifier?: { system?: string; value?: strin
   return Boolean(identifierMatch || serviceProviderMatch || managingOrgMatch);
 }
 
-function withClinicIdentifiers<T extends { identifier?: { system?: string; value?: string }[] }>(resource: T, clinicId?: string): T {
+function withClinicIdentifiers<T extends { [key: string]: any }>(resource: T, clinicId?: string): T {
   if (!clinicId) return resource;
   return {
     ...resource,
@@ -83,7 +83,8 @@ function withServiceProvider<T extends { [key: string]: any }>(resource: T, clin
   };
 }
 
-async function validateAndCreate<T extends { resourceType: string }>(medplum: MedplumClient, resource: T) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function validateAndCreate(medplum: MedplumClient, resource: any) {
   const validation = validateFhirResource(resource);
   logValidation(resource.resourceType, validation);
   if (!validation.valid) {
@@ -170,7 +171,6 @@ async function getOrCreatePatient(
       telecom: patientData.phone ? [{ system: 'phone', value: patientData.phone }] : undefined,
       address: patientData.address ? [{ text: patientData.address }] : undefined,
       managingOrganization: clinicId ? { reference: `Organization/${clinicId}` } : undefined,
-      identifier: addClinicIdentifier(undefined, clinicId),
     });
     console.log(`✅ Created FHIR Patient: ${patient.id}`);
   } else if (clinicId && !matchesClinic(patient as any, clinicId)) {
@@ -188,7 +188,7 @@ async function getOrCreatePatient(
     }
   }
 
-  return patient;
+  return patient!;
 }
 
 /**
@@ -219,7 +219,7 @@ export async function saveConsultationToMedplum(
 
   // 2. Create Encounter (this is the consultation)
   const encounterDate = consultation.date?.toISOString() || new Date().toISOString();
-  const encounter = await validateAndCreate<Encounter>(client, withServiceProvider(withClinicIdentifiers({
+  const encounter = await validateAndCreate(client, withServiceProvider(withClinicIdentifiers({
       resourceType: 'Encounter',
       status: 'finished',
       class: {
@@ -246,7 +246,7 @@ export async function saveConsultationToMedplum(
 
   // 3. Create Chief Complaint (Observation)
   if (consultation.chiefComplaint) {
-    await validateAndCreate<Observation>(client, withClinicIdentifiers({
+    await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Observation',
       status: 'final',
       subject: { reference: patientReference },
@@ -282,7 +282,7 @@ export async function saveConsultationToMedplum(
       }
     }
 
-    await validateAndCreate<Condition>(client, withClinicIdentifiers({
+    await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Condition',
       subject: { reference: patientReference },
       encounter: { reference: `Encounter/${encounter.id}` },
@@ -311,7 +311,7 @@ export async function saveConsultationToMedplum(
 
   // 5. Create Clinical Notes (Observation)
   if (consultation.notes) {
-    await validateAndCreate<Observation>(client, withClinicIdentifiers({
+    await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Observation',
       status: 'final',
       subject: { reference: patientReference },
@@ -324,7 +324,7 @@ export async function saveConsultationToMedplum(
 
   // 5b. Progress Note
   if (consultation.progressNote) {
-    await validateAndCreate<Observation>(client, withClinicIdentifiers({
+    await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Observation',
       status: 'final',
       subject: { reference: patientReference },
@@ -337,7 +337,7 @@ export async function saveConsultationToMedplum(
 
   // 6. Create Procedures
   if (consultation.procedures) {
-    for (const proc of consultation.procedures) {
+    for (const proc of consultation.procedures as any[]) {
       const codeable = proc.codingCode || proc.codingDisplay || proc.codingSystem
         ? {
             coding: proc.codingCode
@@ -353,7 +353,7 @@ export async function saveConsultationToMedplum(
           }
         : { text: proc.name };
 
-      await validateAndCreate<Procedure>(client, withClinicIdentifiers({
+      await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         status: 'completed',
         subject: { reference: patientReference },
@@ -366,7 +366,7 @@ export async function saveConsultationToMedplum(
 
   // 7. Create Prescriptions (MedicationRequests)
   if (consultation.prescriptions) {
-    for (const rx of consultation.prescriptions) {
+    for (const rx of consultation.prescriptions as any[]) {
       const medicationCode = findMedicationByName(rx.medication.name);
       const medicationCodeableConcept: any = {
         text: `${rx.medication.name}${rx.medication.strength ? ` ${rx.medication.strength}` : ''}`,
@@ -381,7 +381,7 @@ export async function saveConsultationToMedplum(
         ];
       }
 
-      await validateAndCreate<MedicationRequest>(client, withClinicIdentifiers({
+      await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'MedicationRequest',
         status: 'active',
         intent: 'order',
