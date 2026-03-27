@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { CLINIC_COOKIE, IS_ADMIN_COOKIE } from "@/lib/server/cookie-constants";
 
-const CLINIC_COOKIE = "medplum-clinic";
-const IS_ADMIN_COOKIE = "medplum-is-admin";
 const BASE_DOMAIN = process.env.NEXT_PUBLIC_BASE_DOMAIN || "";
 
 type SubdomainContext =

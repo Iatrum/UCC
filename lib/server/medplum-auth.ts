@@ -6,6 +6,7 @@
 import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
+import { SESSION_COOKIE } from '@/lib/server/cookie-constants';
 
 const MEDPLUM_BASE_URL = process.env.MEDPLUM_BASE_URL || 'http://localhost:8103';
 const MEDPLUM_CLIENT_ID = process.env.MEDPLUM_CLIENT_ID;
@@ -31,7 +32,7 @@ export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumCl
   // Fallback to cookie
   if (!accessToken) {
     const cookieStore = await cookies();
-    accessToken = cookieStore.get('medplum-session')?.value || null;
+    accessToken = cookieStore.get(SESSION_COOKIE)?.value || null;
   }
 
   if (!accessToken) {
