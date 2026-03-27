@@ -33,7 +33,8 @@ async function registerTestPatient(page: Page): Promise<string> {
     .getByLabel(/nric/i)
     .or(page.locator('input[placeholder*="NRIC"]'))
     .first();
-  await nricInput.fill(PATIENT_NRIC.replace(/-/g, ""));
+  // Keep dashes — form expects YYMMDD-SS-NNNN format
+  await nricInput.fill(PATIENT_NRIC);
 
   await page.getByLabel(/gender/i).click();
   await page.getByRole("option", { name: /female/i }).first().click();

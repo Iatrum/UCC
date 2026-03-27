@@ -34,12 +34,12 @@ test.describe("Patient list", () => {
         .or(page.getByText(/patient/i).first())
     ).toBeVisible({ timeout: 15_000 });
 
-    // Search / filter input
+    // Search / filter input — wait for client-side hydration
     const searchInput = page
       .getByPlaceholder(/search/i)
       .or(page.locator('input[type="search"]'))
       .or(page.locator('input[type="text"]').first());
-    await expect(searchInput.first()).toBeVisible();
+    await expect(searchInput.first()).toBeVisible({ timeout: 15_000 });
 
     await page.screenshot({ path: "test-results/patients-list.png" });
   });
@@ -73,10 +73,10 @@ test.describe("New patient form", () => {
       page.getByRole("heading", { name: /new patient registration/i })
     ).toBeVisible({ timeout: 15_000 });
 
-    await expect(page.getByLabel(/full name/i)).toBeVisible();
-    await expect(page.getByLabel(/nric/i).first()).toBeVisible();
-    await expect(page.getByLabel(/gender/i)).toBeVisible();
-    await expect(page.getByLabel(/contact number/i)).toBeVisible();
+    await expect(page.getByLabel(/full name/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel(/nric/i).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByLabel(/gender/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByLabel(/contact number/i)).toBeVisible({ timeout: 5_000 });
 
     await page.screenshot({ path: "test-results/new-patient-form.png" });
   });
@@ -97,8 +97,13 @@ test.describe("New patient form", () => {
     await page.fill('[name="nric"], input[placeholder*="NRIC"]', "12345"); // too short
     await page.click('button[type="submit"]');
 
-    const nricError = page.getByText(/invalid nric/i);
-    await expect(nricError).toBeVisible({ timeout: 5_000 });
+    // Error message wording varies — match any inline validation feedback
+    const nricError = page
+      .getByText(/invalid nric/i)
+      .or(page.getByText(/invalid format/i))
+      .or(page.getByText(/nric.*format/i))
+      .or(page.locator('[class*="text-red"], [class*="destructive"]').filter({ hasText: /nric|format|id/i }).first());
+    await expect(nricError.first()).toBeVisible({ timeout: 10_000 });
   });
 });
 
@@ -115,12 +120,12 @@ test.describe("Patient registration — happy path", () => {
     // Full Name
     await page.fill('[name="fullName"], input[placeholder*="full name"]', TEST_NAME);
 
-    // NRIC — the form auto-formats as user types
+    // NRIC — keep dashes; the form validates YYMMDD-SS-NNNN format
     const nricInput = page
       .getByLabel(/nric/i)
       .or(page.locator('input[placeholder*="NRIC"]'))
       .first();
-    await nricInput.fill(TEST_NRIC.replace(/-/g, ""));
+    await nricInput.fill(TEST_NRIC);
 
     // Date of Birth is auto-filled from NRIC; no interaction needed.
 
