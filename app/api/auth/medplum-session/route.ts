@@ -93,6 +93,7 @@ export async function GET() {
 
     return NextResponse.json({
       authenticated: true,
+      accessToken: sessionCookie.value,
       clinicId: clinicCookie?.value ?? null,
     });
   } catch (error: any) {

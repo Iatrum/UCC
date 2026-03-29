@@ -3,7 +3,7 @@
  * Uses Medplum client credentials to access all organisations.
  */
 import type { Organization } from "@medplum/fhirtypes";
-import { getMedplumClient } from "./patient-service";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 
 export interface ClinicSummary {
   id: string;
@@ -18,7 +18,7 @@ const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const ORG_LOGO_EXTENSION_URL = "https://ucc.emr/organization-logo-url";
 
 export async function getOrganizationsFromMedplum(): Promise<ClinicSummary[]> {
-  const medplum = await getMedplumClient();
+  const medplum = await getAdminMedplum();
   const bundle = await medplum.searchResources("Organization", { _count: "100" });
 
   return (bundle ?? []).map((org) => {
@@ -59,7 +59,7 @@ export async function saveOrganizationDetailsToMedplum(
   input: OrganizationInput,
   subdomain: string
 ): Promise<void> {
-  const medplum = await getMedplumClient();
+  const medplum = await getAdminMedplum();
 
   const org: Organization = {
     resourceType: "Organization",
@@ -80,7 +80,7 @@ export async function saveOrganizationDetailsToMedplum(
 }
 
 export async function getPractitionersFromMedplum(): Promise<PractitionerSummary[]> {
-  const medplum = await getMedplumClient();
+  const medplum = await getAdminMedplum();
   const practitioners = await medplum.searchResources("Practitioner", {
     _count: "200",
   });

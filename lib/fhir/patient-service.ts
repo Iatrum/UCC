@@ -50,11 +50,6 @@ export interface SavedPatient extends PatientData {
   queueAddedAt?: Date | string | null;
 }
 
-// Exported alias — used within this file AND by existing importers
-// (triage-service, admin-service, models.ts, etc.) so they all go through
-// the single process-level admin singleton in medplum-admin.ts.
-export const getMedplumClient = getAdminMedplum;
-
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
 type Extension = { url: string;[key: string]: any };
@@ -255,10 +250,10 @@ function buildTriageExtension(triageData: Omit<TriageData, 'triageAt' | 'isTriag
  */
 export async function savePatientToMedplum(
   patientData: PatientData,
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<string> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
 
   console.log(`💾 Saving patient to Medplum FHIR...`);
 
@@ -489,7 +484,7 @@ export async function getPatientFromMedplum(
   medplum?: MedplumClient
 ): Promise<SavedPatient | null> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum ?? (await getAdminMedplum());
 
     const fhirPatient = await client.readResource('Patient', patientId);
     if (!matchesClinic(fhirPatient, clinicId)) {
@@ -530,7 +525,8 @@ export async function saveTriageToMedplum(
   triageData: Omit<TriageData, 'triageAt' | 'isTriaged'> & { triageBy?: string },
   clinicId?: string
 ): Promise<void> {
-  const medplum = await getMedplumClient();
+  const { getAdminMedplum } = await import('@/lib/server/medplum-admin');
+  const medplum = await getAdminMedplum();
   const existingPatient = await medplum.readResource('Patient', patientId);
   if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
 
@@ -554,7 +550,8 @@ export async function saveTriageToMedplum(
  * Update only queue status on the triage extension
  */
 export async function updateQueueStatusInMedplum(patientId: string, status: QueueStatus | null, clinicId?: string): Promise<void> {
-  const medplum = await getMedplumClient();
+  const { getAdminMedplum } = await import('@/lib/server/medplum-admin');
+  const medplum = await getAdminMedplum();
   const existingPatient = await medplum.readResource('Patient', patientId);
   if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
   const extensions = existingPatient.extension || [];
@@ -608,11 +605,11 @@ export async function updateQueueStatusInMedplum(patientId: string, status: Queu
  */
 export async function searchPatientsInMedplum(
   query: string,
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum;
 
     const patients = await client.searchResources('Patient', {
       _query: query,
@@ -634,11 +631,11 @@ export async function searchPatientsInMedplum(
  */
 export async function getAllPatientsFromMedplum(
   limit = 100,
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum;
 
     const patients = await client.searchResources('Patient', {
       _count: String(limit),
@@ -661,10 +658,10 @@ export async function getAllPatientsFromMedplum(
 export async function updatePatientInMedplum(
   patientId: string,
   updates: Partial<PatientData>,
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<void> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
 
   const existingPatient = await client.readResource('Patient', patientId);
   if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);

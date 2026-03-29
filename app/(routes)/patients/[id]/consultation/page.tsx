@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
 import ConsultationForm from "./consultation-form";
 import { notFound } from "next/navigation";

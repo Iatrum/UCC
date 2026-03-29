@@ -1,5 +1,5 @@
 import { Consultation } from '@/lib/models'; // Import canonical types
-import { getMedplumClient } from '../fhir/patient-service';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { getConsultationFromMedplum, getPatientConsultationsFromMedplum } from '../fhir/consultation-service';
 
 // Removed local Prescription interface definition
@@ -53,7 +53,8 @@ export async function createConsultation(consultation: Omit<Consultation, 'id' |
 // Ensure other functions use the imported Consultation type
 export async function getConsultationsByPatient(patientId: string): Promise<Consultation[]> {
   try {
-    const consultations = await getPatientConsultationsFromMedplum(patientId);
+    const medplum = await getAdminMedplum();
+    const consultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
     return consultations as unknown as Consultation[];
   } catch (error) {
     console.error('Error fetching patient consultations:', error);
@@ -63,7 +64,8 @@ export async function getConsultationsByPatient(patientId: string): Promise<Cons
 
 export async function getConsultationById(id: string): Promise<Consultation | null> {
   try {
-    const consultation = await getConsultationFromMedplum(id);
+    const medplum = await getAdminMedplum();
+    const consultation = await getConsultationFromMedplum(id, undefined, medplum);
     return (consultation as unknown as Consultation) ?? null;
   } catch (error) {
     console.error('Error fetching consultation:', error);
@@ -74,7 +76,7 @@ export async function getConsultationById(id: string): Promise<Consultation | nu
 export async function updateConsultation(id: string, consultation: Partial<Consultation>): Promise<boolean> {
   try {
     if (consultation.notes) {
-      const medplum = await getMedplumClient();
+      const medplum = await getAdminMedplum();
       await medplum.createResource({
         resourceType: 'Observation',
         status: 'final',
@@ -93,7 +95,7 @@ export async function updateConsultation(id: string, consultation: Partial<Consu
 
 export async function deleteConsultation(id: string): Promise<boolean> {
   try {
-    const medplum = await getMedplumClient();
+    const medplum = await getAdminMedplum();
     await medplum.deleteResource('Encounter', id);
     return true;
   } catch (error) {

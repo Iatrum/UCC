@@ -12,6 +12,17 @@ export class AuthError extends Error {
 }
 
 /**
+ * Thrown when an authenticated user lacks the required permissions.
+ * Route handlers should catch this and return 403, not 500.
+ */
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
+/**
  * Maps a caught error to the correct HTTP response.
  *
  * - AuthError      → 401  (client should re-authenticate)
@@ -31,6 +42,14 @@ export function handleRouteError(
     return NextResponse.json(
       { error: 'Authentication required. Please log in.' },
       { status: 401 }
+    );
+  }
+
+  if (error instanceof ForbiddenError) {
+    console.warn(`${label} Forbidden:`, error.message);
+    return NextResponse.json(
+      { error: 'You do not have permission to perform this action.' },
+      { status: 403 }
     );
   }
 

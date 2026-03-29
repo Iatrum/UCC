@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import crypto from 'node:crypto';
 import { MedplumClient, type ProfileResource } from '@medplum/core';
-import { CLINIC_COOKIE, IS_ADMIN_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
+import { CLINIC_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
+import {
+  deriveSubdomainContext,
+  getHostFromHeaders,
+} from '@/lib/server/subdomain-host';
 import { env } from '@/lib/env';
 
 const MAX_AGE_SECONDS = 60 * 60 * 24;
@@ -11,11 +15,6 @@ const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 const MEDPLUM_BASE_URL = env.MEDPLUM_BASE_URL.replace(/\/$/, '');
 const MEDPLUM_CLIENT_ID = env.MEDPLUM_CLIENT_ID || process.env.NEXT_PUBLIC_MEDPLUM_CLIENT_ID || '';
 const MEDPLUM_PROJECT_ID = process.env.NEXT_PUBLIC_MEDPLUM_PROJECT_ID || '';
-
-type HostContext =
-  | { type: 'admin' }
-  | { type: 'clinic'; clinicId: string }
-  | { type: 'none' };
 
 type ClinicAssignment = {
   id: string;
@@ -31,38 +30,6 @@ class LoginRouteError extends Error {
     super(message);
     this.name = 'LoginRouteError';
   }
-}
-
-function deriveHostContext(host: string | null): HostContext {
-  if (!host) {
-    return { type: 'none' };
-  }
-
-  const bareHost = host.split(':')[0];
-  if (bareHost === 'localhost' || bareHost === '127.0.0.1') {
-    return { type: 'none' };
-  }
-
-  const parts = bareHost.split('.');
-  if (parts.length < 3) {
-    return { type: 'none' };
-  }
-
-  const [subdomain, ...rest] = parts;
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
-  if (baseDomain && rest.join('.') !== baseDomain) {
-    return { type: 'none' };
-  }
-
-  if (subdomain === 'admin') {
-    return { type: 'admin' };
-  }
-
-  if (['www', 'app', 'auth'].includes(subdomain)) {
-    return { type: 'none' };
-  }
-
-  return { type: 'clinic', clinicId: subdomain };
 }
 
 function createPkcePair(): { codeVerifier: string; codeChallenge: string } {
@@ -254,7 +221,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const hostContext = deriveHostContext(req.headers.get('host'));
+    const hostContext = deriveSubdomainContext(getHostFromHeaders(req.headers));
     const { codeVerifier, codeChallenge } = createPkcePair();
     const code = await startEmailPasswordLogin(
       String(email).trim().toLowerCase(),
@@ -337,7 +304,6 @@ export async function POST(req: NextRequest) {
         : MAX_AGE_SECONDS;
 
     setCookie(cookieStore, SESSION_COOKIE, tokenResult.accessToken, maxAge, true);
-    setCookie(cookieStore, IS_ADMIN_COOKIE, admin ? 'true' : 'false', maxAge, false);
 
     if (activeClinicId) {
       setCookie(cookieStore, CLINIC_COOKIE, activeClinicId, maxAge, false);
@@ -347,7 +313,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      accessToken: tokenResult.accessToken,
       isAdmin: admin,
       clinicId: activeClinicId,
       redirectUrl,

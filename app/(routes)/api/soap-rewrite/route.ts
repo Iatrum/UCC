@@ -45,11 +45,7 @@ export async function POST(req: NextRequest) {
     const completion = await createChatCompletion(messages, { model, temperature: 0.3, maxTokens: 1200 });
     const content = completion.choices?.[0]?.message?.content?.trim() || "";
 
-    // Log generated SOAP output to server terminal for debugging/inspection
-    try {
-      console.log("[soap-rewrite] model:", completion.model);
-      console.log("[soap-rewrite] note:\n" + (content || "<empty>"));
-    } catch {}
+    console.log("[soap-rewrite] model:", completion.model, "chars:", content.length);
 
     const finalNote = content && content.trim().length > 0 ? content : buildFallbackSoap(text);
 

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
 import { getPatients, getConsultationsByPatientId } from "@/lib/models";

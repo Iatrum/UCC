@@ -14,11 +14,10 @@ export const KLINIK_PUTERI_URL =
   process.env.CLINIC_URL || "https://klinikputeri.drhidayat.com";
 
 export const KLINIK_PUTERI_EMAIL =
-  process.env.KLINIK_PUTERI_EMAIL ||
-  "klinikputeri.1773494478187@drhidayat.com";
+  process.env.KLINIK_PUTERI_EMAIL || "";
 
 export const KLINIK_PUTERI_PASSWORD =
-  process.env.KLINIK_PUTERI_PASSWORD || "KlinikPuteri!2026";
+  process.env.KLINIK_PUTERI_PASSWORD || "";
 
 // All clinic users (for credential smoke tests)
 export const CLINIC_USERS = [

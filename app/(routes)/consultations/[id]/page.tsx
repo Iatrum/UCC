@@ -1,4 +1,5 @@
-import { cookies } from 'next/headers';
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -6,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
-import { CLINIC_COOKIE } from '@/lib/server/cookie-constants';
+import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -24,9 +25,7 @@ export default async function ConsultationDetails({ params }: Props) {
     redirect('/login');
   }
 
-  // Read clinic scope from cookie (set by middleware on subdomain visit)
-  const cookieStore = await cookies();
-  const clinicId = cookieStore.get(CLINIC_COOKIE)?.value ?? undefined;
+  const clinicId = await resolveClinicIdFromServerScope();
 
   const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
 

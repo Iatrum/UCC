@@ -17,7 +17,8 @@ import {
 } from "firebase/firestore";
 import { safeToISOString } from "./utils";
 import { QueueStatus, BillableConsultation, TriageData } from "./types";
-import { getAllPatientsFromMedplum, getPatientFromMedplum, getMedplumClient } from "./fhir/patient-service";
+import { getAllPatientsFromMedplum, getPatientFromMedplum } from "./fhir/patient-service";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
   getTriageQueueForToday,
   getTriageForPatient,
@@ -236,10 +237,11 @@ function serializeQueuePatient(patient: Patient): Patient {
 }
 
 export async function getPatients(): Promise<Patient[]> {
-  const patients = await getAllPatientsFromMedplum(300);
+  const medplum = await getAdminMedplum();
+  const patients = await getAllPatientsFromMedplum(300, undefined, medplum);
   const enriched = await Promise.all(
     patients.map(async (p) => {
-      const triage = await getTriageForPatient(p.id);
+      const triage = await getTriageForPatient(p.id, medplum);
       return {
         ...(p as any),
         triage: triage.triage,
@@ -252,9 +254,10 @@ export async function getPatients(): Promise<Patient[]> {
 }
 
 export async function getPatientById(id: string): Promise<Patient | null> {
+  const medplum = await getAdminMedplum();
   const [patient, triage] = await Promise.all([
-    getPatientFromMedplum(id),
-    getTriageForPatient(id),
+    getPatientFromMedplum(id, undefined, medplum),
+    getTriageForPatient(id, medplum),
   ]);
   if (!patient) return null;
   return {
@@ -268,7 +271,8 @@ export async function getPatientById(id: string): Promise<Patient | null> {
 export async function createPatient(data: Omit<Patient, "id" | "createdAt" | "updatedAt">): Promise<string> {
   // Use Medplum as ONLY source of truth
   const { savePatientToMedplum } = await import('@/lib/fhir/patient-service');
-  
+  const medplum = await getAdminMedplum();
+
   const patientData = {
     fullName: data.fullName,
     nric: data.nric,
@@ -281,9 +285,9 @@ export async function createPatient(data: Omit<Patient, "id" | "createdAt" | "up
     emergencyContact: data.emergencyContact,
     medicalHistory: data.medicalHistory,
   };
-  
+
   // Save directly to Medplum (source of truth)
-  const medplumId = await savePatientToMedplum(patientData);
+  const medplumId = await savePatientToMedplum(patientData, undefined, medplum);
   
   console.log(`✅ Patient created in Medplum: ${medplumId}`);
   return medplumId;
@@ -396,19 +400,22 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
 }
 
 export async function getConsultationsByPatientId(patientId: string): Promise<Consultation[]> {
-  const consultations = await getPatientConsultationsFromMedplum(patientId);
+  const medplum = await getAdminMedplum();
+  const consultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
   return consultations as unknown as Consultation[];
 }
 
 export async function getConsultationById(id: string): Promise<Consultation | null> {
-  const consultation = await getConsultationFromMedplum(id);
+  const medplum = await getAdminMedplum();
+  const consultation = await getConsultationFromMedplum(id, undefined, medplum);
   return (consultation as unknown as Consultation) ?? null;
 }
 
 export async function createConsultation(
   consultation: Omit<Consultation, "id" | "createdAt" | "updatedAt">
 ): Promise<string> {
-  const patient = await getPatientFromMedplum(consultation.patientId);
+  const medplum = await getAdminMedplum();
+  const patient = await getPatientFromMedplum(consultation.patientId, undefined, medplum);
   if (!patient) {
     throw new Error("Patient not found in Medplum");
   }
@@ -435,14 +442,16 @@ export async function createConsultation(
       gender: (patient as any).gender,
       phone: (patient as any).phone,
       address: (patient as any).address,
-    }
+    },
+    undefined,
+    medplum
   );
 
   return encounterId;
 }
 
 export async function updateConsultation(id: string, data: Partial<Consultation>): Promise<void> {
-  const medplum = await getMedplumClient();
+  const medplum = await getAdminMedplum();
 
   // For now, support updating notes/progress via an Observation amendment.
   if (data.notes) {
@@ -465,15 +474,18 @@ export async function getTodaysQueue(): Promise<Patient[]> {
 }
 
 export async function addPatientToQueue(patientId: string): Promise<void> {
-  await updateQueueStatusForPatient(patientId, "waiting");
+  const medplum = await getAdminMedplum();
+  await updateQueueStatusForPatient(patientId, "waiting", medplum);
 }
 
 export async function removePatientFromQueue(patientId: string): Promise<void> {
-  await updateQueueStatusForPatient(patientId, null);
+  const medplum = await getAdminMedplum();
+  await updateQueueStatusForPatient(patientId, null, medplum);
 }
 
 export async function updateQueueStatus(patientId: string, status: QueueStatus): Promise<void> {
-  await updateQueueStatusForPatient(patientId, status);
+  const medplum = await getAdminMedplum();
+  await updateQueueStatusForPatient(patientId, status, medplum);
 }
 
 export async function getConsultationsWithDetails(statuses: QueueStatus[]): Promise<BillableConsultation[]> {
@@ -483,7 +495,7 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
       return [];
     }
 
-    const medplum = await getMedplumClient();
+    const medplum = await getAdminMedplum();
     let encounters: any[] = [];
     let searchUrl: string | undefined;
 
@@ -529,12 +541,12 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
             return null;
           }
 
-          const consultation = await getConsultationFromMedplum(enc.id);
+          const consultation = await getConsultationFromMedplum(enc.id, undefined, medplum);
           if (!consultation) return null;
           const patientId = enc.subject?.reference?.replace('Patient/', '') || consultation.patientId;
           if (!patientId) return null;
 
-          const patient = await getPatientFromMedplum(patientId);
+          const patient = await getPatientFromMedplum(patientId, undefined, medplum);
 
           return {
             id: consultation.id,
@@ -642,18 +654,22 @@ export async function getAllPatientDocuments(): Promise<(PatientDocument & { pat
 
 // Triage Functions
 export async function triagePatient(patientId: string, triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>): Promise<void> {
-  await saveTriageEncounter(patientId, triageData);
+  const medplum = await getAdminMedplum();
+  await saveTriageEncounter(patientId, triageData, medplum);
 }
 
 export async function updateTriageData(patientId: string, triageData: Partial<TriageData>): Promise<void> {
-  await updateTriageEncounter(patientId, triageData);
+  const medplum = await getAdminMedplum();
+  await updateTriageEncounter(patientId, triageData, medplum);
 }
 
 export async function getTriagedPatientsQueue(): Promise<Patient[]> {
-  const patients = await getTriageQueueForToday();
+  const medplum = await getAdminMedplum();
+  const patients = await getTriageQueueForToday(200, medplum);
   return patients as unknown as Patient[];
 }
 
 export async function checkInPatient(patientId: string, chiefComplaint?: string): Promise<string> {
-  return checkInPatientInTriage(patientId, chiefComplaint);
+  const medplum = await getAdminMedplum();
+  return checkInPatientInTriage(patientId, chiefComplaint, medplum);
 }

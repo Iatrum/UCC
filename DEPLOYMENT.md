@@ -2,6 +2,21 @@
 
 This file is the operational source of truth for deploying and verifying UCC EMR.
 
+Related audit:
+
+- [`PRODUCTION_READINESS.md`](/Users/hidayat/Documents/Projects/UCC/PRODUCTION_READINESS.md)
+
+## Current Release Status
+
+- `bun run lint`: passes
+- `bun run build`: passes
+- Trust-boundary issue around middleware-set admin/clinic UI context cookies has been resolved in the repo
+- The main remaining release gap is documented end-to-end verification on staging
+
+Before calling the system production-ready, check:
+
+- [`PRODUCTION_READINESS.md`](/Users/hidayat/Documents/Projects/UCC/PRODUCTION_READINESS.md)
+
 ## Topology
 
 - Frontend: Next.js app
@@ -119,4 +134,3 @@ When deployment assumptions change, update both:
 - [`MEDPLUM_SELF_HOSTED_DETAILS.md`](/Users/hidayat/Documents/Projects/UCC/MEDPLUM_SELF_HOSTED_DETAILS.md)
 
 That keeps the code, infra assumptions, and operator workflow aligned.
-

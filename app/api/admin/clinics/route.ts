@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveOrganizationDetailsToMedplum } from "@/lib/fhir/admin-service";
+import { requirePlatformAdmin } from "@/lib/server/medplum-auth";
+import { handleRouteError } from "@/lib/server/route-helpers";
 
 /**
  * POST /api/admin/clinics
@@ -7,6 +9,7 @@ import { saveOrganizationDetailsToMedplum } from "@/lib/fhir/admin-service";
  */
 export async function POST(req: NextRequest) {
   try {
+    await requirePlatformAdmin(req);
     const { name, subdomain, phone, address, logoUrl } = await req.json();
 
     if (!name || !subdomain) {
@@ -30,11 +33,7 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json({ success: true, subdomain });
-  } catch (error: any) {
-    console.error("Failed to create clinic:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to create clinic" },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/admin/clinics');
   }
 }

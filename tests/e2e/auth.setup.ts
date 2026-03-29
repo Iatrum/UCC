@@ -80,9 +80,32 @@ setup("admin portal access", async ({ page }) => {
     await page.fill("#password", ADMIN_PASSWORD);
     await page.click('button[type="submit"]');
 
-    await page.waitForURL((url) => !url.pathname.includes("/login"), {
-      timeout: 20_000,
-    });
+    await page.waitForFunction(async () => {
+      const onNonLoginPage = !window.location.pathname.includes("/login");
+      if (onNonLoginPage) {
+        return true;
+      }
+
+      const hasAdminHeading = Boolean(
+        document.querySelector("h1, h2, [role='heading']")
+          ?.textContent
+          ?.match(/admin portal|ucc admin|overview/i)
+      );
+      if (hasAdminHeading) {
+        return true;
+      }
+
+      const hasSessionCookie = document.cookie.includes("medplum-session=");
+      const hasAdminCookie = document.cookie.includes("medplum-platform-admin=true");
+      return hasSessionCookie || hasAdminCookie;
+    }, { timeout: 20_000 });
+
+    await page.waitForTimeout(1000);
+
+    const storageState = await page.context().storageState();
+    if (!Array.isArray(storageState.cookies) || storageState.cookies.length === 0) {
+      throw new Error("Admin login did not persist any browser cookies");
+    }
 
     await page.context().storageState({ path: adminStatePath });
     console.log("✅ Admin auth state saved");

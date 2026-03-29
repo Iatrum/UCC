@@ -1,9 +1,10 @@
-import { cookies } from 'next/headers';
+export const dynamic = 'force-dynamic';
+
 import { notFound, redirect } from 'next/navigation';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
-import { CLINIC_COOKIE } from '@/lib/server/cookie-constants';
+import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import ConsultationForm from '@/app/(routes)/patients/[id]/consultation/consultation-form';
 import { safeToISOString } from '@/lib/utils';
 import type { SerializedPatient } from '@/components/patients/patient-card';
@@ -23,8 +24,7 @@ export default async function EditConsultationPage({ params }: Props) {
     redirect('/login');
   }
 
-  const cookieStore = await cookies();
-  const clinicId = cookieStore.get(CLINIC_COOKIE)?.value ?? undefined;
+  const clinicId = await resolveClinicIdFromServerScope();
 
   const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
   if (!consultation) {

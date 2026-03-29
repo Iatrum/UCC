@@ -54,13 +54,11 @@ export interface ImagingOrderRequest {
   orderedBy?: string;
 }
 
-const getMedplumClient = getAdminMedplum;
-
 /**
  * Create an imaging order (ServiceRequest)
  */
-export async function createImagingOrder(order: ImagingOrderRequest, medplum?: MedplumClient): Promise<string> {
-  const client = medplum ?? (await getMedplumClient());
+export async function createImagingOrder(order: ImagingOrderRequest, medplum: MedplumClient): Promise<string> {
+  const client = medplum;
   
   console.log(`🏥 Creating imaging order for patient ${order.patientId}`);
 
@@ -141,9 +139,9 @@ export async function createImagingOrder(order: ImagingOrderRequest, medplum?: M
 export async function receiveImagingStudy(
   serviceRequestId: string,
   studyData: ImagingStudyData,
-  medplum?: MedplumClient
+  medplum: MedplumClient
 ): Promise<string> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
   
   console.log(`📸 Receiving imaging study ${studyData.studyUid} for ServiceRequest ${serviceRequestId}`);
 
@@ -239,7 +237,7 @@ export async function createImagingReport(
   radiologist?: string,
   medplum?: MedplumClient
 ): Promise<string> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum ?? (await getAdminMedplum());
   
   console.log(`📝 Creating imaging report for study ${imagingStudyId}`);
 
@@ -304,8 +302,8 @@ export async function createImagingReport(
 /**
  * Get all imaging orders for a patient
  */
-export async function getPatientImagingOrders(patientId: string, medplum?: MedplumClient): Promise<ServiceRequest[]> {
-  const client = medplum ?? (await getMedplumClient());
+export async function getPatientImagingOrders(patientId: string, medplum: MedplumClient): Promise<ServiceRequest[]> {
+  const client = medplum;
   
   const orders = await client.searchResources('ServiceRequest', {
     subject: `Patient/${patientId}`,
@@ -319,8 +317,8 @@ export async function getPatientImagingOrders(patientId: string, medplum?: Medpl
 /**
  * Get all imaging studies for a patient
  */
-export async function getPatientImagingStudies(patientId: string, medplum?: MedplumClient): Promise<ImagingReportSummary[]> {
-  const client = medplum ?? (await getMedplumClient());
+export async function getPatientImagingStudies(patientId: string, medplum: MedplumClient): Promise<ImagingReportSummary[]> {
+  const client = medplum;
   
   const studies = await client.searchResources('ImagingStudy', {
     subject: `Patient/${patientId}`,
@@ -383,8 +381,8 @@ export async function getPatientImagingStudies(patientId: string, medplum?: Medp
 /**
  * Get imaging studies for an encounter
  */
-export async function getEncounterImagingStudies(encounterId: string, medplum?: MedplumClient): Promise<ImagingReportSummary[]> {
-  const client = medplum ?? (await getMedplumClient());
+export async function getEncounterImagingStudies(encounterId: string, medplum: MedplumClient): Promise<ImagingReportSummary[]> {
+  const client = medplum;
   
   const studies = await client.searchResources('ImagingStudy', {
     encounter: `Encounter/${encounterId}`,
@@ -446,9 +444,9 @@ export async function getEncounterImagingStudies(encounterId: string, medplum?: 
 /**
  * Get a specific imaging study
  */
-export async function getImagingStudy(studyId: string, medplum?: MedplumClient): Promise<ImagingReportSummary | null> {
+export async function getImagingStudy(studyId: string, medplum: MedplumClient): Promise<ImagingReportSummary | null> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum;
     
     const study = await client.readResource('ImagingStudy', studyId);
     
@@ -501,8 +499,6 @@ export async function getImagingStudy(studyId: string, medplum?: MedplumClient):
     return null;
   }
 }
-
-
 
 
 

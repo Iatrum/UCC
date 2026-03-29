@@ -48,12 +48,20 @@ test.describe("Admin portal", () => {
     ).toBeVisible();
 
     // Stats cards
-    await expect(page.getByText("Total Clinics")).toBeVisible();
-    await expect(page.getByText("Active Modules")).toBeVisible();
-    await expect(page.getByText("Platform")).toBeVisible();
+    await expect(
+      page.locator('[data-slot="card-title"]').filter({ hasText: /^Total Clinics$/ }).first()
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-slot="card-title"]').filter({ hasText: /^Active Modules$/ }).first()
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-slot="card-title"]').filter({ hasText: /^Platform$/ }).first()
+    ).toBeVisible();
 
     // Clinics list section
-    await expect(page.getByText("Clinics")).toBeVisible();
+    await expect(
+      page.locator('[data-slot="card-title"]').filter({ hasText: /^Clinics$/ }).first()
+    ).toBeVisible();
 
     await page.screenshot({ path: "test-results/admin-overview.png" });
   });
@@ -64,9 +72,7 @@ test.describe("Admin portal", () => {
     await page.goto("/admin", { waitUntil: "domcontentloaded" });
 
     // There should be at least one clinic on the seeded platform
-    const clinicCount = await page
-      .locator('[class*="divide-y"] > div')
-      .count();
+    const clinicCount = await page.getByRole("link", { name: "Manage" }).count();
     expect(clinicCount).toBeGreaterThan(0);
   });
 

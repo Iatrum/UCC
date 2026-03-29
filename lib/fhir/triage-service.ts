@@ -1,6 +1,7 @@
 import { TriageData, VitalSigns, QueueStatus } from '../types';
 import { MedplumClient } from '@medplum/core';
-import { getMedplumClient, getPatientFromMedplum, SavedPatient } from './patient-service';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
@@ -259,10 +260,10 @@ async function createVitalsObservations(
 export async function saveTriageEncounter(
   patientId: string,
   triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>,
-  medplum?: MedplumClient,
+  medplum: MedplumClient,
   clinicId?: string
 ): Promise<void> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
   const triageAtIso = new Date().toISOString();
   const queueStatus: QueueStatus = 'waiting';
 
@@ -299,7 +300,7 @@ export async function checkInPatientInTriage(
   medplum?: MedplumClient,
   clinicId?: string
 ): Promise<string> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum ?? (await getAdminMedplum());
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
   if (existing) {
     await updateQueueStatusForPatient(patientId, 'arrived', client, clinicId);
@@ -331,10 +332,10 @@ export async function checkInPatientInTriage(
 export async function updateTriageEncounter(
   patientId: string,
   triageData: Partial<TriageData>,
-  medplum?: MedplumClient,
+  medplum: MedplumClient,
   clinicId?: string
 ): Promise<void> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
@@ -370,7 +371,7 @@ export async function updateQueueStatusForPatient(
   medplum?: MedplumClient,
   clinicId?: string
 ): Promise<void> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum ?? (await getAdminMedplum());
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
@@ -443,10 +444,10 @@ export async function updateQueueStatusForPatient(
 
 export async function getActiveTriageEncounter(
   patientId: string,
-  medplum?: MedplumClient,
+  medplum: MedplumClient,
   clinicId?: string
 ): Promise<TriageSummary & { id: string } | null> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
   const encounters = await client.searchResources('Encounter', {
     subject: `Patient/${patientId}`,
     status: 'arrived,triaged,in-progress',
@@ -477,17 +478,18 @@ export async function getTriageForPatient(
   medplum?: MedplumClient,
   clinicId?: string
 ): Promise<TriageSummary> {
-  const existing = await getActiveTriageEncounter(patientId, medplum, clinicId);
+  const client = medplum ?? (await getAdminMedplum());
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
   if (!existing) return {};
   return existing;
 }
 
 export async function getTriageQueueForToday(
   limit = 200,
-  medplum?: MedplumClient,
+  medplum: MedplumClient,
   clinicId?: string
 ): Promise<SavedPatient[]> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);

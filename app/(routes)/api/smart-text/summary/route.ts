@@ -1,15 +1,18 @@
 import { NextRequest } from "next/server";
-import { getMedplumForRequest } from "@/lib/server/medplum-auth";
+import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { isRateLimited } from "@/lib/rate-limit";
-import { getConsultationsByPatientIdAdmin, getPatientByIdAdmin } from "@/lib/server/models";
+import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
+import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
 import { createChatCompletion, type ChatMessage } from "@/lib/server/openrouter";
 
 const DEFAULT_LIMIT = 5;
 
 export async function POST(req: NextRequest) {
   try {
+    let medplum: Awaited<ReturnType<typeof requireClinicAuth>>["medplum"];
+    let clinicId: string;
     try {
-      await getMedplumForRequest(req);
+      ({ medplum, clinicId } = await requireClinicAuth(req));
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
@@ -31,8 +34,8 @@ export async function POST(req: NextRequest) {
     }
 
     const [patient, consultations] = await Promise.all([
-      getPatientByIdAdmin(patientId),
-      getConsultationsByPatientIdAdmin(patientId),
+      getPatientFromMedplum(patientId, clinicId, medplum),
+      getPatientConsultationsFromMedplum(patientId, clinicId, medplum),
     ]);
 
     if (!patient) {
@@ -56,8 +59,7 @@ export async function POST(req: NextRequest) {
 
     const prompt = buildPrompt(patient, sorted);
 
-    console.log(`[smart-text summary] Prompt for patient ${patient.id}:`);
-    console.log(prompt);
+    console.log(`[smart-text summary] Building summary for patient ${patientId.slice(0, 8)}... (${sorted.length} consultations)`);
 
     const messages: ChatMessage[] = [
       {
@@ -79,16 +81,10 @@ export async function POST(req: NextRequest) {
       });
 
       const content = completion.choices?.[0]?.message?.content ?? "";
-      console.log(`[smart-text summary] AI raw result for patient ${patient.id}:`);
-      console.log(content || "<empty>");
-
       const summary = sanitizeBulletList(content);
 
-      console.log(`[smart-text summary] AI summary for patient ${patient.id}:`);
-      console.log(summary || "<empty>");
-
       if (summary.trim() === "- No summary available.") {
-        console.warn(`[smart-text summary] AI returned empty summary for patient ${patient.id}, using fallback.`);
+        console.warn(`[smart-text summary] AI returned empty summary for patient ${patientId.slice(0, 8)}..., using fallback.`);
         const fallback = buildFallbackSummary(patient, sorted);
         return new Response(
           JSON.stringify({

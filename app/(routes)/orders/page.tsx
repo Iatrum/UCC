@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { getConsultationsWithDetails } from "@/lib/models";
 import { QueueStatus } from '@/lib/types';
 import OrdersClient from "./orders-client";

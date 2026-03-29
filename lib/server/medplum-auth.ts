@@ -7,7 +7,7 @@ import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { SESSION_COOKIE } from '@/lib/server/cookie-constants';
-import { AuthError } from '@/lib/server/route-helpers';
+import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
 import { env } from '@/lib/env';
 // Re-export so callers can import getAdminMedplum from either file.
 export { getAdminMedplum } from './medplum-admin';
@@ -174,6 +174,18 @@ export function getProfileRole(profile: ProfileResource): string {
 /** Require authentication — throws AuthError if not authenticated. */
 export async function requireAuth(req?: NextRequest): Promise<MedplumClient> {
   return getMedplumForRequest(req);
+}
+
+/**
+ * Require platform admin — throws AuthError if not authenticated,
+ * ForbiddenError if authenticated but not a platform admin.
+ */
+export async function requirePlatformAdmin(req: NextRequest): Promise<MedplumClient> {
+  const medplum = await getMedplumForRequest(req);
+  if (!(await isPlatformAdmin(medplum))) {
+    throw new ForbiddenError('Platform admin access required.');
+  }
+  return medplum;
 }
 
 /**

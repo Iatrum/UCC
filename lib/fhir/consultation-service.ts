@@ -115,8 +115,6 @@ async function validateAndCreate(medplum: MedplumClient, resource: any) {
   return medplum.createResource(resource);
 }
 
-const getMedplumClient = getAdminMedplum;
-
 /**
  * Find or create a FHIR Patient by Firebase patient ID
  */
@@ -200,11 +198,11 @@ export async function saveConsultationToMedplum(
     phone?: string;
     address?: string;
   },
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<string> {
-  const client = medplum ?? (await getMedplumClient());
-  
+  const client = medplum;
+
   console.log(`💾 Saving consultation to Medplum (source of truth)...`);
 
   // 1. Verify patient exists in Medplum
@@ -423,7 +421,7 @@ export async function getConsultationFromMedplum(
   medplum?: MedplumClient
 ): Promise<SavedConsultation | null> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum ?? (await getAdminMedplum());
     
     // Get the encounter
     const encounter = await client.readResource('Encounter', encounterId);
@@ -441,19 +439,19 @@ export async function getConsultationFromMedplum(
 
     // Extract Firebase patient ID from encounter identifier
     const firebasePatientId = encounter.identifier?.find(
-      (id) => id.system === 'firebase-patient'
+      (id: { system?: string; value?: string }) => id.system === 'firebase-patient'
     )?.value || '';
 
     // Extract data
     const chiefComplaint = observations.find(
-      (obs) => (obs as any).code?.text === 'Chief Complaint'
+      (obs: Observation) => (obs as any).code?.text === 'Chief Complaint'
     );
     const clinicalNotes = observations.find(
-      (obs) => (obs as any).code?.text === 'Clinical Notes'
+      (obs: Observation) => (obs as any).code?.text === 'Clinical Notes'
     );
 
     const progressNote = observations.find(
-      (obs) => (obs as any).code?.text === 'Progress Note'
+      (obs: Observation) => (obs as any).code?.text === 'Progress Note'
     );
 
     return {
@@ -464,11 +462,11 @@ export async function getConsultationFromMedplum(
       diagnosis: conditions[0] ? ((conditions[0] as any).code?.text || '') : '',
       notes: (clinicalNotes as any)?.valueString,
       progressNote: (progressNote as any)?.valueString,
-      procedures: procedures.map((proc) => ({
+      procedures: procedures.map((proc: Procedure) => ({
         name: (proc as any).code?.text || 'Procedure',
         price: 0,
       })),
-      prescriptions: medications.map((med) => ({
+      prescriptions: medications.map((med: MedicationRequest) => ({
         medication: {
           id: med.id || '',
           name: (med as any).medicationCodeableConcept?.text || 'Medication',
@@ -495,7 +493,7 @@ export async function getPatientConsultationsFromMedplum(
   medplum?: MedplumClient
 ): Promise<SavedConsultation[]> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum ?? (await getAdminMedplum());
 
     // Find encounters scoped to clinic (if provided), then filter by patient identifier
     const searchParams: Record<string, string> = clinicId
@@ -515,11 +513,11 @@ export async function getPatientConsultationsFromMedplum(
     const consultations = await Promise.all(
       encounters
         .filter(
-          (enc) =>
+          (enc: Encounter) =>
             matchesClinic(enc as any, clinicId) &&
             (enc as any).identifier?.some((id: any) => id.system === 'firebase-patient' && id.value === firebasePatientId)
         )
-        .map((encounter) => getConsultationFromMedplum(encounter.id!, clinicId, client))
+        .map((encounter: Encounter) => getConsultationFromMedplum(encounter.id!, clinicId, client))
     );
 
     return consultations.filter((c): c is SavedConsultation => c !== null);
@@ -543,10 +541,10 @@ export async function getPatientConsultationsFromMedplum(
 export async function updateConsultationInMedplum(
   encounterId: string,
   updates: Partial<ConsultationData>,
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<void> {
-  const client = medplum ?? (await getMedplumClient());
+  const client = medplum;
 
   // 1. Verify encounter exists and belongs to this clinic
   let encounter: Encounter;
@@ -741,11 +739,11 @@ export async function updateConsultationInMedplum(
  */
 export async function getRecentConsultationsFromMedplum(
   limit = 10,
-  clinicId?: string,
-  medplum?: MedplumClient
+  clinicId: string | undefined,
+  medplum: MedplumClient
 ): Promise<SavedConsultation[]> {
   try {
-    const client = medplum ?? (await getMedplumClient());
+    const client = medplum;
     
     const encounters = await client.searchResources('Encounter', {
       _count: String(limit),

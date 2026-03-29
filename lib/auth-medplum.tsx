@@ -21,6 +21,23 @@ interface MedplumAuthContextType {
 
 const MedplumAuthContext = createContext<MedplumAuthContextType | null>(null);
 
+/** Align with lib/server/subdomain-host (host-derived; no cookie forgery for subdomain). */
+function clinicIdFromBrowserHostname(): string | null {
+  if (typeof window === 'undefined') return null;
+  const host = window.location.hostname;
+  const base = process.env.NEXT_PUBLIC_BASE_DOMAIN || '';
+  if (host.startsWith('localhost') || /^\d{1,3}(\.\d{1,3}){3}/.test(host)) {
+    return null;
+  }
+  const parts = host.split('.');
+  if (parts.length < 3) return null;
+  const [sub, ...rest] = parts;
+  if (base && rest.join('.') !== base) return null;
+  if (sub === 'admin') return null;
+  if (['www', 'app', 'auth'].includes(sub)) return null;
+  return sub;
+}
+
 export function MedplumAuthProvider({ children }: { children: React.ReactNode }) {
   const [medplum] = useState(() => new MedplumClient({
     baseUrl: MEDPLUM_BASE_URL,
@@ -81,12 +98,16 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
 
   // Restore session from MedplumClient internal storage on mount
   useEffect(() => {
-    // Read clinic from cookie (set by middleware)
-    const clinicCookie = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('medplum-clinic='))
-      ?.split('=')[1];
-    if (clinicCookie) setClinicIdState(decodeURIComponent(clinicCookie));
+    const fromHost = clinicIdFromBrowserHostname();
+    if (fromHost) {
+      setClinicIdState(fromHost);
+    } else {
+      const clinicCookie = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('medplum-clinic='))
+        ?.split('=')[1];
+      if (clinicCookie) setClinicIdState(decodeURIComponent(clinicCookie));
+    }
 
     // MedplumClient persists its own session via @medplum:* localStorage keys
     medplum.getProfileAsync()
@@ -121,7 +142,12 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
         throw new Error(`${payload?.code || 'AUTH_UNKNOWN'}: ${payload?.error || 'Login failed.'}`);
       }
 
-      const accessToken = payload?.accessToken;
+      // Retrieve the session token via the dedicated session endpoint rather
+      // than reading it from the login response body (avoids token exposure in
+      // response logs and proxies).
+      const sessionRes = await fetch('/api/auth/medplum-session', { credentials: 'include' });
+      const sessionPayload = sessionRes.ok ? await sessionRes.json().catch(() => ({})) : {};
+      const accessToken = sessionPayload?.accessToken;
       if (typeof accessToken !== 'string' || !accessToken) {
         throw new Error('AUTH_CONFIG: Login succeeded but no session was created.');
       }

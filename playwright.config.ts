@@ -1,4 +1,7 @@
+import { loadEnvConfig } from "@next/env";
 import { defineConfig, devices } from "@playwright/test";
+
+loadEnvConfig(process.cwd());
 
 // ---------------------------------------------------------------------------
 // URL resolution
@@ -19,8 +22,8 @@ const ADMIN_URL = isLocal
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  timeout: 60_000,
-  retries: process.env.CI ? 2 : 1,
+  timeout: 30_000,
+  retries: process.env.CI ? 2 : 0,
   reporter: [
     ["list"],
     ["html", { outputFolder: "playwright-report", open: "never" }],
@@ -34,13 +37,23 @@ export default defineConfig({
   },
 
   projects: [
-    // ── Auth setup (runs once before all workflow tests) ────────────────────
+    // ── Clinic auth setup ───────────────────────────────────────────────────
     {
-      name: "auth-setup",
-      testMatch: /auth\.setup\.ts/,
+      name: "clinic-auth-setup",
+      testMatch: /setup\/clinic-auth\.setup\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: CLINIC_URL,
+      },
+    },
+
+    // ── Admin auth setup ────────────────────────────────────────────────────
+    {
+      name: "admin-auth-setup",
+      testMatch: /setup\/admin-auth\.setup\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: ADMIN_URL,
       },
     },
 
@@ -61,7 +74,7 @@ export default defineConfig({
         baseURL: CLINIC_URL,
         storageState: "tests/e2e/.auth/clinic.json",
       },
-      dependencies: ["auth-setup"],
+      dependencies: ["clinic-auth-setup"],
     },
 
     // ── Admin portal tests ──────────────────────────────────────────────────
@@ -73,7 +86,7 @@ export default defineConfig({
         baseURL: ADMIN_URL,
         storageState: "tests/e2e/.auth/admin.json",
       },
-      dependencies: ["auth-setup"],
+      dependencies: ["admin-auth-setup"],
     },
 
     // ── Smoke tests (no auth required, run against any env) ─────────────────
