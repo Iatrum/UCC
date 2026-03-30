@@ -123,6 +123,7 @@ Note:
 | Spec | Result | Passed | Failed | Notes |
 |------|--------|--------|--------|-------|
 | admin.spec.ts | partial | 5 | 1 | "clinic list" test: `getByRole("link", { name: "Manage" })` returns 0 and fallback `getByText(/no clinics found/i)` also absent — selector mismatch vs live UI |
+| check-in.spec.ts | partial | 3 | 2 | (1) Search doesn't surface fresh test patient — known live issue; (2) `button[type="submit"]` strict-mode violation (2 "Register Patient" buttons on page) — ambiguous selector |
 
 ## Next Actions
 
