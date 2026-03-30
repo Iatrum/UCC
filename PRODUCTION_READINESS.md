@@ -15,6 +15,7 @@ Current assessment:
 
 - Build-ready
 - Not yet fully production-ready for a healthcare deployment
+- All 10 clinical E2E spec files now run locally (2026-03-30); 3 pass fully, 5 partial, 1 fail, 1 env-skipped — see Individual Spec Results below
 
 ## Launch Blockers
 
@@ -124,11 +125,29 @@ Note:
 |------|--------|--------|--------|-------|
 | admin.spec.ts | partial | 5 | 1 | "clinic list" test: `getByRole("link", { name: "Manage" })` returns 0 and fallback `getByText(/no clinics found/i)` also absent — selector mismatch vs live UI |
 | check-in.spec.ts | partial | 3 | 2 | (1) Search doesn't surface fresh test patient — known live issue; (2) `button[type="submit"]` strict-mode violation (2 "Register Patient" buttons on page) — ambiguous selector |
+| clinic-login.spec.ts | pass | 7 | 0 | All login, error toast, redirect, dashboard, check-in page, and session-reload tests pass |
+| consultation.spec.ts | fail | 0 | 3 | All tests fail: `/patients/{id}/consultation` returns 404 for fresh patients (known live issue); heading "new consultation" never found |
+| credential-check.spec.ts | partial | 2 | 0 (5 skipped) | Landing page + login page pass; 5 Medplum tests skipped — `MEDPLUM_UI_URL`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` not set locally (env guards, not failures; all 7 passed in CI run #12) |
+| emr-auth.spec.ts | pass | 7 | 0 | All auth/access-control tests pass: unauthenticated redirects, login page, API auth enforcement, export secret enforcement |
+| orders.spec.ts | pass | 6 | 0 | Billing & Documents page, search, Bill/MC modals, orders API auth all pass |
+| patients.spec.ts | partial | 6 | 1 | List, nav, form validation, NRIC validation all pass; "happy path creates patient" fails — no redirect to `/patients/{id}` after form submit (known live issue) |
+| queue.spec.ts | partial | 1 | 3 | Queue page renders pass; 3 workflow tests fail — cascade from live issues: triage 404 means patient never enters queue, consultation form never reachable |
+| triage.spec.ts | partial | 1 | 2 | Triage link on patient profile exists (pass); triage form itself 404s for fresh patients — heading "triage assessment" and vitals fields never load (known live issue) |
+| auth.setup.ts | n/a | — | — | Not a standalone runnable spec — no `testMatch` entry in `playwright.config.ts`; used only as a setup fixture via `tests/e2e/setup/` |
+
+**Summary (2026-03-30 local run against klinikputeri.drhidayat.com):**
+- 3 specs fully pass: `clinic-login`, `emr-auth`, `orders` (20 tests, 0 failures)
+- 4 specs partially pass: `admin`, `check-in`, `patients`, `queue`, `triage` (17 passed, 9 failed)
+- 1 spec fully fails: `consultation` (0/3 — live 404 root cause)
+- 1 spec env-skipped: `credential-check` (2/7 locally, 7/7 in CI with secrets)
+- **Root cause of most failures:** `/patients/{id}/triage` and `/patients/{id}/consultation` return 404 for freshly-created patients on the live `klinikputeri.drhidayat.com` deployment
 
 ## Next Actions
 
-1. Run the 11 clinical workflow E2E specs in CI and resolve any failures
-2. Fix the live `404` behavior on `/patients/{id}/triage` and `/patients/{id}/consultation`
-3. Debug why newly created patients are not discoverable from `/check-in` search immediately after creation
-4. Keep AI-route logging limited to metadata
-5. Move test defaults away from production-like domains
+1. **[Blocker]** Fix `/patients/{id}/triage` and `/patients/{id}/consultation` returning 404 for fresh patients — this causes `consultation`, `triage`, and `queue` spec failures
+2. **[Blocker]** Debug why newly created patients are not discoverable from `/check-in` search immediately after creation
+3. **[Blocker]** Fix patient registration happy-path: form submit does not redirect to `/patients/{id}` profile
+4. Fix admin "clinic list" selector: `getByRole("link", { name: "Manage" })` doesn't match live UI; also check if "no clinics found" fallback text is correct
+5. Fix `check-in.spec.ts` ambiguous `button[type="submit"]` selector (two "Register Patient" buttons on page)
+6. Keep AI-route logging limited to metadata
+7. Move test defaults away from production-like domains
