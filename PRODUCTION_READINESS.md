@@ -118,6 +118,12 @@ Note:
 - 2026-03-30: Targeted rerun of `tests/e2e/patients.spec.ts` finished at `6 passed, 1 failed`. The remaining patient failure exposed a stale test assumption: the old URL check incorrectly treated `/patients/new` as a successful patient-profile redirect. Fresh-patient create/profile landing is therefore still unproven and must remain a release blocker until verified against a real patient ID.
 - 2026-03-30: `credential-check.spec.ts` passed in GitHub Actions (Site & Credential Check run #12, 48s). Verified: landing page reachable, EMR staff login page accessible, Medplum self-hosted UI loads, Medplum admin login succeeds, all seeded clinic user logins succeed. Old "E2E verification missing entirely" blocker is now partially resolved — credential check is done, full clinical workflow E2E remains.
 
+## Individual Spec Results (2026-03-30)
+
+| Spec | Result | Passed | Failed | Notes |
+|------|--------|--------|--------|-------|
+| admin.spec.ts | partial | 5 | 1 | "clinic list" test: `getByRole("link", { name: "Manage" })` returns 0 and fallback `getByText(/no clinics found/i)` also absent — selector mismatch vs live UI |
+
 ## Next Actions
 
 1. Run the 11 clinical workflow E2E specs in CI and resolve any failures
