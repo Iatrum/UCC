@@ -15,7 +15,7 @@ Current assessment:
 
 - Build-ready
 - Not yet fully production-ready for a healthcare deployment
-- All 10 clinical E2E spec files now run locally (2026-03-30); 3 pass fully, 5 partial, 1 fail, 1 env-skipped — see Individual Spec Results below
+- All clinical E2E spec files now exist locally, including a dedicated referrals workflow spec added on 2026-03-31; stable hosted verification still depends on the clinic login fixture and live workflow behavior — see Verification Progress below
 
 ## Launch Blockers
 
@@ -24,7 +24,7 @@ Current assessment:
 Files:
 
 - `playwright.config.ts`
-- `tests/e2e/**` (11 spec files: admin, check-in, clinic-login, consultation, emr-auth, orders, patients, queue, triage)
+- `tests/e2e/**` (clinical workflow coverage now includes referrals alongside admin, check-in, clinic-login, consultation, emr-auth, orders, patients, queue, triage)
 - `tests/e2e/support/env.ts`
 
 Problem:
@@ -136,6 +136,10 @@ Note:
 - 2026-03-31: Repo verification commands rerun locally after the latest fixes:
   - `bun run lint` passed
   - `bun run build` passed
+- 2026-03-31: Added `tests/e2e/referrals.spec.ts` and wired it into the clinic Playwright project. The new spec covers referral-tab rendering, validation feedback, and a happy-path save with the `/api/referral-letter` step stubbed in-browser so the actual referral save can still exercise the deployed backend.
+- 2026-03-31: Targeted referral-spec runs against `klinikputeri.drhidayat.com` remain blocked by intermittent clinic login instability. On successful bootstrap attempts the deployed patient profile does show the `Referral / MC` tab, `Referral Letters`, and `No referrals yet.` state, but repeated runs still get stuck on `/login`, so referral workflow verification is not yet clean enough to count toward release sign-off.
+- 2026-03-31: Root cause identified for the login instability on the hosted clinic target. A direct browser reproduction showed successful `/api/auth/login` responses followed by browser-side `https://fhir.drhidayat.com/auth/me` requests being blocked by CORS from `https://klinikputeri.drhidayat.com`. The client auth provider was still depending on direct Medplum browser calls (`getProfileAsync()` / `auth/me`) to establish auth state after login.
+- 2026-03-31: Repo mitigation landed: `lib/auth-medplum.tsx` now restores and verifies auth state through same-origin `/api/auth/medplum-session` and `/api/auth/me` instead of direct browser Medplum profile calls, and `app/api/auth/me` now returns the raw profile plus admin status for the client. This removes the browser CORS dependency from the auth bootstrap path in the repo; hosted verification still requires deploy and rerun.
 
 ## Individual Spec Results (2026-03-30)
 
@@ -179,5 +183,7 @@ Note:
 2. **[Blocker]** Investigate hosted fresh-patient creation instability; later reruns still intermittently fail to leave `/patients/new` after submit
 3. Verify completed consultation queue state on the deployed environment after the `finished`-encounter read fix
 4. Fix admin "clinic list" selector: `getByRole("link", { name: "Manage" })` doesn't match live UI; also check if "no clinics found" fallback text is correct
-5. Keep AI-route logging limited to metadata
-6. Move test defaults away from production-like domains
+5. Deploy and rerun clinic login verification to confirm the auth-provider CORS mitigation resolves the hosted `/login` stickiness
+6. Stabilize `tests/e2e/setup/clinic-auth.setup.ts` after deploy and rerun the new referrals workflow spec
+7. Keep AI-route logging limited to metadata
+8. Move test defaults away from production-like domains

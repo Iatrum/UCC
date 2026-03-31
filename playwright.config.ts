@@ -68,6 +68,7 @@ export default defineConfig({
         "**/queue.spec.ts",
         "**/triage.spec.ts",
         "**/check-in.spec.ts",
+        "**/referrals.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

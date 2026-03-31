@@ -29,6 +29,9 @@ Related audit:
 - 2026-03-31 progress: later hosted reruns remained unstable and regressed on fresh-patient creation/search (`24 passed, 6 failed` in one rerun), so release sign-off still cannot rely on build success alone
 - 2026-03-31 progress: local verification commands were rerun after the latest changes and both passed:
   `bun run lint`, `bun run build`
+- 2026-03-31 progress: referral workflow coverage was added in `tests/e2e/referrals.spec.ts` and included in the clinic Playwright project
+- 2026-03-31 progress: targeted referral-spec verification against `klinikputeri.drhidayat.com` is currently blocked by intermittent clinic login/setup instability; when login succeeds, the deployed patient profile does expose the `Referral / MC` tab and empty referral state, but the run is not yet stable enough for release sign-off
+- 2026-03-31 progress: live root cause for the clinic login instability was identified. Browser reproduction showed `/api/auth/login` succeeding, but the client auth bootstrap still triggered direct browser requests to `https://fhir.drhidayat.com/auth/me`, and those were blocked by CORS from the clinic origin. Repo mitigation is now in place: client auth restore/sign-in has been shifted to same-origin `/api/auth/me` and `/api/auth/medplum-session` instead of browser-side Medplum profile fetches. This needs deploy + rerun before sign-off.
 
 Before calling the system production-ready, check:
 
@@ -128,6 +131,8 @@ Typical symptom:
    - Clinical workflow specs local reruns on 2026-03-31:
      - improved rerun reached `28 passed, 4 failed`
      - later rerun regressed to `24 passed, 6 failed` due hosted fresh-patient instability
+   - Referral workflow spec was added on 2026-03-31, but current hosted verification is still blocked by intermittent clinic login/setup instability
+   - Before sign-off, deploy the 2026-03-31 auth-provider mitigation and rerun clinic login / referral verification against the hosted clinic target
    - Do not sign off release until the remaining workflow blockers are resolved and the suite passes cleanly
 3. Confirm `MEDPLUM_BASE_URL` and `NEXT_PUBLIC_MEDPLUM_BASE_URL` point to the same intended Medplum instance
 4. Confirm `NEXT_PUBLIC_BASE_DOMAIN` matches real DNS

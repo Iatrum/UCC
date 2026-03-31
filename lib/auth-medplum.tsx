@@ -21,6 +21,12 @@ interface MedplumAuthContextType {
 
 const MedplumAuthContext = createContext<MedplumAuthContextType | null>(null);
 
+type AuthMeResponse = {
+  authenticated: boolean;
+  isAdmin: boolean;
+  profile: Resource | null;
+};
+
 /** Align with lib/server/subdomain-host (host-derived; no cookie forgery for subdomain). */
 function clinicIdFromBrowserHostname(): string | null {
   if (typeof window === 'undefined') return null;
@@ -52,6 +58,48 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [clinicId, setClinicIdState] = useState<string | null>(null);
+
+  const refreshAuthState = async (): Promise<AuthMeResponse> => {
+    const [sessionRes, authMeRes] = await Promise.all([
+      fetch('/api/auth/medplum-session', { credentials: 'include' }),
+      fetch('/api/auth/me', { credentials: 'include' }),
+    ]);
+
+    const sessionPayload = sessionRes.ok
+      ? await sessionRes.json().catch(() => ({}))
+      : {};
+
+    const accessToken = sessionPayload?.accessToken;
+    if (typeof accessToken === 'string' && accessToken) {
+      medplum.setAccessToken(accessToken);
+    }
+
+    if (typeof sessionPayload?.clinicId === 'string' || sessionPayload?.clinicId === null) {
+      setClinicIdState(sessionPayload?.clinicId ?? null);
+    }
+
+    if (!authMeRes.ok) {
+      setProfile(null);
+      setIsAdmin(false);
+      return { authenticated: false, isAdmin: false, profile: null };
+    }
+
+    const authMePayload = await authMeRes.json().catch(() => ({}));
+    const nextProfile =
+      authMePayload?.profile && typeof authMePayload.profile === 'object'
+        ? (authMePayload.profile as Resource)
+        : null;
+    const nextIsAdmin = authMePayload?.isAdmin === true;
+
+    setProfile(nextProfile);
+    setIsAdmin(nextIsAdmin);
+
+    return {
+      authenticated: nextProfile !== null,
+      isAdmin: nextIsAdmin,
+      profile: nextProfile,
+    };
+  };
 
   const persistClinicId = async (nextClinicId: string | null) => {
     setClinicIdState(nextClinicId);
@@ -109,19 +157,7 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       if (clinicCookie) setClinicIdState(decodeURIComponent(clinicCookie));
     }
 
-    // MedplumClient persists its own session via @medplum:* localStorage keys
-    medplum.getProfileAsync()
-      .then(async (p) => {
-        if (p) {
-          setProfile(p as Resource);
-          try {
-            const me = await medplum.get('auth/me');
-            setIsAdmin(me?.membership?.admin === true);
-          } catch {
-            setIsAdmin(false);
-          }
-        }
-      })
+    refreshAuthState()
       .catch(() => {
         setProfile(null);
         setIsAdmin(false);
@@ -142,31 +178,12 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
         throw new Error(`${payload?.code || 'AUTH_UNKNOWN'}: ${payload?.error || 'Login failed.'}`);
       }
 
-      // Retrieve the session token via the dedicated session endpoint rather
-      // than reading it from the login response body (avoids token exposure in
-      // response logs and proxies).
-      const sessionRes = await fetch('/api/auth/medplum-session', { credentials: 'include' });
-      const sessionPayload = sessionRes.ok ? await sessionRes.json().catch(() => ({})) : {};
-      const accessToken = sessionPayload?.accessToken;
-      if (typeof accessToken !== 'string' || !accessToken) {
+      const sessionState = await refreshAuthState();
+      if (!sessionState.authenticated) {
         throw new Error('AUTH_CONFIG: Login succeeded but no session was created.');
       }
 
-      medplum.setAccessToken(accessToken);
-
-      try {
-        const maybeProfile = await medplum.getProfileAsync();
-        if (maybeProfile) setProfile(maybeProfile as Resource);
-      } catch {
-        setProfile(null);
-      }
-
-      const adminStatus = payload?.isAdmin === true;
-      setIsAdmin(adminStatus);
-
-      if (typeof payload?.clinicId === 'string' || payload?.clinicId === null) {
-        setClinicIdState(payload.clinicId ?? null);
-      }
+      const adminStatus = payload?.isAdmin === true || sessionState.isAdmin === true;
 
       return { isAdmin: adminStatus };
     } catch (error: any) {
