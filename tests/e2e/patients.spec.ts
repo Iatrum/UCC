@@ -21,17 +21,25 @@ const TEST_NAME = `E2E Test Patient ${RUN_ID}`;
 const TEST_NRIC = `900101-01-${RUN_ID}`;
 const TEST_PHONE = `0123456${RUN_ID}`;
 
+async function selectGender(page: any, gender: "male" | "female") {
+  const trigger = page.getByRole("combobox").first();
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.click();
+  await page.keyboard.press("ArrowDown");
+  if (gender === "female") {
+    await page.keyboard.press("ArrowDown");
+  }
+  await page.keyboard.press("Enter");
+}
+
 // ── Patient list ─────────────────────────────────────────────────────────────
 
 test.describe("Patient list", () => {
   test("page loads and shows a search input", async ({ page }) => {
     await page.goto("/patients", { waitUntil: "domcontentloaded" });
 
-    // Heading or title
     await expect(
-      page
-        .getByRole("heading", { name: /patient/i })
-        .or(page.getByText(/patient/i).first())
+      page.getByRole("heading", { name: /^patients$/i })
     ).toBeVisible({ timeout: 15_000 });
 
     // Search / filter input — wait for client-side hydration
@@ -70,13 +78,13 @@ test.describe("New patient form", () => {
 
   test("shows the registration form with required fields", async ({ page }) => {
     await expect(
-      page.getByRole("heading", { name: /new patient registration/i })
+      page.getByText(/new patient registration/i).first()
     ).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByLabel(/full name/i)).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByLabel(/nric/i).first()).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByLabel(/gender/i)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByLabel(/contact number/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('input[name="nric"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole("combobox").first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByLabel(/contact number/i).first()).toBeVisible({ timeout: 5_000 });
 
     await page.screenshot({ path: "test-results/new-patient-form.png" });
   });
@@ -114,24 +122,20 @@ test.describe("Patient registration — happy path", () => {
     await page.goto("/patients/new", { waitUntil: "domcontentloaded" });
 
     await expect(
-      page.getByRole("heading", { name: /new patient registration/i })
+      page.getByText(/new patient registration/i).first()
     ).toBeVisible({ timeout: 15_000 });
 
     // Full Name
     await page.fill('[name="fullName"], input[placeholder*="full name"]', TEST_NAME);
 
     // NRIC — keep dashes; the form validates YYMMDD-SS-NNNN format
-    const nricInput = page
-      .getByLabel(/nric/i)
-      .or(page.locator('input[placeholder*="NRIC"]'))
-      .first();
+    const nricInput = page.locator('input[name="nric"]').first();
     await nricInput.fill(TEST_NRIC);
 
     // Date of Birth is auto-filled from NRIC; no interaction needed.
 
     // Gender (Shadcn Select — click trigger then option)
-    await page.getByLabel(/gender/i).click();
-    await page.getByRole("option", { name: /male/i }).first().click();
+    await selectGender(page, "male");
 
     // Contact number
     await page.fill(
@@ -145,11 +149,19 @@ test.describe("Patient registration — happy path", () => {
     await page.click('button[type="submit"]:not([type="button"])');
 
     // After save: redirect to /patients/{id}
-    await page.waitForURL(/\/patients\/[a-z0-9-]+$/, { timeout: 20_000 });
-    expect(page.url()).toMatch(/\/patients\/[a-z0-9-]+$/);
+    await page.waitForURL(
+      (url) => /\/patients\/[a-z0-9-]+$/.test(url.pathname) && !url.pathname.endsWith("/new"),
+      { timeout: 20_000 }
+    );
+    expect(page.url()).toMatch(/\/patients\/(?!new$)[a-z0-9-]+$/);
 
     // Patient profile should show the name we registered
-    await expect(page.getByText(TEST_NAME)).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole("heading", { name: new RegExp(TEST_NAME, "i") }).first()
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole("link", { name: /new consultation/i })
+    ).toBeVisible({ timeout: 10_000 });
 
     await page.screenshot({ path: "test-results/patient-profile.png" });
   });

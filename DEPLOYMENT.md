@@ -19,6 +19,16 @@ Related audit:
   `/patients/{id}/triage` and `/patients/{id}/consultation` returned `404` in the deployed clinic target for fresh patients, and `/check-in` search did not surface a newly created patient
 - 2026-03-30 progress: targeted patient-spec rerun finished at `6 passed, 1 failed`; the remaining failure showed the old happy-path assertion was falsely accepting `/patients/new` as if it were a saved patient profile route
 - 2026-03-30 progress: `credential-check.spec.ts` **passed in GitHub Actions** (Site & Credential Check run #12, 48s) — production endpoints, login pages, and all Medplum credentials confirmed reachable and valid in CI; 11 clinical workflow specs exist but have not yet run in CI
+- 2026-03-31 progress: clinic helper bug fixed across workflow specs; several tests had been incorrectly accepting `/patients/new` as a successful saved-patient route, which cascaded into false patient IDs and false 404s on triage/consultation pages
+- 2026-03-31 progress: fresh `bun run test:e2e:clinic` rerun after helper fixes finished at `24 passed, 8 failed`
+- 2026-03-31 progress: triage and consultation route availability is now proven by the suite; the remaining blockers are narrower:
+  `/check-in` search still does not surface fresh patients, triage submit is not progressing the queue flow as expected, and two failures are now strict-mode test assertions
+- 2026-03-31 progress: one transient clinic-auth setup timeout occurred during rerun, but an immediate focused rerun of `tests/e2e/setup/clinic-auth.setup.ts` passed in `6.3s`
+- 2026-03-31 progress: repo-side fixes were applied for clinic patient search and queue-status reads (`finished` encounters are now included when reading latest triage state)
+- 2026-03-31 progress: best clinic rerun after those fixes reached `28 passed, 4 failed`
+- 2026-03-31 progress: later hosted reruns remained unstable and regressed on fresh-patient creation/search (`24 passed, 6 failed` in one rerun), so release sign-off still cannot rely on build success alone
+- 2026-03-31 progress: local verification commands were rerun after the latest changes and both passed:
+  `bun run lint`, `bun run build`
 
 Before calling the system production-ready, check:
 
@@ -115,7 +125,10 @@ Typical symptom:
 1. Run `npm run validate-env`
 2. Run `npm run test:e2e`
    - Credential check (`credential-check.spec.ts`): **passed in CI 2026-03-30** (GitHub Actions run #12)
-   - Clinical workflow specs (11 files): not yet run in CI; do not sign off release until these pass
+   - Clinical workflow specs local reruns on 2026-03-31:
+     - improved rerun reached `28 passed, 4 failed`
+     - later rerun regressed to `24 passed, 6 failed` due hosted fresh-patient instability
+   - Do not sign off release until the remaining workflow blockers are resolved and the suite passes cleanly
 3. Confirm `MEDPLUM_BASE_URL` and `NEXT_PUBLIC_MEDPLUM_BASE_URL` point to the same intended Medplum instance
 4. Confirm `NEXT_PUBLIC_BASE_DOMAIN` matches real DNS
 5. Confirm `COOKIE_DOMAIN` matches the deployment strategy

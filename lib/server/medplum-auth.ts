@@ -48,6 +48,10 @@ export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumCl
     if (authHeader?.startsWith('Bearer ')) {
       accessToken = authHeader.substring(7);
     }
+
+    if (!accessToken) {
+      accessToken = req.cookies.get(SESSION_COOKIE)?.value || null;
+    }
   }
 
   if (!accessToken) {

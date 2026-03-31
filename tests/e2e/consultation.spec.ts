@@ -13,12 +13,23 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const CLINIC_URL =
-  process.env.EMR_CLINIC_URL || "https://apex-group.drhidayat.com";
+  process.env.EMR_CLINIC_URL || "https://klinikputeri.drhidayat.com";
 
 const RUN_ID = String(Date.now()).slice(-4).padStart(4, "0");
 const PATIENT_NAME = `E2E Consult Patient ${RUN_ID}`;
 const PATIENT_NRIC = `850615-07-${RUN_ID}`;
 const PATIENT_PHONE = `0197654${RUN_ID}`;
+
+async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
+  const trigger = page.getByRole("combobox").first();
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.click();
+  await page.keyboard.press("ArrowDown");
+  if (gender === "female") {
+    await page.keyboard.press("ArrowDown");
+  }
+  await page.keyboard.press("Enter");
+}
 
 /** Register a new test patient and return their profile URL. */
 async function registerTestPatient(page: Page): Promise<string> {
@@ -29,15 +40,11 @@ async function registerTestPatient(page: Page): Promise<string> {
     PATIENT_NAME
   );
 
-  const nricInput = page
-    .getByLabel(/nric/i)
-    .or(page.locator('input[placeholder*="NRIC"]'))
-    .first();
+  const nricInput = page.locator('input[name="nric"]').first();
   // Keep dashes — form expects YYMMDD-SS-NNNN format
   await nricInput.fill(PATIENT_NRIC);
 
-  await page.getByLabel(/gender/i).click();
-  await page.getByRole("option", { name: /female/i }).first().click();
+  await selectGender(page, "female");
 
   await page.fill(
     'input[placeholder*="contact number"], input[placeholder*="phone"]',
@@ -45,7 +52,10 @@ async function registerTestPatient(page: Page): Promise<string> {
   );
 
   await page.click('button[type="submit"]');
-  await page.waitForURL(/\/patients\/[a-z0-9-]+$/, { timeout: 20_000 });
+  await page.waitForURL(
+    (url) => /\/patients\/[a-z0-9-]+$/.test(url.pathname) && !url.pathname.endsWith("/new"),
+    { timeout: 20_000 }
+  );
 
   return page.url(); // e.g. https://apex-group.drhidayat.com/patients/abc123
 }
@@ -58,7 +68,7 @@ test.describe("Consultation form", () => {
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext({
-      storageState: "tests/e2e/.auth/clinic.json",
+      storageState: "tests/e2e/.auth/klinikputeri.json",
     });
     const page = await context.newPage();
     patientUrl = await registerTestPatient(page);
@@ -82,7 +92,9 @@ test.describe("Consultation form", () => {
       page.locator('textarea[placeholder*="Clinical notes"]')
     ).toBeVisible();
     await expect(
-      page.locator('input[placeholder*="Condition"]')
+      page.locator('input[placeholder*="Condition"]').or(
+        page.locator('input[placeholder*="diagnosis" i]')
+      )
     ).toBeVisible();
 
     // Submit button
@@ -102,10 +114,9 @@ test.describe("Consultation form", () => {
     await page.getByRole("button", { name: /sign order/i }).click();
 
     // Toast / error for missing chief complaint + diagnosis
-    const errorIndicator = page
-      .getByText(/chief complaint|diagnosis|required/i)
-      .or(page.locator('[role="alert"]').first());
-    await expect(errorIndicator).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByText(/please fill in chief complaint and diagnosis/i).first()
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("happy-path: fill and submit consultation → back to patient profile", async ({
@@ -127,7 +138,9 @@ test.describe("Consultation form", () => {
 
     // Fill Diagnosis
     await page
-      .locator('input[placeholder*="Condition"]')
+      .locator('input[placeholder*="Condition"]').or(
+        page.locator('input[placeholder*="diagnosis" i]')
+      ).first()
       .fill("Tension-type headache (E2E)");
 
     await page.screenshot({ path: "test-results/consultation-filled.png" });
@@ -144,7 +157,9 @@ test.describe("Consultation form", () => {
     );
 
     // Back on the patient profile
-    await expect(page.getByText(PATIENT_NAME)).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole("heading", { name: new RegExp(PATIENT_NAME, "i") })
+    ).toBeVisible({ timeout: 10_000 });
 
     await page.screenshot({ path: "test-results/consultation-saved.png" });
   });

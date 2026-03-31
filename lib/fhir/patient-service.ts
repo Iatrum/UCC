@@ -511,8 +511,12 @@ export async function getPatientFromMedplum(
     patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
 
     return patientData;
-  } catch (error) {
-    console.error('Failed to get patient from Medplum:', error);
+  } catch (error: any) {
+    const status = error?.status ?? error?.statusCode;
+    console.error(
+      `Failed to get patient from Medplum (patientId=${patientId}, status=${status}):`,
+      error?.message ?? error
+    );
     return null;
   }
 }
@@ -609,17 +613,28 @@ export async function searchPatientsInMedplum(
   medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {
-    const client = medplum;
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) {
+      return [];
+    }
 
-    const patients = await client.searchResources('Patient', {
-      _query: query,
-      _count: '50',
-      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`, organization: `Organization/${clinicId}` } : {}),
-    });
+    // Medplum free-text `_query` matching has been unreliable for freshly-created
+    // patients in this app's clinic-scoped flows. Pull the clinic-scoped patient set
+    // and apply local matching so NRIC / name / phone searches behave deterministically.
+    const patients = await getAllPatientsFromMedplum(300, clinicId, medplum);
 
     return patients
-      .filter((patient) => matchesClinic(patient as any, clinicId))
-      .map(fhirPatientToPatientData);
+      .filter((patient) => {
+        const fullName = patient.fullName?.toLowerCase() ?? '';
+        const nric = patient.nric?.toLowerCase() ?? '';
+        const phone = patient.phone?.toLowerCase() ?? '';
+        return (
+          fullName.includes(trimmed) ||
+          nric.includes(trimmed) ||
+          phone.includes(trimmed)
+        );
+      })
+      .slice(0, 50);
   } catch (error) {
     console.error('Failed to search patients in Medplum:', error);
     return [];

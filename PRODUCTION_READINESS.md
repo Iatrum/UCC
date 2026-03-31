@@ -1,6 +1,6 @@
 # Production Readiness
 
-Last updated: 2026-03-30
+Last updated: 2026-03-31
 
 ## Status
 
@@ -95,8 +95,8 @@ Note:
 
 ## Last Verified Checks
 
-- `bun run lint` — passed 2026-03-30
-- `bun run build` — passed 2026-03-30
+- `bun run lint` — passed 2026-03-31
+- `bun run build` — passed 2026-03-31
 - `credential-check.spec.ts` E2E — passed 2026-03-30 in GitHub Actions (run #12, 48s)
   - `drhidayat.com` landing page loads (status < 400, title matches UCC EMR)
   - EMR staff login page accessible (`https://apex-group.drhidayat.com/login`, email/password fields visible)
@@ -118,6 +118,24 @@ Note:
 - 2026-03-30: `/patients/new` is deployed and rendering, but the title is not exposed as a semantic heading in the live DOM; remaining patient-form title assertions are test-contract cleanup, not evidence that the page is missing.
 - 2026-03-30: Targeted rerun of `tests/e2e/patients.spec.ts` finished at `6 passed, 1 failed`. The remaining patient failure exposed a stale test assumption: the old URL check incorrectly treated `/patients/new` as a successful patient-profile redirect. Fresh-patient create/profile landing is therefore still unproven and must remain a release blocker until verified against a real patient ID.
 - 2026-03-30: `credential-check.spec.ts` passed in GitHub Actions (Site & Credential Check run #12, 48s). Verified: landing page reachable, EMR staff login page accessible, Medplum self-hosted UI loads, Medplum admin login succeeds, all seeded clinic user logins succeed. Old "E2E verification missing entirely" blocker is now partially resolved — credential check is done, full clinical workflow E2E remains.
+- 2026-03-31: Fixed the shared clinic E2E helper bug where multiple specs accepted `/patients/new` as if it were a real saved patient profile route. This was generating fake patient IDs such as `new` and cascading into false 404s on follow-on pages.
+- 2026-03-31: Full `bun run test:e2e:clinic` rerun after helper fixes finished at `24 passed, 8 failed`.
+- 2026-03-31: Previously reported route-level 404 blockers are no longer reproduced in the suite. `consultation page renders correctly`, `consultation happy-path`, `triage page is reachable`, and `triage form loads with vitals fields` now pass.
+- 2026-03-31: One transient clinic auth setup timeout occurred during rerun, but an immediate focused rerun of `tests/e2e/setup/clinic-auth.setup.ts` passed in `6.3s`, so this is not currently treated as a persistent blocker.
+- 2026-03-31: Remaining failures are now concentrated in workflow behavior and assertion cleanup:
+  - `/check-in` still does not find a freshly created patient by NRIC
+  - triage submit does not complete the queue workflow in a way the tests can observe
+  - queue workflow tests still time out waiting for patients to appear in queue / progress to consultation
+  - two remaining failures are strict-mode assertion issues in `consultation.spec.ts` and `patients.spec.ts`, not route-availability failures
+- 2026-03-31: Additional repo fixes landed:
+  - clinic-scoped patient search now falls back to deterministic local filtering by `fullName` / `nric` / `phone` in `lib/fhir/patient-service.ts`
+  - queue/triage specs were aligned to patient-specific triage links and less brittle post-submit state checks
+  - queue-status read path now includes `finished` encounters in `lib/fhir/triage-service.ts`, so `meds_and_bills` / completed states can still be read back from the latest encounter
+- 2026-03-31: Best full clinic rerun after those fixes reached `28 passed, 4 failed`.
+- 2026-03-31: Follow-up reruns remained unstable on the hosted target and regressed back to fresh-patient creation/search timeouts (`24 passed, 6 failed` in one later rerun). This suggests the remaining issue is not just test drift but live-environment instability around freshly-created patients.
+- 2026-03-31: Repo verification commands rerun locally after the latest fixes:
+  - `bun run lint` passed
+  - `bun run build` passed
 
 ## Individual Spec Results (2026-03-30)
 
@@ -142,12 +160,24 @@ Note:
 - 1 spec env-skipped: `credential-check` (2/7 locally, 7/7 in CI with secrets)
 - **Root cause of most failures:** `/patients/{id}/triage` and `/patients/{id}/consultation` return 404 for freshly-created patients on the live `klinikputeri.drhidayat.com` deployment
 
+**Summary (2026-03-31 local rerun against klinikputeri.drhidayat.com):**
+- `24 passed, 8 failed`
+- major improvement from the 2026-03-30 rerun (`20 passed, 12 failed`)
+- triage and consultation route availability is now proven in the E2E suite
+- remaining blockers are patient discoverability in `/check-in`, queue progression after triage submit, and two strict-mode test assertions
+
+**Best subsequent result (2026-03-31 after more fixes):**
+- `28 passed, 4 failed`
+- strict-mode failures were removed
+- queue navigation improved and consultation/triage path coverage held
+- persistent live blocker remained: fresh-patient discoverability in `/check-in`
+- later reruns still showed hosted-environment instability on fresh patient creation/search, so production readiness is still not proven
+
 ## Next Actions
 
-1. **[Blocker]** Fix `/patients/{id}/triage` and `/patients/{id}/consultation` returning 404 for fresh patients — this causes `consultation`, `triage`, and `queue` spec failures
-2. **[Blocker]** Debug why newly created patients are not discoverable from `/check-in` search immediately after creation
-3. **[Blocker]** Fix patient registration happy-path: form submit does not redirect to `/patients/{id}` profile
+1. **[Blocker]** Deploy and verify the repo-side patient search fix; live `/check-in` still does not reliably find freshly-created patients by NRIC/name
+2. **[Blocker]** Investigate hosted fresh-patient creation instability; later reruns still intermittently fail to leave `/patients/new` after submit
+3. Verify completed consultation queue state on the deployed environment after the `finished`-encounter read fix
 4. Fix admin "clinic list" selector: `getByRole("link", { name: "Manage" })` doesn't match live UI; also check if "no clinics found" fallback text is correct
-5. Fix `check-in.spec.ts` ambiguous `button[type="submit"]` selector (two "Register Patient" buttons on page)
-6. Keep AI-route logging limited to metadata
-7. Move test defaults away from production-like domains
+5. Keep AI-route logging limited to metadata
+6. Move test defaults away from production-like domains

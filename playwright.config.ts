@@ -14,7 +14,7 @@ const isLocal = process.env.PLAYWRIGHT_ENV === "local" || !process.env.EMR_CLINI
 
 const CLINIC_URL = isLocal
   ? "http://localhost:3000"
-  : process.env.EMR_CLINIC_URL || "https://apex-group.drhidayat.com";
+  : process.env.EMR_CLINIC_URL || "https://klinikputeri.drhidayat.com";
 
 const ADMIN_URL = isLocal
   ? "http://localhost:3000"
@@ -72,7 +72,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         baseURL: CLINIC_URL,
-        storageState: "tests/e2e/.auth/clinic.json",
+        storageState: "tests/e2e/.auth/klinikputeri.json",
       },
       dependencies: ["clinic-auth-setup"],
     },

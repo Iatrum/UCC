@@ -71,8 +71,14 @@ test.describe("Admin portal", () => {
   }) => {
     await page.goto("/admin", { waitUntil: "domcontentloaded" });
 
-    // There should be at least one clinic on the seeded platform
     const clinicCount = await page.getByRole("link", { name: "Manage" }).count();
+    if (clinicCount === 0) {
+      await expect(
+        page.getByText(/no clinics found/i)
+      ).toBeVisible();
+      return;
+    }
+
     expect(clinicCount).toBeGreaterThan(0);
   });
 

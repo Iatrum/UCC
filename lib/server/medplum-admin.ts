@@ -35,10 +35,16 @@ export async function getAdminMedplum(): Promise<MedplumClient> {
 
   _adminClientPromise = (async () => {
     const medplum = new MedplumClient({ baseUrl, clientId, clientSecret });
-    await medplum.startClientLogin(clientId, clientSecret);
-    console.log('✅ Connected to Medplum');
-    _adminClient = medplum;
-    return medplum;
+    try {
+      await medplum.startClientLogin(clientId, clientSecret);
+      console.log('✅ Connected to Medplum');
+      _adminClient = medplum;
+      return medplum;
+    } catch (err) {
+      // Reset so the next request can retry instead of using a poisoned promise
+      _adminClientPromise = undefined;
+      throw err;
+    }
   })();
 
   return _adminClientPromise;

@@ -16,60 +16,33 @@ type Props = {
 }
 
 export default async function ConsultationPage({ params, searchParams }: Props) {
-  // Await params
   const resolvedParams = await params;
-  const [patientBase, triageData] = await Promise.all([
+
+  const [patient, triageData] = await Promise.all([
     getPatientFromMedplum(resolvedParams.id),
     getTriageForPatient(resolvedParams.id),
   ]);
-  let patient = patientBase;
 
   if (!patient) {
-    const medplumPatient = await getPatientFromMedplum(resolvedParams.id);
-    if (!medplumPatient) {
-      notFound();
-    }
-    patient = {
-      id: medplumPatient.id,
-      fullName: medplumPatient.fullName,
-      nric: medplumPatient.nric,
-      dateOfBirth: medplumPatient.dateOfBirth,
-      gender: medplumPatient.gender,
-      email: medplumPatient.email ?? "",
-      phone: medplumPatient.phone,
-      address: medplumPatient.address,
-      postalCode: medplumPatient.postalCode ?? "",
-      emergencyContact: medplumPatient.emergencyContact ?? { name: "", relationship: "", phone: "" },
-      medicalHistory: medplumPatient.medicalHistory ?? { allergies: [], conditions: [], medications: [] },
-      createdAt: medplumPatient.createdAt ?? new Date(),
-      updatedAt: medplumPatient.updatedAt ?? new Date(),
-      queueStatus: triageData.queueStatus ?? null,
-      queueAddedAt: triageData.queueAddedAt ?? null,
-      triage: triageData.triage,
-      lastVisit: (medplumPatient as any).lastVisit,
-      upcomingAppointment: (medplumPatient as any).upcomingAppointment,
-    } as any;
+    notFound();
   }
-  patient = {
+
+  const patientWithTriage = {
     ...patient,
     queueStatus: triageData.queueStatus ?? null,
     queueAddedAt: triageData.queueAddedAt ?? null,
     triage: triageData.triage,
   } as any;
 
-  if (!patient) {
-    notFound();
-  }
-
   // Serialize patient for client component
   const initialPatient: SerializedPatient = {
-    ...patient,
-    dateOfBirth: safeToISOString(patient.dateOfBirth),
-    lastVisit: safeToISOString(patient.lastVisit),
-    upcomingAppointment: safeToISOString((patient as any).upcomingAppointment),
-    createdAt: safeToISOString(patient.createdAt),
-    updatedAt: safeToISOString(patient.updatedAt),
-    queueAddedAt: safeToISOString(patient.queueAddedAt),
+    ...patientWithTriage,
+    dateOfBirth: safeToISOString(patientWithTriage.dateOfBirth),
+    lastVisit: safeToISOString(patientWithTriage.lastVisit),
+    upcomingAppointment: safeToISOString((patientWithTriage as any).upcomingAppointment),
+    createdAt: safeToISOString(patientWithTriage.createdAt),
+    updatedAt: safeToISOString(patientWithTriage.updatedAt),
+    queueAddedAt: safeToISOString(patientWithTriage.queueAddedAt),
   };
 
   return (

@@ -450,7 +450,7 @@ export async function getActiveTriageEncounter(
   const client = medplum;
   const encounters = await client.searchResources('Encounter', {
     subject: `Patient/${patientId}`,
-    status: 'arrived,triaged,in-progress',
+    status: 'arrived,triaged,in-progress,finished',
     _count: '1',
     _sort: '-_lastUpdated',
     ...(clinicId ? { 'service-provider': `Organization/${clinicId}` } : {}),
