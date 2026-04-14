@@ -36,19 +36,80 @@ interface TriageSummary {
   triage?: TriageData;
   queueStatus?: QueueStatus | null;
   queueAddedAt?: string | null;
+  visitIntent?: string;
+  payerType?: string;
+  billingPerson?: string;
+  dependentName?: string;
+  dependentRelationship?: string;
+  dependentPhone?: string;
+  assignedClinician?: string;
+  registrationSource?: string;
+  registrationAt?: string;
+  performedBy?: string;
   encounterId?: string;
 }
 
-const VITAL_CODES: Record<keyof VitalSigns, { code: string; system: string; display: string; unit?: string }> = {
-  bloodPressureSystolic: { code: '8480-6', system: 'http://loinc.org', display: 'Systolic blood pressure' },
-  bloodPressureDiastolic: { code: '8462-4', system: 'http://loinc.org', display: 'Diastolic blood pressure' },
-  heartRate: { code: '8867-4', system: 'http://loinc.org', display: 'Heart rate' },
-  respiratoryRate: { code: '9279-1', system: 'http://loinc.org', display: 'Respiratory rate' },
-  temperature: { code: '8310-5', system: 'http://loinc.org', display: 'Body temperature', unit: 'Cel' },
-  oxygenSaturation: { code: '59408-5', system: 'http://loinc.org', display: 'Oxygen saturation' },
+const VITAL_CODES: Record<
+  keyof VitalSigns,
+  { code: string; system: string; display: string; unit?: string; quantityCode?: string }
+> = {
+  bloodPressureSystolic: {
+    code: '8480-6',
+    system: 'http://loinc.org',
+    display: 'Systolic blood pressure',
+    unit: 'mmHg',
+    quantityCode: 'mm[Hg]',
+  },
+  bloodPressureDiastolic: {
+    code: '8462-4',
+    system: 'http://loinc.org',
+    display: 'Diastolic blood pressure',
+    unit: 'mmHg',
+    quantityCode: 'mm[Hg]',
+  },
+  heartRate: {
+    code: '8867-4',
+    system: 'http://loinc.org',
+    display: 'Heart rate',
+    unit: 'beats/minute',
+    quantityCode: '/min',
+  },
+  respiratoryRate: {
+    code: '9279-1',
+    system: 'http://loinc.org',
+    display: 'Respiratory rate',
+    unit: 'breaths/minute',
+    quantityCode: '/min',
+  },
+  temperature: {
+    code: '8310-5',
+    system: 'http://loinc.org',
+    display: 'Body temperature',
+    unit: 'C',
+    quantityCode: 'Cel',
+  },
+  oxygenSaturation: {
+    code: '59408-5',
+    system: 'http://loinc.org',
+    display: 'Oxygen saturation',
+    unit: '%',
+    quantityCode: '%',
+  },
   painScore: { code: '72514-3', system: 'http://loinc.org', display: 'Pain severity - 0-10 verbal numeric rating' },
-  weight: { code: '29463-7', system: 'http://loinc.org', display: 'Body weight' },
-  height: { code: '8302-2', system: 'http://loinc.org', display: 'Body height' },
+  weight: {
+    code: '29463-7',
+    system: 'http://loinc.org',
+    display: 'Body weight',
+    unit: 'kg',
+    quantityCode: 'kg',
+  },
+  height: {
+    code: '8302-2',
+    system: 'http://loinc.org',
+    display: 'Body height',
+    unit: 'cm',
+    quantityCode: 'cm',
+  },
 };
 
 function queueStatusFromEncounter(encounterStatus?: string): QueueStatus {
@@ -141,6 +202,32 @@ function buildQueueOnlyExtension(queueStatus: QueueStatus, queueAddedAtIso: stri
   };
 }
 
+function buildCheckInMetadataExtension(
+  visitIntent?: string,
+  payerType?: string,
+  assignedClinician?: string,
+  billingPerson?: string,
+  dependentName?: string,
+  dependentRelationship?: string,
+  dependentPhone?: string,
+  registrationSource?: string,
+  registrationAt?: string,
+  performedBy?: string
+): Extension[] {
+  const entries: Extension[] = [];
+  if (visitIntent) entries.push({ url: 'visitIntent', valueString: visitIntent });
+  if (payerType) entries.push({ url: 'payerType', valueString: payerType });
+  if (assignedClinician) entries.push({ url: 'assignedClinician', valueString: assignedClinician });
+  if (billingPerson) entries.push({ url: 'billingPerson', valueString: billingPerson });
+  if (dependentName) entries.push({ url: 'dependentName', valueString: dependentName });
+  if (dependentRelationship) entries.push({ url: 'dependentRelationship', valueString: dependentRelationship });
+  if (dependentPhone) entries.push({ url: 'dependentPhone', valueString: dependentPhone });
+  if (registrationSource) entries.push({ url: 'registrationSource', valueString: registrationSource });
+  if (registrationAt) entries.push({ url: 'registrationAt', valueDateTime: registrationAt });
+  if (performedBy) entries.push({ url: 'performedBy', valueString: performedBy });
+  return entries;
+}
+
 function validateAndCreate<T extends { resourceType: string }>(medplum: any, resource: T) {
   const validation = validateFhirResource(resource);
   logValidation(resource.resourceType, validation);
@@ -198,6 +285,16 @@ function parseTriageExtension(extensions?: Extension[]): TriageSummary {
     triage,
     queueStatus,
     queueAddedAt,
+    visitIntent: getSub('visitIntent')?.valueString,
+    payerType: getSub('payerType')?.valueString,
+    billingPerson: getSub('billingPerson')?.valueString,
+    dependentName: getSub('dependentName')?.valueString,
+    dependentRelationship: getSub('dependentRelationship')?.valueString,
+    dependentPhone: getSub('dependentPhone')?.valueString,
+    assignedClinician: getSub('assignedClinician')?.valueString,
+    registrationSource: getSub('registrationSource')?.valueString,
+    registrationAt: getSub('registrationAt')?.valueDateTime,
+    performedBy: getSub('performedBy')?.valueString,
   };
 }
 
@@ -232,10 +329,14 @@ async function createVitalsObservations(
     const value = vitals[key];
     if (typeof value !== 'number') return;
     const codeInfo = VITAL_CODES[key];
-    const valueQuantity =
-      key === 'temperature' || key === 'weight' || key === 'height'
-        ? { value, system: 'http://unitsofmeasure.org', code: codeInfo.unit || (key === 'temperature' ? 'Cel' : undefined) }
-        : { value };
+    const valueQuantity = codeInfo.quantityCode
+      ? {
+          value,
+          unit: codeInfo.unit,
+          system: 'http://unitsofmeasure.org',
+          code: codeInfo.quantityCode,
+        }
+      : { value };
 
     promises.push(
       validateAndCreate(medplum, {
@@ -297,6 +398,18 @@ export async function saveTriageEncounter(
 export async function checkInPatientInTriage(
   patientId: string,
   chiefComplaint?: string,
+  metadata?: {
+    visitIntent?: string;
+    payerType?: string;
+    assignedClinician?: string;
+    billingPerson?: string;
+    dependentName?: string;
+    dependentRelationship?: string;
+    dependentPhone?: string;
+    registrationSource?: string;
+    registrationAt?: string;
+    performedBy?: string;
+  },
   medplum?: MedplumClient,
   clinicId?: string
 ): Promise<string> {
@@ -308,6 +421,18 @@ export async function checkInPatientInTriage(
   }
 
   const queueAddedAtIso = new Date().toISOString();
+  const checkInMetadataExt = buildCheckInMetadataExtension(
+    metadata?.visitIntent,
+    metadata?.payerType,
+    metadata?.assignedClinician,
+    metadata?.billingPerson,
+    metadata?.dependentName,
+    metadata?.dependentRelationship,
+    metadata?.dependentPhone,
+    metadata?.registrationSource,
+    metadata?.registrationAt,
+    metadata?.performedBy
+  );
   const encounter = await validateAndCreate(client, {
     resourceType: 'Encounter',
     status: 'arrived',
@@ -318,7 +443,7 @@ export async function checkInPatientInTriage(
     },
     subject: { reference: `Patient/${patientId}` },
     period: { start: queueAddedAtIso },
-    extension: [buildQueueOnlyExtension('arrived', queueAddedAtIso)],
+    extension: [buildQueueOnlyExtension('arrived', queueAddedAtIso), ...checkInMetadataExt],
     ...clinicEncounterScope(clinicId),
   });
 
@@ -376,7 +501,7 @@ export async function updateQueueStatusForPatient(
 
   if (!existing) {
     if (status === 'arrived') {
-      await checkInPatientInTriage(patientId, undefined, client, clinicId);
+      await checkInPatientInTriage(patientId, undefined, undefined, client, clinicId);
       return;
     }
     throw new Error('No active triage encounter found');
@@ -539,6 +664,16 @@ export async function getTriageQueueForToday(
       triage: parsed.triage,
       queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
       queueAddedAt: queueAddedAtIso,
+      visitIntent: parsed.visitIntent,
+      payerType: parsed.payerType,
+      billingPerson: parsed.billingPerson,
+      dependentName: parsed.dependentName,
+      dependentRelationship: parsed.dependentRelationship,
+      dependentPhone: parsed.dependentPhone,
+      assignedClinician: parsed.assignedClinician,
+      registrationSource: parsed.registrationSource,
+      registrationAt: parsed.registrationAt,
+      performedBy: parsed.performedBy,
     });
   }
 

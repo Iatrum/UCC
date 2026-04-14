@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Search, Clock, CheckCircle2 } from "lucide-react";
@@ -21,6 +22,9 @@ export default function CheckInPage() {
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [chiefComplaint, setChiefComplaint] = useState("");
+  const [visitIntent, setVisitIntent] = useState("consultation");
+  const [payerType, setPayerType] = useState("self_pay");
+  const [assignedClinician, setAssignedClinician] = useState("");
   const [results, setResults] = useState<PatientResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [checkingInId, setCheckingInId] = useState<string | null>(null);
@@ -75,6 +79,9 @@ export default function CheckInPage() {
         body: JSON.stringify({
           patientId,
           chiefComplaint: chiefComplaint.trim() || undefined,
+          visitIntent,
+          payerType,
+          assignedClinician: assignedClinician.trim() || undefined,
         }),
       });
       if (!res.ok) {
@@ -86,6 +93,7 @@ export default function CheckInPage() {
         description: "Patient added to waiting room as 'Arrived'.",
       });
       setChiefComplaint("");
+      setAssignedClinician("");
       // refresh search results to reflect status
       setResults((prev) =>
         prev.map((p) =>
@@ -157,7 +165,7 @@ export default function CheckInPage() {
             />
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">
                 Presenting complaint (optional)
@@ -166,6 +174,42 @@ export default function CheckInPage() {
                 placeholder="E.g., fever and cough"
                 value={chiefComplaint}
                 onChange={(e) => setChiefComplaint(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Visit intent</label>
+              <Select value={visitIntent} onValueChange={setVisitIntent}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select visit intent" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="consultation">Consultation</SelectItem>
+                  <SelectItem value="otc">OTC / Quick Purchase</SelectItem>
+                  <SelectItem value="follow_up">Follow-up</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Payer type</label>
+              <Select value={payerType} onValueChange={setPayerType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select payer" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="self_pay">Self-pay</SelectItem>
+                  <SelectItem value="panel">Panel / Corporate</SelectItem>
+                  <SelectItem value="dependent">Dependent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                Assigned clinician (optional)
+              </label>
+              <Input
+                placeholder="E.g., Dr. Sarah Wong"
+                value={assignedClinician}
+                onChange={(e) => setAssignedClinician(e.target.value)}
               />
             </div>
           </div>

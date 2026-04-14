@@ -12,7 +12,20 @@ export async function POST(request: NextRequest) {
       request.json(),
     ]);
 
-    const { patientId, chiefComplaint } = body;
+    const {
+      patientId,
+      chiefComplaint,
+      visitIntent,
+      payerType,
+      assignedClinician,
+      billingPerson,
+      dependentName,
+      dependentRelationship,
+      dependentPhone,
+      registrationSource,
+      registrationAt,
+      performedBy,
+    } = body;
 
     if (!patientId) {
       return NextResponse.json({ error: 'patientId is required' }, { status: 400 });
@@ -21,7 +34,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing clinicId' }, { status: 400 });
     }
 
-    await checkInPatientInTriage(patientId, chiefComplaint, medplum, clinicId);
+    await checkInPatientInTriage(
+      patientId,
+      chiefComplaint,
+      {
+        visitIntent,
+        payerType,
+        assignedClinician,
+        billingPerson,
+        dependentName,
+        dependentRelationship,
+        dependentPhone,
+        registrationSource,
+        registrationAt,
+        performedBy,
+      },
+      medplum,
+      clinicId
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

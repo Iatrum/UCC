@@ -55,6 +55,16 @@ export interface Patient {
   updatedAt?: Date | string;
   queueStatus?: QueueStatus;
   queueAddedAt?: Date | string | null;
+  visitIntent?: string;
+  payerType?: string;
+  billingPerson?: string;
+  dependentName?: string;
+  dependentRelationship?: string;
+  dependentPhone?: string;
+  assignedClinician?: string;
+  registrationSource?: string;
+  registrationAt?: string;
+  performedBy?: string;
   triage?: TriageData;
 }
 
@@ -543,7 +553,7 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
 
           const consultation = await getConsultationFromMedplum(enc.id, undefined, medplum);
           if (!consultation) return null;
-          const patientId = enc.subject?.reference?.replace('Patient/', '') || consultation.patientId;
+          const patientId = consultation.patientId || enc.subject?.reference?.replace('Patient/', '');
           if (!patientId) return null;
 
           const patient = await getPatientFromMedplum(patientId, undefined, medplum);
@@ -671,5 +681,5 @@ export async function getTriagedPatientsQueue(): Promise<Patient[]> {
 
 export async function checkInPatient(patientId: string, chiefComplaint?: string): Promise<string> {
   const medplum = await getAdminMedplum();
-  return checkInPatientInTriage(patientId, chiefComplaint, medplum);
+  return checkInPatientInTriage(patientId, chiefComplaint, undefined, medplum);
 }
