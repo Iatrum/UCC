@@ -1,8 +1,32 @@
 import { TriageData, VitalSigns, QueueStatus } from '../types';
-import type { Encounter } from '@medplum/fhirtypes';
-import { getMedplumClient, getPatientFromMedplum, SavedPatient } from './patient-service';
+import { MedplumClient } from '@medplum/core';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
-import { applyMyCoreProfile, MY_CORE_IDENTIFIERS } from './mycore';
+
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+
+/** Build the identifiers + serviceProvider fields that tag a triage Encounter to a clinic. */
+function clinicEncounterScope(clinicId?: string): Record<string, any> {
+  if (!clinicId) return {};
+  return {
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
+    serviceProvider: { reference: `Organization/${clinicId}` },
+  };
+}
+
+/** Verify an Encounter belongs to the given clinic. Throws if it does not. */
+function assertEncounterBelongsToClinic(encounter: any, clinicId?: string): void {
+  if (!clinicId) return; // no scope → no assertion (backward-compat with admin callers)
+  const identifierMatch = encounter.identifier?.some(
+    (id: any) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
+  );
+  const serviceProviderMatch =
+    encounter.serviceProvider?.reference === `Organization/${clinicId}`;
+  if (!identifierMatch && !serviceProviderMatch) {
+    throw new Error(`Access denied: encounter does not belong to clinic '${clinicId}'`);
+  }
+}
 
 const TRIAGE_ENCOUNTER_EXTENSION_URL = 'https://ucc.emr/triage-encounter';
 
@@ -12,19 +36,80 @@ interface TriageSummary {
   triage?: TriageData;
   queueStatus?: QueueStatus | null;
   queueAddedAt?: string | null;
+  visitIntent?: string;
+  payerType?: string;
+  billingPerson?: string;
+  dependentName?: string;
+  dependentRelationship?: string;
+  dependentPhone?: string;
+  assignedClinician?: string;
+  registrationSource?: string;
+  registrationAt?: string;
+  performedBy?: string;
   encounterId?: string;
 }
 
-const VITAL_CODES: Record<keyof VitalSigns, { code: string; system: string; display: string; unit?: string }> = {
-  bloodPressureSystolic: { code: '8480-6', system: 'http://loinc.org', display: 'Systolic blood pressure' },
-  bloodPressureDiastolic: { code: '8462-4', system: 'http://loinc.org', display: 'Diastolic blood pressure' },
-  heartRate: { code: '8867-4', system: 'http://loinc.org', display: 'Heart rate' },
-  respiratoryRate: { code: '9279-1', system: 'http://loinc.org', display: 'Respiratory rate' },
-  temperature: { code: '8310-5', system: 'http://loinc.org', display: 'Body temperature', unit: 'Cel' },
-  oxygenSaturation: { code: '59408-5', system: 'http://loinc.org', display: 'Oxygen saturation' },
+const VITAL_CODES: Record<
+  keyof VitalSigns,
+  { code: string; system: string; display: string; unit?: string; quantityCode?: string }
+> = {
+  bloodPressureSystolic: {
+    code: '8480-6',
+    system: 'http://loinc.org',
+    display: 'Systolic blood pressure',
+    unit: 'mmHg',
+    quantityCode: 'mm[Hg]',
+  },
+  bloodPressureDiastolic: {
+    code: '8462-4',
+    system: 'http://loinc.org',
+    display: 'Diastolic blood pressure',
+    unit: 'mmHg',
+    quantityCode: 'mm[Hg]',
+  },
+  heartRate: {
+    code: '8867-4',
+    system: 'http://loinc.org',
+    display: 'Heart rate',
+    unit: 'beats/minute',
+    quantityCode: '/min',
+  },
+  respiratoryRate: {
+    code: '9279-1',
+    system: 'http://loinc.org',
+    display: 'Respiratory rate',
+    unit: 'breaths/minute',
+    quantityCode: '/min',
+  },
+  temperature: {
+    code: '8310-5',
+    system: 'http://loinc.org',
+    display: 'Body temperature',
+    unit: 'C',
+    quantityCode: 'Cel',
+  },
+  oxygenSaturation: {
+    code: '59408-5',
+    system: 'http://loinc.org',
+    display: 'Oxygen saturation',
+    unit: '%',
+    quantityCode: '%',
+  },
   painScore: { code: '72514-3', system: 'http://loinc.org', display: 'Pain severity - 0-10 verbal numeric rating' },
-  weight: { code: '29463-7', system: 'http://loinc.org', display: 'Body weight' },
-  height: { code: '8302-2', system: 'http://loinc.org', display: 'Body height' },
+  weight: {
+    code: '29463-7',
+    system: 'http://loinc.org',
+    display: 'Body weight',
+    unit: 'kg',
+    quantityCode: 'kg',
+  },
+  height: {
+    code: '8302-2',
+    system: 'http://loinc.org',
+    display: 'Body height',
+    unit: 'cm',
+    quantityCode: 'cm',
+  },
 };
 
 function queueStatusFromEncounter(encounterStatus?: string): QueueStatus {
@@ -42,7 +127,7 @@ function queueStatusFromEncounter(encounterStatus?: string): QueueStatus {
   }
 }
 
-function encounterStatusFromQueue(status: QueueStatus | null): Encounter['status'] | undefined {
+function encounterStatusFromQueue(status: QueueStatus | null): string | undefined {
   switch (status) {
     case 'arrived':
       return 'arrived';
@@ -117,14 +202,39 @@ function buildQueueOnlyExtension(queueStatus: QueueStatus, queueAddedAtIso: stri
   };
 }
 
+function buildCheckInMetadataExtension(
+  visitIntent?: string,
+  payerType?: string,
+  assignedClinician?: string,
+  billingPerson?: string,
+  dependentName?: string,
+  dependentRelationship?: string,
+  dependentPhone?: string,
+  registrationSource?: string,
+  registrationAt?: string,
+  performedBy?: string
+): Extension[] {
+  const entries: Extension[] = [];
+  if (visitIntent) entries.push({ url: 'visitIntent', valueString: visitIntent });
+  if (payerType) entries.push({ url: 'payerType', valueString: payerType });
+  if (assignedClinician) entries.push({ url: 'assignedClinician', valueString: assignedClinician });
+  if (billingPerson) entries.push({ url: 'billingPerson', valueString: billingPerson });
+  if (dependentName) entries.push({ url: 'dependentName', valueString: dependentName });
+  if (dependentRelationship) entries.push({ url: 'dependentRelationship', valueString: dependentRelationship });
+  if (dependentPhone) entries.push({ url: 'dependentPhone', valueString: dependentPhone });
+  if (registrationSource) entries.push({ url: 'registrationSource', valueString: registrationSource });
+  if (registrationAt) entries.push({ url: 'registrationAt', valueDateTime: registrationAt });
+  if (performedBy) entries.push({ url: 'performedBy', valueString: performedBy });
+  return entries;
+}
+
 function validateAndCreate<T extends { resourceType: string }>(medplum: any, resource: T) {
-  const profiledResource = applyMyCoreProfile(resource as any) as T;
-  const validation = validateFhirResource(profiledResource);
+  const validation = validateFhirResource(resource);
   logValidation(resource.resourceType, validation);
   if (!validation.valid) {
     throw new Error(`Invalid ${resource.resourceType}: ${validation.errors.join(', ')}`);
   }
-  return medplum.createResource(profiledResource);
+  return medplum.createResource(resource);
 }
 
 function parseTriageExtension(extensions?: Extension[]): TriageSummary {
@@ -175,11 +285,25 @@ function parseTriageExtension(extensions?: Extension[]): TriageSummary {
     triage,
     queueStatus,
     queueAddedAt,
+    visitIntent: getSub('visitIntent')?.valueString,
+    payerType: getSub('payerType')?.valueString,
+    billingPerson: getSub('billingPerson')?.valueString,
+    dependentName: getSub('dependentName')?.valueString,
+    dependentRelationship: getSub('dependentRelationship')?.valueString,
+    dependentPhone: getSub('dependentPhone')?.valueString,
+    assignedClinician: getSub('assignedClinician')?.valueString,
+    registrationSource: getSub('registrationSource')?.valueString,
+    registrationAt: getSub('registrationAt')?.valueDateTime,
+    performedBy: getSub('performedBy')?.valueString,
   };
 }
 
-async function createChiefComplaintObservation(encounterId: string, patientRef: string, chiefComplaint: string) {
-  const medplum = await getMedplumClient();
+async function createChiefComplaintObservation(
+  medplum: MedplumClient,
+  encounterId: string,
+  patientRef: string,
+  chiefComplaint: string
+) {
   await validateAndCreate(medplum, {
     resourceType: 'Observation',
     status: 'final',
@@ -193,18 +317,26 @@ async function createChiefComplaintObservation(encounterId: string, patientRef: 
   });
 }
 
-async function createVitalsObservations(encounterId: string, patientRef: string, vitals: VitalSigns) {
-  const medplum = await getMedplumClient();
+async function createVitalsObservations(
+  medplum: MedplumClient,
+  encounterId: string,
+  patientRef: string,
+  vitals: VitalSigns
+) {
   const promises: Promise<any>[] = [];
 
   (Object.keys(vitals) as (keyof VitalSigns)[]).forEach((key) => {
     const value = vitals[key];
     if (typeof value !== 'number') return;
     const codeInfo = VITAL_CODES[key];
-    const valueQuantity =
-      key === 'temperature' || key === 'weight' || key === 'height'
-        ? { value, system: 'http://unitsofmeasure.org', code: codeInfo.unit || (key === 'temperature' ? 'Cel' : undefined) }
-        : { value };
+    const valueQuantity = codeInfo.quantityCode
+      ? {
+          value,
+          unit: codeInfo.unit,
+          system: 'http://unitsofmeasure.org',
+          code: codeInfo.quantityCode,
+        }
+      : { value };
 
     promises.push(
       validateAndCreate(medplum, {
@@ -226,12 +358,17 @@ async function createVitalsObservations(encounterId: string, patientRef: string,
   await Promise.all(promises);
 }
 
-export async function saveTriageEncounter(patientId: string, triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>): Promise<void> {
-  const medplum = await getMedplumClient();
+export async function saveTriageEncounter(
+  patientId: string,
+  triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>,
+  medplum: MedplumClient,
+  clinicId?: string
+): Promise<void> {
+  const client = medplum;
   const triageAtIso = new Date().toISOString();
   const queueStatus: QueueStatus = 'waiting';
 
-  const encounter = await validateAndCreate(medplum, {
+  const encounter = await validateAndCreate(client, {
     resourceType: 'Encounter',
     status: 'triaged',
     class: {
@@ -239,12 +376,6 @@ export async function saveTriageEncounter(patientId: string, triageData: Omit<Tr
       code: 'AMB',
       display: 'ambulatory',
     },
-    identifier: [
-      {
-        system: MY_CORE_IDENTIFIERS.ENCOUNTER_ID,
-        value: `${patientId}-triage-${Date.now()}`,
-      },
-    ],
     subject: { reference: `Patient/${patientId}` },
     period: { start: triageAtIso },
     priority: {
@@ -257,22 +388,52 @@ export async function saveTriageEncounter(patientId: string, triageData: Omit<Tr
       ],
     },
     extension: [buildTriageExtension(triageData, triageAtIso, queueStatus)],
+    ...clinicEncounterScope(clinicId),
   });
 
-  await createChiefComplaintObservation(encounter.id!, `Patient/${patientId}`, triageData.chiefComplaint);
-  await createVitalsObservations(encounter.id!, `Patient/${patientId}`, triageData.vitalSigns || {});
+  await createChiefComplaintObservation(client, encounter.id!, `Patient/${patientId}`, triageData.chiefComplaint);
+  await createVitalsObservations(client, encounter.id!, `Patient/${patientId}`, triageData.vitalSigns || {});
 }
 
-export async function checkInPatientInTriage(patientId: string, chiefComplaint?: string): Promise<string> {
-  const medplum = await getMedplumClient();
-  const existing = await getActiveTriageEncounter(patientId);
+export async function checkInPatientInTriage(
+  patientId: string,
+  chiefComplaint?: string,
+  metadata?: {
+    visitIntent?: string;
+    payerType?: string;
+    assignedClinician?: string;
+    billingPerson?: string;
+    dependentName?: string;
+    dependentRelationship?: string;
+    dependentPhone?: string;
+    registrationSource?: string;
+    registrationAt?: string;
+    performedBy?: string;
+  },
+  medplum?: MedplumClient,
+  clinicId?: string
+): Promise<string> {
+  const client = medplum ?? (await getAdminMedplum());
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
   if (existing) {
-    await updateQueueStatusForPatient(patientId, 'arrived');
+    await updateQueueStatusForPatient(patientId, 'arrived', client, clinicId);
     return existing.id;
   }
 
   const queueAddedAtIso = new Date().toISOString();
-  const encounter = await validateAndCreate(medplum, {
+  const checkInMetadataExt = buildCheckInMetadataExtension(
+    metadata?.visitIntent,
+    metadata?.payerType,
+    metadata?.assignedClinician,
+    metadata?.billingPerson,
+    metadata?.dependentName,
+    metadata?.dependentRelationship,
+    metadata?.dependentPhone,
+    metadata?.registrationSource,
+    metadata?.registrationAt,
+    metadata?.performedBy
+  );
+  const encounter = await validateAndCreate(client, {
     resourceType: 'Encounter',
     status: 'arrived',
     class: {
@@ -282,11 +443,12 @@ export async function checkInPatientInTriage(patientId: string, chiefComplaint?:
     },
     subject: { reference: `Patient/${patientId}` },
     period: { start: queueAddedAtIso },
-    extension: [buildQueueOnlyExtension('arrived', queueAddedAtIso)],
+    extension: [buildQueueOnlyExtension('arrived', queueAddedAtIso), ...checkInMetadataExt],
+    ...clinicEncounterScope(clinicId),
   });
 
   if (chiefComplaint) {
-    await createChiefComplaintObservation(encounter.id!, `Patient/${patientId}`, chiefComplaint);
+    await createChiefComplaintObservation(client, encounter.id!, `Patient/${patientId}`, chiefComplaint);
   }
 
   return encounter.id!;
@@ -294,16 +456,19 @@ export async function checkInPatientInTriage(patientId: string, chiefComplaint?:
 
 export async function updateTriageEncounter(
   patientId: string,
-  triageData: Partial<TriageData>
+  triageData: Partial<TriageData>,
+  medplum: MedplumClient,
+  clinicId?: string
 ): Promise<void> {
-  const medplum = await getMedplumClient();
-  const existing = await getActiveTriageEncounter(patientId);
+  const client = medplum;
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
     throw new Error('No active triage encounter found to update');
   }
 
-  const encounter = await medplum.readResource('Encounter', existing.id);
+  const encounter = await client.readResource('Encounter', existing.id);
+  assertEncounterBelongsToClinic(encounter, clinicId);
   const triageExt = buildTriageExtension(
     {
       triageLevel: triageData.triageLevel ?? existing.triage?.triageLevel ?? 3,
@@ -319,27 +484,31 @@ export async function updateTriageEncounter(
 
   const otherExtensions = (encounter as any).extension?.filter((ext: any) => ext.url !== TRIAGE_ENCOUNTER_EXTENSION_URL) || [];
 
-  await medplum.updateResource(
-    applyMyCoreProfile({
-      ...(encounter as any),
-      extension: [...otherExtensions, triageExt],
-    })
-  );
+  await client.updateResource({
+    ...(encounter as any),
+    extension: [...otherExtensions, triageExt],
+  });
 }
 
-export async function updateQueueStatusForPatient(patientId: string, status: QueueStatus | null): Promise<void> {
-  const medplum = await getMedplumClient();
-  const existing = await getActiveTriageEncounter(patientId);
+export async function updateQueueStatusForPatient(
+  patientId: string,
+  status: QueueStatus | null,
+  medplum?: MedplumClient,
+  clinicId?: string
+): Promise<void> {
+  const client = medplum ?? (await getAdminMedplum());
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
     if (status === 'arrived') {
-      await checkInPatientInTriage(patientId);
+      await checkInPatientInTriage(patientId, undefined, undefined, client, clinicId);
       return;
     }
     throw new Error('No active triage encounter found');
   }
 
-  const encounter = (await medplum.readResource('Encounter', existing.id)) as Encounter;
+  const encounter = await client.readResource('Encounter', existing.id) as any;
+  assertEncounterBelongsToClinic(encounter, clinicId);
   const newStatus = encounterStatusFromQueue(status);
   if (!newStatus) {
     // If clearing status, mark encounter finished and drop queue extension fields
@@ -392,23 +561,24 @@ export async function updateQueueStatusForPatient(patientId: string, status: Que
     newExtensions.push(triageExt);
   }
 
-  await medplum.updateResource(
-    applyMyCoreProfile({
-      ...encounter,
-      extension: newExtensions,
-    })
-  );
+  await client.updateResource({
+    ...encounter,
+    extension: newExtensions,
+  });
 }
 
 export async function getActiveTriageEncounter(
-  patientId: string
+  patientId: string,
+  medplum: MedplumClient,
+  clinicId?: string
 ): Promise<TriageSummary & { id: string } | null> {
-  const medplum = await getMedplumClient();
-  const encounters = await medplum.searchResources('Encounter', {
+  const client = medplum;
+  const encounters = await client.searchResources('Encounter', {
     subject: `Patient/${patientId}`,
-    status: 'arrived,triaged,in-progress',
+    status: 'arrived,triaged,in-progress,finished',
     _count: '1',
     _sort: '-_lastUpdated',
+    ...(clinicId ? { 'service-provider': `Organization/${clinicId}` } : {}),
   });
 
   if (!encounters?.length) return null;
@@ -428,61 +598,23 @@ export async function getActiveTriageEncounter(
   };
 }
 
-async function getLatestTriageEncounter(
-  patientId: string
-): Promise<TriageSummary & { id: string } | null> {
-  const medplum = await getMedplumClient();
-  const encounters = await medplum.searchResources('Encounter', {
-    subject: `Patient/${patientId}`,
-    status: 'arrived,triaged,in-progress,finished',
-    _count: '20',
-    _sort: '-_lastUpdated',
-  });
-
-  for (const encounter of encounters as Encounter[]) {
-    const parsed = parseTriageExtension(encounter.extension);
-    if (!parsed.triage && !parsed.queueStatus && !parsed.queueAddedAt) {
-      continue;
-    }
-
-    return {
-      ...parsed,
-      encounterId: encounter.id,
-      id: encounter.id!,
-      queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
-      queueAddedAt: parsed.queueAddedAt
-        ? new Date(parsed.queueAddedAt).toISOString()
-        : encounter.period?.start
-        ? new Date(encounter.period.start).toISOString()
-        : null,
-    };
-  }
-
-  return null;
+export async function getTriageForPatient(
+  patientId: string,
+  medplum?: MedplumClient,
+  clinicId?: string
+): Promise<TriageSummary> {
+  const client = medplum ?? (await getAdminMedplum());
+  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
+  if (!existing) return {};
+  return existing;
 }
 
-export async function getTriageForPatient(patientId: string): Promise<TriageSummary> {
-  const existing = await getActiveTriageEncounter(patientId);
-  if (existing) {
-    return existing;
-  }
-
-  const latest = await getLatestTriageEncounter(patientId);
-  if (latest) {
-    return latest;
-  }
-
-  return {};
-}
-
-export async function getTriageQueueForToday(limit = 200): Promise<SavedPatient[]> {
-  let medplum;
-  try {
-    medplum = await getMedplumClient();
-  } catch (err) {
-    console.error('[triage] Medplum not configured:', err);
-    return [];
-  }
+export async function getTriageQueueForToday(
+  limit = 200,
+  medplum: MedplumClient,
+  clinicId?: string
+): Promise<SavedPatient[]> {
+  const client = medplum;
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
@@ -490,48 +622,60 @@ export async function getTriageQueueForToday(limit = 200): Promise<SavedPatient[
 
   const startIso = start.toISOString();
   const endIso = end.toISOString();
-  const query = `status=arrived,triaged,in-progress,finished&date=ge${startIso}&date=lt${endIso}&_count=${limit}&_sort=date`;
 
-  const encounters = (await medplum.searchResources('Encounter', query)) as Encounter[];
+  // Always scope by clinic. If clinicId is absent, return empty rather than
+  // leaking all clinics' data — callers must supply a clinic scope.
+  if (!clinicId) {
+    console.warn('[getTriageQueueForToday] called without clinicId — returning empty to prevent cross-clinic leak');
+    return [];
+  }
 
-  // Use Map to deduplicate patients by ID, keeping the most recent encounter data
-  const patientsMap = new Map<string, SavedPatient>();
+  const query =
+    `status=arrived,triaged,in-progress,finished` +
+    `&date=ge${startIso}&date=lt${endIso}` +
+    `&_count=${limit}&_sort=date` +
+    `&service-provider=Organization/${clinicId}`;
+
+  const encounters = (await client.searchResources('Encounter', query)) as any[];
+
+  const patients: SavedPatient[] = [];
 
   for (const encounter of encounters) {
+    // Double-check ownership at the application layer (defence-in-depth)
+    try {
+      assertEncounterBelongsToClinic(encounter, clinicId);
+    } catch {
+      continue; // skip encounters that don't belong to this clinic
+    }
+
     const subjectRef: string = encounter.subject?.reference || '';
     const patientId = subjectRef.replace('Patient/', '');
     if (!patientId) continue;
 
-    const patient = await getPatientFromMedplum(patientId);
+    const patient = await getPatientFromMedplum(patientId, clinicId, client);
     if (!patient) continue;
 
     const parsed = parseTriageExtension(encounter.extension);
-  const queueAddedAtSource = parsed.queueAddedAt ?? encounter.period?.start;
-  const queueAddedAtIso = queueAddedAtSource
-    ? new Date(queueAddedAtSource).toISOString()
-    : null;
-    
-    const patientData: SavedPatient = {
+    const queueAddedAtIso = (parsed.queueAddedAt ?? encounter.period?.start ?? null)
+      ? new Date(parsed.queueAddedAt ?? encounter.period?.start).toISOString()
+      : null;
+    patients.push({
       ...patient,
       triage: parsed.triage,
       queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
       queueAddedAt: queueAddedAtIso,
-    };
-
-    // If patient already exists, keep the one with the most recent queueAddedAt time
-    const existing = patientsMap.get(patientId);
-    if (!existing) {
-      patientsMap.set(patientId, patientData);
-    } else {
-      const existingTime = existing.queueAddedAt ? new Date(existing.queueAddedAt).getTime() : 0;
-      const newTime = queueAddedAtIso ? new Date(queueAddedAtIso).getTime() : 0;
-      if (newTime > existingTime) {
-        patientsMap.set(patientId, patientData);
-      }
-    }
+      visitIntent: parsed.visitIntent,
+      payerType: parsed.payerType,
+      billingPerson: parsed.billingPerson,
+      dependentName: parsed.dependentName,
+      dependentRelationship: parsed.dependentRelationship,
+      dependentPhone: parsed.dependentPhone,
+      assignedClinician: parsed.assignedClinician,
+      registrationSource: parsed.registrationSource,
+      registrationAt: parsed.registrationAt,
+      performedBy: parsed.performedBy,
+    });
   }
-
-  const patients = Array.from(patientsMap.values());
 
   return patients
     .filter((p) => p.queueStatus)

@@ -17,7 +17,8 @@ import {
 } from "firebase/firestore";
 import { safeToISOString } from "./utils";
 import { QueueStatus, BillableConsultation, TriageData } from "./types";
-import { getAllPatientsFromMedplum, getPatientFromMedplum, getMedplumClient } from "./fhir/patient-service";
+import { getAllPatientsFromMedplum, getPatientFromMedplum } from "./fhir/patient-service";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
   getTriageQueueForToday,
   getTriageForPatient,
@@ -27,12 +28,6 @@ import {
   checkInPatientInTriage,
 } from "./fhir/triage-service";
 import { getPatientConsultationsFromMedplum, getConsultationFromMedplum, saveConsultationToMedplum } from "./fhir/consultation-service";
-import {
-  getPatientReferralsFromMedplum,
-  getReferralFromMedplum,
-  saveReferralToMedplum,
-  updateReferralInMedplum,
-} from "./fhir/referral-service";
 
 export interface Patient {
   id: string;
@@ -60,6 +55,16 @@ export interface Patient {
   updatedAt?: Date | string;
   queueStatus?: QueueStatus;
   queueAddedAt?: Date | string | null;
+  visitIntent?: string;
+  payerType?: string;
+  billingPerson?: string;
+  dependentName?: string;
+  dependentRelationship?: string;
+  dependentPhone?: string;
+  assignedClinician?: string;
+  registrationSource?: string;
+  registrationAt?: string;
+  performedBy?: string;
   triage?: TriageData;
 }
 
@@ -69,11 +74,10 @@ export interface Consultation {
   date: Date;
   type?: string;
   doctor?: string;
-  chiefComplaint?: string;
+  chiefComplaint: string;
   diagnosis: string;
   procedures: ProcedureRecord[];
   notes?: string;
-  progressNote?: string;
   prescriptions: Prescription[];
   createdAt?: Date;
   updatedAt?: Date;
@@ -131,6 +135,8 @@ export interface Appointment {
 
 const PATIENTS = "patients";
 const CONSULTATIONS = "consultations";
+const REFERRALS = "referrals";
+const APPOINTMENTS = "appointments";
 const PATIENT_DOCUMENTS = "documents";
 
 type TimestampInput = Timestamp | Date | string | null | undefined;
@@ -154,6 +160,9 @@ const TIMESTAMP_FIELDS = [
   "cancelledAt",
 ] as const;
 
+const APPOINTMENT_DATE_FIELDS = ["scheduledAt", "checkInTime", "completedAt", "cancelledAt"] as const;
+const APPOINTMENT_DATE_FIELD_SET = new Set<string>(APPOINTMENT_DATE_FIELDS);
+
 function coerceDate(value: TimestampInput): Date | null {
   if (!value) {
     return null;
@@ -173,6 +182,11 @@ function coerceDate(value: TimestampInput): Date | null {
   }
 
   return null;
+}
+
+function coerceTimestamp(value: TimestampInput): Timestamp | null {
+  const date = coerceDate(value);
+  return date ? Timestamp.fromDate(date) : null;
 }
 
 function convertTimestamps(data: DocumentData): DocumentData {
@@ -200,6 +214,14 @@ function mapDocument<T>(doc: DocWithData): T {
   return { id: doc.id, ...convertTimestamps(data) } as T;
 }
 
+function requireTimestamp(value: TimestampInput, field: string): Timestamp {
+  const timestamp = coerceTimestamp(value);
+  if (!timestamp) {
+    throw new Error(`Invalid ${field} provided for appointment.`);
+  }
+  return timestamp;
+}
+
 function toIsoIfPossible(value: Date | string | null | undefined) {
   if (value instanceof Date) {
     return value.toISOString();
@@ -210,29 +232,6 @@ function toIsoIfPossible(value: Date | string | null | undefined) {
   }
 
   return value;
-}
-
-function getApiBaseUrl() {
-  if (typeof window !== "undefined") {
-    return "";
-  }
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    "http://localhost:3000";
-  return baseUrl.replace(/\/$/, "");
-}
-
-function normalizeAppointmentDates(appointment: Appointment): Appointment {
-  return {
-    ...appointment,
-    scheduledAt: coerceDate(appointment.scheduledAt) ?? appointment.scheduledAt,
-    createdAt: coerceDate(appointment.createdAt) ?? appointment.createdAt,
-    updatedAt: coerceDate(appointment.updatedAt) ?? appointment.updatedAt,
-    checkInTime: coerceDate(appointment.checkInTime) ?? appointment.checkInTime,
-    completedAt: coerceDate(appointment.completedAt) ?? appointment.completedAt,
-    cancelledAt: coerceDate(appointment.cancelledAt) ?? appointment.cancelledAt,
-  };
 }
 
 function serializeQueuePatient(patient: Patient): Patient {
@@ -248,10 +247,11 @@ function serializeQueuePatient(patient: Patient): Patient {
 }
 
 export async function getPatients(): Promise<Patient[]> {
-  const patients = await getAllPatientsFromMedplum(300);
+  const medplum = await getAdminMedplum();
+  const patients = await getAllPatientsFromMedplum(300, undefined, medplum);
   const enriched = await Promise.all(
     patients.map(async (p) => {
-      const triage = await getTriageForPatient(p.id);
+      const triage = await getTriageForPatient(p.id, medplum);
       return {
         ...(p as any),
         triage: triage.triage,
@@ -264,9 +264,10 @@ export async function getPatients(): Promise<Patient[]> {
 }
 
 export async function getPatientById(id: string): Promise<Patient | null> {
+  const medplum = await getAdminMedplum();
   const [patient, triage] = await Promise.all([
-    getPatientFromMedplum(id),
-    getTriageForPatient(id),
+    getPatientFromMedplum(id, undefined, medplum),
+    getTriageForPatient(id, medplum),
   ]);
   if (!patient) return null;
   return {
@@ -280,7 +281,8 @@ export async function getPatientById(id: string): Promise<Patient | null> {
 export async function createPatient(data: Omit<Patient, "id" | "createdAt" | "updatedAt">): Promise<string> {
   // Use Medplum as ONLY source of truth
   const { savePatientToMedplum } = await import('@/lib/fhir/patient-service');
-  
+  const medplum = await getAdminMedplum();
+
   const patientData = {
     fullName: data.fullName,
     nric: data.nric,
@@ -293,49 +295,36 @@ export async function createPatient(data: Omit<Patient, "id" | "createdAt" | "up
     emergencyContact: data.emergencyContact,
     medicalHistory: data.medicalHistory,
   };
-  
+
   // Save directly to Medplum (source of truth)
-  const medplumId = await savePatientToMedplum(patientData);
+  const medplumId = await savePatientToMedplum(patientData, undefined, medplum);
   
   console.log(`✅ Patient created in Medplum: ${medplumId}`);
   return medplumId;
 }
 
 export async function getAppointments(statuses?: AppointmentStatus[]): Promise<Appointment[]> {
-  const params = new URLSearchParams();
+  const appointmentsQuery = query(collection(db, APPOINTMENTS), orderBy("scheduledAt", "asc"));
+  const snapshot = await getDocs(appointmentsQuery);
+  const appointments = snapshot.docs.map((docSnap) => mapDocument<Appointment>(docSnap));
+
   if (statuses && statuses.length > 0) {
-    params.set("status", statuses.join(","));
-  }
-  const queryString = params.toString();
-  const baseUrl = getApiBaseUrl();
-  const response = await fetch(`${baseUrl}/api/appointments${queryString ? `?${queryString}` : ""}`, {
-    cache: "no-store",
-  });
-  const data = await response.json();
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.error || "Failed to load appointments");
+    const allowed = new Set(statuses);
+    return appointments.filter((appointment) => appointment.status && allowed.has(appointment.status));
   }
 
-  return (data.appointments as Appointment[]).map((appointment) => normalizeAppointmentDates(appointment));
+  return appointments;
 }
 
 export async function getAppointmentById(id: string): Promise<Appointment | null> {
-  const baseUrl = getApiBaseUrl();
-  const response = await fetch(`${baseUrl}/api/appointments?id=${encodeURIComponent(id)}`, {
-    cache: "no-store",
-  });
-  const data = await response.json();
+  const docRef = doc(db, APPOINTMENTS, id);
+  const docSnap = await getDoc(docRef);
 
-  if (response.status === 404) {
+  if (!docSnap.exists()) {
     return null;
   }
 
-  if (!response.ok || !data.success) {
-    throw new Error(data.error || "Failed to get appointment");
-  }
-
-  return normalizeAppointmentDates(data.appointment as Appointment);
+  return mapDocument<Appointment>(docSnap);
 }
 
 export interface CreateAppointmentInput {
@@ -353,69 +342,90 @@ export interface CreateAppointmentInput {
 }
 
 export async function createAppointment(appointment: CreateAppointmentInput): Promise<string> {
-  const baseUrl = getApiBaseUrl();
-  const response = await fetch(`${baseUrl}/api/appointments`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...appointment,
-      status: appointment.status ?? "scheduled",
-    }),
-  });
-  const data = await response.json();
+  const now = Timestamp.now();
+  const scheduledTimestamp = requireTimestamp(appointment.scheduledAt, "scheduledAt");
 
-  if (!response.ok || !data.success) {
-    throw new Error(data.error || "Failed to save appointment");
+  const payload: Record<string, unknown> = {
+    patientId: appointment.patientId,
+    patientName: appointment.patientName,
+    patientContact: appointment.patientContact ?? "",
+    clinician: appointment.clinician,
+    reason: appointment.reason,
+    type: appointment.type ?? "",
+    location: appointment.location ?? "",
+    notes: appointment.notes ?? "",
+    durationMinutes: appointment.durationMinutes ?? null,
+    status: appointment.status ?? "scheduled",
+    scheduledAt: scheduledTimestamp,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const docRef = await addDoc(collection(db, APPOINTMENTS), payload);
+
+  try {
+    const patientRef = doc(db, PATIENTS, appointment.patientId);
+    await updateDoc(patientRef, {
+      upcomingAppointment: scheduledTimestamp,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Failed to update patient upcoming appointment after scheduling:", error);
   }
 
-  return data.appointmentId as string;
+  return docRef.id;
 }
 
 export async function updateAppointment(id: string, data: Partial<Appointment>): Promise<void> {
-  const baseUrl = getApiBaseUrl();
-  const payload: Record<string, unknown> = {
-    appointmentId: id,
-  };
+  const docRef = doc(db, APPOINTMENTS, id);
+  const updatePayload: Record<string, unknown> = {};
 
-  if (data.status) {
-    payload.status = data.status;
-  }
-  if (data.checkInTime !== undefined) {
-    payload.checkInTime = toIsoIfPossible(data.checkInTime as Date | string | null | undefined);
-  }
-  if (data.completedAt !== undefined) {
-    payload.completedAt = toIsoIfPossible(data.completedAt as Date | string | null | undefined);
-  }
-  if (data.cancelledAt !== undefined) {
-    payload.cancelledAt = toIsoIfPossible(data.cancelledAt as Date | string | null | undefined);
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || key === "id" || key === "createdAt") {
+      continue;
+    }
+
+    if (APPOINTMENT_DATE_FIELD_SET.has(key)) {
+      if (value === null) {
+        updatePayload[key] = null;
+        continue;
+      }
+
+      const timestamp = coerceTimestamp(value as TimestampInput);
+      if (!timestamp) {
+        console.warn(`Skipping invalid date field ${key} when updating appointment ${id}`);
+        continue;
+      }
+
+      updatePayload[key] = timestamp;
+      continue;
+    }
+
+    updatePayload[key] = value;
   }
 
-  const response = await fetch(`${baseUrl}/api/appointments`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const dataResponse = await response.json();
+  updatePayload.updatedAt = Timestamp.now();
 
-  if (!response.ok || !dataResponse.success) {
-    throw new Error(dataResponse.error || "Failed to update appointment");
-  }
+  await updateDoc(docRef, updatePayload as Record<string, unknown>);
 }
 
 export async function getConsultationsByPatientId(patientId: string): Promise<Consultation[]> {
-  const consultations = await getPatientConsultationsFromMedplum(patientId);
+  const medplum = await getAdminMedplum();
+  const consultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
   return consultations as unknown as Consultation[];
 }
 
 export async function getConsultationById(id: string): Promise<Consultation | null> {
-  const consultation = await getConsultationFromMedplum(id);
+  const medplum = await getAdminMedplum();
+  const consultation = await getConsultationFromMedplum(id, undefined, medplum);
   return (consultation as unknown as Consultation) ?? null;
 }
 
 export async function createConsultation(
   consultation: Omit<Consultation, "id" | "createdAt" | "updatedAt">
 ): Promise<string> {
-  const patient = await getPatientFromMedplum(consultation.patientId);
+  const medplum = await getAdminMedplum();
+  const patient = await getPatientFromMedplum(consultation.patientId, undefined, medplum);
   if (!patient) {
     throw new Error("Patient not found in Medplum");
   }
@@ -442,14 +452,16 @@ export async function createConsultation(
       gender: (patient as any).gender,
       phone: (patient as any).phone,
       address: (patient as any).address,
-    }
+    },
+    undefined,
+    medplum
   );
 
   return encounterId;
 }
 
 export async function updateConsultation(id: string, data: Partial<Consultation>): Promise<void> {
-  const medplum = await getMedplumClient();
+  const medplum = await getAdminMedplum();
 
   // For now, support updating notes/progress via an Observation amendment.
   if (data.notes) {
@@ -472,15 +484,18 @@ export async function getTodaysQueue(): Promise<Patient[]> {
 }
 
 export async function addPatientToQueue(patientId: string): Promise<void> {
-  await updateQueueStatusForPatient(patientId, "waiting");
+  const medplum = await getAdminMedplum();
+  await updateQueueStatusForPatient(patientId, "waiting", medplum);
 }
 
 export async function removePatientFromQueue(patientId: string): Promise<void> {
-  await updateQueueStatusForPatient(patientId, null);
+  const medplum = await getAdminMedplum();
+  await updateQueueStatusForPatient(patientId, null, medplum);
 }
 
 export async function updateQueueStatus(patientId: string, status: QueueStatus): Promise<void> {
-  await updateQueueStatusForPatient(patientId, status);
+  const medplum = await getAdminMedplum();
+  await updateQueueStatusForPatient(patientId, status, medplum);
 }
 
 export async function getConsultationsWithDetails(statuses: QueueStatus[]): Promise<BillableConsultation[]> {
@@ -490,7 +505,7 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
       return [];
     }
 
-    const medplum = await getMedplumClient();
+    const medplum = await getAdminMedplum();
     let encounters: any[] = [];
     let searchUrl: string | undefined;
 
@@ -536,12 +551,12 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
             return null;
           }
 
-          const consultation = await getConsultationFromMedplum(enc.id);
+          const consultation = await getConsultationFromMedplum(enc.id, undefined, medplum);
           if (!consultation) return null;
-          const patientId = enc.subject?.reference?.replace('Patient/', '') || consultation.patientId;
+          const patientId = consultation.patientId || enc.subject?.reference?.replace('Patient/', '');
           if (!patientId) return null;
 
-          const patient = await getPatientFromMedplum(patientId);
+          const patient = await getPatientFromMedplum(patientId, undefined, medplum);
 
           return {
             id: consultation.id,
@@ -561,7 +576,7 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
           } satisfies BillableConsultation;
         })
       )
-    ).filter((c): c is BillableConsultation => Boolean(c));
+    ).filter(Boolean) as BillableConsultation[];
 
     return consultations.sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;
@@ -582,88 +597,42 @@ export interface Referral {
   facility: string;
   department?: string;
   doctorName?: string;
-  urgency?: "routine" | "urgent" | "stat" | "asap";
+  urgency?: "routine" | "urgent" | "emergency";
   reason?: string;
   clinicalInfo?: string;
-  letterText?: string;
-  status?: "draft" | "active" | "on-hold" | "revoked" | "completed" | "entered-in-error" | "unknown";
+  letterText: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 export async function createReferral(referral: Omit<Referral, "id" | "createdAt" | "updatedAt">): Promise<string> {
-  const now = new Date();
-  const date = referral.date ?? now;
-
-  return saveReferralToMedplum({
-    patientId: referral.patientId,
-    specialty: referral.specialty,
-    facility: referral.facility,
-    department: referral.department,
-    doctorName: referral.doctorName,
-    urgency: referral.urgency,
-    reason: referral.reason,
-    clinicalInfo: referral.clinicalInfo,
-    letterText: referral.letterText,
-    date,
-  });
+  const now = Timestamp.now();
+  const dataToSave = { ...referral, createdAt: now, updatedAt: now };
+  if (!dataToSave.date) {
+    dataToSave.date = now.toDate();
+  }
+  const docRef = await addDoc(collection(db, REFERRALS), dataToSave);
+  return docRef.id;
 }
 
 export async function getReferralsByPatientId(patientId: string): Promise<Referral[]> {
-  const referrals = await getPatientReferralsFromMedplum(patientId);
-  return referrals.map((referral) => ({
-    id: referral.id,
-    patientId: referral.patientId,
-    date: referral.date instanceof Date ? referral.date : new Date(referral.date),
-    specialty: referral.specialty,
-    facility: referral.facility,
-    department: referral.department,
-    doctorName: referral.doctorName,
-    urgency: referral.urgency as Referral["urgency"],
-    reason: referral.reason,
-    clinicalInfo: referral.clinicalInfo,
-    letterText: referral.letterText,
-    status: referral.status,
-    createdAt: referral.createdAt,
-  }));
+  const referralQuery = query(collection(db, REFERRALS), where("patientId", "==", patientId));
+  const snapshot = await getDocs(referralQuery);
+  return snapshot.docs.map((docSnap) => mapDocument<Referral>(docSnap));
 }
 
 export async function getReferralById(id: string): Promise<Referral | null> {
-  const referral = await getReferralFromMedplum(id);
-  if (!referral) {
+  const docRef = doc(db, REFERRALS, id);
+  const docSnap = await getDoc(docRef);
+  if (!docSnap.exists()) {
     return null;
   }
-  return {
-    id: referral.id,
-    patientId: referral.patientId,
-    date: referral.date instanceof Date ? referral.date : new Date(referral.date),
-    specialty: referral.specialty,
-    facility: referral.facility,
-    department: referral.department,
-    doctorName: referral.doctorName,
-    urgency: referral.urgency as Referral["urgency"],
-    reason: referral.reason,
-    clinicalInfo: referral.clinicalInfo,
-    letterText: referral.letterText,
-    status: referral.status,
-    createdAt: referral.createdAt,
-  };
+  return mapDocument<Referral>(docSnap);
 }
 
 export async function updateReferral(id: string, data: Partial<Referral>): Promise<void> {
-  await updateReferralInMedplum(id, {
-    patientId: data.patientId,
-    specialty: data.specialty,
-    facility: data.facility,
-    department: data.department,
-    doctorName: data.doctorName,
-    urgency: data.urgency,
-    reason: data.reason,
-    clinicalInfo: data.clinicalInfo,
-    letterText: data.letterText,
-    date: data.date,
-    status: data.status,
-  });
+  const docRef = doc(db, REFERRALS, id);
+  await updateDoc(docRef, { ...data, updatedAt: Timestamp.now() });
 }
 
 export interface PatientDocument {
@@ -695,18 +664,22 @@ export async function getAllPatientDocuments(): Promise<(PatientDocument & { pat
 
 // Triage Functions
 export async function triagePatient(patientId: string, triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>): Promise<void> {
-  await saveTriageEncounter(patientId, triageData);
+  const medplum = await getAdminMedplum();
+  await saveTriageEncounter(patientId, triageData, medplum);
 }
 
 export async function updateTriageData(patientId: string, triageData: Partial<TriageData>): Promise<void> {
-  await updateTriageEncounter(patientId, triageData);
+  const medplum = await getAdminMedplum();
+  await updateTriageEncounter(patientId, triageData, medplum);
 }
 
 export async function getTriagedPatientsQueue(): Promise<Patient[]> {
-  const patients = await getTriageQueueForToday();
+  const medplum = await getAdminMedplum();
+  const patients = await getTriageQueueForToday(200, medplum);
   return patients as unknown as Patient[];
 }
 
 export async function checkInPatient(patientId: string, chiefComplaint?: string): Promise<string> {
-  return checkInPatientInTriage(patientId, chiefComplaint);
+  const medplum = await getAdminMedplum();
+  return checkInPatientInTriage(patientId, chiefComplaint, undefined, medplum);
 }

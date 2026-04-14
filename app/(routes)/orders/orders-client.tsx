@@ -25,11 +25,15 @@ const McModal = dynamic(() => import("@/components/mc/mc-modal"), { ssr: false }
 
 interface OrdersClientProps {
   initialConsultations: BillableConsultation[];
+  otcContext?: {
+    patientId: string;
+    patientName?: string;
+  };
 }
 
-export default function OrdersClient({ initialConsultations }: OrdersClientProps) {
+export default function OrdersClient({ initialConsultations, otcContext }: OrdersClientProps) {
   const [consultations] = useState<BillableConsultation[]>(initialConsultations);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(otcContext?.patientName || "");
   const { toast } = useToast();
 
   // State for Bill Modal
@@ -114,6 +118,22 @@ export default function OrdersClient({ initialConsultations }: OrdersClientProps
           </p>
         </div>
       </div>
+
+      {otcContext ? (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-6">
+            <p className="text-sm font-medium">OTC registration handoff received</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Patient {otcContext.patientName || otcContext.patientId} was sent from registration. Use search and complete billing actions for this patient.
+            </p>
+            <div className="mt-3">
+              <Link href={`/patients/${otcContext.patientId}`} className="text-sm underline">
+                Open patient profile
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

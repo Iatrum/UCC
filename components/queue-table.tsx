@@ -32,6 +32,13 @@ function formatAddedAt(value?: string | Date | null) {
   return iso.slice(11, 19); // HH:MM:SS (UTC) to avoid hydration mismatch
 }
 
+function formatLabel(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps) {
   const router = useRouter();
 
@@ -230,6 +237,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
             <TableHead>Phone</TableHead>
             <TableHead>Triage Level</TableHead>
             <TableHead>Chief Complaint</TableHead>
+            <TableHead>Visit Context</TableHead>
             <TableHead>Added At</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -258,6 +266,24 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
               </TableCell>
               <TableCell className="max-w-[200px] truncate">
                 {patient.triage?.chiefComplaint || 'N/A'}
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-wrap gap-1">
+                  {patient.visitIntent ? (
+                    <Badge variant="outline">{formatLabel(patient.visitIntent)}</Badge>
+                  ) : null}
+                  {patient.payerType ? (
+                    <Badge variant="secondary">{formatLabel(patient.payerType)}</Badge>
+                  ) : null}
+                  {patient.assignedClinician ? (
+                    <Badge variant="outline" className="max-w-[160px] truncate">
+                      {patient.assignedClinician}
+                    </Badge>
+                  ) : null}
+                  {!patient.visitIntent && !patient.payerType && !patient.assignedClinician ? (
+                    <span className="text-xs text-muted-foreground">N/A</span>
+                  ) : null}
+                </div>
               </TableCell>
               <TableCell>
                 {formatAddedAt(patient.queueAddedAt)}
@@ -303,7 +329,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
           })}
           {patients.length === 0 && (
             <TableRow>
-              <TableCell colSpan={9} className="text-center py-4">
+              <TableCell colSpan={10} className="text-center py-4">
                 No patients in queue
               </TableCell>
             </TableRow>

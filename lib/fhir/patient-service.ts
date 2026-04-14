@@ -54,6 +54,16 @@ export interface SavedPatient extends PatientData {
   triage?: TriageData;
   queueStatus?: QueueStatus | null;
   queueAddedAt?: Date | string | null;
+  visitIntent?: string;
+  payerType?: string;
+  billingPerson?: string;
+  dependentName?: string;
+  dependentRelationship?: string;
+  dependentPhone?: string;
+  assignedClinician?: string;
+  registrationSource?: string;
+  registrationAt?: string;
+  performedBy?: string;
 }
 
 let medplumClient: MedplumClient | undefined;
