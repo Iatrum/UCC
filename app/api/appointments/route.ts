@@ -9,6 +9,7 @@ import {
   getPatientAppointmentsFromMedplum,
   getUpcomingAppointments,
   updateAppointmentStatus,
+  rescheduleAppointment,
 } from '@/lib/fhir/appointment-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
@@ -75,13 +76,23 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const medplum = await getMedplumForRequest(request);
-    const { appointmentId, status } = await request.json();
+    const { appointmentId, status, scheduledAt } = await request.json();
 
-    if (!appointmentId || !status) {
-      return NextResponse.json({ error: 'Missing appointmentId or status' }, { status: 400 });
+    if (!appointmentId) {
+      return NextResponse.json({ error: 'Missing appointmentId' }, { status: 400 });
     }
 
-    await updateAppointmentStatus(medplum, appointmentId, status);
+    if (status) {
+      await updateAppointmentStatus(medplum, appointmentId, status);
+    }
+
+    if (scheduledAt) {
+      await rescheduleAppointment(medplum, appointmentId, scheduledAt);
+    }
+
+    if (!status && !scheduledAt) {
+      return NextResponse.json({ error: 'No update fields provided' }, { status: 400 });
+    }
 
     return NextResponse.json({ success: true, message: 'Appointment updated successfully' });
   } catch (error) {

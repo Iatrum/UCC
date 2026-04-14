@@ -15,18 +15,33 @@ import { KLINIK_PUTERI_URL, KLINIK_PUTERI_EMAIL, KLINIK_PUTERI_PASSWORD } from "
 const SESSION_FILE = path.join(__dirname, "../.auth/klinikputeri.json");
 
 setup("authenticate as Klinik Puteri staff", async ({ page }) => {
-  await page.goto(`${KLINIK_PUTERI_URL}/login`, {
-    waitUntil: "domcontentloaded",
+  const response = await page.request.post(`${KLINIK_PUTERI_URL}/api/auth/login`, {
+    data: {
+      email: KLINIK_PUTERI_EMAIL,
+      password: KLINIK_PUTERI_PASSWORD,
+    },
     timeout: 30_000,
   });
+  expect(response.ok()).toBeTruthy();
 
-  // Fill and submit login form
-  await page.locator('input[type="email"]').fill(KLINIK_PUTERI_EMAIL);
-  await page.locator('input[type="password"]').fill(KLINIK_PUTERI_PASSWORD);
-  await page.locator('button[type="submit"]').click();
+  await expect
+    .poll(
+      async () => {
+        const res = await page.request.get(`${KLINIK_PUTERI_URL}/api/auth/me`, {
+          headers: {
+            Cookie: (await page.context().cookies())
+              .map((cookie) => `${cookie.name}=${cookie.value}`)
+              .join("; "),
+          },
+        });
+        return res.status();
+      },
+      { timeout: 30_000, intervals: [1000, 2000, 3000] }
+    )
+    .toBe(200);
 
-  // Wait until we're no longer on /login
-  await page.waitForURL((url) => !url.pathname.includes("/login"), {
+  await page.goto(`${KLINIK_PUTERI_URL}/dashboard`, {
+    waitUntil: "domcontentloaded",
     timeout: 30_000,
   });
 

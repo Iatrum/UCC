@@ -11,9 +11,9 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { KLINIK_PUTERI_URL } from "./support/env";
 
-const CLINIC_URL =
-  process.env.EMR_CLINIC_URL || "https://klinikputeri.drhidayat.com";
+const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.drhidayat.com";
 
 const RUN_ID = String(Date.now()).slice(-4).padStart(4, "0");
 const PATIENT_NAME = `E2E Consult Patient ${RUN_ID}`;
@@ -51,13 +51,20 @@ async function registerTestPatient(page: Page): Promise<string> {
     PATIENT_PHONE
   );
 
-  await page.click('button[type="submit"]');
-  await page.waitForURL(
-    (url) => /\/patients\/[a-z0-9-]+$/.test(url.pathname) && !url.pathname.endsWith("/new"),
+  const createPatient = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/patients") &&
+      response.request().method() === "POST",
     { timeout: 20_000 }
   );
 
-  return page.url(); // e.g. https://apex-group.drhidayat.com/patients/abc123
+  await page.click('button[type="submit"]');
+  const response = await createPatient;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok() || typeof data?.patientId !== "string") {
+    throw new Error(`Failed to create consultation test patient: ${response.status()}`);
+  }
+  return `${CLINIC_URL}/patients/${data.patientId}`;
 }
 
 // ── Consultation form ─────────────────────────────────────────────────────────
@@ -77,10 +84,10 @@ test.describe("Consultation form", () => {
   });
 
   test("consultation page renders correctly", async ({ page }) => {
-    await page.goto(
-      `${CLINIC_URL}/patients/${patientId}/consultation`,
-      { waitUntil: "domcontentloaded" }
-    );
+    await page.goto(`${CLINIC_URL}/patients/${patientId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("link", { name: /new consultation/i }).click();
 
     // Heading
     await expect(
@@ -102,14 +109,44 @@ test.describe("Consultation form", () => {
       page.getByRole("button", { name: /sign order/i })
     ).toBeVisible();
 
+    // New treatment plan panel tabs
+    await expect(page.getByRole("tab", { name: "Items" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Services" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Packages" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Documents" })).toBeVisible();
+
     await page.screenshot({ path: "test-results/consultation-form.png" });
   });
 
+  test("treatment plan autosaves and rehydrates after refresh", async ({ page }) => {
+    await page.goto(`${CLINIC_URL}/patients/${patientId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("link", { name: /new consultation/i }).click();
+
+    await page.getByRole("tab", { name: "Services" }).click();
+    await page.getByRole("button", { name: /add custom/i }).click();
+
+    const customService = `E2E Service ${Date.now().toString().slice(-5)}`;
+    const serviceNameInput = page.locator('input[value*="Custom service entry"]').first();
+    await expect(serviceNameInput).toBeVisible({ timeout: 10_000 });
+    await serviceNameInput.fill(customService);
+    await serviceNameInput.blur();
+
+    await expect(page.getByText(/All changes autosaved/i)).toBeVisible({ timeout: 10_000 });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.getByRole("tab", { name: "Services" }).click();
+    await expect(page.locator(`input[value="${customService}"]`).first()).toBeVisible({
+      timeout: 15_000,
+    });
+  });
+
   test("submitting empty form shows validation error", async ({ page }) => {
-    await page.goto(
-      `${CLINIC_URL}/patients/${patientId}/consultation`,
-      { waitUntil: "domcontentloaded" }
-    );
+    await page.goto(`${CLINIC_URL}/patients/${patientId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("link", { name: /new consultation/i }).click();
 
     await page.getByRole("button", { name: /sign order/i }).click();
 
@@ -122,10 +159,10 @@ test.describe("Consultation form", () => {
   test("happy-path: fill and submit consultation → back to patient profile", async ({
     page,
   }) => {
-    await page.goto(
-      `${CLINIC_URL}/patients/${patientId}/consultation`,
-      { waitUntil: "domcontentloaded" }
-    );
+    await page.goto(`${CLINIC_URL}/patients/${patientId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("link", { name: /new consultation/i }).click();
 
     await expect(
       page.getByRole("heading", { name: /new consultation/i })

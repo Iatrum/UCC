@@ -33,7 +33,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 const appointmentStatuses = [
   "scheduled",
   "checked_in",
-  "in_progress",
   "completed",
   "cancelled",
   "no_show",
@@ -158,13 +157,14 @@ export default function NewAppointmentForm() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const defaultScheduledAt = useMemo(() => new Date(Date.now() + 30 * 60 * 1000), []);
 
   const form = useForm<AppointmentFormValues>({
     resolver: zodResolver(appointmentSchema),
     defaultValues: {
       patientId: "",
-      scheduledDate: format(new Date(), "yyyy-MM-dd"),
-      scheduledTime: format(new Date(), "HH:mm"),
+      scheduledDate: format(defaultScheduledAt, "yyyy-MM-dd"),
+      scheduledTime: format(defaultScheduledAt, "HH:mm"),
       clinician: "",
       reason: "",
       visitType: "",
@@ -233,7 +233,6 @@ export default function NewAppointmentForm() {
       // Map appointment status to FHIR status
       const fhirStatus = values.status === "scheduled" ? "booked" : 
                         values.status === "checked_in" ? "arrived" :
-                        values.status === "in_progress" ? "arrived" :
                         values.status === "completed" ? "fulfilled" :
                         values.status === "cancelled" ? "cancelled" :
                         values.status === "no_show" ? "noshow" : "booked";

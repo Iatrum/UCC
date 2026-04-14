@@ -7,10 +7,67 @@ import { Calendar, Clock, MapPin, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getAppointments, type Appointment, type AppointmentStatus } from "@/lib/models";
+import { useToast } from "@/components/ui/use-toast";
 import { formatDisplayDate } from "@/lib/utils";
+import { rescheduleAppointment, updateAppointmentStatus } from "@/lib/fhir/appointment-client";
 
-const activeStatuses: AppointmentStatus[] = ["scheduled", "checked_in", "in_progress"];
+type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
+
+interface Appointment {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientContact?: string;
+  clinician: string;
+  reason: string;
+  type?: string;
+  location?: string;
+  notes?: string;
+  status: AppointmentStatus;
+  scheduledAt: Date | string;
+  durationMinutes?: number;
+  createdAt: Date | string;
+}
+
+const activeStatuses: AppointmentStatus[] = ["scheduled", "checked_in"];
+
+function normalizeAppointmentStatus(status: string | undefined): AppointmentStatus {
+  switch (status) {
+    case "booked":
+      return "scheduled";
+    case "arrived":
+      return "checked_in";
+    case "fulfilled":
+      return "completed";
+    case "cancelled":
+      return "cancelled";
+    case "noshow":
+      return "no_show";
+    case "checked_in":
+    case "scheduled":
+    case "completed":
+    case "no_show":
+      return status;
+    default:
+      return "scheduled";
+  }
+}
+
+async function getAppointments(): Promise<Appointment[]> {
+  const response = await fetch("/api/appointments", { credentials: "include" });
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || "Failed to load appointments");
+  }
+
+  return (data.appointments ?? []).map((appointment: any) => ({
+    ...appointment,
+    status: normalizeAppointmentStatus(appointment.status),
+    scheduledAt: appointment.scheduledAt ? new Date(appointment.scheduledAt) : new Date(),
+    createdAt: appointment.createdAt ? new Date(appointment.createdAt) : new Date(),
+  }));
+}
 
 function formatDateTime(date: Date | string): { day: string; time: string } {
   const instance = date instanceof Date ? date : new Date(date);
@@ -30,7 +87,6 @@ function formatDateTime(date: Date | string): { day: string; time: string } {
 const statusLabels: Record<AppointmentStatus, string> = {
   scheduled: "Scheduled",
   checked_in: "Checked in",
-  in_progress: "In progress",
   completed: "Completed",
   cancelled: "Cancelled",
   no_show: "No show",
@@ -39,45 +95,90 @@ const statusLabels: Record<AppointmentStatus, string> = {
 const statusVariants: Record<AppointmentStatus, "default" | "secondary" | "destructive" | "outline"> = {
   scheduled: "secondary",
   checked_in: "default",
-  in_progress: "default",
   completed: "outline",
   cancelled: "destructive",
   no_show: "destructive",
 };
 
 export default function AppointmentsRootPage() {
+  const { toast } = useToast();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadAppointments() {
-      setError(null);
-      setLoading(true);
-      try {
-        const data = await getAppointments();
-        if (!cancelled) {
-          setAppointments(data);
-        }
-      } catch (err) {
-        console.error("Failed to load appointments", err);
-        if (!cancelled) {
-          setError("Unable to load appointments right now. Please try again.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadAppointments();
+    void loadAppointments(cancelled);
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function loadAppointments(cancelled = false) {
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await getAppointments();
+      if (!cancelled) {
+        setAppointments(data);
+      }
+    } catch (err) {
+      console.error("Failed to load appointments", err);
+      if (!cancelled) {
+        setError("Unable to load appointments right now. Please try again.");
+      }
+    } finally {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }
+  }
+
+  async function handleMarkArrived(appointment: Appointment) {
+    try {
+      setActionId(appointment.id);
+      await updateAppointmentStatus(appointment.id, "arrived");
+      toast({
+        title: "Patient marked as arrived",
+        description: `${appointment.patientName} is now checked in.`,
+      });
+      await loadAppointments();
+    } catch (err: any) {
+      console.error("Failed to mark as arrived", err);
+      toast({
+        title: "Unable to update appointment",
+        description: err?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function handleReschedule(appointment: Appointment) {
+    try {
+      setActionId(appointment.id);
+      const current = appointment.scheduledAt instanceof Date ? appointment.scheduledAt : new Date(appointment.scheduledAt);
+      const nextSlot = new Date(current);
+      nextSlot.setMinutes(nextSlot.getMinutes() + 30);
+      await rescheduleAppointment(appointment.id, nextSlot);
+      toast({
+        title: "Appointment rescheduled",
+        description: `${appointment.patientName} moved to ${nextSlot.toLocaleString()}.`,
+      });
+      await loadAppointments();
+    } catch (err: any) {
+      console.error("Failed to reschedule appointment", err);
+      toast({
+        title: "Unable to reschedule",
+        description: err?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionId(null);
+    }
+  }
 
   const now = useMemo(() => new Date(), []);
 
@@ -118,7 +219,6 @@ export default function AppointmentsRootPage() {
         total: 0,
         scheduled: 0,
         checked_in: 0,
-        in_progress: 0,
         completed: 0,
         cancelled: 0,
         no_show: 0,
@@ -169,7 +269,7 @@ export default function AppointmentsRootPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statusCounts.scheduled + statusCounts.checked_in + statusCounts.in_progress}
+              {statusCounts.scheduled + statusCounts.checked_in}
             </div>
           </CardContent>
         </Card>
@@ -251,6 +351,24 @@ export default function AppointmentsRootPage() {
                   {appointment.notes ? (
                     <p className="rounded-md bg-muted p-3 text-muted-foreground">{appointment.notes}</p>
                   ) : null}
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1"
+                      variant="outline"
+                      onClick={() => handleMarkArrived(appointment)}
+                      disabled={actionId === appointment.id || appointment.status !== "scheduled"}
+                    >
+                      Mark arrived
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      variant="outline"
+                      onClick={() => handleReschedule(appointment)}
+                      disabled={actionId === appointment.id || appointment.status === "completed" || appointment.status === "cancelled"}
+                    >
+                      Reschedule +30m
+                    </Button>
+                  </div>
                   <Button className="w-full" variant="secondary" asChild>
                     <Link href={`/appointments/${appointment.id}`}>View details</Link>
                   </Button>

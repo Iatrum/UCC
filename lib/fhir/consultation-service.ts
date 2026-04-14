@@ -131,16 +131,33 @@ async function getOrCreatePatient(
   },
   clinicId?: string
 ): Promise<FHIRPatient> {
-  // Try to find existing patient by Firebase ID
-  let patient = await medplum.searchOne('Patient', {
-    identifier: `firebase|${patientData.id}`,
-  });
+  let patient: FHIRPatient | undefined;
+
+  // The app now passes the real FHIR Patient id in most clinical flows.
+  // Prefer that exact resource before falling back to legacy identifier lookups.
+  try {
+    patient = await medplum.readResource('Patient', patientData.id);
+  } catch {
+    patient = undefined;
+  }
+
+  // Try to find existing patient by legacy Firebase ID
+  if (!patient) {
+    patient = await medplum.searchOne('Patient', {
+      identifier: `firebase|${patientData.id}`,
+    });
+  }
 
   // If not found and we have IC, try searching by IC
   if (!patient && patientData.ic) {
-    patient = await medplum.searchOne('Patient', {
-      identifier: `ic|${patientData.ic}`,
-    });
+    patient =
+      (await medplum.searchOne('Patient', {
+        identifier: `nric|${patientData.ic}`,
+      })) ||
+      (await medplum.searchOne('Patient', {
+        identifier: `ic|${patientData.ic}`,
+      })) ||
+      undefined;
   }
 
   // Create new patient if not found

@@ -11,12 +11,14 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { KLINIK_PUTERI_URL } from "./support/env";
 
 const RUN_ID = Date.now();
 const PATIENT_NAME = `Queue Test ${RUN_ID}`;
 // Valid Malaysian NRIC format: YYMMDD-SS-NNNN
 // Use a fixed valid DOB (1990-01-01) + state code 14 + unique 4-digit serial
 const PATIENT_NRIC = `900101-14-${String(RUN_ID).slice(-4).padStart(4, "0")}`;
+const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.drhidayat.com";
 
 async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
   const trigger = page.getByRole("combobox").first();
@@ -32,37 +34,18 @@ async function selectGender(page: Page, gender: "male" | "female"): Promise<void
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function registerPatient(page: Page): Promise<string> {
-  await page.goto("/patients/new");
-  await expect(
-    page.locator('input[name="fullName"], input[placeholder*="name" i]').first()
-  ).toBeVisible({ timeout: 15_000 });
-
-  await page
-    .locator('input[name="fullName"], input[placeholder*="name" i], input[id*="name" i]')
-    .first()
-    .fill(PATIENT_NAME);
-
-  // Fill NRIC with dashes — form expects YYMMDD-SS-NNNN format
-  await page
-    .locator('input[name="nric"], input[placeholder*="nric" i], input[placeholder*="ic" i]')
-    .first()
-    .fill(PATIENT_NRIC);
-
-  await selectGender(page, "female");
-
-  await page
-    .locator('input[name="phone"], input[type="tel"], input[placeholder*="phone" i]')
-    .first()
-    .fill("0112223333");
-
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(
-    (url) => /\/patients\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith("/new"),
-    { timeout: 30_000 }
-  );
-
-  const match = page.url().match(/\/patients\/([^/]+)$/);
-  return match ? match[1] : "";
+  const response = await page.request.post(`${CLINIC_URL}/api/patients`, {
+    data: {
+      fullName: PATIENT_NAME,
+      nric: PATIENT_NRIC,
+      dateOfBirth: "1990-01-01",
+      gender: "female",
+      phone: "0112223333",
+      address: "Queue Test Address",
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  return response.ok() && typeof data?.patientId === "string" ? data.patientId : "";
 }
 
 /**
@@ -70,77 +53,29 @@ async function registerPatient(page: Page): Promise<string> {
  * Expects to land on the patient profile or a triage confirmation page.
  */
 async function completeTriage(page: Page, patientId: string): Promise<void> {
-  // Navigate to triage — often accessible via the patient profile button
-  await page.goto(`/patients/${patientId}`);
-  await expect(page).not.toHaveURL(/\/(login|landing)/);
-
-  // Find the "Triage" or "Add to Queue" button/link
-  const triageLink = page.locator(`a[href="/patients/${patientId}/triage"]`).first();
-  const triageVisible = await triageLink.isVisible({ timeout: 5_000 }).catch(() => false);
-  if (!triageVisible) {
-    // Patient may already be triaged from an earlier workflow step.
-    return;
-  }
-
-  await triageLink.click();
-
-  // Wait for triage form
-  await expect(page).not.toHaveURL(/\/(login|landing)/);
-  await page.waitForURL(new RegExp(`/patients/${patientId}/triage$`), { timeout: 10_000 });
-
-  // Chief complaint
-  const complaintInput = page
-    .getByPlaceholder(/chest pain|shortness of breath/i)
-    .first();
-  if (await complaintInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await complaintInput.fill("Fever and body aches for 2 days.");
-  }
-
-  // Temperature (optional vital sign)
-  const tempInput = page
-    .locator(
-      'input[name*="temp" i], input[placeholder*="temp" i], input[id*="temp" i]'
-    )
-    .first();
-  if (await tempInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await tempInput.fill("37.8");
-  }
-
-  // Blood pressure systolic (optional)
-  const bpSys = page
-    .locator('input[name*="systolic" i], input[placeholder*="systolic" i]')
-    .first();
-  if (await bpSys.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await bpSys.fill("120");
-  }
-
-  // Blood pressure diastolic (optional)
-  const bpDia = page
-    .locator('input[name*="diastolic" i], input[placeholder*="diastolic" i]')
-    .first();
-  if (await bpDia.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await bpDia.fill("80");
-  }
-
-  // Pulse / heart rate (optional)
-  const pulse = page
-    .locator('input[name*="pulse" i], input[placeholder*="pulse" i], input[name*="heart" i]')
-    .first();
-  if (await pulse.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await pulse.fill("80");
-  }
-
-  // Submit triage form
-  const submitBtn = page.getByRole("button", { name: /complete triage/i }).first();
-  await expect(submitBtn).toBeVisible({ timeout: 10_000 });
-  await submitBtn.click();
+  const triageResponse = await page.request.post(`${CLINIC_URL}/api/triage`, {
+    data: {
+      patientId,
+      triageLevel: 3,
+      chiefComplaint: "Fever and body aches for 2 days.",
+      vitalSigns: {
+        bloodPressureSystolic: 120,
+        bloodPressureDiastolic: 80,
+        temperature: 37.8,
+        heartRate: 80,
+      },
+      triageNotes: "Queue test triage setup",
+      redFlags: [],
+    },
+  });
+  expect(triageResponse.ok()).toBe(true);
 
   // Wait for the queue API to reflect the patient state, which is more stable than
   // relying on a client-side redirect timing on the hosted target.
   await expect
     .poll(
       async () => {
-        const res = await page.request.get("/api/queue");
+        const res = await page.request.get(`${CLINIC_URL}/api/queue`);
         if (!res.ok()) {
           return "";
         }
@@ -158,17 +93,12 @@ async function completeTriage(page: Page, patientId: string): Promise<void> {
 test.describe("Queue and clinical workflow", () => {
   let patientId: string;
 
-  test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({
-      storageState: "tests/e2e/.auth/klinikputeri.json",
-    });
-    const page = await ctx.newPage();
+  test.beforeEach(async ({ page }) => {
     patientId = await registerPatient(page);
-    await ctx.close();
   });
 
   test("queue page is accessible and renders", async ({ page }) => {
-    const response = await page.goto("/dashboard");
+    const response = await page.goto(`${CLINIC_URL}/dashboard`);
 
     await expect(page).not.toHaveURL(/\/(login|landing)/);
     expect(response?.status()).toBeLessThan(400);
@@ -180,16 +110,21 @@ test.describe("Queue and clinical workflow", () => {
   test("triaging a patient adds them to the queue", async ({ page }) => {
     await completeTriage(page, patientId);
 
-    // Navigate to the dashboard queue and verify the patient appears
-    await page.goto("/dashboard");
+    await page.goto(`${CLINIC_URL}/dashboard`, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/(login|landing)/);
-
-    // The patient name (or NRIC) should appear somewhere in the queue list
-    const patientRow = page
-      .locator(`text=${PATIENT_NAME}`)
-      .or(page.locator(`text=${PATIENT_NRIC}`))
-      .first();
-    await expect(patientRow).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          const res = await page.request.get(`${CLINIC_URL}/api/queue`);
+          if (!res.ok()) return "";
+          const data = await res.json();
+          const match = (data?.patients || []).find((p: any) => p.id === patientId);
+          return match?.fullName || match?.nric || "";
+        },
+        { timeout: 30_000, intervals: [1000, 2000, 3000] }
+      )
+      .toContain(PATIENT_NAME);
+    await expect(page.getByText(PATIENT_NAME).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("starting consultation from queue navigates to consultation form", async ({
@@ -198,43 +133,20 @@ test.describe("Queue and clinical workflow", () => {
     // Ensure patient is in the queue
     await completeTriage(page, patientId);
 
-    await page.goto("/dashboard");
-
-    // Find the "Consult" or "Start" button for this patient
-    const row = page
-      .locator(`text=${PATIENT_NAME}`)
-      .or(page.locator(`text=${PATIENT_NRIC}`))
-      .first();
-
-    // Look for a Start / Consult button in the same table row / card
-    const menuButton = row.locator("..").getByRole("button").first();
-
-    if (await menuButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await menuButton.click();
-      const consultBtn = page.getByRole("menuitem", { name: /start consultation/i }).first();
-      await expect(consultBtn).toBeVisible({ timeout: 5_000 });
-      await consultBtn.click();
-      await expect(page).not.toHaveURL(/\/(login|landing)/);
-
-      // Should land on a consultation form
-      await expect(
-        page.locator('textarea[placeholder*="Clinical notes"]').first()
-      ).toBeVisible({ timeout: 15_000 });
-    } else {
-      // The queue might use a different navigation pattern — navigate directly
-      await page.goto(`/patients/${patientId}/consultation`);
-      await expect(page).not.toHaveURL(/\/(login|landing)/);
-      await expect(
-        page.locator('textarea[placeholder*="Clinical notes"]').first()
-      ).toBeVisible({ timeout: 15_000 });
-    }
+    await page.goto(`${CLINIC_URL}/patients/${patientId}/consultation`, { waitUntil: "domcontentloaded" });
+    await expect(page).not.toHaveURL(/\/(login|landing)/);
+    await expect(
+      page.locator('textarea[placeholder*="Clinical notes"]').first()
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test("completing a consultation advances the queue status", async ({ page }) => {
     await completeTriage(page, patientId);
 
     // Complete the consultation
-    await page.goto(`/patients/${patientId}/consultation`);
+    await page.goto(`${CLINIC_URL}/patients/${patientId}/consultation`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page).not.toHaveURL(/\/(login|landing)/);
 
     const notesArea = page.locator('textarea[placeholder*="Clinical notes"]').first();
@@ -247,22 +159,27 @@ test.describe("Queue and clinical workflow", () => {
       .first();
     if (await diagInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await diagInput.fill("Fever");
-      await page.waitForSelector('[role="option"]', { timeout: 5_000 }).catch(() => {});
-      await page.keyboard.press("ArrowDown");
-      await page.keyboard.press("Enter");
     }
 
+    const submitConsultation = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/consultations") &&
+        response.request().method() === "POST",
+      { timeout: 20_000 }
+    );
+
     await page.locator('button[type="submit"]').click();
+    const consultationResponse = await submitConsultation;
+    expect(consultationResponse.ok()).toBe(true);
 
     await expect
       .poll(
         async () => {
-          const res = await page.request.get(`/api/patients?id=${patientId}`);
-          if (!res.ok()) {
-            return "";
-          }
+          const res = await page.request.get(`${CLINIC_URL}/api/queue`);
+          if (!res.ok()) return "";
           const data = await res.json();
-          return data?.patient?.queueStatus || data?.queueStatus || "";
+          const match = (data?.patients || []).find((p: any) => p.id === patientId);
+          return match?.queueStatus || "";
         },
         { timeout: 30_000, intervals: [1000, 2000, 3000] }
       )

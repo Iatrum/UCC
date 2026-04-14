@@ -1,6 +1,6 @@
 # Production Readiness
 
-Last updated: 2026-03-31
+Last updated: 2026-04-05
 
 ## Status
 
@@ -140,6 +140,34 @@ Note:
 - 2026-03-31: Targeted referral-spec runs against `klinikputeri.drhidayat.com` remain blocked by intermittent clinic login instability. On successful bootstrap attempts the deployed patient profile does show the `Referral / MC` tab, `Referral Letters`, and `No referrals yet.` state, but repeated runs still get stuck on `/login`, so referral workflow verification is not yet clean enough to count toward release sign-off.
 - 2026-03-31: Root cause identified for the login instability on the hosted clinic target. A direct browser reproduction showed successful `/api/auth/login` responses followed by browser-side `https://fhir.drhidayat.com/auth/me` requests being blocked by CORS from `https://klinikputeri.drhidayat.com`. The client auth provider was still depending on direct Medplum browser calls (`getProfileAsync()` / `auth/me`) to establish auth state after login.
 - 2026-03-31: Repo mitigation landed: `lib/auth-medplum.tsx` now restores and verifies auth state through same-origin `/api/auth/medplum-session` and `/api/auth/me` instead of direct browser Medplum profile calls, and `app/api/auth/me` now returns the raw profile plus admin status for the client. This removes the browser CORS dependency from the auth bootstrap path in the repo; hosted verification still requires deploy and rerun.
+- 2026-03-31: Post-push hosted retest confirms the live clinic deployment has not yet picked up the auth mitigation. Browser reproduction still shows `/api/auth/login` returning an `accessToken` in the JSON body and the client still calling `https://fhir.drhidayat.com/auth/me` directly from the browser, which fails CORS. Focused rerun of `tests/e2e/setup/clinic-auth.setup.ts` still times out waiting to leave `/login`.
+- 2026-03-31: The auth mitigation was promoted to production and the hosted clinic login was retested successfully. Direct browser reproduction on `https://klinikputeri.drhidayat.com/login` now shows the new same-origin flow:
+  `/api/auth/login` returns the new repo response shape, then `/api/auth/medplum-session` and `/api/auth/me` both return `200`, session cookies are set on `.drhidayat.com`, and the browser lands on `/dashboard` with no Medplum CORS errors.
+- 2026-03-31: Focused rerun of `tests/e2e/setup/clinic-auth.setup.ts` passed again in `5.1s` after the production promotion, confirming that clinic auth bootstrap is healthy on the live deployment.
+- 2026-03-31: Full referral workflow verification now passes on the live clinic target. `bunx playwright test tests/e2e/referrals.spec.ts --project=clinic` finished at `4 passed` after the production auth fix. Verified coverage:
+  referral tab renders, empty state shows, validation feedback appears on empty submit, and the happy-path referral save completes successfully.
+- 2026-04-05: Clinic workflow specs were hardened to use the real clinic host explicitly (`https://klinikputeri.drhidayat.com`) and to stop relying on ambiguous `Triage` link text, sidebar collisions, or stale `/patients/new` assumptions. Check-in, consultation, queue, and triage specs now target patient-specific routes and API-backed waits.
+- 2026-04-05: Focused rerun of `check-in + triage + consultation + queue` reached `13 passed, 2 failed`.
+- 2026-04-05: Confirmed green in the focused clinic batch:
+  - check-in page load/search/check-in flow
+  - consultation form render/validation/happy path
+  - queue page render
+  - queue triage-to-consultation navigation
+  - triage page reachability and form render
+- 2026-04-05: Remaining red cases are both submit/progression behaviors on the live hosted clinic target:
+  - `tests/e2e/triage.spec.ts` happy-path triage submit intermittently receives a non-OK `/api/triage` response in browser-driven verification, even though direct authenticated API reproduction can succeed
+  - `tests/e2e/queue.spec.ts` post-consultation queue progression is still not proving the expected terminal queue state reliably in Playwright
+- 2026-04-05: An isolated serialized rerun (`--workers=1`) hit another intermittent timeout in `tests/e2e/setup/clinic-auth.setup.ts`, so auth bootstrap was improved but still not fully deterministic under the old browser-form setup.
+- 2026-04-05: Further isolation work moved `triage` and `queue` setup off the patient-registration UI and onto direct authenticated API setup so those suites only exercise the workflow they actually own.
+- 2026-04-05: Vercel runtime logs confirmed the then-current production deployment emitted `POST /api/triage -> 500` during the failing focused reruns.
+- 2026-04-05: Local app fix landed in `lib/fhir/triage-service.ts` to send full UCUM unit metadata for vitals observations (heart rate, respiratory rate, SpO2, weight, height, blood pressure, temperature).
+- 2026-04-05: That triage-service fix has now been deployed to production (`https://ucc-k56f04mdx-hidayat0507s-projects.vercel.app`, aliased to `https://drhidayat.com`).
+- 2026-04-05: Clinic auth setup was also hardened in `tests/e2e/setup/clinic-auth.setup.ts` to create the session through same-origin `/api/auth/login` via Playwright `page.request` instead of relying on a flaky browser-form submit. Focused rerun of `triage + queue` now starts cleanly with clinic auth setup passing in `6.0s`.
+- 2026-04-05: Post-deploy focused rerun of `tests/e2e/triage.spec.ts` + `tests/e2e/queue.spec.ts` finished at `6 passed, 2 failed`.
+- 2026-04-05: The deploy removed the prior gross blocker: queue can now observe a triaged patient, so the old production `POST /api/triage -> 500` failure is no longer the dominant failure mode in focused verification.
+- 2026-04-05: Two production workflow issues still remain:
+  - browser-driven triage submit still receives a non-OK `/api/triage` response in `tests/e2e/triage.spec.ts`, even though direct authenticated API reproduction returns `200`
+  - post-consultation queue progression still remains at `waiting` instead of advancing to `meds_and_bills` / `completed` in `tests/e2e/queue.spec.ts`
 
 ## Individual Spec Results (2026-03-30)
 
@@ -177,13 +205,28 @@ Note:
 - persistent live blocker remained: fresh-patient discoverability in `/check-in`
 - later reruns still showed hosted-environment instability on fresh patient creation/search, so production readiness is still not proven
 
+**Latest focused result (2026-04-05 against klinikputeri.drhidayat.com):**
+- `13 passed, 2 failed` for `check-in + triage + consultation + queue`
+- check-in discoverability is now proven in the focused suite
+- consultation render, validation, and happy path are now proven in the focused suite
+- remaining blockers are narrowed to:
+  - live browser-driven triage submit instability
+  - live queue-state progression after consultation completion
+
+**Latest post-deploy verification (2026-04-05 against klinikputeri.drhidayat.com):**
+- production deploy succeeded for the triage-service fix
+- `6 passed, 2 failed` for focused `triage + queue`
+- clinic auth setup now passes through the API bootstrap path
+- queue can now observe a triaged patient
+- remaining blockers are:
+  - browser-form triage submit still gets a non-OK `/api/triage` response
+  - consultation completion still leaves queue state at `waiting`
+
 ## Next Actions
 
-1. **[Blocker]** Deploy and verify the repo-side patient search fix; live `/check-in` still does not reliably find freshly-created patients by NRIC/name
-2. **[Blocker]** Investigate hosted fresh-patient creation instability; later reruns still intermittently fail to leave `/patients/new` after submit
-3. Verify completed consultation queue state on the deployed environment after the `finished`-encounter read fix
-4. Fix admin "clinic list" selector: `getByRole("link", { name: "Manage" })` doesn't match live UI; also check if "no clinics found" fallback text is correct
-5. Deploy and rerun clinic login verification to confirm the auth-provider CORS mitigation resolves the hosted `/login` stickiness
-6. Stabilize `tests/e2e/setup/clinic-auth.setup.ts` after deploy and rerun the new referrals workflow spec
-7. Keep AI-route logging limited to metadata
-8. Move test defaults away from production-like domains
+1. **[Blocker]** Debug the remaining browser-path `/api/triage` mismatch. Direct authenticated API calls now return `200`, but browser-driven triage submit still fails.
+2. **[Blocker]** Fix consultation queue transition so completion advances status out of `waiting` to `meds_and_bills` / `completed`.
+3. Rerun the broader clinic suite after the triage browser-path and queue-transition issues are fixed.
+4. Fix admin "clinic list" selector: `getByRole("link", { name: "Manage" })` doesn't match live UI; also check if "no clinics found" fallback text is correct.
+5. Keep AI-route logging limited to metadata.
+6. Move test defaults away from production-like domains.

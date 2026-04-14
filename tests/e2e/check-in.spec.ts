@@ -9,11 +9,13 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { KLINIK_PUTERI_URL } from "./support/env";
 
 const RUN_ID = String(Date.now()).slice(-4).padStart(4, "0");
 const PATIENT_NAME = `CheckIn E2E ${RUN_ID}`;
 // Valid Malaysian NRIC format: YYMMDD-SS-NNNN
 const PATIENT_NRIC = `900101-10-${RUN_ID}`;
+const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.drhidayat.com";
 
 async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
   const trigger = page.getByRole("combobox").first();
@@ -27,7 +29,7 @@ async function selectGender(page: Page, gender: "male" | "female"): Promise<void
 }
 
 async function createTestPatient(page: Page): Promise<{ id: string; nric: string }> {
-  await page.goto("/patients/new", { waitUntil: "domcontentloaded" });
+  await page.goto(`${CLINIC_URL}/patients/new`, { waitUntil: "domcontentloaded" });
 
   await page
     .locator('input[name="fullName"], input[placeholder*="name" i]')
@@ -46,14 +48,19 @@ async function createTestPatient(page: Page): Promise<{ id: string; nric: string
     .first()
     .fill("0129990000");
 
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(
-    (url) => /\/patients\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith("/new"),
+  const createPatient = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/patients") &&
+      response.request().method() === "POST",
     { timeout: 20_000 }
   );
 
-  const match = page.url().match(/\/patients\/([^/]+)$/);
-  return { id: match?.[1] ?? "", nric: PATIENT_NRIC };
+  await page.locator('button[type="submit"]').click();
+  const response = await createPatient;
+  const data = await response.json().catch(() => ({}));
+  const patientId =
+    response.ok() && typeof data?.patientId === "string" ? data.patientId : "";
+  return { id: patientId, nric: PATIENT_NRIC };
 }
 
 test.describe("Check-in workflow", () => {
@@ -69,7 +76,7 @@ test.describe("Check-in workflow", () => {
   });
 
   test("check-in page loads", async ({ page }) => {
-    const response = await page.goto("/check-in", { waitUntil: "domcontentloaded" });
+    const response = await page.goto(`${CLINIC_URL}/check-in`, { waitUntil: "domcontentloaded" });
     const status = response?.status() ?? 0;
 
     // Skip gracefully if the route is not yet deployed
@@ -87,7 +94,7 @@ test.describe("Check-in workflow", () => {
   });
 
   test("check-in page has a search / NRIC input", async ({ page }) => {
-    await page.goto("/check-in", { waitUntil: "domcontentloaded" });
+    await page.goto(`${CLINIC_URL}/check-in`, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/login/);
 
     const searchInput = page
@@ -100,7 +107,7 @@ test.describe("Check-in workflow", () => {
   });
 
   test("searching by NRIC finds the test patient", async ({ page }) => {
-    await page.goto("/check-in", { waitUntil: "domcontentloaded" });
+    await page.goto(`${CLINIC_URL}/check-in`, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/login/);
 
     const searchInput = page
@@ -111,16 +118,25 @@ test.describe("Check-in workflow", () => {
 
     await expect(searchInput).toBeVisible({ timeout: 15_000 });
     await searchInput.fill(PATIENT_NRIC);
-    await page.waitForTimeout(1_000);
-
-    // Patient card or name should appear
-    await expect(
-      page.getByText(PATIENT_NAME).or(page.getByText(PATIENT_NRIC))
-    ).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(
+            `${CLINIC_URL}/api/patients?search=${encodeURIComponent(PATIENT_NRIC)}`
+          );
+          const data = await response.json().catch(() => ({}));
+          return (data?.patients || []).some((p: any) => p.nric === PATIENT_NRIC);
+        },
+        { timeout: 15_000, intervals: [500, 1000, 2000] }
+      )
+      .toBe(true);
+    await expect(page.getByRole("cell", { name: PATIENT_NAME }).first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("checking in updates patient status to arrived", async ({ page }) => {
-    await page.goto("/check-in", { waitUntil: "domcontentloaded" });
+    await page.goto(`${CLINIC_URL}/check-in`, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/login/);
 
     const searchInput = page
@@ -131,11 +147,21 @@ test.describe("Check-in workflow", () => {
 
     await expect(searchInput).toBeVisible({ timeout: 15_000 });
     await searchInput.fill(PATIENT_NRIC);
-    await page.waitForTimeout(1_000);
-
-    await expect(
-      page.getByText(PATIENT_NAME).or(page.getByText(PATIENT_NRIC))
-    ).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(
+            `${CLINIC_URL}/api/patients?search=${encodeURIComponent(PATIENT_NRIC)}`
+          );
+          const data = await response.json().catch(() => ({}));
+          return (data?.patients || []).some((p: any) => p.nric === PATIENT_NRIC);
+        },
+        { timeout: 15_000, intervals: [500, 1000, 2000] }
+      )
+      .toBe(true);
+    await expect(page.getByRole("cell", { name: PATIENT_NAME }).first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // Click check-in button
     const checkInBtn = page
@@ -151,7 +177,7 @@ test.describe("Check-in workflow", () => {
       ).toBeVisible({ timeout: 10_000 });
     } else {
       // Check-in may use a direct API — verify via API response
-      const res = await page.request.post("/api/check-in", {
+      const res = await page.request.post(`${CLINIC_URL}/api/check-in`, {
         data: { patientId: patient.id },
       });
       expect([200, 201]).toContain(res.status());

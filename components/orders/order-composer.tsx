@@ -1,393 +1,492 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown, X } from "lucide-react";
-
+import { Search, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/use-toast";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { getMedications, Medication } from "@/lib/inventory";
-import { Prescription, ProcedureRecord } from "@/lib/models";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+  computeTreatmentPlanSummary,
+  type TreatmentPlanEntry,
+  type TreatmentPlanEntryInput,
+  type TreatmentPlanSummary,
+  type TreatmentPlanTab,
+} from "@/lib/treatment-plan";
 
-type OrderOption = {
+type CatalogItem = {
   id: string;
-  label: string;
-  type: "medication" | "procedure";
-  price?: number;
-  payload?: any;
+  name: string;
+  unitPrice?: number;
+  meta?: Record<string, string>;
 };
 
-const frequencies = [
-  { value: "od", label: "OD" },
-  { value: "bd", label: "BD" },
-  { value: "tds", label: "TDS" },
-  { value: "qid", label: "QID" },
-  { value: "prn", label: "PRN" },
-];
-
-const durations = [
-  { value: "3d", label: "3 days" },
-  { value: "5d", label: "5 days" },
-  { value: "1w", label: "1 week" },
-  { value: "2w", label: "2 weeks" },
-  { value: "1m", label: "1 month" },
-];
-
-export type ProcedureOption = { id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string };
-
 interface OrderComposerProps {
-  procedureOptions: ProcedureOption[];
-  initialPrescriptions?: Prescription[];
-  initialProcedures?: ProcedureRecord[];
-  onPrescriptionsChange: (prescriptions: Prescription[]) => void;
-  onProceduresChange: (procedures: ProcedureRecord[]) => void;
+  draftId: string;
+  patientId: string;
+  consultationId?: string;
+  initialEntries?: TreatmentPlanEntry[];
+  items: CatalogItem[];
+  services: CatalogItem[];
+  packages?: CatalogItem[];
+  documents?: CatalogItem[];
+  loadingCatalog?: boolean;
+  onPlanChange?: (entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => void;
+  submitLabel?: string;
+  submitting?: boolean;
 }
 
+const TABS: Array<{ key: TreatmentPlanTab; label: string }> = [
+  { key: "items", label: "Items" },
+  { key: "services", label: "Services" },
+  { key: "packages", label: "Packages" },
+  { key: "documents", label: "Documents" },
+];
+
+const TAB_EMPTY: Record<TreatmentPlanTab, string> = {
+  items: "No inventory items in this catalog yet.",
+  services: "No services in this catalog yet.",
+  packages: "No packages in this catalog yet.",
+  documents: "No documents in this catalog yet.",
+};
+
 export function OrderComposer({
-  procedureOptions,
-  initialPrescriptions = [],
-  initialProcedures = [],
-  onPrescriptionsChange,
-  onProceduresChange,
+  draftId,
+  patientId,
+  consultationId,
+  initialEntries = [],
+  items,
+  services,
+  packages = [],
+  documents = [],
+  loadingCatalog = false,
+  onPlanChange,
+  submitLabel = "Sign Order",
+  submitting = false,
 }: OrderComposerProps) {
-  const [open, setOpen] = React.useState(false);
-  const [medications, setMedications] = React.useState<Medication[]>([]);
-  const [loadingMeds, setLoadingMeds] = React.useState(true);
-  const [prescriptions, setPrescriptions] = React.useState<Prescription[]>(initialPrescriptions);
-  const [procedures, setProcedures] = React.useState<ProcedureRecord[]>(initialProcedures);
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = React.useState<TreatmentPlanTab>("items");
+  const [query, setQuery] = React.useState("");
+  const [entries, setEntries] = React.useState<TreatmentPlanEntry[]>([]);
+  const [summary, setSummary] = React.useState<TreatmentPlanSummary>(() => computeTreatmentPlanSummary([]));
+  const [hydrated, setHydrated] = React.useState(false);
+  const [savingIds, setSavingIds] = React.useState<Record<string, boolean>>({});
+
+  const catalogByTab = React.useMemo<Record<TreatmentPlanTab, CatalogItem[]>>(
+    () => ({
+      items,
+      services,
+      packages,
+      documents,
+    }),
+    [items, services, packages, documents]
+  );
+
+  const publishPlan = React.useCallback(
+    (nextEntries: TreatmentPlanEntry[]) => {
+      const nextSummary = computeTreatmentPlanSummary(nextEntries);
+      setEntries(nextEntries);
+      setSummary(nextSummary);
+      onPlanChange?.(nextEntries, nextSummary);
+    },
+    [onPlanChange]
+  );
+
+  const loadDraft = React.useCallback(async () => {
+    const response = await fetch(
+      `/api/consultations/plan?draftId=${encodeURIComponent(draftId)}&patientId=${encodeURIComponent(
+        patientId
+      )}${consultationId ? `&consultationId=${encodeURIComponent(consultationId)}` : ""}`,
+      { cache: "no-store" }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Failed to load treatment plan draft");
+    }
+    return data.plan as { entries: TreatmentPlanEntry[]; summary: TreatmentPlanSummary };
+  }, [consultationId, draftId, patientId]);
 
   React.useEffect(() => {
+    let active = true;
     (async () => {
       try {
-        setLoadingMeds(true);
-        const meds = await getMedications();
-        setMedications(meds);
+        const plan = await loadDraft();
+        if (!active) return;
+        if (plan.entries.length > 0) {
+          publishPlan(plan.entries);
+          return;
+        }
+        publishPlan(initialEntries);
+      } catch (error) {
+        if (!active) return;
+        publishPlan(initialEntries);
+        console.error("Failed to hydrate treatment plan draft:", error);
       } finally {
-        setLoadingMeds(false);
+        if (active) setHydrated(true);
       }
     })();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [initialEntries, loadDraft, publishPlan]);
 
-  React.useEffect(() => onPrescriptionsChange(prescriptions), [prescriptions, onPrescriptionsChange]);
-  React.useEffect(() => onProceduresChange(procedures), [procedures, onProceduresChange]);
+  const filteredCatalog = React.useMemo(() => {
+    const tabItems = catalogByTab[activeTab];
+    const term = query.trim().toLowerCase();
+    if (!term) return tabItems;
+    return tabItems.filter((item) => item.name.toLowerCase().includes(term));
+  }, [activeTab, catalogByTab, query]);
 
-  const [query, setQuery] = React.useState("");
-  const hasQuery = query.trim().length > 0;
+  const persistEntry = React.useCallback(
+    async (entry: TreatmentPlanEntryInput, rollback: () => void) => {
+      const pendingKey = entry.id || `${entry.tab}:${entry.catalogRef || entry.name}`;
+      setSavingIds((prev) => ({ ...prev, [pendingKey]: true }));
+      try {
+        const response = await fetch("/api/consultations/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draftId, patientId, consultationId, entry }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.error || "Failed to save treatment plan entry");
+        }
+        publishPlan(data.plan.entries as TreatmentPlanEntry[]);
+      } catch (error) {
+        rollback();
+        toast({
+          title: "Autosave failed",
+          description: error instanceof Error ? error.message : "Failed to save treatment plan changes.",
+          variant: "destructive",
+        });
+      } finally {
+        setSavingIds((prev) => {
+          const next = { ...prev };
+          delete next[pendingKey];
+          return next;
+        });
+      }
+    },
+    [consultationId, draftId, patientId, publishPlan, toast]
+  );
 
-  const [isMedDialogOpen, setIsMedDialogOpen] = React.useState(false);
-  const [editingIndex, setEditingIndex] = React.useState<number | null>(null);
-  const [draftPrescription, setDraftPrescription] = React.useState<Prescription | null>(null);
-  const [isProcDialogOpen, setIsProcDialogOpen] = React.useState(false);
-  const [editingProcIndex, setEditingProcIndex] = React.useState<number | null>(null);
-  const [draftProcedure, setDraftProcedure] = React.useState<ProcedureRecord | null>(null);
-
-  const options: OrderOption[] = React.useMemo(() => {
-    const medOptions: OrderOption[] = medications.map((m) => ({
-      id: m.id,
-      label: m.dosageForm ? `${m.name} (${m.dosageForm})` : m.name,
-      type: "medication",
-      payload: m,
-    }));
-    const procOptions: OrderOption[] = procedureOptions.map((p) => ({
-      id: p.id,
-      label: p.label,
-      type: "procedure",
-      price: p.price,
-      payload: { codingSystem: p.codingSystem, codingCode: p.codingCode, codingDisplay: p.codingDisplay },
-    }));
-    return [...medOptions, ...procOptions];
-  }, [medications, procedureOptions]);
-
-  const filteredMedOptions = React.useMemo(() => {
-    if (!hasQuery) return [] as OrderOption[];
-    const q = query.toLowerCase();
-    return options
-      .filter(o => o.type === "medication" && o.label.toLowerCase().includes(q));
-  }, [options, query, hasQuery]);
-
-  const filteredProcOptions = React.useMemo(() => {
-    if (!hasQuery) return [] as OrderOption[];
-    const q = query.toLowerCase();
-    return options
-      .filter(o => o.type === "procedure" && o.label.toLowerCase().includes(q));
-  }, [options, query, hasQuery]);
-
-  const handleSelect = (opt: OrderOption) => {
-    if (opt.type === "medication") {
-      // Add to list first; details will be edited when clicking the list item
-      const newItem: Prescription = {
-        medication: { id: opt.id, name: (opt.payload?.name as string) ?? opt.label.split(" (")[0] },
-        frequency: "",
-        duration: "",
+  const addCatalogItem = React.useCallback(
+    async (tab: TreatmentPlanTab, item: CatalogItem) => {
+      const nowIso = new Date().toISOString();
+      const optimistic: TreatmentPlanEntry = {
+        id: crypto.randomUUID(),
+        tab,
+        catalogRef: item.id,
+        name: item.name,
+        quantity: 1,
+        unitPrice: Number(item.unitPrice || 0),
+        lineTotal: Number((item.unitPrice || 0).toFixed(2)),
+        meta: item.meta,
+        createdAt: nowIso,
+        updatedAt: nowIso,
       };
-      setPrescriptions((prev) => [...prev, newItem]);
-      setQuery("");
-    } else {
-      // Add to list first; details will be edited when clicking the list item
-      const proc: ProcedureRecord = {
-        name: opt.label,
-        price: opt.price,
-        procedureId: opt.id,
-        codingSystem: opt.payload?.codingSystem,
-        codingCode: opt.payload?.codingCode,
-        codingDisplay: opt.payload?.codingDisplay,
-      };
-      setProcedures((prev) => [...prev, proc]);
-      setQuery("");
-    }
-    setOpen(false);
-  };
+      const prev = entries;
+      publishPlan([...prev, optimistic]);
+      await persistEntry(
+        {
+          id: optimistic.id,
+          tab: optimistic.tab,
+          catalogRef: optimistic.catalogRef,
+          name: optimistic.name,
+          quantity: optimistic.quantity,
+          unitPrice: optimistic.unitPrice,
+          meta: optimistic.meta,
+        },
+        () => publishPlan(prev)
+      );
+    },
+    [entries, persistEntry, publishPlan]
+  );
 
-  const removePrescription = (index: number) => setPrescriptions((prev) => prev.filter((_, i) => i !== index));
-  const removeProcedure = (index: number) => setProcedures((prev) => prev.filter((_, i) => i !== index));
+  const addManualItem = React.useCallback(async () => {
+    await addCatalogItem(activeTab, {
+      id: `manual-${crypto.randomUUID()}`,
+      name: `Custom ${activeTab.slice(0, -1)} entry`,
+      unitPrice: 0,
+      meta: { source: "manual" },
+    });
+  }, [activeTab, addCatalogItem]);
+
+  const removeEntry = React.useCallback(
+    async (entry: TreatmentPlanEntry) => {
+      const prev = entries;
+      const next = prev.filter((item) => item.id !== entry.id);
+      publishPlan(next);
+      try {
+        const response = await fetch("/api/consultations/plan", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draftId, entryId: entry.id }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.error || "Failed to delete entry");
+        }
+        publishPlan(data.plan.entries as TreatmentPlanEntry[]);
+      } catch (error) {
+        publishPlan(prev);
+        toast({
+          title: "Autosave failed",
+          description: error instanceof Error ? error.message : "Failed to delete treatment plan entry.",
+          variant: "destructive",
+        });
+      }
+    },
+    [draftId, entries, publishPlan, toast]
+  );
+
+  const updateEntryField = React.useCallback(
+    async (entry: TreatmentPlanEntry, patch: Partial<TreatmentPlanEntryInput>) => {
+      const prev = entries;
+      const next = prev.map((item) => {
+        if (item.id !== entry.id) return item;
+        const quantity = Number(patch.quantity ?? item.quantity);
+        const unitPrice = Number(patch.unitPrice ?? item.unitPrice);
+        return {
+          ...item,
+          ...patch,
+          quantity,
+          unitPrice,
+          lineTotal: Number((quantity * unitPrice).toFixed(2)),
+          updatedAt: new Date().toISOString(),
+        };
+      });
+      publishPlan(next);
+      await persistEntry(
+        {
+          id: entry.id,
+          tab: entry.tab,
+          catalogRef: entry.catalogRef,
+          name: (patch.name ?? entry.name) as string,
+          quantity: Number(patch.quantity ?? entry.quantity),
+          unitPrice: Number(patch.unitPrice ?? entry.unitPrice),
+          instruction: patch.instruction ?? entry.instruction,
+          dosage: patch.dosage ?? entry.dosage,
+          frequency: patch.frequency ?? entry.frequency,
+          duration: patch.duration ?? entry.duration,
+          meta: patch.meta ?? entry.meta,
+        },
+        () => publishPlan(prev)
+      );
+    },
+    [entries, persistEntry, publishPlan]
+  );
+
+  const tabEntries = React.useMemo(
+    () => entries.filter((entry) => entry.tab === activeTab),
+    [activeTab, entries]
+  );
 
   return (
-    <div className="space-y-3">
-      {/* Unified type-to-add field */}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className="w-full justify-between h-9"
-          >
-            Type to order (Medication/Procedure)
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-          <Command>
-            <CommandInput placeholder="Search to order (MedicationRequest/ServiceRequest)..." onValueChange={setQuery} />
-            <CommandList>
-              {!hasQuery ? (
-                <CommandEmpty>Start typing to search…</CommandEmpty>
-              ) : (
-                <>
-                  <CommandGroup heading="Medications">
-                    {loadingMeds && <CommandItem disabled>Loading...</CommandItem>}
-                    {!loadingMeds && filteredMedOptions.map((opt) => (
-                      <CommandItem key={`med-${opt.id}`} value={opt.label} onSelect={() => handleSelect(opt)}>
-                        <Check className="mr-2 h-4 w-4 opacity-0" />
-                        {opt.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Procedures">
-                    {procedureOptions.length === 0 && <CommandItem disabled>No procedures configured</CommandItem>}
-                    {filteredProcOptions.map((opt) => (
-                      <CommandItem key={`proc-${opt.id}`} value={opt.label} onSelect={() => handleSelect(opt)}>
-                        <Check className="mr-2 h-4 w-4 opacity-0" />
-                        {opt.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </>
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <Card className="h-full md:sticky md:top-2">
+      <CardHeader className="pb-3">
+        <CardTitle>Order Composer</CardTitle>
+        <CardDescription>Autosaved draft with real-time billing totals.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TreatmentPlanTab)}>
+          <TabsList className="grid w-full grid-cols-4">
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.key} value={tab.key}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-      {/* Added items list */}
-      <div className="space-y-2">
-        {prescriptions.map((p, index) => (
-          <div
-            key={`p-${index}`}
-            className="border rounded-md p-2 hover:bg-accent/30 cursor-pointer"
-            role="button"
-            onClick={() => {
-              setEditingIndex(index);
-              setDraftPrescription(p);
-              setIsMedDialogOpen(true);
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium">{p.medication.name}</div>
-                {(p.frequency || p.duration) && (
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {[
-                      ((): string => {
-                        const map: Record<string, string> = { od: "OD", bd: "BD", tds: "TDS", qid: "QID", qds: "QID", prn: "PRN" };
-                        return map[p.frequency] ?? (p.frequency ? p.frequency.toUpperCase() : "");
-                      })(),
-                      p.duration,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
-                )}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removePrescription(index);
-                }}
-                aria-label="Remove medication"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-
-        {procedures.map((proc, index) => (
-          <div
-            key={`r-${index}`}
-            className="border rounded-md p-2 hover:bg-accent/30 cursor-pointer"
-            role="button"
-            onClick={() => {
-              setEditingProcIndex(index);
-              setDraftProcedure(proc);
-              setIsProcDialogOpen(true);
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium">{proc.name}</div>
-                {typeof proc.price !== 'undefined' && (
-                  <div className="text-xs text-muted-foreground mt-0.5">${proc.price.toFixed(2)}</div>
-                )}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeProcedure(index);
-                }}
-                aria-label="Remove procedure"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Medication details dialog */}
-      <Dialog open={isMedDialogOpen} onOpenChange={setIsMedDialogOpen}>
-        <DialogContent className="sm:max-w-md p-4">
-          {draftPrescription && (
-            <>
-              <DialogHeader className="pb-0">
-                <DialogTitle className="text-base leading-tight">{draftPrescription.medication.name}</DialogTitle>
-              </DialogHeader>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs">Frequency</Label>
-                  <Select value={draftPrescription.frequency} onValueChange={(val) => setDraftPrescription({ ...draftPrescription, frequency: val })}>
-                    <SelectTrigger className="h-8"><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>
-                      {frequencies.map(f => (
-                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Duration</Label>
-                  <Select value={draftPrescription.duration} onValueChange={(val) => setDraftPrescription({ ...draftPrescription, duration: val })}>
-                    <SelectTrigger className="h-8"><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>
-                      {durations.map(d => (
-                        <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter className="pt-1">
-                <Button variant="outline" onClick={() => setIsMedDialogOpen(false)}>Cancel</Button>
-                <Button
-                  onClick={() => {
-                    if (!draftPrescription) return;
-                    if (editingIndex === null) {
-                      setPrescriptions(prev => [...prev, draftPrescription]);
-                    } else {
-                      setPrescriptions(prev => prev.map((p, i) => (i === editingIndex ? draftPrescription : p)));
-                    }
-                    setIsMedDialogOpen(false);
-                    setDraftPrescription(null);
-                    setEditingIndex(null);
-                  }}
-                >
-                  Save
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Procedure details dialog */}
-      <Dialog open={isProcDialogOpen} onOpenChange={setIsProcDialogOpen}>
-        <DialogContent className="sm:max-w-md p-4">
-          {draftProcedure && (
-            <>
-              <DialogHeader className="pb-0">
-                <DialogTitle className="text-base leading-tight">{draftProcedure.name}</DialogTitle>
-              </DialogHeader>
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <Label className="text-xs">Notes</Label>
-                  <textarea
-                    className="mt-1 w-full h-24 rounded-md border px-2 py-1 text-sm"
-                    placeholder="Add procedure notes..."
-                    value={draftProcedure.notes ?? ""}
-                    onChange={(e) => setDraftProcedure({ ...draftProcedure, notes: e.target.value })}
+          {TABS.map((tab) => (
+            <TabsContent key={tab.key} value={tab.key} className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    className="pl-8"
+                    placeholder={`Search ${tab.label.toLowerCase()} catalog`}
                   />
                 </div>
-              </div>
-              <DialogFooter className="pt-1">
-                <Button variant="outline" onClick={() => setIsProcDialogOpen(false)}>Cancel</Button>
-                <Button
-                  onClick={() => {
-                    if (!draftProcedure) return;
-                    if (editingProcIndex === null) {
-                      setProcedures(prev => [...prev, draftProcedure]);
-                    } else {
-                      setProcedures(prev => prev.map((p, i) => (i === editingProcIndex ? draftProcedure : p)));
-                    }
-                    setIsProcDialogOpen(false);
-                    setDraftProcedure(null);
-                    setEditingProcIndex(null);
-                  }}
-                >
-                  Save
+                <Button type="button" variant="outline" onClick={addManualItem}>
+                  Add custom
                 </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+              </div>
+
+              <div className="max-h-40 space-y-1 overflow-auto rounded-md border p-2">
+                {loadingCatalog ? <p className="text-xs text-muted-foreground">Loading catalog...</p> : null}
+                {!loadingCatalog && filteredCatalog.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{TAB_EMPTY[tab.key]}</p>
+                ) : null}
+                {filteredCatalog.map((item) => (
+                  <button
+                    key={`${tab.key}-${item.id}`}
+                    type="button"
+                    className="w-full rounded-md border px-2 py-1 text-left text-sm hover:bg-muted"
+                    onClick={() => addCatalogItem(tab.key, item)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>{item.name}</span>
+                      <span className="text-xs text-muted-foreground">RM {(item.unitPrice || 0).toFixed(2)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                {tabEntries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No entries added yet.</p>
+                ) : null}
+
+                {tabEntries.map((entry) => (
+                  <div key={entry.id} className="space-y-2 rounded-md border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Input
+                        value={entry.name}
+                        onChange={(event) => {
+                          const next = entries.map((item) =>
+                            item.id === entry.id ? { ...item, name: event.target.value } : item
+                          );
+                          publishPlan(next);
+                        }}
+                        onBlur={(event) => void updateEntryField(entry, { name: event.target.value })}
+                      />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void removeEntry(entry)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">Qty</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={entry.quantity}
+                          onChange={(event) => {
+                            const value = Number(event.target.value || 0);
+                            const next = entries.map((item) =>
+                              item.id === entry.id
+                                ? {
+                                    ...item,
+                                    quantity: value,
+                                    lineTotal: Number((value * item.unitPrice).toFixed(2)),
+                                  }
+                                : item
+                            );
+                            publishPlan(next);
+                          }}
+                          onBlur={(event) => void updateEntryField(entry, { quantity: Number(event.target.value || 0) })}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Unit Price</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={entry.unitPrice}
+                          onChange={(event) => {
+                            const value = Number(event.target.value || 0);
+                            const next = entries.map((item) =>
+                              item.id === entry.id
+                                ? {
+                                    ...item,
+                                    unitPrice: value,
+                                    lineTotal: Number((value * item.quantity).toFixed(2)),
+                                  }
+                                : item
+                            );
+                            publishPlan(next);
+                          }}
+                          onBlur={(event) => void updateEntryField(entry, { unitPrice: Number(event.target.value || 0) })}
+                        />
+                      </div>
+                    </div>
+
+                    <Input
+                      placeholder="Instruction"
+                      value={entry.instruction || ""}
+                      onChange={(event) => {
+                        const next = entries.map((item) =>
+                          item.id === entry.id ? { ...item, instruction: event.target.value } : item
+                        );
+                        publishPlan(next);
+                      }}
+                      onBlur={(event) => void updateEntryField(entry, { instruction: event.target.value })}
+                    />
+
+                    {(entry.tab === "items" || entry.tab === "services") && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input
+                          placeholder="Dosage"
+                          value={entry.dosage || ""}
+                          onChange={(event) => {
+                            const next = entries.map((item) =>
+                              item.id === entry.id ? { ...item, dosage: event.target.value } : item
+                            );
+                            publishPlan(next);
+                          }}
+                          onBlur={(event) => void updateEntryField(entry, { dosage: event.target.value })}
+                        />
+                        <Input
+                          placeholder="Frequency"
+                          value={entry.frequency || ""}
+                          onChange={(event) => {
+                            const next = entries.map((item) =>
+                              item.id === entry.id ? { ...item, frequency: event.target.value } : item
+                            );
+                            publishPlan(next);
+                          }}
+                          onBlur={(event) => void updateEntryField(entry, { frequency: event.target.value })}
+                        />
+                        <Input
+                          placeholder="Duration"
+                          value={entry.duration || ""}
+                          onChange={(event) => {
+                            const next = entries.map((item) =>
+                              item.id === entry.id ? { ...item, duration: event.target.value } : item
+                            );
+                            publishPlan(next);
+                          }}
+                          onBlur={(event) => void updateEntryField(entry, { duration: event.target.value })}
+                        />
+                      </div>
+                    )}
+
+                    <div className="text-right text-xs text-muted-foreground">
+                      Line total: RM {entry.lineTotal.toFixed(2)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+
+        <div className="sticky bottom-0 space-y-2 border-t bg-background pt-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Subtotal</span>
+            <span>RM {summary.subtotal.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm font-semibold">
+            <span>Total</span>
+            <span>RM {summary.total.toFixed(2)}</span>
+          </div>
+          <Button type="submit" className="w-full" disabled={!hydrated || submitting}>
+            {submitting ? "Saving..." : submitLabel}
+          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            {Object.keys(savingIds).length > 0 ? "Autosaving order composer..." : "All changes autosaved."}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

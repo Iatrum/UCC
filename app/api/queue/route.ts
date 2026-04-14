@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (!patientId) {
       return NextResponse.json({ success: false, error: 'patientId is required' }, { status: 400 });
     }
-    await checkInPatientInTriage(patientId, undefined, medplum, clinicId);
+    await checkInPatientInTriage(patientId, undefined, undefined, medplum, clinicId);
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleRouteError(error, 'POST /api/queue');
@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'patientId and status are required' }, { status: 400 });
     }
     await updateQueueStatusForPatient(patientId, status, medplum, clinicId);
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, patientId, finalQueueStatus: status });
   } catch (error) {
     return handleRouteError(error, 'PATCH /api/queue');
   }

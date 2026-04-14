@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       consultationId: encounterId,
+      patientId,
       message: 'Consultation saved successfully',
     });
   } catch (error) {

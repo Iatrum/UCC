@@ -10,10 +10,12 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { KLINIK_PUTERI_URL } from "./support/env";
 
 const RUN_ID = String(Date.now()).slice(-4);
 const PATIENT_NAME = `Triage E2E ${RUN_ID}`;
 const PATIENT_NRIC = `900615-07-${RUN_ID.padStart(4, "0")}`;
+const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.drhidayat.com";
 
 async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
   const trigger = page.getByRole("combobox").first();
@@ -27,49 +29,37 @@ async function selectGender(page: Page, gender: "male" | "female"): Promise<void
 }
 
 async function createTestPatient(page: Page): Promise<string> {
-  await page.goto("/patients/new", { waitUntil: "domcontentloaded" });
+  const response = await page.request.post(`${CLINIC_URL}/api/patients`, {
+    data: {
+      fullName: PATIENT_NAME,
+      nric: PATIENT_NRIC,
+      dateOfBirth: "1990-06-15",
+      gender: "female",
+      phone: "0118887777",
+      address: "Triage Test Address",
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  return response.ok() && typeof data?.patientId === "string" ? data.patientId : "";
+}
 
-  await page
-    .locator('input[name="fullName"], input[placeholder*="name" i]')
-    .first()
-    .fill(PATIENT_NAME);
-
-  await page
-    .locator('input[name="nric"], input[placeholder*="nric" i], input[placeholder*="ic" i]')
-    .first()
-    .fill(PATIENT_NRIC);
-
-  await selectGender(page, "female");
-
-  await page
-    .locator('input[name="phone"], input[type="tel"], input[placeholder*="phone" i]')
-    .first()
-    .fill("0118887777");
-
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(
-    (url) => /\/patients\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith("/new"),
-    { timeout: 20_000 }
-  );
-
-  const match = page.url().match(/\/patients\/([^/]+)$/);
-  return match?.[1] ?? "";
+async function openTriageForm(page: Page, patientId: string): Promise<void> {
+  await page.goto(`${CLINIC_URL}/patients/${patientId}/triage`, { waitUntil: "domcontentloaded" });
+  await expect(page).not.toHaveURL(/\/login/);
+  await expect(page).toHaveURL(new RegExp(`/patients/${patientId}/triage$`), {
+    timeout: 15_000,
+  });
 }
 
 test.describe("Triage workflow", () => {
   let patientId: string;
 
-  test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({
-      storageState: "tests/e2e/.auth/klinikputeri.json",
-    });
-    const page = await ctx.newPage();
+  test.beforeEach(async ({ page }) => {
     patientId = await createTestPatient(page);
-    await ctx.close();
   });
 
   test("triage page is reachable from patient profile", async ({ page }) => {
-    await page.goto(`/patients/${patientId}`);
+    await page.goto(`${CLINIC_URL}/patients/${patientId}`);
     await expect(page).not.toHaveURL(/\/login/);
 
     const triageLink = page
@@ -81,8 +71,7 @@ test.describe("Triage workflow", () => {
   });
 
   test("triage form loads with vitals fields", async ({ page }) => {
-    await page.goto(`/patients/${patientId}/triage`);
-    await expect(page).not.toHaveURL(/\/login/);
+    await openTriageForm(page, patientId);
 
     await expect(
       page.getByRole("heading", { name: /triage assessment/i })
@@ -94,8 +83,7 @@ test.describe("Triage workflow", () => {
   });
 
   test("submitting triage form with vitals saves and redirects", async ({ page }) => {
-    await page.goto(`/patients/${patientId}/triage`);
-    await expect(page).not.toHaveURL(/\/login/);
+    await openTriageForm(page, patientId);
 
     // Chief complaint (required)
     const complaint = page.getByPlaceholder(/chest pain|shortness of breath/i);
@@ -119,15 +107,28 @@ test.describe("Triage workflow", () => {
       }
     }
 
-    // Submit
-    await page.getByRole("button", { name: /complete triage/i }).click();
+    const submitTriage = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/triage") &&
+        response.request().method() === "POST",
+      { timeout: 20_000 }
+    );
 
-    // The hosted app may not always complete the client-side redirect promptly.
-    // Verify the outcome by checking the queue/dashboard state directly.
-    await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-    await expect(page).not.toHaveURL(/\/login/);
-    await expect(
-      page.getByText(PATIENT_NAME).or(page.getByText(PATIENT_NRIC)).first()
-    ).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: /complete triage/i }).click();
+    const triageResponse = await submitTriage;
+    expect(triageResponse.ok()).toBe(true);
+
+    await expect
+      .poll(
+        async () => {
+          const res = await page.request.get(`${CLINIC_URL}/api/queue`);
+          if (!res.ok()) return "";
+          const data = await res.json();
+          const match = (data?.patients || []).find((p: any) => p.id === patientId);
+          return match?.queueStatus || "";
+        },
+        { timeout: 30_000, intervals: [1000, 2000, 3000] }
+      )
+      .toMatch(/waiting|in_consultation|completed/);
   });
 });

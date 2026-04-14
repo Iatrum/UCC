@@ -159,3 +159,26 @@ export async function updateAppointmentStatus(
   await medplum.updateResource({ ...appointment, status });
   console.log(`✅ Updated Appointment ${appointmentId} status to ${status}`);
 }
+
+/**
+ * Reschedule appointment start/end while keeping status simple.
+ */
+export async function rescheduleAppointment(
+  medplum: MedplumClient,
+  appointmentId: string,
+  scheduledAt: Date | string
+): Promise<void> {
+  const appointment = await medplum.readResource('Appointment', appointmentId);
+  const startIso = typeof scheduledAt === 'string' ? new Date(scheduledAt).toISOString() : scheduledAt.toISOString();
+  const duration = appointment.minutesDuration ?? 30;
+  const end = new Date(startIso);
+  end.setMinutes(end.getMinutes() + duration);
+
+  await medplum.updateResource({
+    ...appointment,
+    start: startIso,
+    end: end.toISOString(),
+    status: appointment.status === 'cancelled' || appointment.status === 'noshow' ? 'booked' : appointment.status,
+  });
+  console.log(`✅ Rescheduled Appointment ${appointmentId} to ${startIso}`);
+}

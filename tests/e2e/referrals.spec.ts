@@ -36,8 +36,11 @@ async function selectGender(page: Page, gender: "male" | "female"): Promise<void
 }
 
 async function registerTestPatient(page: Page): Promise<string> {
-  await ensureClinicSession(page);
   await page.goto(`${CLINIC_URL}/patients/new`, { waitUntil: "domcontentloaded" });
+  if (page.url().includes("/login")) {
+    await ensureClinicSession(page);
+    await page.goto(`${CLINIC_URL}/patients/new`, { waitUntil: "domcontentloaded" });
+  }
 
   await page.getByLabel(/full name/i).first().fill(PATIENT_NAME);
   await page.locator('input[name="nric"]').first().fill(PATIENT_NRIC);
@@ -74,11 +77,6 @@ async function registerTestPatient(page: Page): Promise<string> {
 }
 
 async function ensureClinicSession(page: Page): Promise<void> {
-  await page.goto(`${CLINIC_URL}/login`, {
-    waitUntil: "domcontentloaded",
-    timeout: 30_000,
-  });
-
   if (!page.url().includes("/login")) {
     return;
   }

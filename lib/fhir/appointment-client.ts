@@ -16,6 +16,8 @@ export interface AppointmentInput {
   durationMinutes?: number;
 }
 
+export type FhirAppointmentStatus = 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow';
+
 export interface Appointment extends AppointmentInput {
   id: string;
   createdAt: Date;
@@ -83,7 +85,7 @@ export async function getPatientAppointments(patientId: string): Promise<Appoint
  */
 export async function updateAppointmentStatus(
   appointmentId: string,
-  status: 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow'
+  status: FhirAppointmentStatus
 ): Promise<void> {
   const response = await fetch('/api/appointments', {
     method: 'PATCH',
@@ -98,6 +100,27 @@ export async function updateAppointmentStatus(
   }
 }
 
+/**
+ * Reschedule an appointment to a new date-time.
+ */
+export async function rescheduleAppointment(
+  appointmentId: string,
+  scheduledAt: Date | string
+): Promise<void> {
+  const response = await fetch('/api/appointments', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      appointmentId,
+      scheduledAt: scheduledAt instanceof Date ? scheduledAt.toISOString() : scheduledAt,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to reschedule appointment');
+  }
+}
 
 
 

@@ -7,13 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { ArrowLeft, Mic } from "lucide-react";
 import { Prescription, ProcedureRecord } from "@/lib/models";
-import { updateQueueStatus } from "@/lib/actions";
 import { safeToISOString } from "@/lib/utils";
-import { OrderComposer } from "@/components/orders/order-composer";
 import { PatientCard, SerializedPatient } from "@/components/patients/patient-card";
 import { useToast } from "@/components/ui/use-toast";
 import { useRouter } from "next/navigation";
 import { getProcedures } from "@/lib/procedures";
+import { getMedications } from "@/lib/inventory";
 import SoapRewriteButton from "./soap-rewrite-button";
 import ReferralLetterButton from "./referral-letter-button";
 import { executeSmartTextCommand, type SmartTextContext } from "@/lib/smart-text";
@@ -23,6 +22,8 @@ import { getPatient } from "@/lib/fhir/patient-client";
 import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-constants";
 import { IMAGING_PROCEDURES, type ImagingProcedureCode } from "@/lib/fhir/imaging-service";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OrderComposer } from "@/components/orders/order-composer";
+import { type TreatmentPlanEntry, type TreatmentPlanSummary } from "@/lib/treatment-plan";
 
 // Load procedures from DB
 
@@ -51,15 +52,14 @@ export default function ConsultationForm({
   const [clinicalNotes, setClinicalNotes] = useState(initialConsultation?.chiefComplaint ?? "");
   const [diagnosis, setDiagnosis] = useState(initialConsultation?.diagnosis ?? "");
   const [progressNote, setProgressNote] = useState(initialConsultation?.progressNote ?? "");
-  const [procedureEntries, setProcedureEntries] = useState<ProcedureRecord[]>(
-    initialConsultation?.procedures ? [...initialConsultation.procedures] : []
-  );
   const [additionalNotes, setAdditionalNotes] = useState(initialConsultation?.notes ?? "");
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>(
-    initialConsultation?.prescriptions ? [...initialConsultation.prescriptions] : []
-  );
-  const [labSelections, setLabSelections] = useState<LabTestCode[]>([]);
-  const [imagingSelections, setImagingSelections] = useState<ImagingProcedureCode[]>([]);
+  const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
+  const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>({
+    subtotal: 0,
+    total: 0,
+    currency: "MYR",
+    itemCount: 0,
+  });
   const [submitting, setSubmitting] = useState(false);
 
   const { toast } = useToast();
@@ -108,14 +108,30 @@ export default function ConsultationForm({
     };
   }, [patientId, initialPatient]);
 
-  // Procedures managed by OrderComposer
   const [procedureOptions, setProcedureOptions] = useState<{ id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string }[]>([]);
+  const [medicationOptions, setMedicationOptions] = useState<{ id: string; name: string; unitPrice: number }[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const list = await getProcedures();
-        setProcedureOptions(list.map(p => ({ id: p.id, label: p.name, price: p.defaultPrice, codingSystem: p.codingSystem, codingCode: p.codingCode, codingDisplay: p.codingDisplay })));
+        const [procedures, medications] = await Promise.all([getProcedures(), getMedications()]);
+        setProcedureOptions(
+          procedures.map((p) => ({
+            id: p.id,
+            label: p.name,
+            price: p.defaultPrice,
+            codingSystem: p.codingSystem,
+            codingCode: p.codingCode,
+            codingDisplay: p.codingDisplay,
+          }))
+        );
+        setMedicationOptions(
+          medications.map((m) => ({
+            id: m.id,
+            name: m.name,
+            unitPrice: m.unitPrice || 0,
+          }))
+        );
       } catch (e) {
         // ignore
       }
@@ -186,17 +202,45 @@ export default function ConsultationForm({
     [smartTextState]
   );
 
-  const toggleLab = useCallback((code: LabTestCode) => {
-    setLabSelections((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
-  }, []);
+  const treatmentDraftId = useMemo(
+    () => (isEditMode && initialConsultation?.id ? `consultation-${initialConsultation.id}` : `patient-${patientId}`),
+    [initialConsultation?.id, isEditMode, patientId]
+  );
 
-  const toggleImaging = useCallback((code: ImagingProcedureCode) => {
-    setImagingSelections((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
-  }, []);
+  const initialTreatmentEntries = useMemo<TreatmentPlanEntry[]>(() => {
+    const now = new Date().toISOString();
+    const fromPrescriptions =
+      initialConsultation?.prescriptions?.map((item, index) => ({
+        id: `rx-${index}-${item.medication.id}`,
+        tab: "items" as const,
+        catalogRef: item.medication.id,
+        name: item.medication.name,
+        quantity: 1,
+        unitPrice: Number(item.price || 0),
+        lineTotal: Number((item.price || 0).toFixed(2)),
+        dosage: item.medication.strength,
+        frequency: item.frequency,
+        duration: item.duration,
+        createdAt: now,
+        updatedAt: now,
+      })) || [];
+
+    const fromProcedures =
+      initialConsultation?.procedures?.map((item, index) => ({
+        id: `proc-${index}-${item.procedureId || item.name}`,
+        tab: "services" as const,
+        catalogRef: item.procedureId,
+        name: item.name,
+        quantity: 1,
+        unitPrice: Number(item.price || 0),
+        lineTotal: Number(item.price || 0),
+        instruction: item.notes,
+        createdAt: now,
+        updatedAt: now,
+      })) || [];
+
+    return [...fromPrescriptions, ...fromProcedures];
+  }, [initialConsultation?.prescriptions, initialConsultation?.procedures]);
 
   const handleSmartTextKeyDown = useCallback(
     (field: string, setter: (value: string) => void) =>
@@ -338,14 +382,47 @@ export default function ConsultationForm({
 
     try {
       setSubmitting(true);
+      const medicationEntries = treatmentEntries.filter((entry) => entry.tab === "items");
+      const serviceEntries = treatmentEntries.filter(
+        (entry) => entry.tab === "services" || entry.tab === "packages"
+      );
+      const documentEntries = treatmentEntries.filter((entry) => entry.tab === "documents");
+
+      const prescriptions: Prescription[] = medicationEntries.map((entry) => ({
+        medication: {
+          id: entry.catalogRef || entry.id,
+          name: entry.name,
+        },
+        frequency: entry.frequency || "",
+        duration: entry.duration || "",
+        price: entry.unitPrice,
+      }));
+
+      const procedureEntries: ProcedureRecord[] = serviceEntries.map((entry) => ({
+        name: entry.name,
+        price: entry.unitPrice,
+        notes: entry.instruction,
+        procedureId: entry.catalogRef,
+      }));
+
+      const labSelections = documentEntries
+        .filter((entry) => entry.meta?.kind === "lab")
+        .map((entry) => entry.meta?.code as LabTestCode)
+        .filter(Boolean);
+
+      const imagingSelections = documentEntries
+        .filter((entry) => entry.meta?.kind === "imaging")
+        .map((entry) => entry.meta?.code as ImagingProcedureCode)
+        .filter(Boolean);
+
       const consultationData = {
         patientId,
         chiefComplaint: clinicalNotes,
         diagnosis,
-        procedures: procedureEntries, // From order composer
+        procedures: procedureEntries,
         notes: additionalNotes,
         progressNote,
-        prescriptions: prescriptions // Assuming prescriptions state already holds objects with price?
+        prescriptions,
       };
 
       let newConsultationId: string;
@@ -432,14 +509,42 @@ export default function ConsultationForm({
 
       console.log(`✅ Consultation ${isEditMode ? 'updated' : 'saved'} in Medplum FHIR: ${newConsultationId}`);
 
-      // Only advance queue status for new consultations
+      let queueAdvanceError: string | null = null;
+      let finalQueueStatus = "meds_and_bills";
+
+      // Queue progression is downstream of the clinical save. It should not
+      // cause the UI to report that the consultation itself failed.
       if (!isEditMode) {
-        await updateQueueStatus(patientId, "meds_and_bills");
+        try {
+          const response = await fetch('/api/queue', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ patientId, status: 'meds_and_bills' }),
+          });
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to update queue status');
+          }
+          const queueResult = await response.json().catch(() => ({}));
+          finalQueueStatus = queueResult?.finalQueueStatus || finalQueueStatus;
+        } catch (error) {
+          console.error('Error updating queue status:', error);
+          queueAdvanceError = error instanceof Error ? error.message : 'Failed to update queue status';
+        }
       }
 
       const actionLabel = isEditMode ? 'updated' : 'saved';
-      const orderMessage = orderErrors.length
-        ? `Consultation ${actionLabel}. Orders with issues: ${orderErrors.join(', ')}.`
+      const issueMessages: string[] = [];
+      if (orderErrors.length) {
+        issueMessages.push(`Orders with issues: ${orderErrors.join(', ')}`);
+      }
+      if (queueAdvanceError) {
+        issueMessages.push('Queue status did not update automatically');
+      }
+
+      const orderMessage = issueMessages.length
+        ? `Consultation ${actionLabel}. ${issueMessages.join('. ')}.`
         : isEditMode
           ? 'Consultation updated successfully.'
           : 'Consultation recorded to FHIR and orders placed.';
@@ -447,7 +552,12 @@ export default function ConsultationForm({
       toast({
         title: isEditMode ? 'Consultation Updated' : 'Consultation Saved',
         description: orderMessage,
-        variant: orderErrors.length ? 'destructive' : 'default',
+        variant: issueMessages.length ? 'destructive' : 'default',
+      });
+      console.log("Consultation completion:", {
+        consultationId: newConsultationId,
+        finalQueueStatus,
+        patientId,
       });
 
       router.push(`/patients/${patientId}`);
@@ -472,6 +582,32 @@ export default function ConsultationForm({
   }
 
   const vitals = patient.triage?.vitalSigns;
+  const treatmentItemsCatalog = medicationOptions.map((item) => ({
+    id: item.id,
+    name: item.name,
+    unitPrice: item.unitPrice,
+  }));
+
+  const treatmentServicesCatalog = procedureOptions.map((item) => ({
+    id: item.id,
+    name: item.label,
+    unitPrice: item.price || 0,
+  }));
+
+  const treatmentDocumentsCatalog = [
+    ...labOptions.map((lab) => ({
+      id: `lab-${lab.code}`,
+      name: `Lab: ${lab.label}`,
+      unitPrice: 0,
+      meta: { kind: "lab", code: lab.code },
+    })),
+    ...imagingOptions.map((img) => ({
+      id: `imaging-${img.code}`,
+      name: `Imaging: ${img.label}`,
+      unitPrice: 0,
+      meta: { kind: "imaging", code: img.code },
+    })),
+  ];
 
   return (
     <div className="container max-w-7xl py-6">
@@ -621,60 +757,28 @@ export default function ConsultationForm({
             </div>
           </div>
 
-          {/* Right: Orders (Meds + Procedures) */}
+          {/* Right: Yezza-style treatment plan workspace */}
           <div className="md:col-span-3 space-y-2 sticky top-2 self-start">
             <OrderComposer
-              procedureOptions={procedureOptions}
-              initialPrescriptions={prescriptions}
-              initialProcedures={procedureEntries}
-              onPrescriptionsChange={setPrescriptions}
-              onProceduresChange={setProcedureEntries}
+              draftId={treatmentDraftId}
+              patientId={patientId}
+              consultationId={initialConsultation?.id || undefined}
+              initialEntries={initialTreatmentEntries}
+              items={treatmentItemsCatalog}
+              services={treatmentServicesCatalog}
+              packages={[]}
+              documents={treatmentDocumentsCatalog}
+              onPlanChange={(entries, summary) => {
+                setTreatmentEntries(entries);
+                setTreatmentSummary(summary);
+              }}
+              submitLabel={isEditMode ? "Update Consultation" : "Sign Order"}
+              submitting={submitting}
             />
-            <div className="border rounded-md p-3 space-y-3">
-              <div>
-                <p className="text-sm font-semibold">Lab Orders (FHIR ServiceRequest)</p>
-                <div className="space-y-1 max-h-36 overflow-auto pr-1">
-                  {labOptions.map((lab) => (
-                    <label key={lab.code} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={labSelections.includes(lab.code)}
-                        onChange={() => toggleLab(lab.code)}
-                      />
-                      <span>{lab.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Imaging Orders (PACS)</p>
-                <div className="space-y-1 max-h-36 overflow-auto pr-1">
-                  {imagingOptions.map((img) => (
-                    <label key={img.code} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={imagingSelections.includes(img.code)}
-                        onChange={() => toggleImaging(img.code)}
-                      />
-                      <span>{img.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+            <div className="rounded-md border p-3 text-xs text-muted-foreground">
+              Autosaved draft total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
             </div>
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex justify-end space-x-4">
-          <Button variant="outline" type="button" asChild>
-            <Link href={`/patients/${patientId}`}>Cancel</Link>
-          </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? (isEditMode ? "Updating..." : "Saving...") : isEditMode ? "Update Consultation" : "Sign Order"}
-          </Button>
         </div>
       </form>
     </div>
