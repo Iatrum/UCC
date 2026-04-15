@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast";
 import { getAllPatients, type Patient } from "@/lib/fhir/patient-client";
 import { saveAppointment } from "@/lib/fhir/appointment-client";
+import { useMedplumAuth } from "@/lib/auth-medplum";
 import type { AppointmentStatus } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
@@ -154,6 +155,7 @@ const PatientCombobox = forwardRef<HTMLButtonElement, PatientComboboxProps>(func
 export default function NewAppointmentForm() {
   const router = useRouter();
   const { toast } = useToast();
+  const { loading: authLoading } = useMedplumAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -174,6 +176,10 @@ export default function NewAppointmentForm() {
   });
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     async function loadPatients() {
       setLoadingPatients(true);
       setLoadError(null);
@@ -188,14 +194,20 @@ export default function NewAppointmentForm() {
         setPatients(sorted as any);
       } catch (error) {
         console.error("Failed to load patients from Medplum", error);
-        setLoadError("Unable to load patients from FHIR. Please try refreshing the page.");
+        const message =
+          error instanceof Error ? error.message : "Unable to load patients from FHIR.";
+        setLoadError(
+          message.includes("Authentication required")
+            ? `${message} Try refreshing the page.`
+            : message
+        );
       } finally {
         setLoadingPatients(false);
       }
     }
 
     loadPatients();
-  }, []);
+  }, [authLoading]);
 
   const patientOptions = useMemo(() => {
     return patients.map((patient) => ({

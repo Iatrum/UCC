@@ -50,6 +50,7 @@ export interface SavedPatient extends PatientData {
   queueAddedAt?: Date | string | null;
   visitIntent?: string;
   payerType?: string;
+  paymentMethod?: string;
   billingPerson?: string;
   dependentName?: string;
   dependentRelationship?: string;
@@ -662,10 +663,12 @@ export async function getAllPatientsFromMedplum(
   try {
     const client = medplum;
 
+    // Scope by clinic identifier only; `matchesClinic` still enforces org + identifier.
+    // A combined `organization` search param was overly strict for some records and is unnecessary here.
     const patients = await client.searchResources('Patient', {
       _count: String(limit),
       _sort: '-_lastUpdated',
-      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`, organization: `Organization/${clinicId}` } : {}),
+      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
     });
 
     return patients

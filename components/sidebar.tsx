@@ -22,7 +22,6 @@ import {
   Settings,
   TestTube,
   Users,
-  Clock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
@@ -42,7 +41,6 @@ type SidebarProps = {
 
 const baseNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Check-in", href: "/check-in", icon: Clock },
   { name: "Patients", href: "/patients", icon: Users },
   { name: "Orders", href: "/orders", icon: ClipboardListIcon },
 ];
@@ -72,7 +70,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
     const loadModules = () => {
       const enabled = getEnabledModules();
       const moduleNav = enabled
-        .filter(module => module.route) // Only modules with routes
+        .filter((module) => module.route && module.id !== "triage")
         .map(module => ({
           name: module.name,
           href: module.route!,

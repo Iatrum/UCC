@@ -14,13 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -30,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
+import { useMedplumAuth } from "@/lib/auth-medplum";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -43,8 +37,13 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { loading: authLoading } = useMedplumAuth();
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     async function loadPatients() {
       setLoading(true);
       setError(null);
@@ -73,14 +72,20 @@ export default function PatientsPage() {
         });
       } catch (err) {
         console.error('Error loading patients from Medplum:', err);
-        setError('Failed to load patient data from FHIR.');
+        const message =
+          err instanceof Error ? err.message : 'Failed to load patient data from FHIR.';
+        setError(
+          message.includes('Authentication required')
+            ? `${message} If you are signed in, try refreshing the page.`
+            : message
+        );
       } finally {
         setLoading(false);
       }
     }
 
     loadPatients();
-  }, []);
+  }, [authLoading]);
 
   const handleAddToQueue = async (patient: Patient) => {
     try {
@@ -104,33 +109,6 @@ export default function PatientsPage() {
       toast({
         title: "Error",
         description: "Failed to check patient in. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleRemoveFromQueue = async (patient: Patient) => {
-    try {
-      const res = await fetch('/api/queue', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId: patient.id }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to remove from queue');
-      }
-      toast({
-        title: "Removed from Queue",
-        description: `${patient.fullName} has been removed from the queue.`,
-      });
-      // Refresh the page to update the queue status
-      window.location.reload();
-    } catch (error) {
-      console.error('Error removing from queue:', error);
-      toast({
-        title: "Error",
-        description: "Failed to remove patient from queue. Please try again.",
         variant: "destructive"
       });
     }
@@ -280,43 +258,13 @@ export default function PatientsPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem asChild>
-                                <Link href={`/patients/${patient.id}`}>
-                                  View Details
-                                </Link>
-                              </DropdownMenuItem>
-                              {(!(patient as any).triage?.isTriaged || !(patient as any).queueStatus) && (
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/patients/${patient.id}/triage`}>
-                                    Perform Triage
-                                  </Link>
-                                </DropdownMenuItem>
-                              )}
-                              {(patient as any).queueStatus === 'waiting' ? (
-                                <DropdownMenuItem onClick={() => handleRemoveFromQueue(patient)}>
-                                  Remove from Queue
-                                </DropdownMenuItem>
-                              ) : (
-                                <>
-                                  <DropdownMenuItem onClick={() => handleAddToQueue(patient)}>
-                                    Check In
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/patients/${patient.id}/triage`}>
-                                      Go to Triage
-                                    </Link>
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <Button
+                            size="sm"
+                            onClick={() => handleAddToQueue(patient)}
+                            disabled={['arrived', 'waiting', 'in_consultation'].includes((patient as any).queueStatus)}
+                          >
+                            Check in
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))

@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: __dirname,
+  allowedDevOrigins: ["127.0.0.1"],
   experimental: {
     optimizePackageImports: [
       "lucide-react",

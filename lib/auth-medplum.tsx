@@ -107,6 +107,7 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       const accessToken = medplum.getAccessToken();
       await fetch('/api/auth/medplum-session', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accessToken, clinicId: nextClinicId }),
       });
@@ -115,10 +116,9 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  // Keep the server-side session cookie in sync with the client-side access
-  // token. MedplumClient manages its own token refresh via localStorage; when
-  // it refreshes (typically at ~55 min for a 1-hour token), we need to push
-  // the new token back to the httpOnly cookie so server routes keep working.
+  // Periodically push MedplumClient token (incl. after silent refresh) to the
+  // httpOnly cookie so server routes stay authorized. Initial mount sync runs
+  // in the effect below *before* refreshAuthState to avoid racing /api/* calls.
   useEffect(() => {
     const syncServerCookie = async () => {
       const token = medplum.getAccessToken();
@@ -126,6 +126,7 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       try {
         await fetch('/api/auth/medplum-session', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accessToken: token }),
         });
@@ -134,12 +135,6 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       }
     };
 
-    // Sync immediately on mount (picks up any token that was refreshed while
-    // the tab was in the background)
-    syncServerCookie();
-
-    // Re-sync every 10 minutes so the server cookie is always within 10
-    // minutes of the latest client-side token.
     const syncInterval = setInterval(syncServerCookie, 10 * 60 * 1000);
     return () => clearInterval(syncInterval);
   }, [medplum]);
@@ -157,18 +152,48 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       if (clinicCookie) setClinicIdState(decodeURIComponent(clinicCookie));
     }
 
-    refreshAuthState()
-      .catch(() => {
-        setProfile(null);
-        setIsAdmin(false);
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    (async () => {
+      // Server API routes read the httpOnly cookie. MedplumClient may already
+      // have a valid token in localStorage before the cookie is written — sync
+      // first so the first /api/patients (etc.) from child components succeeds.
+      try {
+        const token = medplum.getAccessToken();
+        if (token) {
+          await fetch('/api/auth/medplum-session', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: token }),
+          });
+        }
+      } catch {
+        // non-fatal
+      }
+
+      if (cancelled) return;
+
+      await refreshAuthState()
+        .catch(() => {
+          setProfile(null);
+          setIsAdmin(false);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [medplum]);
 
   const signIn = async (email: string, password: string): Promise<{ isAdmin: boolean }> => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
@@ -197,7 +222,7 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
       setProfile(null);
       setIsAdmin(false);
       setClinicIdState(null);
-      await fetch('/api/auth/medplum-session', { method: 'DELETE' });
+      await fetch('/api/auth/medplum-session', { method: 'DELETE', credentials: 'include' });
     } catch (error) {
       console.error('Logout failed:', error);
     }

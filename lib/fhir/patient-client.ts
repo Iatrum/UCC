@@ -30,26 +30,44 @@ export interface Patient extends PatientInput {
   updatedAt: Date;
 }
 
+async function readJson(response: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await response.json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function mapPatientRows(patients: unknown[]): Patient[] {
+  return patients.map((p: any) => ({
+    ...p,
+    dateOfBirth: new Date(p.dateOfBirth),
+    createdAt: new Date(p.createdAt),
+    updatedAt: new Date(p.updatedAt),
+  }));
+}
+
 /**
  * Save a patient to Medplum (replaces createPatient from Firebase)
  */
 export async function savePatient(patient: PatientInput, clinicId?: string): Promise<string> {
   const response = await fetch('/api/patients', {
     method: 'POST',
-    headers: { 
+    credentials: 'include',
+    headers: {
       'Content-Type': 'application/json',
       ...(clinicId ? { 'X-Clinic-Id': clinicId } : {}),
     },
     body: JSON.stringify(patient),
   });
 
-  const data = await response.json();
+  const data = await readJson(response);
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to save patient');
+    throw new Error(typeof data.error === 'string' ? data.error : 'Failed to save patient');
   }
 
-  return data.patientId;
+  return data.patientId as string;
 }
 
 /**
@@ -57,16 +75,17 @@ export async function savePatient(patient: PatientInput, clinicId?: string): Pro
  */
 export async function getPatient(patientId: string, clinicId?: string): Promise<Patient | null> {
   const response = await fetch(`/api/patients?id=${patientId}`, {
+    credentials: 'include',
     headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
   });
-  const data = await response.json();
+  const data = await readJson(response);
 
   if (!response.ok) {
     if (response.status === 404) return null;
-    throw new Error(data.error || 'Failed to get patient');
+    throw new Error(typeof data.error === 'string' ? data.error : 'Failed to get patient');
   }
 
-  const patient = data.patient;
+  const patient = data.patient as any;
   return {
     ...patient,
     dateOfBirth: new Date(patient.dateOfBirth),
@@ -80,20 +99,21 @@ export async function getPatient(patientId: string, clinicId?: string): Promise<
  */
 export async function getAllPatients(limit = 100, clinicId?: string): Promise<Patient[]> {
   const response = await fetch(`/api/patients?limit=${limit}`, {
+    credentials: 'include',
     headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
   });
-  const data = await response.json();
+  const data = await readJson(response);
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to get patients');
+    const msg =
+      typeof data.error === 'string'
+        ? data.error
+        : `Failed to get patients (${response.status})`;
+    throw new Error(msg);
   }
 
-  return data.patients.map((p: any) => ({
-    ...p,
-    dateOfBirth: new Date(p.dateOfBirth),
-    createdAt: new Date(p.createdAt),
-    updatedAt: new Date(p.updatedAt),
-  }));
+  const rows = Array.isArray(data.patients) ? data.patients : [];
+  return mapPatientRows(rows);
 }
 
 /**
@@ -101,45 +121,44 @@ export async function getAllPatients(limit = 100, clinicId?: string): Promise<Pa
  */
 export async function searchPatients(query: string, clinicId?: string): Promise<Patient[]> {
   const response = await fetch(`/api/patients?search=${encodeURIComponent(query)}`, {
+    credentials: 'include',
     headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
   });
-  const data = await response.json();
+  const data = await readJson(response);
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to search patients');
+    const msg =
+      typeof data.error === 'string'
+        ? data.error
+        : `Failed to search patients (${response.status})`;
+    throw new Error(msg);
   }
 
-  return data.patients.map((p: any) => ({
-    ...p,
-    dateOfBirth: new Date(p.dateOfBirth),
-    createdAt: new Date(p.createdAt),
-    updatedAt: new Date(p.updatedAt),
-  }));
+  const rows = Array.isArray(data.patients) ? data.patients : [];
+  return mapPatientRows(rows);
 }
 
 /**
  * Update a patient
  */
-export async function updatePatient(patientId: string, updates: Partial<PatientInput>, clinicId?: string): Promise<void> {
+export async function updatePatient(
+  patientId: string,
+  updates: Partial<PatientInput>,
+  clinicId?: string
+): Promise<void> {
   const response = await fetch('/api/patients', {
     method: 'PATCH',
-    headers: { 
+    credentials: 'include',
+    headers: {
       'Content-Type': 'application/json',
       ...(clinicId ? { 'X-Clinic-Id': clinicId } : {}),
     },
     body: JSON.stringify({ patientId, ...updates }),
   });
 
-  const data = await response.json();
+  const data = await readJson(response);
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to update patient');
+    throw new Error(typeof data.error === 'string' ? data.error : 'Failed to update patient');
   }
 }
-
-
-
-
-
-
-

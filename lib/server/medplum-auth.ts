@@ -6,11 +6,17 @@
 import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
-import { SESSION_COOKIE } from '@/lib/server/cookie-constants';
-import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
+import { REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
+import { AuthError, ClinicContextError, ForbiddenError } from '@/lib/server/route-helpers';
 import { env } from '@/lib/env';
 // Re-export so callers can import getAdminMedplum from either file.
 export { getAdminMedplum } from './medplum-admin';
+
+const MAX_AGE_SECONDS = Number(process.env.AUTH_SESSION_MAX_AGE_SECONDS || 60 * 60 * 24 * 30);
+const isProd = process.env.NODE_ENV === 'production';
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+const MEDPLUM_BASE_URL = env.MEDPLUM_BASE_URL.replace(/\/$/, '');
+const MEDPLUM_CLIENT_ID = env.MEDPLUM_CLIENT_ID || process.env.NEXT_PUBLIC_MEDPLUM_CLIENT_ID || '';
 
 /**
  * Decode a JWT payload without verifying the signature — only used to read
@@ -30,6 +36,62 @@ function getJwtExpiry(token: string): number | null {
   }
 }
 
+type RefreshResult = {
+  accessToken: string;
+  refreshToken?: string;
+};
+
+function setSessionCookie(
+  cookieStore: Awaited<ReturnType<typeof cookies>>,
+  name: string,
+  value: string
+): void {
+  try {
+    cookieStore.set(name, value, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: MAX_AGE_SECONDS,
+      domain: COOKIE_DOMAIN,
+    });
+  } catch {
+    // Read-only cookie store contexts cannot persist rotations.
+  }
+}
+
+async function refreshAccessToken(refreshToken: string): Promise<RefreshResult | null> {
+  if (!MEDPLUM_CLIENT_ID) {
+    return null;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: MEDPLUM_CLIENT_ID,
+  });
+
+  const response = await fetch(`${MEDPLUM_BASE_URL}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload.access_token !== 'string') {
+    return null;
+  }
+
+  return {
+    accessToken: payload.access_token,
+    refreshToken: typeof payload.refresh_token === 'string' ? payload.refresh_token : undefined,
+  };
+}
+
 /**
  * Get authenticated Medplum client for the current user.
  *
@@ -40,13 +102,16 @@ function getJwtExpiry(token: string): number | null {
  */
 export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumClient> {
   const medplum = new MedplumClient({ baseUrl: env.MEDPLUM_BASE_URL });
+  const cookieStore = await cookies();
 
   let accessToken: string | null = null;
+  let fromAuthHeader = false;
 
   if (req) {
     const authHeader = req.headers.get('authorization');
     if (authHeader?.startsWith('Bearer ')) {
       accessToken = authHeader.substring(7);
+      fromAuthHeader = true;
     }
 
     if (!accessToken) {
@@ -55,7 +120,6 @@ export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumCl
   }
 
   if (!accessToken) {
-    const cookieStore = await cookies();
     accessToken = cookieStore.get(SESSION_COOKIE)?.value || null;
   }
 
@@ -66,7 +130,26 @@ export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumCl
   // Reject expired tokens locally — no network round-trip required.
   const exp = getJwtExpiry(accessToken);
   if (exp !== null && exp < Math.floor(Date.now() / 1000)) {
-    throw new AuthError('Session expired. Please sign in again.');
+    if (fromAuthHeader) {
+      throw new AuthError('Session expired. Please sign in again.');
+    }
+
+    const refreshToken =
+      req?.cookies.get(REFRESH_COOKIE)?.value || cookieStore.get(REFRESH_COOKIE)?.value || null;
+    if (!refreshToken) {
+      throw new AuthError('Session expired. Please sign in again.');
+    }
+
+    const refreshed = await refreshAccessToken(refreshToken);
+    if (!refreshed) {
+      throw new AuthError('Session expired. Please sign in again.');
+    }
+
+    accessToken = refreshed.accessToken;
+    setSessionCookie(cookieStore, SESSION_COOKIE, refreshed.accessToken);
+    if (refreshed.refreshToken) {
+      setSessionCookie(cookieStore, REFRESH_COOKIE, refreshed.refreshToken);
+    }
   }
 
   medplum.setAccessToken(accessToken);
@@ -207,7 +290,9 @@ export async function requireClinicAuth(
   ]);
 
   if (!clinicId) {
-    throw new AuthError('No clinic context found. Access must come from a clinic subdomain.');
+    throw new ClinicContextError(
+      'No clinic context. Open the app from your clinic subdomain (for example clinic.example.com), or sign in again from localhost so a clinic can be selected.'
+    );
   }
 
   await assertClinicAssignment(medplum, profile, clinicId);

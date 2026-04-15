@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, CLINIC_COOKIE } from "@/lib/server/cookie-constants";
+import { SESSION_COOKIE, CLINIC_COOKIE, REFRESH_COOKIE } from "@/lib/server/cookie-constants";
 
 const MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
 const isProd = process.env.NODE_ENV === "production";
@@ -66,6 +66,7 @@ export async function DELETE() {
   try {
     const cookieStore = await cookies();
     cookieStore.delete(SESSION_COOKIE);
+    cookieStore.delete(REFRESH_COOKIE);
     cookieStore.delete(CLINIC_COOKIE);
     return NextResponse.json({ success: true });
   } catch (error: any) {

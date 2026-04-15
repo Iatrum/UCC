@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import crypto from 'node:crypto';
 import { MedplumClient, type ProfileResource } from '@medplum/core';
-import { CLINIC_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
+import { CLINIC_COOKIE, REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import {
   deriveSubdomainContext,
   getHostFromHeaders,
 } from '@/lib/server/subdomain-host';
 import { env } from '@/lib/env';
 
-const MAX_AGE_SECONDS = 60 * 60 * 24;
+const MAX_AGE_SECONDS = Number(process.env.AUTH_SESSION_MAX_AGE_SECONDS || 60 * 60 * 24 * 30);
 const isProd = process.env.NODE_ENV === 'production';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 const MEDPLUM_BASE_URL = env.MEDPLUM_BASE_URL.replace(/\/$/, '');
@@ -86,7 +86,7 @@ async function startEmailPasswordLogin(
       password,
       clientId: MEDPLUM_CLIENT_ID,
       projectId: MEDPLUM_PROJECT_ID || undefined,
-      scope: 'openid profile',
+      scope: 'openid profile offline_access',
       codeChallenge,
       codeChallengeMethod: 'S256',
     }),
@@ -123,7 +123,7 @@ async function startEmailPasswordLogin(
 async function exchangeAuthorizationCode(
   code: string,
   codeVerifier: string
-): Promise<{ accessToken: string; expiresIn: number | undefined }> {
+): Promise<{ accessToken: string; refreshToken: string | undefined; expiresIn: number | undefined }> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -148,6 +148,7 @@ async function exchangeAuthorizationCode(
 
   return {
     accessToken: payload.access_token,
+    refreshToken: typeof payload.refresh_token === 'string' ? payload.refresh_token : undefined,
     expiresIn: typeof payload.expires_in === 'number' ? payload.expires_in : undefined,
   };
 }
@@ -298,15 +299,15 @@ export async function POST(req: NextRequest) {
     }
 
     const cookieStore = await cookies();
-    const maxAge =
-      tokenResult.expiresIn && tokenResult.expiresIn > 0
-        ? tokenResult.expiresIn
-        : MAX_AGE_SECONDS;
-
-    setCookie(cookieStore, SESSION_COOKIE, tokenResult.accessToken, maxAge, true);
+    setCookie(cookieStore, SESSION_COOKIE, tokenResult.accessToken, MAX_AGE_SECONDS, true);
+    if (tokenResult.refreshToken) {
+      setCookie(cookieStore, REFRESH_COOKIE, tokenResult.refreshToken, MAX_AGE_SECONDS, true);
+    } else {
+      deleteCookie(cookieStore, REFRESH_COOKIE, true);
+    }
 
     if (activeClinicId) {
-      setCookie(cookieStore, CLINIC_COOKIE, activeClinicId, maxAge, false);
+      setCookie(cookieStore, CLINIC_COOKIE, activeClinicId, MAX_AGE_SECONDS, false);
     } else {
       deleteCookie(cookieStore, CLINIC_COOKIE, false);
     }

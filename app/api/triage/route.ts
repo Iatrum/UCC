@@ -23,6 +23,14 @@ export async function POST(request: NextRequest) {
       triageLevel,
       chiefComplaint,
       vitalSigns,
+      visitIntent,
+      payerType,
+      paymentMethod,
+      assignedClinician,
+      billingPerson,
+      dependentName,
+      dependentRelationship,
+      dependentPhone,
       triageNotes,
       redFlags,
     } = body;
@@ -59,6 +67,16 @@ export async function POST(request: NextRequest) {
       triageLevel: triageLevel as TriageLevel,
       chiefComplaint,
       vitalSigns: vitalSigns as VitalSigns,
+      visitIntent,
+      payerType,
+      paymentMethod,
+      assignedClinician,
+      billingPerson,
+      dependentName,
+      dependentRelationship,
+      dependentPhone,
+      registrationSource: "triage",
+      registrationAt: new Date().toISOString(),
       triageNotes,
       redFlags: redFlags || [],
       triageBy,
@@ -69,8 +87,6 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, 'POST /api/triage');
   }
 }
-
-
 
 
 

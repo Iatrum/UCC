@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,23 @@ type PatientResult = {
 };
 
 export default function CheckInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-6">
+          <h1 className="text-3xl font-bold tracking-tight">Walk-in Check-in</h1>
+          <p className="text-muted-foreground">Loading…</p>
+        </div>
+      }
+    >
+      <CheckInPageInner />
+    </Suspense>
+  );
+}
+
+function CheckInPageInner() {
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [chiefComplaint, setChiefComplaint] = useState("");
   const [visitIntent, setVisitIntent] = useState("consultation");
@@ -30,6 +47,15 @@ export default function CheckInPage() {
   const [checkingInId, setCheckingInId] = useState<string | null>(null);
 
   const debouncedQuery = useDebounce(query, 250);
+
+  useEffect(() => {
+    const q = searchParams.get("search") || searchParams.get("q");
+    if (q) setQuery(q);
+    const v = searchParams.get("visitIntent");
+    if (v === "otc" || v === "consultation" || v === "follow_up") {
+      setVisitIntent(v);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     let active = true;

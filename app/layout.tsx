@@ -60,8 +60,9 @@ export default async function RootLayout({
       <body className="min-h-screen bg-background font-sans antialiased">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="light"
+          enableSystem={false}
+          themes={["light", "dark", "warm"]}
           disableTransitionOnChange
         >
           <MedplumAuthProvider>

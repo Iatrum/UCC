@@ -1,6 +1,6 @@
 # Production Readiness
 
-Last updated: 2026-04-05
+Last updated: 2026-04-15
 
 ## Status
 
@@ -8,6 +8,7 @@ Last updated: 2026-04-05
 - `bun run build`: passes
 - Major admin auth regressions previously found were fixed
 - Login response no longer returns the Medplum bearer token
+- Session durability was improved on 2026-04-15 by introducing server-side refresh-token rotation when short-lived access tokens expire
 - Clinic Playwright auth state mismatch was identified on 2026-03-30:
   setup wrote `tests/e2e/.auth/klinikputeri.json` while the clinic project/specs read `tests/e2e/.auth/clinic.json`
 
@@ -106,6 +107,17 @@ Note:
 
 ## Verification Progress
 
+- 2026-04-15: Fixed short session/auto-logout behavior by adding refresh-token session support in the server auth path. Login now requests `offline_access`, stores a secure refresh cookie, and `getMedplumForRequest()` attempts token refresh before returning `Session expired`.
+- 2026-04-15: Session-cookie handling was aligned across auth routes:
+  - login route now sets long-lived auth cookies using `AUTH_SESSION_MAX_AGE_SECONDS` (default 30 days)
+  - `/api/auth/medplum-session` logout now clears both access and refresh cookies
+- 2026-04-15: Verification rerun in repo:
+  - `bun run lint` passed
+  - `bun run build` passed
+- 2026-04-15: Production deployment completed for the session fix (`https://drhidayat.com` alias updated).
+- 2026-04-15: Live auth verification on `https://klinikputeri.drhidayat.com`:
+  - login response now sets `medplum-session`, `medplum-refresh`, and `medplum-clinic` with `Max-Age=2592000` and `Domain=.drhidayat.com`
+  - forced-expired access-token simulation with a valid refresh cookie still returned authenticated `200` from `/api/auth/me`, confirming server-side refresh flow works
 - 2026-03-30: Initial staging-targeted `bun run test:e2e` run exposed widespread clinic-flow failures.
 - 2026-03-30: First pass separated stale selectors from runtime issues and updated the clinic/admin Playwright specs to match the current UI.
 - 2026-03-30: Root cause found for a large portion of clinic failures: clinic auth setup persisted `tests/e2e/.auth/klinikputeri.json`, but the main Playwright config and several specs loaded `tests/e2e/.auth/clinic.json`, which was empty.
