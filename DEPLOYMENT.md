@@ -41,3 +41,14 @@ docker compose --env-file .env -f docker-compose.vps.yml logs -f ucc-app
 - `MEDPLUM_BASE_URL` inside `ucc-app` is set to the internal Docker service URL so server-side code can talk to Medplum directly.
 - For a real VPS deployment, put Nginx or Caddy in front and terminate HTTPS there.
 - You still need to create a Medplum client app and set `MEDPLUM_CLIENT_ID` / `MEDPLUM_CLIENT_SECRET`.
+
+## Vercel: production tracks `claude/condescending-kirch`
+
+Production for this repo is intended to follow the **`claude/condescending-kirch`** branch (not necessarily `main`). After you push that branch, Vercel should build and promote **Production** from it.
+
+1. Open [Vercel Dashboard](https://vercel.com/dashboard) → project **ucc** (or your linked project).
+2. **Settings** → **Git** (or **Environments** / **Production Branch**, depending on UI version).
+3. Set **Production Branch** to: `claude/condescending-kirch`.
+4. Save. Pushes to that branch will update the production deployment and aliases (for example `drhidayat.com` if configured).
+
+`main` can stay for housekeeping, releases, or merges when you choose; until you change this setting again, only the configured branch drives production.
