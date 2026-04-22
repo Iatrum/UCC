@@ -12,8 +12,10 @@ export function proxy(req: NextRequest) {
   // ── Admin subdomain ─────────────────────────────────────────
   if (context.type === "admin") {
     const url = req.nextUrl.clone();
+    const alreadyOnAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
     const shouldRewrite =
+      !alreadyOnAdminRoute &&
       !pathname.startsWith("/login") &&
       !pathname.startsWith("/logout") &&
       !pathname.startsWith("/api/") &&
