@@ -5,10 +5,10 @@
 
 export interface ConsultationInput {
   patientId: string;
+  chiefComplaint: string;
   diagnosis: string;
   procedures?: Array<{ name: string; price?: number }>;
   notes?: string;
-  chiefComplaint?: string;
   progressNote?: string;
   prescriptions?: Array<{
     medication: { id: string; name: string };

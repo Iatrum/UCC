@@ -1,33 +1,47 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { Consultation, getConsultationById } from "@/lib/models";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+export const dynamic = 'force-dynamic';
 
-// Define the props type according to Next.js App Router conventions for async Server Components
+import { redirect } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
+import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
+
 type Props = {
-  params: Promise<{ id: string }>
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
-}
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
 
 export default async function ConsultationDetails({ params }: Props) {
-  // Directly await the params promise
-  const { id } = await params; 
-  
-  // Fetch the specific consultation using the id
-  const consultation: Consultation | null = await getConsultationById(id);
+  const { id } = await params;
+
+  // Require authentication — throws if no valid session cookie
+  let medplum;
+  try {
+    medplum = await getMedplumForRequest();
+  } catch {
+    redirect('/login');
+  }
+
+  const clinicId = await resolveClinicIdFromServerScope();
+
+  const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
 
   if (!consultation) {
-    return <div>Consultation not found</div>;
+    return (
+      <div className="container max-w-4xl py-6">
+        <p className="text-muted-foreground">Consultation not found or access denied.</p>
+      </div>
+    );
   }
+
+  const dateLabel = consultation.date instanceof Date
+    ? consultation.date.toLocaleDateString()
+    : consultation.date
+      ? new Date(consultation.date).toLocaleDateString()
+      : '—';
 
   return (
     <div className="container max-w-4xl py-6">
@@ -42,60 +56,78 @@ export default async function ConsultationDetails({ params }: Props) {
           </Link>
         </Button>
         <Button size="sm" asChild>
-          <Link href={`/consultations/${consultation.id}/edit`}>Edit Consultation</Link>
+          <Link href={`/consultations/${id}/edit`}>Edit Consultation</Link>
         </Button>
       </div>
 
       <div className="space-y-6">
-        {/* Consultation Header */}
         <Card>
           <CardHeader>
             <CardTitle>Consultation Details</CardTitle>
-            <CardDescription>
-              {consultation.date.toLocaleDateString()} - {consultation.doctor}
-            </CardDescription>
+            <CardDescription>{dateLabel}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4">
+            <div className="grid gap-6">
+
+              {/* Chief Complaint / SOAP Note */}
               <div>
-                <h3 className="font-medium mb-2">Chief Complaint</h3>
-                <p className="whitespace-pre-wrap">{consultation.chiefComplaint}</p>
+                <h3 className="font-medium mb-2">Chief Complaint / Clinical Notes</h3>
+                <p className="whitespace-pre-wrap text-sm">{consultation.chiefComplaint || '—'}</p>
               </div>
+
+              {/* Progress Note (AI-generated SOAP) */}
+              {consultation.progressNote && (
+                <div>
+                  <h3 className="font-medium mb-2">Progress Note (SOAP)</h3>
+                  <p className="whitespace-pre-wrap text-sm">{consultation.progressNote}</p>
+                </div>
+              )}
+
+              {/* Diagnosis */}
               <div>
                 <h3 className="font-medium mb-2">Diagnosis</h3>
-                <p>{consultation.diagnosis}</p>
+                <p className="text-sm">{consultation.diagnosis || '—'}</p>
               </div>
+
+              {/* Additional Notes */}
+              {consultation.notes && (
+                <div>
+                  <h3 className="font-medium mb-2">Additional Notes</h3>
+                  <p className="whitespace-pre-wrap text-sm">{consultation.notes}</p>
+                </div>
+              )}
+
+              {/* Procedures */}
               {consultation.procedures && consultation.procedures.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-2">Procedures</h3>
-                  <ul className="list-disc list-inside">
+                  <ul className="list-disc list-inside text-sm space-y-1">
                     {consultation.procedures.map((procedure, index) => (
                       <li key={index}>
                         {procedure.name}
-                        {procedure.price && ` - $${procedure.price.toFixed(2)}`}
+                        {procedure.price ? ` — RM${procedure.price.toFixed(2)}` : ''}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-              {consultation.notes && (
-                <div>
-                  <h3 className="font-medium mb-2">Additional Procedures / Notes</h3>
-                  <p className="whitespace-pre-wrap">{consultation.notes}</p>
-                </div>
-              )}
+
+              {/* Prescriptions */}
               {consultation.prescriptions && consultation.prescriptions.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-2">Prescriptions</h3>
-                  <ul className="space-y-1">
+                  <ul className="space-y-1 text-sm">
                     {consultation.prescriptions.map((prescription, index) => (
                       <li key={index}>
-                        {prescription.medication.name} {prescription.frequency} {prescription.duration}
+                        {prescription.medication.name}{' '}
+                        {prescription.frequency}{' '}
+                        {prescription.duration}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
+
             </div>
           </CardContent>
         </Card>
