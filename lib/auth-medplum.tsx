@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { MedplumClient } from '@medplum/core';
 import type { Resource } from '@medplum/fhirtypes';
 
@@ -104,40 +104,16 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
   const persistClinicId = async (nextClinicId: string | null) => {
     setClinicIdState(nextClinicId);
     try {
-      const accessToken = medplum.getAccessToken();
       await fetch('/api/auth/medplum-session', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken, clinicId: nextClinicId }),
+        body: JSON.stringify({ clinicId: nextClinicId }),
       });
     } catch (error) {
       console.warn('Warning: Failed to persist clinicId to session cookie:', error);
     }
   };
-
-  // Periodically push MedplumClient token (incl. after silent refresh) to the
-  // httpOnly cookie so server routes stay authorized. Initial mount sync runs
-  // in the effect below *before* refreshAuthState to avoid racing /api/* calls.
-  useEffect(() => {
-    const syncServerCookie = async () => {
-      const token = medplum.getAccessToken();
-      if (!token) return;
-      try {
-        await fetch('/api/auth/medplum-session', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: token }),
-        });
-      } catch {
-        // Non-fatal — cookie will eventually expire naturally
-      }
-    };
-
-    const syncInterval = setInterval(syncServerCookie, 10 * 60 * 1000);
-    return () => clearInterval(syncInterval);
-  }, [medplum]);
 
   // Restore session from MedplumClient internal storage on mount
   useEffect(() => {
@@ -155,25 +131,9 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
     let cancelled = false;
 
     (async () => {
-      // Server API routes read the httpOnly cookie. MedplumClient may already
-      // have a valid token in localStorage before the cookie is written — sync
-      // first so the first /api/patients (etc.) from child components succeeds.
-      try {
-        const token = medplum.getAccessToken();
-        if (token) {
-          await fetch('/api/auth/medplum-session', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken: token }),
-          });
-        }
-      } catch {
-        // non-fatal
-      }
-
-      if (cancelled) return;
-
+      // The httpOnly session cookie is authoritative — set during
+      // /api/auth/login and rotated server-side on expiry. `refreshAuthState`
+      // reads it via GET /api/auth/medplum-session and seeds MedplumClient.
       await refreshAuthState()
         .catch(() => {
           setProfile(null);
