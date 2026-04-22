@@ -1,40 +1,6 @@
 import { Consultation } from '@/lib/models'; // Import canonical types
-import { getMedplumClient } from '../fhir/patient-service';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { getConsultationFromMedplum, getPatientConsultationsFromMedplum } from '../fhir/consultation-service';
-
-function textToNarrative(text?: string): { status: 'generated'; div: string } | undefined {
-  const trimmed = text?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const html = trimmed
-    .split(/\n{2,}/)
-    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br/>')}</p>`)
-    .join('');
-
-  return {
-    status: 'generated',
-    div: `<div xmlns="http://www.w3.org/1999/xhtml">${html}</div>`,
-  };
-}
-
-function buildNarrativeConsultationNote(consultation: Partial<Consultation>): string {
-  const parts = [
-    consultation.notes?.trim(),
-    consultation.progressNote?.trim() && consultation.progressNote.trim() !== consultation.notes?.trim()
-      ? consultation.progressNote.trim()
-      : undefined,
-  ].filter((value): value is string => Boolean(value));
-
-  if (parts.length > 0) {
-    return parts.join('\n\n');
-  }
-
-  return consultation.chiefComplaint?.trim()
-    || consultation.diagnosis?.trim()
-    || 'Consultation note';
-}
 
 // Removed local Prescription interface definition
 /*
@@ -87,7 +53,8 @@ export async function createConsultation(consultation: Omit<Consultation, 'id' |
 // Ensure other functions use the imported Consultation type
 export async function getConsultationsByPatient(patientId: string): Promise<Consultation[]> {
   try {
-    const consultations = await getPatientConsultationsFromMedplum(patientId);
+    const medplum = await getAdminMedplum();
+    const consultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
     return consultations as unknown as Consultation[];
   } catch (error) {
     console.error('Error fetching patient consultations:', error);
@@ -97,7 +64,8 @@ export async function getConsultationsByPatient(patientId: string): Promise<Cons
 
 export async function getConsultationById(id: string): Promise<Consultation | null> {
   try {
-    const consultation = await getConsultationFromMedplum(id);
+    const medplum = await getAdminMedplum();
+    const consultation = await getConsultationFromMedplum(id, undefined, medplum);
     return (consultation as unknown as Consultation) ?? null;
   } catch (error) {
     console.error('Error fetching consultation:', error);
@@ -107,57 +75,16 @@ export async function getConsultationById(id: string): Promise<Consultation | nu
 
 export async function updateConsultation(id: string, consultation: Partial<Consultation>): Promise<boolean> {
   try {
-    if (consultation.notes || consultation.progressNote) {
-      const medplum = await getMedplumClient();
-      const encounter = await medplum.readResource('Encounter', id);
-      const compositions = await medplum.searchResources('Composition', {
-        encounter: `Encounter/${id}`,
+    if (consultation.notes) {
+      const medplum = await getAdminMedplum();
+      await medplum.createResource({
+        resourceType: 'Observation',
+        status: 'final',
+        encounter: { reference: `Encounter/${id}` },
+        code: { text: 'Clinical Notes' },
+        valueString: consultation.notes,
+        effectiveDateTime: new Date().toISOString(),
       });
-      const latestComposition = compositions
-        .slice()
-        .sort((a, b) => {
-          const aTime = a.meta?.lastUpdated ? new Date(a.meta.lastUpdated).getTime() : 0;
-          const bTime = b.meta?.lastUpdated ? new Date(b.meta.lastUpdated).getTime() : 0;
-          return bTime - aTime;
-        })[0];
-
-      if (latestComposition?.id) {
-        const nextText = buildNarrativeConsultationNote({
-          notes: consultation.notes?.trim() || latestComposition.text?.div?.replace(/<[^>]+>/g, ' ').trim(),
-          progressNote: consultation.progressNote,
-          chiefComplaint: consultation.chiefComplaint,
-          diagnosis: consultation.diagnosis,
-        });
-        await medplum.updateResource({
-          ...latestComposition,
-          status: 'final',
-          date: new Date().toISOString(),
-          title: latestComposition.title || 'Consultation Note',
-          text: textToNarrative(nextText),
-          section: undefined,
-        });
-      } else {
-        await medplum.createResource({
-          resourceType: 'Composition',
-          status: 'final',
-          type: {
-            coding: [
-              {
-                system: 'http://loinc.org',
-                code: '34109-9',
-                display: 'Note',
-              },
-            ],
-            text: 'Consultation note',
-          },
-          subject: encounter.subject,
-          encounter: { reference: `Encounter/${id}` },
-          date: new Date().toISOString(),
-          title: 'Consultation Note',
-          author: [{ display: 'System' }],
-          text: textToNarrative(buildNarrativeConsultationNote(consultation)),
-        });
-      }
     }
     return true;
   } catch (error) {
@@ -168,7 +95,7 @@ export async function updateConsultation(id: string, consultation: Partial<Consu
 
 export async function deleteConsultation(id: string): Promise<boolean> {
   try {
-    const medplum = await getMedplumClient();
+    const medplum = await getAdminMedplum();
     await medplum.deleteResource('Encounter', id);
     return true;
   } catch (error) {
