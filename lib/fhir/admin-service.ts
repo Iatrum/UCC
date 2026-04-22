@@ -347,6 +347,32 @@ export async function updatePractitionerInMedplum(
 }
 
 /**
+ * Medplum rejects plain FHIR DELETE on ProjectMembership — use the admin
+ * endpoint which also cascades cleanup of the associated User identity.
+ */
+async function removeProjectMemberViaAdmin(
+  medplum: MedplumClient,
+  projectId: string,
+  membershipId: string
+): Promise<void> {
+  const baseUrl = medplum.getBaseUrl().replace(/\/$/, "");
+  const url = `${baseUrl}/admin/projects/${projectId}/members/${membershipId}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${medplum.getAccessToken()}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Admin member delete failed (${res.status}): ${body || res.statusText}`
+    );
+  }
+}
+
+/**
  * Delete a Practitioner and clean up their PractitionerRoles and
  * ProjectMembership entries so the Medplum project doesn't keep dangling refs.
  */
@@ -368,13 +394,6 @@ export async function deletePractitionerFromMedplum(
       membership.profile?.reference === `Practitioner/${practitionerId}`
   );
 
-  // Collect User refs so we can also drop the login identity. Without this
-  // the User remains and causes "email already exists" on re-invite.
-  const userRefs = new Set<string>();
-  for (const m of matchingMemberships) {
-    if (m.user?.reference) userRefs.add(m.user.reference);
-  }
-
   for (const role of roles ?? []) {
     if (role.id) {
       try {
@@ -385,17 +404,22 @@ export async function deletePractitionerFromMedplum(
     }
   }
 
+  // Use the admin endpoint — FHIR DELETE on ProjectMembership is rejected
+  // by Medplum and leaves a reference that blocks the Practitioner delete.
+  // This endpoint also cleans up the associated User identity.
   for (const membership of matchingMemberships) {
-    if (membership.id) {
-      try {
-        await medplum.deleteResource("ProjectMembership", membership.id);
-      } catch (err) {
-        console.warn(
-          "[deletePractitioner] failed to delete membership",
-          membership.id,
-          err
-        );
-      }
+    const projectId = getIdFromReference(membership.project?.reference);
+    if (!projectId || !membership.id) continue;
+    try {
+      await removeProjectMemberViaAdmin(medplum, projectId, membership.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[deletePractitioner] could not remove membership",
+        membership.id,
+        message
+      );
+      throw new Error(`Failed to remove project membership: ${message}`);
     }
   }
 
@@ -409,17 +433,6 @@ export async function deletePractitionerFromMedplum(
       message
     );
     throw new Error(`Failed to delete Practitioner: ${message}`);
-  }
-
-  // Best-effort User cleanup (ignore auth errors — User is a super-admin resource).
-  for (const ref of Array.from(userRefs)) {
-    const [resourceType, id] = ref.split("/");
-    if (resourceType !== "User" || !id) continue;
-    try {
-      await medplum.deleteResource("User", id);
-    } catch (err) {
-      console.warn("[deletePractitioner] could not delete User", id, err);
-    }
   }
 }
 
