@@ -14,14 +14,15 @@ Rule of thumb: **the cookie is the source of truth. Never put auth state anywher
 
 ---
 
-## The six essential pieces (do not remove)
+## The seven essential pieces (do not remove)
 
 1. **Login form** — `app/(routes)/login/page.tsx`
 2. **Login API** — `app/api/auth/login/route.ts` (OAuth2 PKCE → sets cookies)
 3. **Per-API-route auth helpers** — `lib/server/medplum-auth.ts` (`requireAuth`, `requireClinicAuth`, `requirePlatformAdmin`)
 4. **Page-level redirect for logged-out users** — `app/layout.tsx`
-5. **Logout** — `app/(routes)/logout/page.tsx` + `DELETE /api/auth/medplum-session`
-6. **Refresh-token rotation** — inside `getMedplumForRequest()` in `lib/server/medplum-auth.ts`
+5. **Admin portal role guard** — `app/(routes)/admin/layout.tsx` calls `requirePlatformAdminPage`
+6. **Logout** — `app/(routes)/logout/page.tsx` + `DELETE /api/auth/medplum-session`
+7. **Refresh-token rotation** — inside `getMedplumForRequest()` in `lib/server/medplum-auth.ts`
 
 Remove any one of these and the app is either broken or unsafe.
 
@@ -55,6 +56,7 @@ Remove any one of these and the app is either broken or unsafe.
 | File | Role |
 |---|---|
 | `app/layout.tsx` | Server Component that redirects to `/login` if session cookie missing on a protected path |
+| `app/(routes)/admin/layout.tsx` | Server Component that calls `requirePlatformAdminPage` — redirects non-admins before any admin page renders |
 
 ### Config
 
@@ -86,6 +88,7 @@ All three have `Secure`, `SameSite=Lax`, `Domain=.iatrum.com` (production).
 4. **PKCE stays.** The login route runs OAuth2 authorization-code + PKCE. Do not "simplify" by skipping the code-challenge step.
 5. **Refresh-token rotation is server-side only.** `getMedplumForRequest()` detects expired JWTs and refreshes transparently. The browser `MedplumClient` does not refresh tokens — do not hand it a refresh token.
 6. **Cookies are the source of truth, not `MedplumClient.localStorage`.** Any change that "syncs" the browser token back to the server cookie is redundant — the server set it in the first place.
+7. **The admin portal layout must call `requirePlatformAdminPage`.** `app/(routes)/admin/page.tsx` and its siblings fetch data with a Medplum **service account** (`getAdminMedplum`) — that client ignores the visitor's session, so admin pages render for anyone unless the layout blocks them. The session-cookie check in `app/layout.tsx` only stops logged-out visitors; a logged-in clinic user would otherwise see the admin portal. Keep the role check in the admin layout, and keep `export const dynamic = "force-dynamic"` on that layout so nothing can statically optimise around the guard.
 
 ---
 
@@ -172,6 +175,28 @@ Browser                           Next.js server
   | <---------------------------------- |
 ```
 
+### Admin portal access control
+
+```
+Browser                         Next.js server                        Medplum
+  |  GET admin.iatrum.com/           |                                     |
+  |  (proxy rewrites → /admin)       |                                     |
+  | -------------------------------> |                                     |
+  |                                  |  app/layout.tsx                     |
+  |                                  |  session cookie? no  → /login       |
+  |                                  |  session cookie? yes → pass         |
+  |                                  |                                     |
+  |                                  |  app/(routes)/admin/layout.tsx      |
+  |                                  |  requirePlatformAdminPage("/admin") |
+  |                                  |   1. getMedplumForRequest()         |
+  |                                  |      (throws if no cookie)          |
+  |                                  |   2. GET /auth/me  ---------------> |
+  |                                  |      membership.admin?              |
+  |                                  |                       <-----------  |
+  |                                  |   not admin → /login?error=admin_required
+  |                                  |   admin     → render portal         |
+```
+
 ---
 
 ## Sanity checklist before merging any auth change
@@ -182,6 +207,8 @@ Browser                           Next.js server
 - [ ] Manual: log in → stays logged in across refreshes
 - [ ] Manual: `iatrum.com/` (apex) → marketing page renders without login
 - [ ] Manual: `admin.iatrum.com/` while logged out → redirects to `/login`
+- [ ] Manual: `admin.iatrum.com/` while logged in as a non-admin clinic user → redirects to `/login?error=admin_required`
+- [ ] Manual: `admin.iatrum.com/` while logged in as a platform admin → renders the admin portal
 - [ ] Manual: clinic subdomain login still works
 - [ ] No new files in `localStorage`/`sessionStorage` contain tokens (check browser devtools)
 - [ ] No new `middleware.ts` or `proxy.ts` logic that gates auth
@@ -190,6 +217,6 @@ Browser                           Next.js server
 
 ## Last reviewed
 
-2026-04-22 — auth refactor that added the server-side page gate and trimmed redundant client token sync (see `authentication` branch).
+2026-04-22 — auth refactor that added the server-side page gate, the admin-portal role guard, and trimmed redundant client token sync (see `authentication` branch).
 
 The design at that date is considered the minimum viable professional setup for a Medplum + Next.js 16 multi-clinic app. Resist the urge to refactor further unless a real requirement changes.
