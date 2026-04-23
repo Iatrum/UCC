@@ -10,26 +10,16 @@ export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // ── Admin subdomain ─────────────────────────────────────────
+  // Redirect admin.domain.com → domain.com/admin/* so the path-based URL
+  // remains the single canonical entry point for the admin portal.
   if (context.type === "admin") {
-    const url = req.nextUrl.clone();
-    const alreadyOnAdminRoute =
-      pathname === "/admin" || pathname.startsWith("/admin/");
-    const shouldRewrite =
-      !alreadyOnAdminRoute &&
-      !pathname.startsWith("/login") &&
-      !pathname.startsWith("/logout") &&
-      !pathname.startsWith("/api/") &&
-      !pathname.startsWith("/_next");
-
-    if (shouldRewrite) {
-      url.pathname = pathname === "/" ? "/admin" : "/admin" + pathname;
+    const BASE_DOMAIN = process.env.NEXT_PUBLIC_BASE_DOMAIN || "";
+    if (BASE_DOMAIN) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.hostname = BASE_DOMAIN;
+      redirectUrl.pathname = pathname === "/" ? "/admin" : "/admin" + pathname;
+      return NextResponse.redirect(redirectUrl, 308);
     }
-
-    const servingPath = shouldRewrite ? url.pathname : pathname;
-    const requestHeaders = withPathname(req, servingPath);
-    return shouldRewrite
-      ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
-      : NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // ── Clinic subdomain ─────────────────────────────────────────
