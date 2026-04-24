@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev --turbopack",
     "build": "bun run scripts/validate-env.ts && next build --webpack",
     "build:ci": "SKIP_ENV_VALIDATION=1 next build --webpack",
     "start": "next start",

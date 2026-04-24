@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Search, Clock, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { useRouter } from "next/navigation";
 
 type PatientResult = {
   id: string;
@@ -36,6 +37,7 @@ export default function CheckInPage() {
 
 function CheckInPageInner() {
   const { toast } = useToast();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -118,14 +120,7 @@ function CheckInPageInner() {
         title: "Checked in",
         description: "Patient added to waiting room as 'Arrived'.",
       });
-      setChiefComplaint("");
-      setAssignedClinician("");
-      // refresh search results to reflect status
-      setResults((prev) =>
-        prev.map((p) =>
-          p.id === patientId ? { ...p, queueStatus: "arrived" } : p
-        )
-      );
+      router.push(`/patients/${patientId}/triage?visitType=${visitIntent}`);
     } catch (error) {
       console.error("Error checking in patient:", error);
       toast({

@@ -192,7 +192,9 @@ function buildTriageExtension(triageData: Omit<TriageData, 'triageAt' | 'isTriag
         triageData.registrationAt,
         triageData.performedBy
       ),
-      { url: 'vitalSigns', extension: vitalExtensions },
+      ...(vitalExtensions.length
+        ? [{ url: 'vitalSigns', extension: vitalExtensions }]
+        : []),
       ...(redFlagExtensions.length
         ? [
             {

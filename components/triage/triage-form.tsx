@@ -156,7 +156,11 @@ export default function TriageForm({ patient }: TriageFormProps) {
         description: `${patient.fullName} has been triaged and added to the queue.`,
       });
 
-      router.push("/dashboard");
+      if (visitIntent === "otc") {
+        router.push(`/orders?source=registration-otc&patientId=${patient.id}&patientName=${encodeURIComponent(patient.fullName)}`);
+      } else {
+        router.push("/dashboard");
+      }
       router.refresh();
     } catch (error) {
       console.error("Error submitting triage:", error);
@@ -579,7 +583,11 @@ export default function TriageForm({ patient }: TriageFormProps) {
           Cancel
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? "Completing Triage..." : "Complete Triage & Add to Queue"}
+          {submitting
+            ? "Completing Triage..."
+            : visitIntent === "otc"
+              ? "Complete & Go to Billing"
+              : "Complete Triage & Add to Queue"}
         </Button>
       </div>
     </form>

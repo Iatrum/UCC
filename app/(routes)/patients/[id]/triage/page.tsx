@@ -11,10 +11,12 @@ import { getTriageForPatient } from "@/lib/fhir/triage-service";
 
 interface TriagePageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ visitType?: string }>;
 }
 
-export default async function TriagePage({ params }: TriagePageProps) {
+export default async function TriagePage({ params, searchParams }: TriagePageProps) {
   const { id } = await params;
+  const { visitType } = await searchParams;
   const [patient, triage] = await Promise.all([
     getPatientFromMedplum(id),
     getTriageForPatient(id),
@@ -29,7 +31,7 @@ export default async function TriagePage({ params }: TriagePageProps) {
     triage: triage.triage,
     queueStatus: triage.queueStatus ?? null,
     queueAddedAt: triage.queueAddedAt ?? null,
-    visitIntent: triage.visitIntent ?? patient.visitIntent,
+    visitIntent: visitType ?? triage.visitIntent ?? patient.visitIntent,
     payerType: triage.payerType ?? patient.payerType,
     paymentMethod: triage.paymentMethod ?? patient.paymentMethod,
     billingPerson: triage.billingPerson ?? patient.billingPerson,
