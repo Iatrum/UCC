@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Trash2 } from "lucide-react";
+import { ArrowLeft, Building2, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -140,7 +140,7 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Clinic Details</CardTitle>
+          <CardTitle>Branch Details</CardTitle>
           <CardDescription>
             Update contact information and branding. The subdomain cannot be
             changed after creation.
@@ -148,8 +148,17 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {clinic.parentName && (
+              <div className="space-y-2">
+                <Label>Parent Company</Label>
+                <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span>{clinic.parentName}</span>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="name">Clinic Name *</Label>
+              <Label htmlFor="name">Branch Name *</Label>
               <Input
                 id="name"
                 value={form.name}
@@ -199,8 +208,8 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
         <CardHeader>
           <CardTitle className="text-destructive">Danger Zone</CardTitle>
           <CardDescription>
-            Deleting a clinic is permanent. It will be refused if any users or
-            branches are still assigned.
+            Deleting a branch is permanent. It will be refused if any users are
+            still assigned.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -208,16 +217,15 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
             <AlertDialogTrigger asChild>
               <Button variant="destructive" disabled={deleting}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                {deleting ? "Deleting..." : "Delete Clinic"}
+                {deleting ? "Deleting..." : "Delete Branch"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete {clinic.name}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This removes the Medplum Organization resource. Existing
-                  patient data tied to this clinic will be orphaned. Users
-                  assigned to this clinic must be removed first.
+                  This removes the Medplum Organization resource for this
+                  branch. Users assigned to this branch must be removed first.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
