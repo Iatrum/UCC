@@ -9,6 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -27,10 +34,19 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
-import type { ClinicSummary } from "@/lib/fhir/admin-service";
+import type {
+  ClinicSummary,
+  ParentOrganizationSummary,
+} from "@/lib/fhir/admin-service";
 import { useAdminPath } from "@/hooks/use-admin-path";
 
-export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
+export default function ClinicEditForm({
+  clinic,
+  organisations,
+}: {
+  clinic: ClinicSummary;
+  organisations: ParentOrganizationSummary[];
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const adminPath = useAdminPath();
@@ -38,6 +54,7 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
   const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({
     name: clinic.name,
+    parentId: clinic.parentId ?? organisations[0]?.id ?? "",
     phone: clinic.phone ?? "",
     address: clinic.address ?? "",
     logoUrl: clinic.logoUrl ?? "",
@@ -50,8 +67,8 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) {
-      toast({ title: "Clinic name is required", variant: "destructive" });
+    if (!form.name.trim() || !form.parentId) {
+      toast({ title: "Clinic name and organisation are required", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -148,15 +165,30 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {clinic.parentName && (
-              <div className="space-y-2">
-                <Label>Parent Company</Label>
-                <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
-                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span>{clinic.parentName}</span>
-                </div>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="parentId">Organisation *</Label>
+              <Select
+                value={form.parentId}
+                onValueChange={(value) =>
+                  setForm((prev) => ({ ...prev, parentId: value }))
+                }
+                disabled={organisations.length === 0}
+              >
+                <SelectTrigger id="parentId">
+                  <SelectValue placeholder="Select organisation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organisations.map((organisation) => (
+                    <SelectItem key={organisation.id} value={organisation.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        {organisation.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">Branch Name *</Label>
               <Input
@@ -193,7 +225,7 @@ export default function ClinicEditForm({ clinic }: { clinic: ClinicSummary }) {
               />
             </div>
             <div className="pt-2 flex gap-3">
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || organisations.length === 0}>
                 {saving ? "Saving..." : "Save Changes"}
               </Button>
               <Button type="button" variant="outline" asChild>

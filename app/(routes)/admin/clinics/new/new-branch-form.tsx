@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -16,13 +23,13 @@ import { useToast } from "@/components/ui/use-toast";
 import { ArrowLeft, Building2 } from "lucide-react";
 import Link from "next/link";
 import { useAdminPath } from "@/hooks/use-admin-path";
+import type { ParentOrganizationSummary } from "@/lib/fhir/admin-service";
 
 interface Props {
-  parentId: string;
-  parentName: string;
+  organisations: ParentOrganizationSummary[];
 }
 
-export default function NewBranchForm({ parentId, parentName }: Props) {
+export default function NewBranchForm({ organisations }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const adminPath = useAdminPath();
@@ -30,6 +37,7 @@ export default function NewBranchForm({ parentId, parentName }: Props) {
   const [form, setForm] = useState({
     name: "",
     subdomain: "",
+    parentId: organisations[0]?.id ?? "",
     phone: "",
     address: "",
     logoUrl: "",
@@ -46,7 +54,7 @@ export default function NewBranchForm({ parentId, parentName }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.subdomain) {
+    if (!form.name || !form.subdomain || !form.parentId) {
       toast({ title: "Required fields missing", variant: "destructive" });
       return;
     }
@@ -55,7 +63,7 @@ export default function NewBranchForm({ parentId, parentName }: Props) {
       const res = await fetch("/api/admin/clinics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, parentId }),
+        body: JSON.stringify(form),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -86,7 +94,7 @@ export default function NewBranchForm({ parentId, parentName }: Props) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">New Branch</h1>
           <p className="text-muted-foreground text-sm">
-            Register a new clinic branch under {parentName}.
+            Register a new clinic branch under an organisation.
           </p>
         </div>
       </div>
@@ -102,11 +110,27 @@ export default function NewBranchForm({ parentId, parentName }: Props) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Parent Company</Label>
-              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
-                <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span>{parentName}</span>
-              </div>
+              <Label htmlFor="parentId">Organisation *</Label>
+              <Select
+                value={form.parentId}
+                onValueChange={(value) =>
+                  setForm((prev) => ({ ...prev, parentId: value }))
+                }
+              >
+                <SelectTrigger id="parentId">
+                  <SelectValue placeholder="Select organisation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organisations.map((organisation) => (
+                    <SelectItem key={organisation.id} value={organisation.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        {organisation.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="name">Branch Name *</Label>

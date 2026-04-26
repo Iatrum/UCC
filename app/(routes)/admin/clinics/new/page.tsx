@@ -1,4 +1,4 @@
-import { getParentOrganizationFromMedplum } from "@/lib/fhir/admin-service";
+import { getParentOrganizationsFromMedplum } from "@/lib/fhir/admin-service";
 import { adminPathForHost } from "@/lib/admin-routes";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,9 @@ export const dynamic = "force-dynamic";
 export default async function NewBranchPage() {
   const host = getHostFromHeaders(await headers());
   const adminPath = (path: string) => adminPathForHost(path, host);
-  const parentOrg = await getParentOrganizationFromMedplum().catch(() => null);
+  const organisations = await getParentOrganizationsFromMedplum().catch(() => []);
 
-  if (!parentOrg) {
+  if (organisations.length === 0) {
     return (
       <div className="max-w-2xl space-y-6">
         <div>
@@ -29,12 +29,12 @@ export default async function NewBranchPage() {
             <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-3">
               <p className="text-sm text-amber-800 dark:text-amber-300">
-                You need to set up a parent company before adding clinic
+                You need to create an organisation before adding clinic
                 branches.
               </p>
               <Button asChild size="sm">
                 <Link href={adminPath("/organisation")}>
-                  Set Up Organisation
+                  Create Organisation
                 </Link>
               </Button>
             </div>
@@ -44,5 +44,5 @@ export default async function NewBranchPage() {
     );
   }
 
-  return <NewBranchForm parentId={parentOrg.id} parentName={parentOrg.name} />;
+  return <NewBranchForm organisations={organisations} />;
 }

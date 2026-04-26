@@ -20,9 +20,10 @@ import { useAdminPath } from "@/hooks/use-admin-path";
 
 interface Props {
   organisation: ParentOrganizationSummary | null;
+  mode: "create" | "edit";
 }
 
-export default function OrgForm({ organisation }: Props) {
+export default function OrgForm({ organisation, mode }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const adminPath = useAdminPath();
@@ -47,14 +48,14 @@ export default function OrgForm({ organisation }: Props) {
     }
     setSaving(true);
     try {
-      const isNew = !organisation;
+      const isNew = mode === "create";
       const res = await fetch("/api/admin/organisation", {
         method: isNew ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           isNew
             ? form
-            : { id: organisation.id, ...form }
+            : { id: organisation?.id, ...form }
         ),
       });
       if (!res.ok) {
@@ -65,6 +66,7 @@ export default function OrgForm({ organisation }: Props) {
         title: isNew ? "Organisation created" : "Saved",
         description: `${form.name} has been ${isNew ? "set up" : "updated"}.`,
       });
+      router.replace(adminPath("/organisation"));
       router.refresh();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -73,7 +75,7 @@ export default function OrgForm({ organisation }: Props) {
     }
   };
 
-  const isNew = !organisation;
+  const isNew = mode === "create";
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -83,12 +85,12 @@ export default function OrgForm({ organisation }: Props) {
         </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            {isNew ? "Set Up Organisation" : organisation.name}
+            {isNew ? "New Organisation" : organisation?.name}
           </h1>
           <p className="text-muted-foreground text-sm">
             {isNew
-              ? "Create your parent company before adding clinic branches."
-              : "Your parent company. All clinic branches belong to this organisation."}
+              ? "Create a parent company for clinic branches."
+              : "Update this organisation's company details."}
           </p>
         </div>
       </div>
@@ -98,7 +100,7 @@ export default function OrgForm({ organisation }: Props) {
           <CardTitle>Organisation Details</CardTitle>
           <CardDescription>
             {isNew
-              ? "This will be the parent company for all your clinic branches."
+              ? "This organisation can own one or more clinic branches."
               : "Update your organisation's contact information and branding."}
           </CardDescription>
         </CardHeader>
@@ -147,29 +149,18 @@ export default function OrgForm({ organisation }: Props) {
               </Button>
               {!isNew && (
                 <Button type="button" variant="outline" asChild>
-                  <Link href={adminPath("/")}>Cancel</Link>
+                  <Link href={adminPath("/organisation")}>Cancel</Link>
+                </Button>
+              )}
+              {isNew && (
+                <Button type="button" variant="outline" asChild>
+                  <Link href={adminPath("/organisation")}>Cancel</Link>
                 </Button>
               )}
             </div>
           </form>
         </CardContent>
       </Card>
-
-      {!isNew && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Clinic Branches</CardTitle>
-            <CardDescription>
-              Manage the clinic branches that belong to this organisation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" asChild>
-              <Link href={adminPath("/clinics")}>View Branches</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

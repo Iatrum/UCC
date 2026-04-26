@@ -1,6 +1,6 @@
 import {
   getOrganizationsFromMedplum,
-  getParentOrganizationFromMedplum,
+  getParentOrganizationsFromMedplum,
 } from "@/lib/fhir/admin-service";
 import { adminPathForHost } from "@/lib/admin-routes";
 import {
@@ -20,9 +20,9 @@ import { getHostFromHeaders } from "@/lib/server/subdomain-host";
 export default async function BranchesPage() {
   const host = getHostFromHeaders(await headers());
   const adminPath = (path: string) => adminPathForHost(path, host);
-  const [clinics, parentOrg] = await Promise.all([
+  const [clinics, organisations] = await Promise.all([
     getOrganizationsFromMedplum().catch(() => []),
-    getParentOrganizationFromMedplum().catch(() => null),
+    getParentOrganizationsFromMedplum().catch(() => []),
   ]);
   const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || "yourdomain.com";
 
@@ -32,9 +32,7 @@ export default async function BranchesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Branches</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {parentOrg
-              ? `Clinic branches under ${parentOrg.name}.`
-              : "Manage clinic branches on this platform."}
+            Manage clinic branches across organisations.
           </p>
         </div>
         <Button asChild>
@@ -45,17 +43,17 @@ export default async function BranchesPage() {
         </Button>
       </div>
 
-      {!parentOrg && (
+      {organisations.length === 0 && (
         <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
           <CardContent className="flex items-center gap-3 py-4">
             <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              No parent company configured yet.{" "}
+              No organisations configured yet.{" "}
               <Link
                 href={adminPath("/organisation")}
                 className="font-medium underline underline-offset-2"
               >
-                Set one up first
+                Create one first
               </Link>{" "}
               before adding branches.
             </p>
