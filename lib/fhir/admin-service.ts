@@ -35,6 +35,12 @@ export interface ParentOrganizationSummary {
 const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const ORG_LOGO_EXTENSION_URL = "https://ucc.emr/organization-logo-url";
 
+function isClinicOrganization(org: Organization): boolean {
+  return Boolean(
+    org.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM)
+  );
+}
+
 function mapOrganizationToSummary(org: Organization, parentName?: string): ClinicSummary {
   const subdomain =
     org.identifier?.find((id) => id.system === CLINIC_IDENTIFIER_SYSTEM)
@@ -72,9 +78,7 @@ export async function getOrganizationsFromMedplum(): Promise<ClinicSummary[]> {
   const all = await medplum.searchResources("Organization", { _count: "200" });
 
   const hasExplicitParent = (all ?? []).some(
-    (org) =>
-      !org.partOf &&
-      !org.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM)
+    (org) => !org.partOf && !isClinicOrganization(org)
   );
 
   // When there is no explicit parent org, the single standalone clinic (no partOf)
@@ -83,7 +87,7 @@ export async function getOrganizationsFromMedplum(): Promise<ClinicSummary[]> {
     ? (all ?? []).find(
         (org) =>
           !org.partOf &&
-          org.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM)
+          isClinicOrganization(org)
       )?.id
     : undefined;
 
@@ -95,7 +99,7 @@ export async function getOrganizationsFromMedplum(): Promise<ClinicSummary[]> {
   return (all ?? [])
     .filter(
       (org) =>
-        org.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM) &&
+        isClinicOrganization(org) &&
         org.id !== autoParentId
     )
     .map((org) => {
@@ -105,33 +109,33 @@ export async function getOrganizationsFromMedplum(): Promise<ClinicSummary[]> {
     });
 }
 
-export async function getParentOrganizationFromMedplum(): Promise<ParentOrganizationSummary | null> {
+export async function getParentOrganizationsFromMedplum(): Promise<ParentOrganizationSummary[]> {
   const medplum = await getAdminMedplum();
   const all = await medplum.searchResources("Organization", { _count: "200" });
+  const explicitParents = (all ?? [])
+    .filter((org) => !org.partOf && !isClinicOrganization(org))
+    .map(mapOrganizationToParentSummary);
 
-  // Prefer an explicit parent (no clinic identifier, no partOf).
-  const explicitParent = (all ?? []).find(
-    (org) =>
-      !org.partOf &&
-      !org.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM)
-  );
-  if (explicitParent) return mapOrganizationToParentSummary(explicitParent);
+  if (explicitParents.length > 0) {
+    return explicitParents;
+  }
 
-  // Fall back: standalone clinic (has identifier, no partOf) acts as auto-parent.
+  // Backward compatibility for old single-clinic installs that used a
+  // standalone clinic Organization as the parent company.
   const autoParent = (all ?? []).find(
-    (org) =>
-      !org.partOf &&
-      org.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM)
+    (org) => !org.partOf && isClinicOrganization(org)
   );
-  return autoParent ? mapOrganizationToParentSummary(autoParent) : null;
+  return autoParent ? [mapOrganizationToParentSummary(autoParent)] : [];
+}
+
+export async function getParentOrganizationFromMedplum(): Promise<ParentOrganizationSummary | null> {
+  const parents = await getParentOrganizationsFromMedplum();
+  return parents[0] ?? null;
 }
 
 export async function saveParentOrganizationToMedplum(
   input: Omit<OrganizationInput, "parentId">
 ): Promise<ParentOrganizationSummary> {
-  const existing = await getParentOrganizationFromMedplum();
-  if (existing) throw new Error("A parent organisation already exists.");
-
   const medplum = await getAdminMedplum();
   const org: Organization = {
     resourceType: "Organization",
@@ -173,7 +177,16 @@ export async function getOrganizationFromMedplum(
   const medplum = await getAdminMedplum();
   try {
     const org = await medplum.readResource("Organization", id);
-    return mapOrganizationToSummary(org);
+    const parentId = getIdFromReference(org.partOf?.reference);
+    if (!parentId) {
+      return mapOrganizationToSummary(org);
+    }
+    try {
+      const parent = await medplum.readResource("Organization", parentId);
+      return mapOrganizationToSummary(org, parent.name ?? "Unnamed organisation");
+    } catch {
+      return mapOrganizationToSummary(org);
+    }
   } catch {
     return null;
   }
@@ -185,6 +198,9 @@ export async function updateOrganizationDetailsInMedplum(
 ): Promise<ClinicSummary> {
   const medplum = await getAdminMedplum();
   const existing = await medplum.readResource("Organization", id);
+  const parent = input.parentId
+    ? await medplum.readResource("Organization", input.parentId)
+    : null;
 
   const identifiers =
     existing.identifier?.filter(
@@ -198,6 +214,9 @@ export async function updateOrganizationDetailsInMedplum(
     resourceType: "Organization",
     name: input.name,
     identifier: identifiers.length > 0 ? identifiers : existing.identifier,
+    partOf: input.parentId
+      ? { reference: `Organization/${input.parentId}` }
+      : existing.partOf,
     telecom: input.phone
       ? [{ system: "phone" as const, value: input.phone }]
       : undefined,
@@ -213,7 +232,8 @@ export async function updateOrganizationDetailsInMedplum(
   };
 
   const saved = await medplum.updateResource(updated);
-  return mapOrganizationToSummary(saved);
+  const parentName = parent?.name;
+  return mapOrganizationToSummary(saved, parentName);
 }
 
 /**
@@ -301,14 +321,16 @@ export async function saveOrganizationDetailsToMedplum(
   subdomain: string
 ): Promise<void> {
   const medplum = await getAdminMedplum();
+  if (!input.parentId) {
+    throw new Error("Parent organisation is required.");
+  }
+  await medplum.readResource("Organization", input.parentId);
 
   const org: Organization = {
     resourceType: "Organization",
     name: input.name,
     identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: subdomain }],
-    ...(input.parentId && {
-      partOf: { reference: `Organization/${input.parentId}` },
-    }),
+    partOf: { reference: `Organization/${input.parentId}` },
     ...(input.phone && {
       telecom: [{ system: "phone" as const, value: input.phone }],
     }),

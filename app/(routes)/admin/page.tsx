@@ -1,7 +1,7 @@
 import { listActiveModules } from "@/lib/module-registry";
 import {
   getOrganizationsFromMedplum,
-  getParentOrganizationFromMedplum,
+  getParentOrganizationsFromMedplum,
 } from "@/lib/fhir/admin-service";
 import { adminPathForHost } from "@/lib/admin-routes";
 import {
@@ -20,10 +20,10 @@ import { getHostFromHeaders } from "@/lib/server/subdomain-host";
 export default async function AdminOverviewPage() {
   const host = getHostFromHeaders(await headers());
   const adminPath = (path: string) => adminPathForHost(path, host);
-  const [modules, clinics, parentOrg] = await Promise.all([
+  const [modules, clinics, organisations] = await Promise.all([
     listActiveModules().catch(() => []),
     getOrganizationsFromMedplum().catch(() => []),
-    getParentOrganizationFromMedplum().catch(() => null),
+    getParentOrganizationsFromMedplum().catch(() => []),
   ]);
 
   return (
@@ -39,27 +39,27 @@ export default async function AdminOverviewPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Organisation</CardTitle>
+            <CardTitle className="text-sm font-medium">Organisations</CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold truncate">
-              {parentOrg ? parentOrg.name : "—"}
+              {organisations.length}
             </div>
             <p className="text-xs text-muted-foreground">
-              {parentOrg ? (
+              {organisations.length > 0 ? (
                 <Link
                   href={adminPath("/organisation")}
                   className="underline underline-offset-2"
                 >
-                  Manage organisation
+                  Manage organisations
                 </Link>
               ) : (
                 <Link
                   href={adminPath("/organisation")}
                   className="underline underline-offset-2 text-amber-600 dark:text-amber-400"
                 >
-                  Not configured — set up now
+                  None configured — create one
                 </Link>
               )}
             </p>
@@ -93,7 +93,7 @@ export default async function AdminOverviewPage() {
           <div>
             <CardTitle>Branches</CardTitle>
             <CardDescription>
-              All clinic branches under {parentOrg?.name ?? "your organisation"}
+              All clinic branches across organisations
             </CardDescription>
           </div>
           <Button asChild size="sm">

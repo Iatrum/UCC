@@ -29,7 +29,7 @@ export default function AdminSidebar() {
 
   const navigation = [
     { name: "Overview", href: adminPath("/"), icon: LayoutDashboard, exact: true },
-    { name: "Organisation", href: adminPath("/organisation"), icon: Building2 },
+    { name: "Organisations", href: adminPath("/organisation"), icon: Building2 },
     { name: "Branches", href: adminPath("/clinics"), icon: GitBranch },
     { name: "Users", href: adminPath("/users"), icon: Users },
     { name: "Settings", href: adminPath("/settings"), icon: Settings },

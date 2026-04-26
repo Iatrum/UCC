@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getParentOrganizationFromMedplum,
+  getParentOrganizationsFromMedplum,
   saveParentOrganizationToMedplum,
   updateParentOrganizationInMedplum,
 } from "@/lib/fhir/admin-service";
@@ -10,8 +10,11 @@ import { handleRouteError } from "@/lib/server/route-helpers";
 export async function GET(req: NextRequest) {
   try {
     await requirePlatformAdmin(req);
-    const organisation = await getParentOrganizationFromMedplum();
-    return NextResponse.json({ organisation });
+    const organisations = await getParentOrganizationsFromMedplum();
+    return NextResponse.json({
+      organisations,
+      organisation: organisations[0] ?? null,
+    });
   } catch (error) {
     return handleRouteError(error, "GET /api/admin/organisation");
   }
