@@ -117,8 +117,7 @@ export function RegisterPatientDialog({ open, onOpenChange }: RegisterPatientDia
 
   const selectExisting = (p: SearchHit) => {
     onOpenChange(false);
-    const search = encodeURIComponent(p.fullName || p.nric || p.phone || "");
-    router.push(`/check-in?search=${search}&${visitParam}`);
+    router.push(`/patients/${p.id}/check-in?visitType=${visitPurpose}`);
   };
 
   return (

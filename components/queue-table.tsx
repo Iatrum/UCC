@@ -302,8 +302,8 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
                     </DropdownMenuItem>
                     {!patient.triage?.isTriaged && (
                       <DropdownMenuItem asChild>
-                        <Link href={`/patients/${patient.id}/triage`}>
-                          Perform Triage
+                        <Link href={`/patients/${patient.id}/check-in`}>
+                          Check-in
                         </Link>
                       </DropdownMenuItem>
                     )}
