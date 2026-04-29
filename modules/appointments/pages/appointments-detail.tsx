@@ -194,15 +194,15 @@ export default async function AppointmentDetailsPage({ params }: PageProps) {
                 </div>
                 <div className="flex items-center justify-between">
                   <dt>Checked in</dt>
-                  <dd>{appointment.status === "checked_in" ? formatDateTime(scheduledAt) : "-"}</dd>
+                  <dd>{appointment.checkinAt ? formatDateTime(appointment.checkinAt) : "-"}</dd>
                 </div>
                 <div className="flex items-center justify-between">
                   <dt>Completed</dt>
-                  <dd>{appointment.status === "completed" ? formatDateTime(scheduledAt) : "-"}</dd>
+                  <dd>{appointment.completedAt ? formatDateTime(appointment.completedAt) : "-"}</dd>
                 </div>
                 <div className="flex items-center justify-between">
                   <dt>Cancelled</dt>
-                  <dd>{appointment.status === "cancelled" || appointment.status === "no_show" ? formatDateTime(scheduledAt) : "-"}</dd>
+                  <dd>{appointment.cancelledAt ? formatDateTime(appointment.cancelledAt) : "-"}</dd>
                 </div>
               </dl>
             </div>
