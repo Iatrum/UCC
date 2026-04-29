@@ -6,9 +6,10 @@ type Props = {
 };
 
 export default async function CheckoutPage({ params, searchParams }: Props) {
+  const fallbackSearchParams: { [key: string]: string | string[] | undefined } = {};
   const [{ consultationId }, resolvedSearchParams] = await Promise.all([
     params,
-    searchParams?.catch(() => ({})) ?? {},
+    searchParams?.catch(() => fallbackSearchParams) ?? fallbackSearchParams,
   ]);
 
   const patientId =
