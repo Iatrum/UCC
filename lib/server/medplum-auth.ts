@@ -5,6 +5,7 @@
 
 import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import { AuthError, ClinicContextError, ForbiddenError } from '@/lib/server/route-helpers';
@@ -44,7 +45,8 @@ type RefreshResult = {
 function setSessionCookie(
   cookieStore: Awaited<ReturnType<typeof cookies>>,
   name: string,
-  value: string
+  value: string,
+  domain: string | undefined
 ): void {
   try {
     cookieStore.set(name, value, {
@@ -53,11 +55,25 @@ function setSessionCookie(
       sameSite: 'lax',
       path: '/',
       maxAge: MAX_AGE_SECONDS,
-      domain: COOKIE_DOMAIN,
+      domain,
     });
   } catch {
     // Read-only cookie store contexts cannot persist rotations.
   }
+}
+
+function cookieDomainForRequest(req?: NextRequest): string | undefined {
+  if (!COOKIE_DOMAIN || !req) {
+    return COOKIE_DOMAIN;
+  }
+
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const hostname = host?.split(':')[0] ?? '';
+  if (hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+    return undefined;
+  }
+
+  return COOKIE_DOMAIN;
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<RefreshResult | null> {
@@ -146,9 +162,10 @@ export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumCl
     }
 
     accessToken = refreshed.accessToken;
-    setSessionCookie(cookieStore, SESSION_COOKIE, refreshed.accessToken);
+    const cookieDomain = cookieDomainForRequest(req);
+    setSessionCookie(cookieStore, SESSION_COOKIE, refreshed.accessToken, cookieDomain);
     if (refreshed.refreshToken) {
-      setSessionCookie(cookieStore, REFRESH_COOKIE, refreshed.refreshToken);
+      setSessionCookie(cookieStore, REFRESH_COOKIE, refreshed.refreshToken, cookieDomain);
     }
   }
 
@@ -271,6 +288,28 @@ export async function requirePlatformAdmin(req: NextRequest): Promise<MedplumCli
   const medplum = await getMedplumForRequest(req);
   if (!(await isPlatformAdmin(medplum))) {
     throw new ForbiddenError('Platform admin access required.');
+  }
+  return medplum;
+}
+
+/**
+ * Page/layout variant of `requirePlatformAdmin` that uses `redirect()` so
+ * visitors land on `/login` instead of an error boundary.
+ *
+ * - Not signed in -> `/login?next=<nextPath>`
+ * - Signed in but not a platform admin -> `/login?error=admin_required&next=<nextPath>`
+ */
+export async function requirePlatformAdminPage(
+  nextPath: string = '/admin'
+): Promise<MedplumClient> {
+  let medplum: MedplumClient;
+  try {
+    medplum = await getMedplumForRequest();
+  } catch {
+    redirect(`/login?next=${encodeURIComponent(nextPath)}`);
+  }
+  if (!(await isPlatformAdmin(medplum))) {
+    redirect(`/login?error=admin_required&next=${encodeURIComponent(nextPath)}`);
   }
   return medplum;
 }

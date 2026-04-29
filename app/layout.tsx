@@ -6,7 +6,7 @@ import Sidebar from "@/components/sidebar";
 import { MedplumAuthProvider } from "@/lib/auth-medplum";
 import { listActiveModules } from "@/lib/module-registry";
 import { cookies, headers } from "next/headers";
-import { CLINIC_COOKIE } from "@/lib/server/cookie-constants";
+import { CLINIC_COOKIE, SESSION_COOKIE } from "@/lib/server/cookie-constants";
 import {
   getHostFromHeaders,
   resolvePortalPresentation,
@@ -37,26 +37,54 @@ export default async function RootLayout({
       clinicCookieValue: cookieStore.get(CLINIC_COOKIE)?.value,
     });
 
+  // Marketing landing page — root path on the apex host (no admin, no clinic
+  // subdomain). Cookies are ignored here so drhidayat.com/ always shows the
+  // landing page regardless of any stale clinic/session cookies.
+  const isApexHost = (() => {
+    const bare = (host ?? "").split(":")[0];
+    if (!bare) return true;
+    if (bare.startsWith("localhost") || /^\d{1,3}(\.\d{1,3}){3}/.test(bare)) return true;
+    const parts = bare.split(".");
+    if (parts.length < 3) return true;
+    return parts[0] === "www";
+  })();
+  const isRootPath = pathname === "/" || pathname === "";
+  const isMarketingPage = isApexHost && isRootPath && !isAdminContext;
+
+  // On a non-apex host (e.g. demo.drhidayat.com) `/` is not the marketing
+  // page — it's the app entry. Bounce into /dashboard so a shared session
+  // cookie doesn't accidentally render the landing component here.
+  if (!isApexHost && isRootPath && !isAdminContext) {
+    redirect("/dashboard");
+  }
+
+  // Paths that render without requiring authentication (login page itself,
+  // marketing landing, error pages, API handlers, and Next.js internals).
+  const isPublicPath =
+    !pathname ||
+    isMarketingPage ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/logout") ||
+    pathname.startsWith("/clinic-not-found") ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/_next");
+
   // Validate clinic subdomain — redirect to error page for unknown clinics.
   // Skip on admin context, login, and /clinic-not-found itself.
-  if (!isAdminContext) {
-    const isPublicPath =
-      !pathname ||
-      pathname.startsWith("/login") ||
-      pathname.startsWith("/clinic-not-found") ||
-      pathname.startsWith("/api/") ||
-      pathname.startsWith("/_next");
-
-    if (clinicId && !isPublicPath) {
-      const exists = await clinicExists(clinicId);
-      if (!exists) {
-        redirect("/clinic-not-found");
-      }
+  if (!isAdminContext && clinicId && !isPublicPath) {
+    const exists = await clinicExists(clinicId);
+    if (!exists) {
+      redirect("/clinic-not-found");
     }
   }
 
-  // Marketing landing page — no clinic subdomain, no admin, root path
-  const isMarketingPage = !isAdminContext && !clinicId && (pathname === "/" || pathname === "");
+  // Server-side auth gate: if no session cookie and the path is protected,
+  // bounce to /login before rendering. Matches Next.js 16 "auth close to data"
+  // guidance — no middleware/proxy security boundary.
+  const sessionToken = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!sessionToken && !isPublicPath) {
+    redirect("/login");
+  }
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -68,7 +96,7 @@ export default async function RootLayout({
             attribute="class"
             defaultTheme="light"
             enableSystem={false}
-            themes={["light", "dark", "warm"]}
+            themes={["light", "warm"]}
             disableTransitionOnChange
           >
             <MedplumAuthProvider>

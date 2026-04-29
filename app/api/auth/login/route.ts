@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import crypto from 'node:crypto';
 import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { CLINIC_COOKIE, REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
+import { adminPathForHost } from '@/lib/admin-routes';
 import {
   deriveSubdomainContext,
   getHostFromHeaders,
@@ -45,6 +46,7 @@ function setCookie(
   cookieStore: Awaited<ReturnType<typeof cookies>>,
   name: string,
   value: string,
+  domain: string | undefined,
   maxAge = MAX_AGE_SECONDS,
   httpOnly = true
 ): void {
@@ -54,13 +56,14 @@ function setCookie(
     sameSite: 'lax',
     path: '/',
     maxAge,
-    domain: COOKIE_DOMAIN,
+    domain,
   });
 }
 
 function deleteCookie(
   cookieStore: Awaited<ReturnType<typeof cookies>>,
   name: string,
+  domain: string | undefined,
   httpOnly = true
 ): void {
   cookieStore.set(name, '', {
@@ -69,8 +72,21 @@ function deleteCookie(
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
-    domain: COOKIE_DOMAIN,
+    domain,
   });
+}
+
+function cookieDomainForHost(host: string | null): string | undefined {
+  if (!COOKIE_DOMAIN || !host) {
+    return COOKIE_DOMAIN;
+  }
+
+  const hostname = host.split(':')[0] ?? host;
+  if (hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+    return undefined;
+  }
+
+  return COOKIE_DOMAIN;
 }
 
 async function startEmailPasswordLogin(
@@ -222,7 +238,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const hostContext = deriveSubdomainContext(getHostFromHeaders(req.headers));
+    const host = getHostFromHeaders(req.headers);
+    const hostContext = deriveSubdomainContext(host);
     const { codeVerifier, codeChallenge } = createPkcePair();
     const code = await startEmailPasswordLogin(
       String(email).trim().toLowerCase(),
@@ -259,8 +276,10 @@ export async function POST(req: NextRequest) {
           403
         );
       }
-      redirectUrl =
-        typeof next === 'string' && next.startsWith('/admin') ? next : '/admin';
+      redirectUrl = adminPathForHost(
+        typeof next === 'string' ? next : '/',
+        host
+      );
     } else if (hostContext.type === 'clinic') {
       const matchedClinic = assignedClinics.find(
         (clinic) =>
@@ -299,17 +318,18 @@ export async function POST(req: NextRequest) {
     }
 
     const cookieStore = await cookies();
-    setCookie(cookieStore, SESSION_COOKIE, tokenResult.accessToken, MAX_AGE_SECONDS, true);
+    const cookieDomain = cookieDomainForHost(host);
+    setCookie(cookieStore, SESSION_COOKIE, tokenResult.accessToken, cookieDomain, MAX_AGE_SECONDS, true);
     if (tokenResult.refreshToken) {
-      setCookie(cookieStore, REFRESH_COOKIE, tokenResult.refreshToken, MAX_AGE_SECONDS, true);
+      setCookie(cookieStore, REFRESH_COOKIE, tokenResult.refreshToken, cookieDomain, MAX_AGE_SECONDS, true);
     } else {
-      deleteCookie(cookieStore, REFRESH_COOKIE, true);
+      deleteCookie(cookieStore, REFRESH_COOKIE, cookieDomain, true);
     }
 
     if (activeClinicId) {
-      setCookie(cookieStore, CLINIC_COOKIE, activeClinicId, MAX_AGE_SECONDS, false);
+      setCookie(cookieStore, CLINIC_COOKIE, activeClinicId, cookieDomain, MAX_AGE_SECONDS, false);
     } else {
-      deleteCookie(cookieStore, CLINIC_COOKIE, false);
+      deleteCookie(cookieStore, CLINIC_COOKIE, cookieDomain, false);
     }
 
     return NextResponse.json({
