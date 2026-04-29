@@ -71,7 +71,10 @@ export default function BillingTable({ consultations, onGenerate }: BillingTable
               filtered.map((consultation) => (
                 <TableRow key={consultation.id}>
                   <TableCell className="font-medium">
-                    <Link href={`/patients/${consultation.patientId}`} className="hover:underline">
+                    <Link
+                      href={`/orders/checkout/${consultation.id}?patientId=${consultation.patientId}`}
+                      className="text-primary hover:underline"
+                    >
                       {consultation.patientFullName || 'N/A'}
                     </Link>
                   </TableCell>
