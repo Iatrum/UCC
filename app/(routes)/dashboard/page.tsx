@@ -4,27 +4,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Clock, RefreshCw, Users, CalendarDays, Activity } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Patient } from "@/lib/models";
 import QueueTable from "@/components/queue-table";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
 import { addPatientToQueue, removePatientFromQueue } from "@/lib/actions";
 import { RegisterPatientDialog } from "@/components/dashboard/register-patient-dialog";
+import UpcomingAppointmentsTable, { normalizeAppointmentStatus } from "@/modules/appointments/components/upcoming-appointments-table";
+import type { UpcomingAppointment } from "@/modules/appointments/components/upcoming-appointments-table";
 
-interface Appointment {
+interface RawAppointment {
   id: string;
+  patientId?: string;
   patientName: string;
-  date: string;
-  status: string;
+  clinician: string;
   reason?: string;
+  status: string;
+  scheduledAt?: string;
+  date?: string;
 }
 
 export default function Dashboard() {
   const [queue, setQueue] = useState<Patient[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointments, setAppointments] = useState<UpcomingAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [apptLoading, setApptLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +55,17 @@ export default function Dashboard() {
       const response = await fetch('/api/appointments');
       if (!response.ok) throw new Error(`Failed to fetch appointments`);
       const result = await response.json();
-      setAppointments(result.appointments || []);
+      const raw: RawAppointment[] = result.appointments || [];
+      const mapped: UpcomingAppointment[] = raw.map((a) => ({
+        id: a.id,
+        patientId: a.patientId,
+        patientName: a.patientName,
+        clinician: a.clinician,
+        reason: a.reason,
+        status: normalizeAppointmentStatus(a.status),
+        scheduledAt: a.scheduledAt || a.date || new Date().toISOString(),
+      }));
+      setAppointments(mapped);
     } catch (err) {
       console.error('Error loading appointments:', err);
     } finally {
@@ -74,11 +87,24 @@ export default function Dashboard() {
 
   const waiting = queue.filter(p => p.queueStatus === 'waiting' || p.queueStatus === 'arrived');
   const inProgress = queue.filter(p => p.queueStatus === 'in_consultation');
-  const todayAppts = appointments.filter(a => {
-    const d = new Date(a.date);
+
+  const upcomingAppointments = useMemo(() => {
     const now = new Date();
-    return d.toDateString() === now.toDateString();
-  });
+    return appointments
+      .filter((a) => {
+        const scheduled = new Date(a.scheduledAt);
+        return scheduled.getTime() >= now.getTime() && ["scheduled", "checked_in"].includes(a.status);
+      })
+      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+  }, [appointments]);
+
+  const todayAppts = useMemo(() => {
+    const now = new Date();
+    return upcomingAppointments.filter((a) => {
+      const d = new Date(a.scheduledAt);
+      return d.toDateString() === now.toDateString();
+    });
+  }, [upcomingAppointments]);
 
   return (
     <div className="flex flex-col space-y-6">
@@ -173,39 +199,11 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {apptLoading ? (
-                <div className="text-center py-4 text-muted-foreground">Loading appointments…</div>
-              ) : appointments.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No upcoming appointments.{" "}
-                  <Link href="/appointments/new" className="underline text-primary">Schedule one</Link>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {appointments.slice(0, 20).map((appt) => (
-                      <TableRow key={appt.id}>
-                        <TableCell className="font-medium">{appt.patientName || '—'}</TableCell>
-                        <TableCell>{appt.date ? new Date(appt.date).toLocaleString() : '—'}</TableCell>
-                        <TableCell className="text-muted-foreground">{appt.reason || '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant={appt.status === 'booked' ? 'default' : 'secondary'}>
-                            {appt.status}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+              <UpcomingAppointmentsTable
+                appointments={upcomingAppointments}
+                loading={apptLoading}
+                onRefresh={loadAppointments}
+              />
             </CardContent>
           </Card>
         </TabsContent>
