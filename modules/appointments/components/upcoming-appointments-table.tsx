@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/components/ui/use-toast";
-import { updateAppointmentStatus } from "@/lib/fhir/appointment-client";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
 
@@ -82,37 +79,15 @@ const statusVariants: Record<AppointmentStatus, "default" | "secondary" | "destr
   no_show: "destructive",
 };
 
+const noCheckInStatuses: AppointmentStatus[] = ["completed", "cancelled", "no_show"];
+
 interface Props {
   appointments: UpcomingAppointment[];
   loading?: boolean;
   onRefresh?: () => void | Promise<void>;
 }
 
-export default function UpcomingAppointmentsTable({ appointments, loading, onRefresh }: Props) {
-  const { toast } = useToast();
-  const [actionId, setActionId] = useState<string | null>(null);
-
-  async function handleMarkArrived(appointment: UpcomingAppointment) {
-    try {
-      setActionId(appointment.id);
-      await updateAppointmentStatus(appointment.id, "arrived");
-      toast({
-        title: "Patient marked as arrived",
-        description: `${appointment.patientName} is now checked in.`,
-      });
-      await onRefresh?.();
-    } catch (err: any) {
-      console.error("Failed to mark as arrived", err);
-      toast({
-        title: "Unable to update appointment",
-        description: err?.message || "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setActionId(null);
-    }
-  }
-
+export default function UpcomingAppointmentsTable({ appointments, loading }: Props) {
   if (loading) {
     return (
       <Card>
@@ -150,6 +125,8 @@ export default function UpcomingAppointmentsTable({ appointments, loading, onRef
         <TableBody>
           {appointments.map((appointment) => {
             const { day, time } = formatDateTime(appointment.scheduledAt);
+            const canCheckIn =
+              Boolean(appointment.patientId) && !noCheckInStatuses.includes(appointment.status);
             return (
               <TableRow key={appointment.id}>
                 <TableCell className="font-medium">
@@ -170,14 +147,15 @@ export default function UpcomingAppointmentsTable({ appointments, loading, onRef
                 </TableCell>
                 <TableCell className="w-px whitespace-nowrap">
                   <div className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleMarkArrived(appointment)}
-                      disabled={actionId === appointment.id || appointment.status !== "scheduled"}
-                    >
-                      Mark arrived
-                    </Button>
+                    {canCheckIn ? (
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/patients/${appointment.patientId}/check-in`}>Check-in</Link>
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" disabled>
+                        Check-in
+                      </Button>
+                    )}
                     <Button size="sm" variant="secondary" asChild>
                       <Link href={`/appointments/${appointment.id}`}>View</Link>
                     </Button>

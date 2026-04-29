@@ -4,7 +4,7 @@
  * Covers:
  *   1. Appointments page renders for authenticated clinic staff
  *   2. New appointment form can schedule a patient appointment
- *   3. Appointment list actions update status and time through the UI
+ *   3. Appointment list links to check-in; reschedule works from appointment detail
  */
 
 import { expect, test, type Page } from "@playwright/test";
@@ -100,11 +100,11 @@ async function selectByVisibleOption(page: Page, triggerIndex: number, optionNam
   await page.getByRole("option", { name: optionName }).click();
 }
 
-async function appointmentCardFor(page: Page, patientName: string) {
+async function appointmentRowFor(page: Page, patientName: string) {
   const patientTitle = page.getByText(patientName, { exact: true }).first();
   await expect(patientTitle).toBeVisible({ timeout: 20_000 });
   return patientTitle.locator(
-    'xpath=ancestor::*[.//button[contains(normalize-space(.), "Mark arrived")] and .//button[contains(normalize-space(.), "Reschedule")]][1]'
+    'xpath=ancestor::*[.//a[contains(normalize-space(.), "Check-in")] and .//a[contains(normalize-space(.), "View")]][1]'
   );
 }
 
@@ -158,38 +158,33 @@ test.describe("Appointment workflow", () => {
     await expect(page.getByText(patient.reason).first()).toBeVisible();
   });
 
-  test("marks an appointment arrived and reschedules it from the list", async ({ page }) => {
+  test("check-in link from the list opens patient check-in; detail page can reschedule", async ({ page }) => {
     test.setTimeout(60_000);
     const patient = await createTestPatient(page);
     const appointmentId = await createTestAppointment(page, patient);
 
     await page.goto("/appointments", { waitUntil: "domcontentloaded" });
-    const appointmentCard = await appointmentCardFor(page, patient.name);
+    const appointmentRow = await appointmentRowFor(page, patient.name);
 
-    const markArrived = page.waitForResponse(
-      (response) =>
-        response.url().includes("/api/appointments") &&
-        response.request().method() === "PATCH",
-      { timeout: 30_000 }
-    );
-    await appointmentCard.getByRole("button", { name: /mark arrived/i }).click();
-    const arrivedResponse = await markArrived;
-    expect(arrivedResponse.ok()).toBe(true);
-
-    await expect
-      .poll(
-        async () => {
-          const response = await page.request.get(`/api/appointments?id=${appointmentId}`);
-          const data = await response.json().catch(() => ({}));
-          return data?.appointment?.status || "";
-        },
-        { timeout: 20_000, intervals: [1000, 2000, 3000] }
-      )
-      .toBe("arrived");
+    await appointmentRow.getByRole("link", { name: /check-in/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/patients/${patient.id}/check-in`), { timeout: 20_000 });
 
     const beforeReschedule = await page.request
       .get(`/api/appointments?id=${appointmentId}`)
       .then((response) => response.json());
+
+    await page.goto(`/appointments/${appointmentId}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByText(patient.name, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole("button", { name: /reschedule/i }).click();
+    const dialog = page.getByRole("dialog", { name: /reschedule appointment/i });
+    await expect(dialog).toBeVisible();
+
+    const nextStart = new Date(beforeReschedule?.appointment?.scheduledAt);
+    nextStart.setHours(nextStart.getHours() + 2);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const localValue = `${nextStart.getFullYear()}-${pad(nextStart.getMonth() + 1)}-${pad(nextStart.getDate())}T${pad(nextStart.getHours())}:${pad(nextStart.getMinutes())}`;
+    await dialog.getByLabel(/date and time/i).fill(localValue);
 
     const reschedule = page.waitForResponse(
       (response) =>
@@ -197,7 +192,7 @@ test.describe("Appointment workflow", () => {
         response.request().method() === "PATCH",
       { timeout: 30_000 }
     );
-    await appointmentCard.getByRole("button", { name: /reschedule/i }).click();
+    await dialog.getByRole("button", { name: /save changes/i }).click();
     const rescheduleResponse = await reschedule;
     expect(rescheduleResponse.ok()).toBe(true);
 
