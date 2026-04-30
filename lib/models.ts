@@ -1,11 +1,3 @@
-import { db } from "./firebase";
-import {
-  Timestamp,
-  collection,
-  collectionGroup,
-  getDocs,
-  type DocumentData,
-} from "firebase/firestore";
 import { safeToISOString } from "./utils";
 import { QueueStatus, BillableConsultation, TriageData } from "./types";
 import { getAllPatientsFromMedplum, getPatientFromMedplum } from "./fhir/patient-service";
@@ -95,100 +87,6 @@ export interface Prescription {
   duration: string;
   expiryDate?: string;
   price?: number;
-}
-
-const PATIENTS = "patients";
-const PATIENT_DOCUMENTS = "documents";
-
-type TimestampInput = Timestamp | Date | string | null | undefined;
-
-type DocWithData = {
-  id: string;
-  data(): DocumentData | undefined;
-};
-
-const TIMESTAMP_FIELDS = [
-  "createdAt",
-  "updatedAt",
-  "date",
-  "lastVisit",
-  "upcomingAppointment",
-  "dateOfBirth",
-  "queueAddedAt",
-  "scheduledAt",
-  "checkInTime",
-  "completedAt",
-  "cancelledAt",
-] as const;
-
-function coerceDate(value: TimestampInput): Date | null {
-  if (!value) {
-    return null;
-  }
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-
-  if (value instanceof Timestamp) {
-    return value.toDate();
-  }
-
-  if (typeof value === "string") {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  return null;
-}
-
-function convertTimestamps(data: DocumentData): DocumentData {
-  const result: Record<string, unknown> = { ...data };
-
-  for (const field of TIMESTAMP_FIELDS) {
-    if (!(field in result)) {
-      continue;
-    }
-
-    const value = result[field];
-    if (value === null || value === undefined || value === "") {
-      continue;
-    }
-
-    const coerced = coerceDate(value as TimestampInput);
-    result[field] = coerced ?? null;
-  }
-
-  return result;
-}
-
-function mapDocument<T>(doc: DocWithData): T {
-  const data = doc.data() ?? {};
-  return { id: doc.id, ...convertTimestamps(data) } as T;
-}
-
-function toIsoIfPossible(value: Date | string | null | undefined) {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (typeof value === "string") {
-    return safeToISOString(value) ?? value;
-  }
-
-  return value;
-}
-
-function serializeQueuePatient(patient: Patient): Patient {
-  return {
-    ...patient,
-    createdAt: toIsoIfPossible(patient.createdAt) ?? patient.createdAt,
-    updatedAt: toIsoIfPossible(patient.updatedAt) ?? patient.updatedAt,
-    queueAddedAt: toIsoIfPossible(patient.queueAddedAt) ?? patient.queueAddedAt ?? null,
-    dateOfBirth: toIsoIfPossible(patient.dateOfBirth) ?? patient.dateOfBirth,
-    lastVisit: toIsoIfPossible(patient.lastVisit) ?? patient.lastVisit,
-    upcomingAppointment: toIsoIfPossible(patient.upcomingAppointment) ?? patient.upcomingAppointment,
-  };
 }
 
 export async function getPatients(): Promise<Patient[]> {
@@ -426,33 +324,6 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
     console.error("Error in getConsultationsWithDetails:", error);
     return [];
   }
-}
-
-export interface PatientDocument {
-  id: string;
-  fileName: string;
-  contentType: string;
-  size: number;
-  storagePath: string;
-  downloadUrl: string;
-  uploadedAt: Date | string;
-  uploadedBy?: string | null;
-}
-
-export async function getPatientDocuments(patientId: string): Promise<PatientDocument[]> {
-  const documentsCollection = collection(db, PATIENTS, patientId, PATIENT_DOCUMENTS);
-  const snapshot = await getDocs(documentsCollection);
-  return snapshot.docs.map((docSnap) => mapDocument<PatientDocument>(docSnap));
-}
-
-export async function getAllPatientDocuments(): Promise<(PatientDocument & { patientId: string })[]> {
-  const snapshot = await getDocs(collectionGroup(db, PATIENT_DOCUMENTS));
-  return snapshot.docs.map((docSnap) => {
-    const document = mapDocument<PatientDocument>(docSnap);
-    const segments = docSnap.ref.path.split("/");
-    const patientId = segments.length >= 2 ? segments[1] : "";
-    return { ...document, patientId };
-  });
 }
 
 // Triage Functions
