@@ -4,6 +4,7 @@ import {
   getTriageQueueForToday,
   updateQueueStatusForPatient,
 } from '@/lib/fhir/triage-service';
+import { syncAppointmentCompleted } from '@/lib/fhir/appointment-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
@@ -53,6 +54,15 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'patientId and status are required' }, { status: 400 });
     }
     await updateQueueStatusForPatient(patientId, status, medplum, clinicId);
+
+    if (status === 'completed' || status === 'meds_and_bills') {
+      try {
+        await syncAppointmentCompleted(medplum, patientId);
+      } catch (e) {
+        console.warn('syncAppointmentCompleted failed (non-blocking):', e);
+      }
+    }
+
     return NextResponse.json({ success: true, patientId, finalQueueStatus: status });
   } catch (error) {
     return handleRouteError(error, 'PATCH /api/queue');

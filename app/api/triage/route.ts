@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveTriageEncounter } from "@/lib/fhir/triage-service";
+import { syncAppointmentCheckin } from "@/lib/fhir/appointment-service";
 import { TriageLevel, VitalSigns } from "@/lib/types";
 import { getCurrentProfile, getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { getClinicIdFromRequest } from "@/lib/server/clinic";
@@ -81,6 +82,12 @@ export async function POST(request: NextRequest) {
       redFlags: redFlags || [],
       triageBy,
     }, medplum, clinicId);
+
+    try {
+      await syncAppointmentCheckin(medplum, patientId);
+    } catch (e) {
+      console.warn('syncAppointmentCheckin failed (non-blocking):', e);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

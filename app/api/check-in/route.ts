@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkInPatientInTriage } from '@/lib/fhir/triage-service';
+import { syncAppointmentCheckin } from '@/lib/fhir/appointment-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
 import { handleRouteError } from '@/lib/server/route-helpers';
@@ -54,6 +55,12 @@ export async function POST(request: NextRequest) {
       medplum,
       clinicId
     );
+
+    try {
+      await syncAppointmentCheckin(medplum, patientId);
+    } catch (e) {
+      console.warn('syncAppointmentCheckin failed (non-blocking):', e);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

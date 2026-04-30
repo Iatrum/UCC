@@ -201,6 +201,49 @@ export async function updateAppointmentStatus(
 }
 
 /**
+ * Find today's active appointment for a patient and stamp it as fulfilled (completed).
+ * Matches 'arrived' first, falls back to 'booked' in case check-in sync missed.
+ * No-ops silently if no matching appointment exists.
+ */
+export async function syncAppointmentCompleted(
+  medplum: MedplumClient,
+  patientId: string
+): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const results = await medplum.searchResources('Appointment', {
+    actor: `Patient/${patientId}`,
+    date: `ge${today}T00:00:00`,
+    _sort: 'date',
+    _count: '5',
+  });
+  const target = results.find(a => a.status === 'arrived' || a.status === 'booked');
+  if (target) {
+    await updateAppointmentStatus(medplum, target.id!, 'fulfilled');
+  }
+}
+
+/**
+ * Find today's booked appointment for a patient and stamp it as arrived.
+ * No-ops silently if no matching appointment exists.
+ */
+export async function syncAppointmentCheckin(
+  medplum: MedplumClient,
+  patientId: string
+): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const results = await medplum.searchResources('Appointment', {
+    actor: `Patient/${patientId}`,
+    date: `ge${today}T00:00:00`,
+    status: 'booked',
+    _sort: 'date',
+    _count: '1',
+  });
+  if (results.length > 0) {
+    await updateAppointmentStatus(medplum, results[0].id!, 'arrived');
+  }
+}
+
+/**
  * Reschedule appointment start/end while keeping status simple.
  */
 export async function rescheduleAppointment(

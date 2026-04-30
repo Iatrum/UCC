@@ -12,6 +12,7 @@ import {
   updateConsultationInMedplum,
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { syncAppointmentCompleted } from '@/lib/fhir/appointment-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
@@ -64,6 +65,12 @@ export async function POST(request: NextRequest) {
     );
 
     console.log(`✅ Consultation saved to Medplum: ${encounterId}`);
+
+    try {
+      await syncAppointmentCompleted(medplum, patientId);
+    } catch (e) {
+      console.warn('syncAppointmentCompleted failed (non-blocking):', e);
+    }
 
     return NextResponse.json({
       success: true,
