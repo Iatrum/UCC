@@ -33,7 +33,14 @@ export interface AppointmentData {
 export interface SavedAppointment extends AppointmentData {
   id: string;
   createdAt: Date;
+  checkinAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
 }
+
+const EXT_CHECKIN   = 'urn:iatrum:appointment/checkin-at';
+const EXT_COMPLETED = 'urn:iatrum:appointment/completed-at';
+const EXT_CANCELLED = 'urn:iatrum:appointment/cancelled-at';
 
 /**
  * Save appointment to Medplum
@@ -92,6 +99,7 @@ export async function getAppointmentFromMedplum(medplum: MedplumClient, appointm
     const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
     const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
 
+    const ext = fhirAppt.extension ?? [];
     return {
       id: fhirAppt.id!,
       patientId: patientIdFromActorReference(patientParticipant?.actor?.reference) || '',
@@ -104,6 +112,9 @@ export async function getAppointmentFromMedplum(medplum: MedplumClient, appointm
       scheduledAt: fhirAppt.start ? new Date(fhirAppt.start) : new Date(),
       durationMinutes: fhirAppt.minutesDuration,
       createdAt: fhirAppt.meta?.lastUpdated ? new Date(fhirAppt.meta.lastUpdated) : new Date(),
+      checkinAt:   ext.find(e => e.url === EXT_CHECKIN)?.valueDateTime,
+      completedAt: ext.find(e => e.url === EXT_COMPLETED)?.valueDateTime,
+      cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
     };
   } catch (error) {
     console.error('Failed to get appointment from Medplum:', error);
@@ -167,7 +178,25 @@ export async function updateAppointmentStatus(
   status: 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow'
 ): Promise<void> {
   const appointment = await medplum.readResource('Appointment', appointmentId);
-  await medplum.updateResource({ ...appointment, status });
+
+  const timestampExtUrl =
+    status === 'arrived'   ? EXT_CHECKIN :
+    status === 'fulfilled' ? EXT_COMPLETED :
+    (status === 'cancelled' || status === 'noshow') ? EXT_CANCELLED :
+    null;
+
+  // Preserve all existing extensions; only add the new checkpoint timestamp if not already set.
+  const existingExts = appointment.extension ?? [];
+  const alreadyStamped = timestampExtUrl && existingExts.some(e => e.url === timestampExtUrl);
+  const extension = timestampExtUrl && !alreadyStamped
+    ? [...existingExts, { url: timestampExtUrl, valueDateTime: new Date().toISOString() }]
+    : existingExts;
+
+  await medplum.updateResource({
+    ...appointment,
+    status,
+    ...(extension.length > 0 ? { extension } : {}),
+  });
   console.log(`✅ Updated Appointment ${appointmentId} status to ${status}`);
 }
 

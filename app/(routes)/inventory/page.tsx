@@ -66,6 +66,7 @@ export default function InventoryPage() {
   const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
   const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
+  const [autoCreateDocType, setAutoCreateDocType] = React.useState<PurchaseDocumentType | null>(null);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [procSearch, setProcSearch] = React.useState("");
   const [loading, setLoading] = React.useState(true);
@@ -156,7 +157,12 @@ export default function InventoryPage() {
       });
     } catch (err) {
       console.error("Failed to add medication:", err);
-      setError("Failed to add medication");
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to save medication.",
+        variant: "destructive",
+      });
+      throw err;
     }
   }
 
@@ -180,8 +186,7 @@ export default function InventoryPage() {
 
   async function handleDeleteMedication(id: string) {
     try {
-      const success = await deleteMedication(id);
-      if (!success) throw new Error("Delete failed");
+      await deleteMedication(id);
       await reloadMedications();
       toast({
         title: "Medication deleted",
@@ -198,21 +203,41 @@ export default function InventoryPage() {
   }
 
   async function handleCreateSupplier(data: Omit<Supplier, "id" | "createdAt" | "updatedAt">) {
-    await createSupplier(data);
-    await reloadSuppliers();
-    toast({
-      title: "Supplier saved",
-      description: "The supplier can now be used in purchase orders.",
-    });
+    try {
+      await createSupplier(data);
+      await reloadSuppliers();
+      toast({
+        title: "Supplier saved",
+        description: "The supplier can now be used in purchase orders.",
+      });
+    } catch (err) {
+      console.error("Failed to create supplier:", err);
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to save supplier.",
+        variant: "destructive",
+      });
+      throw err;
+    }
   }
 
   async function handleUpdateSupplier(id: string, data: Partial<Supplier>) {
-    await updateSupplier(id, data);
-    await reloadSuppliers();
-    toast({
-      title: "Supplier updated",
-      description: "Supplier details have been updated.",
-    });
+    try {
+      await updateSupplier(id, data);
+      await reloadSuppliers();
+      toast({
+        title: "Supplier updated",
+        description: "Supplier details have been updated.",
+      });
+    } catch (err) {
+      console.error("Failed to update supplier:", err);
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to update supplier.",
+        variant: "destructive",
+      });
+      throw err;
+    }
   }
 
   async function handleDeleteSupplier(id: string) {
@@ -258,12 +283,22 @@ export default function InventoryPage() {
       expiryDate?: string;
     }>;
   }) {
-    await createPurchaseOrder(input);
-    await reloadPurchaseOrders();
-    toast({
-      title: "Purchase document created",
-      description: "The purchase document has been saved.",
-    });
+    try {
+      await createPurchaseOrder(input);
+      await reloadPurchaseOrders();
+      toast({
+        title: "Purchase document created",
+        description: "The purchase document has been saved.",
+      });
+    } catch (err) {
+      console.error("Failed to create purchase order:", err);
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to save purchase document.",
+        variant: "destructive",
+      });
+      throw err;
+    }
   }
 
   async function handleReceivePurchaseOrder(id: string) {
@@ -483,12 +518,22 @@ export default function InventoryPage() {
                   <CardTitle className="text-base">Create a new</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-3">
-                  <Button variant="outline" disabled className="justify-start rounded-xl">
-                    Quotation
-                  </Button>
-                  <Button className="justify-start rounded-xl" onClick={() => setActiveTab("purchases")}>
-                    Purchase order
-                  </Button>
+                  {[
+                    { label: "Quotation", docType: "rfq" as PurchaseDocumentType },
+                    { label: "Purchase order", docType: "purchaseOrder" as PurchaseDocumentType },
+                  ].map(({ label, docType }) => (
+                    <button
+                      key={docType}
+                      type="button"
+                      className="inline-flex h-9 w-full items-center justify-start rounded-xl border border-gray-300 bg-white px-4 text-sm font-medium text-gray-900 shadow-sm transition-colors hover:bg-[#1c1e4b] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      onClick={() => {
+                        setActiveTab("purchases");
+                        setAutoCreateDocType(docType);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </CardContent>
               </Card>
             </div>
@@ -570,6 +615,8 @@ export default function InventoryPage() {
             medications={medications}
             purchaseOrders={purchaseOrders}
             suppliers={suppliers}
+            autoCreate={autoCreateDocType}
+            onAutoCreateConsumed={() => setAutoCreateDocType(null)}
             onCreate={handleCreatePurchaseOrder}
             onReceive={handleReceivePurchaseOrder}
             onConvert={handleConvertPurchaseDocument}

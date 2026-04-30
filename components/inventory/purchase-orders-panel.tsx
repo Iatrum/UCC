@@ -24,6 +24,8 @@ interface PurchaseOrdersPanelProps {
   medications: Medication[];
   purchaseOrders: PurchaseOrder[];
   suppliers: Supplier[];
+  autoCreate?: PurchaseDocumentType | null;
+  onAutoCreateConsumed?: () => void;
   onCreate: (input: {
     documentType: PurchaseDocumentType;
     reference?: string;
@@ -70,6 +72,8 @@ export function PurchaseOrdersPanel({
   medications,
   purchaseOrders,
   suppliers,
+  autoCreate,
+  onAutoCreateConsumed,
   onCreate,
   onReceive,
   onConvert,
@@ -82,6 +86,14 @@ export function PurchaseOrdersPanel({
   const [showCreateOrder, setShowCreateOrder] = React.useState(false);
   const [selectedDocumentType, setSelectedDocumentType] =
     React.useState<PurchaseDocumentType>("purchaseOrder");
+
+  React.useEffect(() => {
+    if (autoCreate) {
+      setSelectedDocumentType(autoCreate);
+      setShowCreateOrder(true);
+      onAutoCreateConsumed?.();
+    }
+  }, [autoCreate]);
 
   const filteredOrders = purchaseOrders.filter((order) => {
     const query = searchTerm.toLowerCase();
