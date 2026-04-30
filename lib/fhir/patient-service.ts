@@ -710,10 +710,13 @@ export async function updatePatientInMedplum(
   }
 
   if (updates.phone || updates.email) {
-    updatedPatient.telecom = [
-      ...(updates.phone ? [{ system: 'phone' as const, value: updates.phone }] : []),
-      ...(updates.email ? [{ system: 'email' as const, value: updates.email }] : []),
-    ];
+    const existing = existingPatient.telecom ?? [];
+    const merged = existing.filter(
+      (t) => t.system !== 'phone' && t.system !== 'email'
+    );
+    if (updates.phone) merged.push({ system: 'phone' as const, value: updates.phone });
+    if (updates.email) merged.push({ system: 'email' as const, value: updates.email });
+    updatedPatient.telecom = merged;
   }
 
   if (updates.address) {
