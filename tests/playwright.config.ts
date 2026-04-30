@@ -36,7 +36,7 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         baseURL: CLINIC_URL,
         headless: true,
-        storageState: "e2e/.auth/klinikputeri.json",
+        storageState: "e2e/.auth/demo.json",
         screenshot: "only-on-failure",
         video: "retain-on-failure",
         trace: "retain-on-failure",

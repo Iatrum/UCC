@@ -9,7 +9,7 @@
 
 import { test, expect } from "@playwright/test";
 import { expectAuthRedirectOrBlock } from "./support/auth";
-import { EMR_URL, KLINIK_PUTERI_URL } from "./support/env";
+import { EMR_URL, DEMO_CLINIC_URL } from "./support/env";
 
 // The login *form* only exists on clinic subdomains.
 // The root domain (iatrum.com) redirects to /landing.
@@ -56,7 +56,7 @@ test.describe("EMR authentication and access control", () => {
   }
 
   test("/api/patients on clinic subdomain rejects anonymous API calls", async ({ request }) => {
-    const clinicBase = process.env.EMR_CLINIC_URL || KLINIK_PUTERI_URL;
+    const clinicBase = process.env.EMR_CLINIC_URL || DEMO_CLINIC_URL;
     const response = await request.get(`${clinicBase}/api/patients?limit=1`);
     // 401 = no Medplum session cookie; 400 = clinic context guard (should not appear without token first)
     expect([400, 401, 403, 405]).toContain(response.status());

@@ -75,11 +75,12 @@ export default defineConfig({
         "**/appointments.spec.ts",
         "**/referrals.spec.ts",
         "**/documents.spec.ts",
+        "**/inventory.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
         baseURL: CLINIC_URL,
-        storageState: "tests/e2e/.auth/klinikputeri.json",
+        storageState: "tests/e2e/.auth/demo.json",
       },
       dependencies: ["clinic-auth-setup"],
     },
