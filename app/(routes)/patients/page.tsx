@@ -48,26 +48,26 @@ export default function PatientsPage() {
       try {
         // 🎯 LOAD FROM MEDPLUM (FHIR) - Source of Truth
         const data = await getAllPatients(200);
-        const active = data.filter((p) => (p as any).active !== false);
-        console.log(`✅ Loaded ${active.length} active patients from Medplum FHIR`);
+        const activePatients = data.filter((p) => p.active !== false);
+        console.log(`✅ Loaded ${activePatients.length} active patients from Medplum FHIR`);
 
-        setPatients(active as any);
+        setPatients(activePatients);
         
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
         
         setStats({
-          total: data.length,
-          new: data.filter((p) => {
+          total: activePatients.length,
+          new: activePatients.filter((p) => {
             const createdAt = p.createdAt ? new Date(p.createdAt) : null;
             return createdAt && createdAt >= monthStart;
           }).length,
-          followUps: data.filter((p) => {
+          followUps: activePatients.filter((p) => {
             const lastVisit = (p as any).lastVisit ? new Date((p as any).lastVisit) : null;
             return lastVisit && lastVisit >= weekStart;
           }).length,
-          inQueue: data.filter((p) => ['arrived', 'waiting', 'in_consultation'].includes((p as any).queueStatus)).length
+          inQueue: activePatients.filter((p) => ['arrived', 'waiting', 'in_consultation'].includes((p as any).queueStatus)).length
         });
       } catch (err) {
         console.error('Error loading patients from Medplum:', err);
