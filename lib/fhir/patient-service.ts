@@ -669,6 +669,7 @@ export async function getAllPatientsFromMedplum(
     const patients = await client.searchResources('Patient', {
       _count: String(limit),
       _sort: '-_lastUpdated',
+      active: 'true',
       ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
     });
 
