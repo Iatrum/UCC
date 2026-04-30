@@ -66,6 +66,7 @@ export default function InventoryPage() {
   const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
   const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
+  const [autoCreateDocType, setAutoCreateDocType] = React.useState<PurchaseDocumentType | null>(null);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [procSearch, setProcSearch] = React.useState("");
   const [loading, setLoading] = React.useState(true);
@@ -517,12 +518,22 @@ export default function InventoryPage() {
                   <CardTitle className="text-base">Create a new</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-3">
-                  <Button variant="outline" disabled className="justify-start rounded-xl">
-                    Quotation
-                  </Button>
-                  <Button className="justify-start rounded-xl" onClick={() => setActiveTab("purchases")}>
-                    Purchase order
-                  </Button>
+                  {[
+                    { label: "Quotation", docType: "rfq" as PurchaseDocumentType },
+                    { label: "Purchase order", docType: "purchaseOrder" as PurchaseDocumentType },
+                  ].map(({ label, docType }) => (
+                    <button
+                      key={docType}
+                      type="button"
+                      className="inline-flex h-9 w-full items-center justify-start rounded-xl border border-gray-300 bg-white px-4 text-sm font-medium text-gray-900 shadow-sm transition-colors hover:bg-[#1c1e4b] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      onClick={() => {
+                        setActiveTab("purchases");
+                        setAutoCreateDocType(docType);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </CardContent>
               </Card>
             </div>
@@ -604,6 +615,8 @@ export default function InventoryPage() {
             medications={medications}
             purchaseOrders={purchaseOrders}
             suppliers={suppliers}
+            autoCreate={autoCreateDocType}
+            onAutoCreateConsumed={() => setAutoCreateDocType(null)}
             onCreate={handleCreatePurchaseOrder}
             onReceive={handleReceivePurchaseOrder}
             onConvert={handleConvertPurchaseDocument}
