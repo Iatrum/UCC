@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveTriageEncounter } from "@/lib/fhir/triage-service";
+import {
+  saveTriageEncounter,
+  getTriageForPatient,
+  updateTriageEncounter,
+  getActiveTriageEncounter,
+} from "@/lib/fhir/triage-service";
 import { TriageLevel, VitalSigns } from "@/lib/types";
 import { getCurrentProfile, getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { getClinicIdFromRequest } from "@/lib/server/clinic";
@@ -88,7 +93,83 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function GET(request: NextRequest) {
+  try {
+    const [medplum, clinicId] = await Promise.all([
+      getMedplumForRequest(request),
+      getClinicIdFromRequest(request),
+    ]);
 
+    const { searchParams } = new URL(request.url);
+    const patientId = searchParams.get("patientId");
 
+    if (!patientId) {
+      return NextResponse.json({ error: "Missing patientId" }, { status: 400 });
+    }
 
+    if (!clinicId) {
+      return NextResponse.json({ error: "Missing clinicId" }, { status: 400 });
+    }
+
+    const triage = await getTriageForPatient(patientId, medplum, clinicId);
+    return NextResponse.json({ success: true, triage });
+  } catch (error) {
+    return handleRouteError(error, "GET /api/triage");
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const [medplum, clinicId] = await Promise.all([
+      getMedplumForRequest(request),
+      getClinicIdFromRequest(request),
+    ]);
+
+    if (!clinicId) {
+      return NextResponse.json({ error: "Missing clinicId" }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { patientId, ...triageData } = body;
+
+    if (!patientId) {
+      return NextResponse.json({ error: "Missing patientId" }, { status: 400 });
+    }
+
+    await updateTriageEncounter(patientId, triageData, medplum, clinicId);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, "PATCH /api/triage");
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const [medplum, clinicId] = await Promise.all([
+      getMedplumForRequest(request),
+      getClinicIdFromRequest(request),
+    ]);
+
+    if (!clinicId) {
+      return NextResponse.json({ error: "Missing clinicId" }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { patientId } = body;
+
+    if (!patientId) {
+      return NextResponse.json({ error: "Missing patientId" }, { status: 400 });
+    }
+
+    const existing = await getActiveTriageEncounter(patientId, medplum, clinicId);
+    if (!existing) {
+      return NextResponse.json({ error: "No active triage encounter found" }, { status: 404 });
+    }
+
+    await medplum.deleteResource("Encounter", existing.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, "DELETE /api/triage");
+  }
+}
 

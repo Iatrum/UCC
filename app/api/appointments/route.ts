@@ -10,6 +10,7 @@ import {
   getUpcomingAppointments,
   updateAppointmentStatus,
   rescheduleAppointment,
+  deleteAppointment,
 } from '@/lib/fhir/appointment-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
@@ -97,5 +98,25 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Appointment updated successfully' });
   } catch (error) {
     return handleRouteError(error, 'PATCH /api/appointments');
+  }
+}
+
+/**
+ * DELETE - Delete an appointment
+ * Body: { appointmentId }
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const medplum = await getMedplumForRequest(request);
+    const { appointmentId } = await request.json();
+
+    if (!appointmentId) {
+      return NextResponse.json({ error: 'Missing appointmentId' }, { status: 400 });
+    }
+
+    await deleteAppointment(medplum, appointmentId);
+    return NextResponse.json({ success: true, message: 'Appointment deleted successfully' });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/appointments');
   }
 }
