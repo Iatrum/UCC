@@ -780,3 +780,28 @@ export async function getRecentConsultationsFromMedplum(
     return [];
   }
 }
+
+export async function deleteConsultationFromMedplum(
+  encounterId: string,
+  clinicId: string | null | undefined,
+  medplum: MedplumClient
+): Promise<void> {
+  const client = medplum;
+  const encounterRef = `Encounter/${encounterId}`;
+
+  const [conditions, observations, procedures, medications] = await Promise.all([
+    client.searchResources('Condition', { encounter: encounterRef }),
+    client.searchResources('Observation', { encounter: encounterRef }),
+    client.searchResources('Procedure', { encounter: encounterRef }),
+    client.searchResources('MedicationRequest', { encounter: encounterRef }),
+  ]);
+
+  await Promise.all([
+    ...conditions.map((r) => client.deleteResource('Condition', r.id!)),
+    ...observations.map((r) => client.deleteResource('Observation', r.id!)),
+    ...procedures.map((r) => client.deleteResource('Procedure', r.id!)),
+    ...medications.map((r) => client.deleteResource('MedicationRequest', r.id!)),
+  ]);
+
+  await client.deleteResource('Encounter', encounterId);
+}

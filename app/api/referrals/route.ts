@@ -7,6 +7,8 @@ import {
   saveReferralToMedplum,
   getReferralFromMedplum,
   getPatientReferralsFromMedplum,
+  updateReferralInMedplum,
+  deleteReferralFromMedplum,
 } from '@/lib/fhir/referral-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
@@ -64,5 +66,47 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing query parameter: id or patientId' }, { status: 400 });
   } catch (error) {
     return handleRouteError(error, 'GET /api/referrals');
+  }
+}
+
+/**
+ * PATCH - Update a referral
+ * Body: { referralId, status?, urgency?, reason?, clinicalInfo?, doctorName? }
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const medplum = await getMedplumForRequest(request);
+    const body = await request.json();
+    const { referralId, ...updates } = body;
+
+    if (!referralId) {
+      return NextResponse.json({ error: 'Missing referralId' }, { status: 400 });
+    }
+
+    await updateReferralInMedplum(medplum, referralId, updates);
+    return NextResponse.json({ success: true, message: 'Referral updated successfully' });
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/referrals');
+  }
+}
+
+/**
+ * DELETE - Delete a referral
+ * Body: { referralId }
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const medplum = await getMedplumForRequest(request);
+    const body = await request.json();
+    const { referralId } = body;
+
+    if (!referralId) {
+      return NextResponse.json({ error: 'Missing referralId' }, { status: 400 });
+    }
+
+    await deleteReferralFromMedplum(medplum, referralId);
+    return NextResponse.json({ success: true, message: 'Referral deleted successfully' });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/referrals');
   }
 }

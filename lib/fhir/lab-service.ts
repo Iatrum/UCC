@@ -300,6 +300,31 @@ export async function getPatientLabResults(patientId: string, medplum: MedplumCl
 }
 
 /**
+ * Update a lab order (e.g. cancel or change priority)
+ */
+export async function updateLabOrder(
+  serviceRequestId: string,
+  updates: { status?: 'active' | 'on-hold' | 'revoked' | 'completed'; priority?: 'routine' | 'urgent' | 'asap' | 'stat'; clinicalNotes?: string },
+  medplum: MedplumClient
+): Promise<void> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  const updated: ServiceRequest = { ...serviceRequest };
+  if (updates.status) updated.status = updates.status;
+  if (updates.priority) updated.priority = updates.priority;
+  if (updates.clinicalNotes !== undefined) updated.note = updates.clinicalNotes ? [{ text: updates.clinicalNotes }] : undefined;
+  await medplum.updateResource(updated);
+  console.log(`✅ Updated ServiceRequest ${serviceRequestId}`);
+}
+
+/**
+ * Delete a lab order
+ */
+export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumClient): Promise<void> {
+  await medplum.deleteResource('ServiceRequest', serviceRequestId);
+  console.log(`✅ Deleted ServiceRequest ${serviceRequestId}`);
+}
+
+/**
  * Get a specific lab report by ID
  */
 export async function getLabReport(reportId: string, medplum: MedplumClient): Promise<LabReportSummary | null> {

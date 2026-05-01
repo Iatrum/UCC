@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
+import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getClinicIdFromRequest } from '@/lib/server/clinic';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
@@ -34,5 +34,111 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, patient, consultation });
   } catch (error) {
     return handleRouteError(error, 'GET /api/orders');
+  }
+}
+
+/**
+ * POST - Add procedures/prescriptions to an existing consultation
+ * Body: { consultationId, procedures?, prescriptions? }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const clinicId = await getClinicIdFromRequest(req);
+    const medplum = await getMedplumForRequest(req);
+    const body = await req.json();
+    const { consultationId, procedures, prescriptions } = body;
+
+    if (!consultationId) {
+      return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
+    }
+
+    if (!clinicId) {
+      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
+    }
+
+    const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
+    if (!consultation) {
+      return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
+    }
+
+    const updatedProcedures = procedures !== undefined
+      ? [...(consultation.procedures || []), ...procedures]
+      : undefined;
+    const updatedPrescriptions = prescriptions !== undefined
+      ? [...(consultation.prescriptions || []), ...prescriptions]
+      : undefined;
+
+    await updateConsultationInMedplum(
+      consultationId,
+      { ...(updatedProcedures !== undefined ? { procedures: updatedProcedures } : {}), ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}) },
+      clinicId,
+      medplum
+    );
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/orders');
+  }
+}
+
+/**
+ * PATCH - Replace procedures/prescriptions on a consultation
+ * Body: { consultationId, procedures?, prescriptions? }
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const clinicId = await getClinicIdFromRequest(req);
+    const medplum = await getMedplumForRequest(req);
+    const body = await req.json();
+    const { consultationId, ...updates } = body;
+
+    if (!consultationId) {
+      return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
+    }
+
+    if (!clinicId) {
+      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
+    }
+
+    await updateConsultationInMedplum(consultationId, updates, clinicId, medplum);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/orders');
+  }
+}
+
+/**
+ * DELETE - Clear procedures/prescriptions from a consultation
+ * Body: { consultationId, clearProcedures?: boolean, clearPrescriptions?: boolean }
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const clinicId = await getClinicIdFromRequest(req);
+    const medplum = await getMedplumForRequest(req);
+    const body = await req.json();
+    const { consultationId, clearProcedures, clearPrescriptions } = body;
+
+    if (!consultationId) {
+      return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
+    }
+
+    if (!clinicId) {
+      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
+    }
+
+    await updateConsultationInMedplum(
+      consultationId,
+      {
+        ...(clearProcedures ? { procedures: [] } : {}),
+        ...(clearPrescriptions ? { prescriptions: [] } : {}),
+      },
+      clinicId,
+      medplum
+    );
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/orders');
   }
 }

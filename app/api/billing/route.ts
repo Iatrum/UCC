@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { completeCheckoutInvoice } from "@/lib/fhir/billing-service";
+import {
+  completeCheckoutInvoice,
+  getInvoice,
+  getPatientInvoices,
+  getConsultationInvoice,
+  voidInvoice,
+  deleteInvoice,
+} from "@/lib/fhir/billing-service";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
 
@@ -60,5 +67,67 @@ export async function POST(req: NextRequest) {
     }
 
     return handleRouteError(error, "POST /api/billing");
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { medplum } = await requireClinicAuth(req);
+    const { searchParams } = new URL(req.url);
+    const invoiceId = searchParams.get("id");
+    const patientId = searchParams.get("patientId");
+    const consultationId = searchParams.get("consultationId");
+
+    if (invoiceId) {
+      const invoice = await getInvoice(medplum, invoiceId);
+      if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
+      return NextResponse.json({ success: true, invoice });
+    }
+
+    if (consultationId) {
+      const invoice = await getConsultationInvoice(medplum, consultationId);
+      if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
+      return NextResponse.json({ success: true, invoice });
+    }
+
+    if (patientId) {
+      const invoices = await getPatientInvoices(medplum, patientId);
+      return NextResponse.json({ success: true, count: invoices.length, invoices });
+    }
+
+    return NextResponse.json({ success: false, error: "Missing query parameter: id, patientId, or consultationId" }, { status: 400 });
+  } catch (error) {
+    return handleRouteError(error, "GET /api/billing");
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { medplum } = await requireClinicAuth(req);
+    const body = await req.json().catch(() => null);
+    const { invoiceId, action } = body || {};
+
+    if (!invoiceId) return NextResponse.json({ success: false, error: "invoiceId is required" }, { status: 400 });
+    if (action !== "void") return NextResponse.json({ success: false, error: "action must be 'void'" }, { status: 400 });
+
+    const invoice = await voidInvoice(medplum, invoiceId);
+    return NextResponse.json({ success: true, invoiceId: invoice.id });
+  } catch (error) {
+    return handleRouteError(error, "PATCH /api/billing");
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { medplum } = await requireClinicAuth(req);
+    const body = await req.json().catch(() => null);
+    const { invoiceId } = body || {};
+
+    if (!invoiceId) return NextResponse.json({ success: false, error: "invoiceId is required" }, { status: 400 });
+
+    await deleteInvoice(medplum, invoiceId);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, "DELETE /api/billing");
   }
 }

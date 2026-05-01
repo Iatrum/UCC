@@ -201,6 +201,14 @@ export async function updateAppointmentStatus(
 }
 
 /**
+ * Delete an appointment from Medplum.
+ */
+export async function deleteAppointment(medplum: MedplumClient, appointmentId: string): Promise<void> {
+  await medplum.deleteResource('Appointment', appointmentId);
+  console.log(`✅ Deleted Appointment ${appointmentId}`);
+}
+
+/**
  * Reschedule appointment start/end while keeping status simple.
  */
 export async function rescheduleAppointment(

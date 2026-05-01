@@ -91,6 +91,33 @@ export async function getReferralFromMedplum(medplum: MedplumClient, referralId:
 }
 
 /**
+ * Update referral status or fields
+ */
+export async function updateReferralInMedplum(
+  medplum: MedplumClient,
+  referralId: string,
+  updates: Partial<Pick<ReferralData, 'urgency' | 'reason' | 'clinicalInfo' | 'doctorName'>> & { status?: SavedReferral['status'] }
+): Promise<void> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
+
+  const updated: ServiceRequest = { ...serviceRequest };
+  if (updates.status) updated.status = updates.status;
+  if (updates.urgency !== undefined) updated.priority = updates.urgency;
+  if (updates.reason !== undefined) updated.reasonCode = updates.reason ? [{ text: updates.reason }] : undefined;
+  if (updates.clinicalInfo !== undefined) updated.note = updates.clinicalInfo ? [{ text: updates.clinicalInfo }] : undefined;
+  if (updates.doctorName !== undefined) updated.requester = updates.doctorName ? { display: updates.doctorName } : undefined;
+
+  await medplum.updateResource(updated);
+}
+
+/**
+ * Delete (revoke) a referral
+ */
+export async function deleteReferralFromMedplum(medplum: MedplumClient, referralId: string): Promise<void> {
+  await medplum.deleteResource('ServiceRequest', referralId);
+}
+
+/**
  * Get patient referrals from Medplum
  */
 export async function getPatientReferralsFromMedplum(medplum: MedplumClient, patientId: string): Promise<SavedReferral[]> {

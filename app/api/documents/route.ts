@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPatientDocument, deletePatientDocument, listPatientDocuments } from '@/lib/fhir/document-service';
+import { createPatientDocument, deletePatientDocument, listPatientDocuments, updatePatientDocument } from '@/lib/fhir/document-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
@@ -33,6 +33,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error) {
     return handleRouteError(error, 'POST /api/documents');
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const medplum = await getMedplumForRequest(request);
+    const body = await request.json();
+    const { id, title } = body || {};
+    if (!id) {
+      return NextResponse.json({ error: 'Missing document id' }, { status: 400 });
+    }
+    await updatePatientDocument(medplum, id, { title });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/documents');
   }
 }
 
