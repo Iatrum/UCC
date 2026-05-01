@@ -3,6 +3,7 @@ import {
   getParentOrganizationsFromMedplum,
   saveParentOrganizationToMedplum,
   updateParentOrganizationInMedplum,
+  deleteOrganizationFromMedplum,
 } from "@/lib/fhir/admin-service";
 import { requirePlatformAdmin } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
@@ -58,5 +59,19 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true, organisation });
   } catch (error) {
     return handleRouteError(error, "PATCH /api/admin/organisation");
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    await requirePlatformAdmin(req);
+    const { id } = await req.json();
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+    await deleteOrganizationFromMedplum(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, "DELETE /api/admin/organisation");
   }
 }
