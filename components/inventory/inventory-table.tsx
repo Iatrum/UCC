@@ -107,16 +107,20 @@ export function InventoryTable({
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Edit medication ${medication.name}`}
+                      title={`Edit medication ${medication.name}`}
                       onClick={() => setEditingMedication(medication)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Delete medication ${medication.name}`}
+                      title={`Delete medication ${medication.name}`}
                       onClick={() => setDeletingMedication(medication)}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
                     </Button>
                   </div>
                 </TableCell>
