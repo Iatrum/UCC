@@ -1,26 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
-import { getClinicIdFromRequest } from '@/lib/server/clinic';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
 export async function GET(req: NextRequest) {
   try {
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const { searchParams } = new URL(req.url);
     const consultationId = searchParams.get('consultationId');
     const patientId = searchParams.get('patientId');
-    const clinicId = await getClinicIdFromRequest(req);
 
     if (!consultationId || !patientId) {
       return NextResponse.json({ success: false, error: 'consultationId and patientId are required' }, { status: 400 });
     }
-
-    if (!clinicId) {
-      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
-    }
-
-    const medplum = await getMedplumForRequest(req);
 
     const [patient, consultation] = await Promise.all([
       getPatientFromMedplum(patientId, clinicId, medplum),
@@ -43,18 +36,12 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const clinicId = await getClinicIdFromRequest(req);
-    const medplum = await getMedplumForRequest(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json();
     const { consultationId, procedures, prescriptions } = body;
 
     if (!consultationId) {
       return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
-    }
-
-    if (!clinicId) {
-      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
     }
 
     const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
@@ -71,7 +58,10 @@ export async function POST(req: NextRequest) {
 
     await updateConsultationInMedplum(
       consultationId,
-      { ...(updatedProcedures !== undefined ? { procedures: updatedProcedures } : {}), ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}) },
+      {
+        ...(updatedProcedures !== undefined ? { procedures: updatedProcedures } : {}),
+        ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}),
+      },
       clinicId,
       medplum
     );
@@ -88,8 +78,7 @@ export async function POST(req: NextRequest) {
  */
 export async function PATCH(req: NextRequest) {
   try {
-    const clinicId = await getClinicIdFromRequest(req);
-    const medplum = await getMedplumForRequest(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json();
     const { consultationId, ...updates } = body;
 
@@ -97,8 +86,9 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
     }
 
-    if (!clinicId) {
-      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
+    const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
+    if (!consultation) {
+      return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
     }
 
     await updateConsultationInMedplum(consultationId, updates, clinicId, medplum);
@@ -114,8 +104,7 @@ export async function PATCH(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    const clinicId = await getClinicIdFromRequest(req);
-    const medplum = await getMedplumForRequest(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json();
     const { consultationId, clearProcedures, clearPrescriptions } = body;
 
@@ -123,8 +112,9 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
     }
 
-    if (!clinicId) {
-      return NextResponse.json({ success: false, error: 'Missing clinicId' }, { status: 400 });
+    const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
+    if (!consultation) {
+      return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
     }
 
     await updateConsultationInMedplum(
