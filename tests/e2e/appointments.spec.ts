@@ -207,4 +207,31 @@ test.describe("Appointment workflow", () => {
       )
       .not.toBe(beforeReschedule?.appointment?.scheduledAt);
   });
+
+  test("clinic scoping: GET by unknown patientId returns 404", async ({ page }) => {
+    const res = await page.request.get("/api/appointments?patientId=nonexistent-patient-id-00000");
+    expect(res.status()).toBe(404);
+  });
+
+  test("clinic scoping: GET by unknown appointmentId returns 404", async ({ page }) => {
+    const res = await page.request.get("/api/appointments?id=nonexistent-appointment-id-00000");
+    expect(res.status()).toBe(404);
+  });
+
+  test("clinic scoping: own clinic patient appointments are accessible", async ({ page }) => {
+    const patient = await createTestPatient(page);
+    const appointmentId = await createTestAppointment(page, patient);
+
+    const res = await page.request.get(`/api/appointments?patientId=${patient.id}`);
+    expect(res.ok()).toBe(true);
+    const data = await res.json();
+    expect(data.appointments.some((a: any) => a.id === appointmentId)).toBe(true);
+  });
+
+  test("clinic scoping: DELETE rejects unknown appointment", async ({ page }) => {
+    const res = await page.request.delete("/api/appointments", {
+      data: { appointmentId: "nonexistent-appointment-id-00000" },
+    });
+    expect(res.status()).toBe(404);
+  });
 });
