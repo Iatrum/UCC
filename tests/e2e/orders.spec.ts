@@ -127,3 +127,19 @@ test.describe("Orders API", () => {
     expect([400, 401, 403, 404]).toContain(resp.status());
   });
 });
+
+test.describe("Orders API clinic scoping", () => {
+  test("GET with unknown consultationId/patientId returns 404", async ({ request }) => {
+    const res = await request.get(
+      `${CLINIC_URL}/api/orders?consultationId=nonexistent-00000&patientId=nonexistent-00000`
+    );
+    expect(res.status()).toBe(404);
+  });
+
+  test("POST with unknown consultationId returns 404", async ({ request }) => {
+    const res = await request.post(`${CLINIC_URL}/api/orders`, {
+      data: { consultationId: "nonexistent-consultation-id-00000" },
+    });
+    expect(res.status()).toBe(404);
+  });
+});

@@ -202,4 +202,26 @@ test.describe("Referral workflow", () => {
       timeout: 10_000,
     });
   });
+
+  test("clinic scoping: GET referrals with unknown patientId returns 404", async ({ page }) => {
+    const res = await page.request.get(`${CLINIC_URL}/api/referrals?patientId=nonexistent-patient-id-00000`);
+    expect(res.status()).toBe(404);
+  });
+
+  test("clinic scoping: GET referral by unknown id returns 404", async ({ page }) => {
+    const res = await page.request.get(`${CLINIC_URL}/api/referrals?id=nonexistent-referral-id-00000`);
+    expect(res.status()).toBe(404);
+  });
+
+  test("clinic scoping: POST referral with unknown patientId returns 404", async ({ page }) => {
+    const res = await page.request.post(`${CLINIC_URL}/api/referrals`, {
+      data: {
+        patientId: "nonexistent-patient-id-00000",
+        specialty: "Cardiology",
+        facility: "General Hospital",
+        reason: "Test",
+      },
+    });
+    expect(res.status()).toBe(404);
+  });
 });
