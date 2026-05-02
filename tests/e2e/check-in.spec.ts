@@ -132,4 +132,11 @@ test.describe("Reception / check-in API", () => {
     });
     expect([200, 201]).toContain(res.status());
   });
+
+  test("clinic scoping: check-in with unknown patientId returns 404", async ({ request }) => {
+    const res = await request.post(`${CLINIC_URL}/api/check-in`, {
+      data: { patientId: "nonexistent-patient-id-00000" },
+    });
+    expect(res.status()).toBe(404);
+  });
 });

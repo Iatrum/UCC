@@ -500,6 +500,31 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
   }
 }
 
+/**
+ * Update an imaging order (e.g. cancel or change priority)
+ */
+export async function updateImagingOrder(
+  serviceRequestId: string,
+  updates: { status?: 'active' | 'on-hold' | 'revoked' | 'completed'; priority?: 'routine' | 'urgent' | 'asap' | 'stat'; clinicalIndication?: string },
+  medplum: MedplumClient
+): Promise<void> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  const updated: ServiceRequest = { ...serviceRequest };
+  if (updates.status) updated.status = updates.status;
+  if (updates.priority) updated.priority = updates.priority;
+  if (updates.clinicalIndication !== undefined) {
+    updated.reasonCode = updates.clinicalIndication ? [{ text: updates.clinicalIndication }] : undefined;
+  }
+  await medplum.updateResource(updated);
+  console.log(`✅ Updated ImagingOrder ServiceRequest ${serviceRequestId}`);
+}
 
+/**
+ * Delete an imaging order
+ */
+export async function deleteImagingOrder(serviceRequestId: string, medplum: MedplumClient): Promise<void> {
+  await medplum.deleteResource('ServiceRequest', serviceRequestId);
+  console.log(`✅ Deleted ImagingOrder ServiceRequest ${serviceRequestId}`);
+}
 
 

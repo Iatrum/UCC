@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPatientDocument, deletePatientDocument, listPatientDocuments } from '@/lib/fhir/document-service';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { createPatientDocument, deletePatientDocument, listPatientDocuments, updatePatientDocument } from '@/lib/fhir/document-service';
+import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
 export async function GET(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get('patientId');
     if (!patientId) {
       return NextResponse.json({ error: 'Missing patientId' }, { status: 400 });
+    }
+
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    if (!patient) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
 
     const docs = await listPatientDocuments(medplum, patientId);
@@ -21,12 +27,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { patientId, title, url, contentType, size, uploadedBy, storagePath } = body || {};
 
     if (!patientId || !title || !url || !contentType) {
       return NextResponse.json({ error: 'Missing required fields: patientId, title, url, contentType' }, { status: 400 });
+    }
+
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    if (!patient) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
 
     const id = await createPatientDocument(medplum, { patientId, title, url, contentType, size, uploadedBy, storagePath });
@@ -36,13 +47,55 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const { medplum, clinicId } = await requireClinicAuth(request);
+    const body = await request.json();
+    const { id, title } = body || {};
+    if (!id) {
+      return NextResponse.json({ error: 'Missing document id' }, { status: 400 });
+    }
+
+    const doc = await medplum.readResource('DocumentReference', id).catch(() => null);
+    if (!doc) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+    const patientId = (doc as any).subject?.reference?.replace('Patient/', '');
+    if (!patientId) {
+      return NextResponse.json({ error: 'Document has no patient reference' }, { status: 400 });
+    }
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    if (!patient) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
+    await updatePatientDocument(medplum, id, { title });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/documents');
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { id } = body || {};
     if (!id) {
       return NextResponse.json({ error: 'Missing document id' }, { status: 400 });
+    }
+
+    const doc = await medplum.readResource('DocumentReference', id).catch(() => null);
+    if (!doc) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+    const patientId = (doc as any).subject?.reference?.replace('Patient/', '');
+    if (!patientId) {
+      return NextResponse.json({ error: 'Document has no patient reference' }, { status: 400 });
+    }
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    if (!patient) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     await deletePatientDocument(medplum, id);

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createImagingOrder, type ImagingOrderRequest } from '@/lib/fhir/imaging-service';
+import { createImagingOrder, updateImagingOrder, deleteImagingOrder, type ImagingOrderRequest } from '@/lib/fhir/imaging-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
@@ -50,12 +50,46 @@ export async function POST(request: NextRequest) {
     console.error('Error creating imaging order:', error);
     
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to create imaging order',
-        details: error.message 
+        details: error.message
       },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const medplum = await getMedplumForRequest(request);
+    const body = await request.json();
+    const { serviceRequestId, ...updates } = body;
+
+    if (!serviceRequestId) {
+      return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
+    }
+
+    await updateImagingOrder(serviceRequestId, updates, medplum);
+    return NextResponse.json({ success: true, message: 'Imaging order updated' });
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Failed to update imaging order', details: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const medplum = await getMedplumForRequest(request);
+    const body = await request.json();
+    const { serviceRequestId } = body;
+
+    if (!serviceRequestId) {
+      return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
+    }
+
+    await deleteImagingOrder(serviceRequestId, medplum);
+    return NextResponse.json({ success: true, message: 'Imaging order deleted' });
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Failed to delete imaging order', details: error.message }, { status: 500 });
   }
 }
 

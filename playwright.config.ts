@@ -74,6 +74,7 @@ export default defineConfig({
         "**/check-in.spec.ts",
         "**/appointments.spec.ts",
         "**/referrals.spec.ts",
+        "**/documents.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -126,6 +126,28 @@ export async function listPatientDocuments(medplum: MedplumClient, patientId: st
 }
 
 /**
+ * Update a DocumentReference's title.
+ */
+export async function updatePatientDocument(
+  medplum: MedplumClient,
+  documentId: string,
+  updates: { title?: string }
+): Promise<void> {
+  const doc = await medplum.readResource('DocumentReference', documentId) as DocumentReference;
+  const updated: DocumentReference = { ...doc };
+  if (updates.title && updated.content?.[0]?.attachment) {
+    updated.content = [
+      {
+        ...updated.content[0],
+        attachment: { ...updated.content[0].attachment, title: updates.title },
+      },
+      ...(updated.content.slice(1) ?? []),
+    ];
+  }
+  await medplum.updateResource(updated);
+}
+
+/**
  * Delete a DocumentReference in Medplum by id.
  */
 export async function deletePatientDocument(medplum: MedplumClient, documentId: string): Promise<void> {

@@ -10,6 +10,7 @@ import {
   getPatientConsultationsFromMedplum,
   getRecentConsultationsFromMedplum,
   updateConsultationInMedplum,
+  deleteConsultationFromMedplum,
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
@@ -149,5 +150,26 @@ export async function PATCH(request: NextRequest) {
     });
   } catch (error) {
     return handleRouteError(error, 'PATCH /api/consultations');
+  }
+}
+
+/**
+ * DELETE - Delete a consultation and all linked FHIR resources
+ * Body: { consultationId }
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const { medplum, clinicId } = await requireClinicAuth(request);
+    const body = await request.json();
+    const { consultationId } = body;
+
+    if (!consultationId) {
+      return NextResponse.json({ error: 'Missing consultationId' }, { status: 400 });
+    }
+
+    await deleteConsultationFromMedplum(consultationId, clinicId, medplum);
+    return NextResponse.json({ success: true, message: 'Consultation deleted successfully' });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/consultations');
   }
 }

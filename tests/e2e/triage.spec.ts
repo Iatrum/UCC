@@ -127,4 +127,16 @@ test.describe("Check-in workflow", () => {
       )
       .toMatch(/waiting|in_consultation|completed/);
   });
+
+  test("clinic scoping: GET triage with unknown patientId returns 404", async ({ page }) => {
+    const res = await page.request.get(`${CLINIC_URL}/api/triage?patientId=nonexistent-patient-id-00000`);
+    expect(res.status()).toBe(404);
+  });
+
+  test("clinic scoping: POST triage with unknown patientId returns 404", async ({ page }) => {
+    const res = await page.request.post(`${CLINIC_URL}/api/triage`, {
+      data: { patientId: "nonexistent-patient-id-00000", triageLevel: 3, chiefComplaint: "test" },
+    });
+    expect(res.status()).toBe(404);
+  });
 });

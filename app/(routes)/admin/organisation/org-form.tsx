@@ -14,6 +14,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
 import type { ParentOrganizationSummary } from "@/lib/fhir/admin-service";
 import { useAdminPath } from "@/hooks/use-admin-path";
@@ -28,6 +39,7 @@ export default function OrgForm({ organisation, mode }: Props) {
   const { toast } = useToast();
   const adminPath = useAdminPath();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({
     name: organisation?.name ?? "",
     phone: organisation?.phone ?? "",
@@ -72,6 +84,28 @@ export default function OrgForm({ organisation, mode }: Props) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!organisation?.id) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/organisation", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: organisation.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete organisation");
+      }
+      toast({ title: "Organisation deleted", description: `${organisation.name} has been removed.` });
+      router.replace(adminPath("/organisation"));
+    } catch (err: any) {
+      toast({ title: "Cannot delete", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -147,20 +181,47 @@ export default function OrgForm({ organisation, mode }: Props) {
               <Button type="submit" disabled={saving}>
                 {saving ? "Saving..." : isNew ? "Create Organisation" : "Save Changes"}
               </Button>
-              {!isNew && (
-                <Button type="button" variant="outline" asChild>
-                  <Link href={adminPath("/organisation")}>Cancel</Link>
-                </Button>
-              )}
-              {isNew && (
-                <Button type="button" variant="outline" asChild>
-                  <Link href={adminPath("/organisation")}>Cancel</Link>
-                </Button>
-              )}
+                      <Button type="button" variant="outline" asChild>
+                <Link href={adminPath("/organisation")}>Cancel</Link>
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      {!isNew && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>
+              Permanently delete this organisation. This cannot be undone.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={deleting}>
+                  {deleting ? "Deleting..." : "Delete Organisation"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {organisation?.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently remove the organisation. All associated clinics must be deleted first.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -239,7 +239,44 @@ export async function completeCheckoutInvoice(
     ? await medplum.updateResource(invoice)
     : await medplum.createResource<Invoice>(invoice);
 
-  await updateQueueStatusForPatient(input.patientId, "completed", medplum, input.clinicId);
+  try {
+    await updateQueueStatusForPatient(input.patientId, "completed", medplum, input.clinicId);
+  } catch (err) {
+    console.error("[billing-service] Invoice saved but queue status update failed for patient", input.patientId, err);
+  }
 
   return saved;
+}
+
+export async function getInvoice(medplum: MedplumClient, invoiceId: string): Promise<Invoice | null> {
+  try {
+    return await medplum.readResource("Invoice", invoiceId) as Invoice;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPatientInvoices(medplum: MedplumClient, patientId: string): Promise<Invoice[]> {
+  const results = await medplum.searchResources("Invoice", {
+    subject: `Patient/${patientId}`,
+    _sort: "-date",
+  });
+  return results as Invoice[];
+}
+
+export async function getConsultationInvoice(medplum: MedplumClient, consultationId: string): Promise<Invoice | null> {
+  const results = await medplum.searchResources("Invoice", {
+    identifier: `${INVOICE_IDENTIFIER_SYSTEM}|${consultationId}`,
+    _count: "1",
+  });
+  return (results?.[0] as Invoice) ?? null;
+}
+
+export async function voidInvoice(medplum: MedplumClient, invoiceId: string): Promise<Invoice> {
+  const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
+  return medplum.updateResource({ ...invoice, status: "cancelled" });
+}
+
+export async function deleteInvoice(medplum: MedplumClient, invoiceId: string): Promise<void> {
+  await medplum.deleteResource("Invoice", invoiceId);
 }
