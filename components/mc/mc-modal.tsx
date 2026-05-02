@@ -127,8 +127,8 @@ export default function McModal({ isOpen, onClose, isLoading, data }: McModalPro
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-3xl w-[95vw] p-0 overflow-hidden">
-        <div className="flex h-[85vh] flex-col">
+      <DialogContent className="sm:max-w-5xl w-[95vw] p-0 overflow-hidden">
+        <div className="flex h-[90vh] flex-col">
           <DialogHeader className="px-6 py-4 border-b space-y-2">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
