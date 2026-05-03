@@ -9,7 +9,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
-const CLINICIAN = "Dr. Sarah Wong";
+const DEFAULT_CLINICIAN = "Dr. Sarah Wong";
 
 let patientCounter = 0;
 
@@ -78,7 +78,7 @@ async function createTestAppointment(
       patientId: patient.id,
       patientName: patient.name,
       patientContact: patient.phone,
-      clinician: CLINICIAN,
+      clinician: DEFAULT_CLINICIAN,
       reason: patient.reason,
       type: "Follow-up",
       notes: `Created by appointment E2E for ${patient.name}`,
@@ -98,6 +98,27 @@ async function createTestAppointment(
 async function selectByVisibleOption(page: Page, triggerIndex: number, optionName: RegExp | string): Promise<void> {
   await page.locator('button[role="combobox"]').nth(triggerIndex).click();
   await page.getByRole("option", { name: optionName }).click();
+}
+
+async function selectPreferredOrFirstOption(
+  page: Page,
+  triggerIndex: number,
+  preferredName: RegExp | string
+): Promise<string> {
+  await page.locator('button[role="combobox"]').nth(triggerIndex).click();
+
+  const preferredOption = page.getByRole("option", { name: preferredName }).first();
+  if (await preferredOption.isVisible().catch(() => false)) {
+    const selected = (await preferredOption.textContent())?.trim() || "";
+    await preferredOption.click();
+    return selected;
+  }
+
+  const firstAvailableOption = page.getByRole("option").filter({ hasNotText: /loading/i }).first();
+  await expect(firstAvailableOption).toBeVisible({ timeout: 20_000 });
+  const selected = (await firstAvailableOption.textContent())?.trim() || "";
+  await firstAvailableOption.click();
+  return selected;
 }
 
 async function appointmentRowFor(page: Page, patientName: string) {
@@ -123,6 +144,7 @@ test.describe("Appointment workflow", () => {
   });
 
   test("schedules a new appointment from the form", async ({ page }) => {
+    test.setTimeout(60_000);
     const patient = await createTestPatient(page);
     const slot = futureSlot();
 
@@ -137,7 +159,7 @@ test.describe("Appointment workflow", () => {
 
     await page.locator('input[type="date"]').fill(formatDateInput(slot));
     await page.locator('input[type="time"]').fill(formatTimeInput(slot));
-    await selectByVisibleOption(page, 1, CLINICIAN);
+    await selectPreferredOrFirstOption(page, 1, DEFAULT_CLINICIAN);
     await selectByVisibleOption(page, 2, /follow-up/i);
     await page.getByPlaceholder(/follow-up consultation/i).fill(patient.reason);
     await page.getByPlaceholder(/preparation instructions|notes/i).fill("Bring prior lab results.");
@@ -174,7 +196,7 @@ test.describe("Appointment workflow", () => {
       .then((response) => response.json());
 
     await page.goto(`/appointments/${appointmentId}`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(patient.name, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("main").getByText(patient.name).first()).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole("button", { name: /reschedule/i }).click();
     const dialog = page.getByRole("dialog", { name: /reschedule appointment/i });

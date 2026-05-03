@@ -10,12 +10,12 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { KLINIK_PUTERI_URL } from "./support/env";
+import { DEMO_CLINIC_URL } from "./support/env";
 
 const RUN_ID = String(Date.now()).slice(-4);
 const PATIENT_NAME = `Triage E2E ${RUN_ID}`;
 const PATIENT_NRIC = `900615-07-${RUN_ID.padStart(4, "0")}`;
-const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.iatrum.com";
+const CLINIC_URL = DEMO_CLINIC_URL || "https://demo.drhidayat.com";
 
 async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
   const trigger = page.getByRole("combobox").first();
