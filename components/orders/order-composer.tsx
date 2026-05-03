@@ -117,7 +117,7 @@ export function OrderComposer({
   const [savingIds, setSavingIds] = React.useState<Record<string, boolean>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
   const [detailEntryId, setDetailEntryId] = React.useState<string | null>(null);
-  const [pendingDocumentTemplate, setPendingDocumentTemplate] = React.useState<CatalogItem | null>(null);
+  const [editingDocumentEntryId, setEditingDocumentEntryId] = React.useState<string | null>(null);
   const [mcDays, setMcDays] = React.useState(1);
   const [mcDiagnosis, setMcDiagnosis] = React.useState("");
   const [referralTo, setReferralTo] = React.useState("(Insert Hosp name)");
@@ -163,13 +163,27 @@ export function OrderComposer({
   );
 
   const detailEntry = detailEntryId ? entries.find((e) => e.id === detailEntryId) : undefined;
-  const pendingDocumentKind = pendingDocumentTemplate ? documentKind(pendingDocumentTemplate) : null;
+  const editingDocumentEntry = editingDocumentEntryId
+    ? entries.find((e) => e.id === editingDocumentEntryId)
+    : undefined;
+  const editingDocumentKind =
+    editingDocumentEntry?.catalogRef === "letter-mc" || editingDocumentEntry?.meta?.kind === "mc"
+      ? "mc"
+      : editingDocumentEntry?.catalogRef === "letter-referral" || editingDocumentEntry?.meta?.kind === "referral"
+      ? "referral"
+      : null;
 
   React.useEffect(() => {
     if (detailEntryId && !entries.some((e) => e.id === detailEntryId)) {
       setDetailEntryId(null);
     }
   }, [entries, detailEntryId]);
+
+  React.useEffect(() => {
+    if (editingDocumentEntryId && !entries.some((e) => e.id === editingDocumentEntryId)) {
+      setEditingDocumentEntryId(null);
+    }
+  }, [entries, editingDocumentEntryId]);
 
   const publishPlan = React.useCallback(
     (nextEntries: TreatmentPlanEntry[]) => {
@@ -352,38 +366,25 @@ export function OrderComposer({
   );
 
   function handlePickerRowClick(row: { tab: TreatmentPlanTab; item: CatalogItem; kindLabel: string }) {
-    const kind = row.tab === "documents" ? documentKind(row.item) : null;
-    if (kind === "mc" || kind === "referral") {
-      setPendingDocumentTemplate(row.item);
-      setSearchQuery("");
-      return;
-    }
     void addCatalogItem(row.tab, row.item);
     setSearchQuery("");
   }
 
-  function closePendingDocumentDialog() {
-    setPendingDocumentTemplate(null);
-  }
-
-  async function handleCompletePendingDocument(status: "draft" | "completed") {
-    if (!pendingDocumentTemplate) return;
-    await addCatalogItem("documents", {
-      ...pendingDocumentTemplate,
+  async function handleCompleteDocumentDialog(status: "draft" | "completed") {
+    if (!editingDocumentEntry) return;
+    await updateEntryField(editingDocumentEntry, {
       meta: {
-        ...(pendingDocumentTemplate.meta || {}),
+        ...(editingDocumentEntry.meta || {}),
         documentStatus: status,
-        mcDays: String(mcDays),
-        mcDiagnosis,
-        referralTo,
-        referralDiagnosis,
+        ...(editingDocumentKind === "mc" ? { mcDays: String(mcDays), mcDiagnosis } : {}),
+        ...(editingDocumentKind === "referral" ? { referralTo, referralDiagnosis } : {}),
       },
     });
     toast({
       title: status === "completed" ? "Document completed" : "Document saved as incomplete",
-      description: `${documentDisplayName(pendingDocumentTemplate)} added to the composer.`,
+      description: `${editingDocumentEntry.name} updated.`,
     });
-    closePendingDocumentDialog();
+    setEditingDocumentEntryId(null);
   }
 
   const updateEntryField = React.useCallback(
@@ -475,7 +476,18 @@ export function OrderComposer({
                   key={entry.id}
                   type="button"
                   className="flex w-full items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm hover:bg-muted/50"
-                  onClick={() => setDetailEntryId(entry.id)}
+                  onClick={() => {
+                    const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
+                    if (entry.tab === "documents" && kind !== null) {
+                      setMcDays(Number(entry.meta?.mcDays || 1));
+                      setMcDiagnosis(entry.meta?.mcDiagnosis || "");
+                      setReferralTo(entry.meta?.referralTo || "(Insert Hosp name)");
+                      setReferralDiagnosis(entry.meta?.referralDiagnosis || "");
+                      setEditingDocumentEntryId(entry.id);
+                    } else {
+                      setDetailEntryId(entry.id);
+                    }
+                  }}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
@@ -510,16 +522,15 @@ export function OrderComposer({
         </div>
       </div>
 
-      <Dialog open={Boolean(pendingDocumentTemplate)} onOpenChange={(open) => !open && closePendingDocumentDialog()}>
+      <Dialog open={Boolean(editingDocumentEntry)} onOpenChange={(open) => !open && setEditingDocumentEntryId(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{pendingDocumentTemplate ? documentDisplayName(pendingDocumentTemplate) : "Document"}</DialogTitle>
+            <DialogTitle>{editingDocumentEntry?.name ?? "Document"}</DialogTitle>
             <DialogDescription>
-              Fill out information below to complete document. The document is only added to the composer after you
-              choose Complete later or Complete document.
+              Fill out information below to complete document.
             </DialogDescription>
           </DialogHeader>
-          {pendingDocumentKind === "mc" ? (
+          {editingDocumentKind === "mc" ? (
             <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
               <div className="space-y-3">
                 <div>
@@ -551,7 +562,7 @@ export function OrderComposer({
               </div>
             </div>
           ) : null}
-          {pendingDocumentKind === "referral" ? (
+          {editingDocumentKind === "referral" ? (
             <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
               <div className="space-y-3">
                 <div>
@@ -590,10 +601,10 @@ export function OrderComposer({
             </div>
           ) : null}
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => void handleCompletePendingDocument("draft")}>
+            <Button type="button" variant="outline" onClick={() => void handleCompleteDocumentDialog("draft")}>
               Complete later
             </Button>
-            <Button type="button" onClick={() => void handleCompletePendingDocument("completed")}>
+            <Button type="button" onClick={() => void handleCompleteDocumentDialog("completed")}>
               Complete document
             </Button>
           </DialogFooter>
