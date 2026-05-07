@@ -4,11 +4,11 @@ import { notFound, redirect } from 'next/navigation';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { getTriageForPatient } from '@/lib/fhir/triage-service';
 import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
-import ConsultationForm from '@/app/(routes)/patients/[id]/consultation/consultation-form';
+import EditConsultationForm from './edit-form';
 import { safeToISOString } from '@/lib/utils';
 import type { SerializedPatient } from '@/components/patients/patient-card';
-import type { SerializedConsultation } from '@/lib/types';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -31,34 +31,33 @@ export default async function EditConsultationPage({ params }: Props) {
     notFound();
   }
 
-  const patient = await getPatientFromMedplum(consultation.patientId, clinicId, medplum);
+  const [patient, triageData] = await Promise.all([
+    getPatientFromMedplum(consultation.patientId, clinicId, medplum),
+    getTriageForPatient(consultation.patientId, medplum, clinicId),
+  ]);
+
   if (!patient) {
     notFound();
   }
 
-  const initialPatient: SerializedPatient = {
+  const serializedPatient: SerializedPatient = {
     ...(patient as any),
+    triage: triageData.triage as any,
     dateOfBirth: safeToISOString((patient as any).dateOfBirth),
     lastVisit: safeToISOString((patient as any).lastVisit),
     upcomingAppointment: safeToISOString((patient as any).upcomingAppointment),
     createdAt: safeToISOString((patient as any).createdAt),
     updatedAt: safeToISOString((patient as any).updatedAt),
-    queueAddedAt: safeToISOString((patient as any).queueAddedAt),
-  };
-
-  const initialConsultation: SerializedConsultation = {
-    ...(consultation as any),
-    date: safeToISOString(consultation.date),
-    createdAt: safeToISOString(consultation.createdAt),
-    updatedAt: safeToISOString((consultation as any).updatedAt),
+    queueAddedAt: safeToISOString(triageData.queueAddedAt ?? null),
   };
 
   return (
     <main className="min-h-screen bg-background">
-      <ConsultationForm
+      <EditConsultationForm
+        consultationId={id}
         patientId={consultation.patientId}
-        initialPatient={initialPatient}
-        initialConsultation={initialConsultation}
+        initialNotes={consultation.chiefComplaint || ''}
+        patient={serializedPatient}
       />
     </main>
   );
