@@ -66,7 +66,6 @@ const emptyTreatmentSummary: TreatmentPlanSummary = {
   currency: "MYR",
   itemCount: 0,
 };
-const emptyTreatmentEntries: TreatmentPlanEntry[] = [];
 const emptyPackages: [] = [];
 
 export default function PatientProfileWorkspace({
@@ -84,8 +83,7 @@ export default function PatientProfileWorkspace({
   const [selectedConsultation, setSelectedConsultation] = useState<ProfileConsultation | null>(null);
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
-  const [consultSubmitting, setConsultSubmitting] = useState(false);
-  const [treatmentSubmitting, setTreatmentSubmitting] = useState(false);
+  const [signing, setSigning] = useState(false);
   const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
   const [procedureOptions, setProcedureOptions] = useState<
@@ -126,12 +124,6 @@ export default function PatientProfileWorkspace({
       active = false;
     };
   }, []);
-
-  const latestConsultation = useMemo(() => {
-    return [...consultations]
-      .filter((consultation) => consultation.chiefComplaint && consultation.diagnosis)
-      .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
-  }, [consultations]);
 
   const treatmentItemsCatalog = useMemo(
     () =>
@@ -194,9 +186,9 @@ export default function PatientProfileWorkspace({
     setActiveTab(value as ProfileTab);
   }
 
-  async function handleConsultSign(event: FormEvent<HTMLFormElement>) {
+  async function handleSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (consultSubmitting) return;
+    if (signing) return;
 
     if (!clinicalNotes.trim() || !diagnosis.trim()) {
       toast({
@@ -207,66 +199,10 @@ export default function PatientProfileWorkspace({
       return;
     }
 
-    try {
-      setConsultSubmitting(true);
-      const response = await fetch("/api/consultations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patientId,
-          chiefComplaint: clinicalNotes.trim(),
-          diagnosis: diagnosis.trim(),
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || "Failed to save consultation");
-      }
-
-      toast({
-        title: "Consult Signed",
-        description: "Clinical notes and diagnosis were saved.",
-      });
-      setClinicalNotes("");
-      setDiagnosis("");
-      setPanelOpen(false);
-      router.refresh();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save consultation.",
-        variant: "destructive",
-      });
-    } finally {
-      setConsultSubmitting(false);
-    }
-  }
-
-  async function handleTreatmentSign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (treatmentSubmitting) return;
-
-    if (!latestConsultation) {
-      toast({
-        title: "Consult Required",
-        description: "Please sign a consult before signing treatment.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (treatmentEntries.length === 0) {
-      toast({
-        title: "No Treatment Added",
-        description: "Add at least one treatment item before signing.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const medicationEntries = treatmentEntries.filter((entry) => entry.tab === "items");
     const serviceEntries = treatmentEntries.filter((entry) => entry.tab === "services" || entry.tab === "packages");
     const documentEntries = treatmentEntries.filter((entry) => entry.tab === "documents");
+
     const prescriptions: Prescription[] = medicationEntries.map((entry) => ({
       medication: {
         id: entry.catalogRef || entry.id,
@@ -292,33 +228,22 @@ export default function PatientProfileWorkspace({
       .map((entry) => entry.meta?.code as ImagingProcedureCode)
       .filter(Boolean);
 
-    const baseTreatmentNotes = `Treatment visit based on consultation from ${formatDisplayDate(latestConsultation.date)}.`;
-    const mcReferralNames = documentEntries
-      .filter((entry) => entry.meta?.kind === "mc" || entry.meta?.kind === "referral")
-      .map((entry) => entry.name.trim())
-      .filter(Boolean);
-    const treatmentNotes =
-      mcReferralNames.length > 0
-        ? `${baseTreatmentNotes}\n\nRequested documents: ${mcReferralNames.join("; ")}`
-        : baseTreatmentNotes;
-
     try {
-      setTreatmentSubmitting(true);
+      setSigning(true);
       const response = await fetch("/api/consultations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patientId,
-          chiefComplaint: latestConsultation.chiefComplaint,
-          diagnosis: latestConsultation.diagnosis,
-          notes: treatmentNotes,
-          procedures,
+          chiefComplaint: clinicalNotes.trim(),
+          diagnosis: diagnosis.trim(),
           prescriptions,
+          procedures,
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success || !data?.consultationId) {
-        throw new Error(data?.error || "Failed to save treatment");
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Failed to save consultation");
       }
 
       const orderErrors: string[] = [];
@@ -332,7 +257,7 @@ export default function PatientProfileWorkspace({
               encounterId: data.consultationId,
               tests: labSelections,
               priority: "routine",
-              clinicalNotes: latestConsultation.chiefComplaint,
+              clinicalNotes: clinicalNotes.trim(),
             }),
           });
           if (!labResponse.ok) {
@@ -355,8 +280,8 @@ export default function PatientProfileWorkspace({
               encounterId: data.consultationId,
               procedures: imagingSelections,
               priority: "routine",
-              clinicalIndication: latestConsultation.diagnosis || latestConsultation.chiefComplaint,
-              clinicalQuestion: latestConsultation.chiefComplaint,
+              clinicalIndication: diagnosis.trim() || clinicalNotes.trim(),
+              clinicalQuestion: clinicalNotes.trim(),
               orderedBy: undefined,
             }),
           });
@@ -371,22 +296,25 @@ export default function PatientProfileWorkspace({
       }
 
       toast({
-        title: "Treatment Signed",
+        title: "Consult Signed",
         description: orderErrors.length
-          ? `Treatment saved. Orders with issues: ${orderErrors.join(", ")}.`
-          : "Treatment visit was saved.",
+          ? `Consultation saved. Orders with issues: ${orderErrors.join(", ")}.`
+          : "Consultation and treatment were saved.",
         variant: orderErrors.length ? "destructive" : "default",
       });
+      setClinicalNotes("");
+      setDiagnosis("");
+      setTreatmentEntries([]);
       setPanelOpen(false);
       router.refresh();
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save treatment.",
+        description: error instanceof Error ? error.message : "Failed to save consultation.",
         variant: "destructive",
       });
     } finally {
-      setTreatmentSubmitting(false);
+      setSigning(false);
     }
   }
 
@@ -650,7 +578,7 @@ export default function PatientProfileWorkspace({
             <div className="w-[480px] shrink-0 flex flex-col gap-2">
               <div className="flex flex-1 flex-col rounded-lg border bg-card shadow-sm">
                 {drawerMode === "consult" && (
-                  <form onSubmit={handleConsultSign} className="flex flex-col h-full">
+                  <form onSubmit={handleSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
                       <Textarea
                         placeholder="Clinical notes"
@@ -665,26 +593,26 @@ export default function PatientProfileWorkspace({
                       />
                     </div>
                     <div className="border-t px-5 py-4">
-                      <Button type="submit" disabled={consultSubmitting} className="w-full">
-                        {consultSubmitting ? "Signing..." : "Sign"}
+                      <Button type="submit" disabled={signing} className="w-full">
+                        {signing ? "Signing..." : "Sign"}
                       </Button>
                     </div>
                   </form>
                 )}
                 {drawerMode === "treatment" && (
-                  <form onSubmit={handleTreatmentSign} className="flex flex-col h-full">
+                  <form onSubmit={handleSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
                       <OrderComposer
                         draftId={`profile-treatment-${patientId}`}
                         patientId={patientId}
-                        initialEntries={emptyTreatmentEntries}
+                        initialEntries={treatmentEntries}
                         items={treatmentItemsCatalog}
                         services={treatmentServicesCatalog}
                         packages={emptyPackages}
                         documents={treatmentDocumentsCatalog}
                         onPlanChange={handleTreatmentPlanChange}
                         submitLabel="Sign"
-                        submitting={treatmentSubmitting}
+                        submitting={signing}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
