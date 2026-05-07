@@ -674,16 +674,22 @@ export async function getActiveTriageEncounter(
   clinicId?: string
 ): Promise<TriageSummary & { id: string } | null> {
   const client = medplum;
+  // Fetch a small batch so we can skip consultation Encounters (status=finished,
+  // no triage extension) that sort ahead of the real triage Encounter after a
+  // consultation is saved.
   const encounters = await client.searchResources('Encounter', {
     subject: `Patient/${patientId}`,
     status: 'arrived,triaged,in-progress,finished',
-    _count: '1',
+    _count: '10',
     _sort: '-_lastUpdated',
     ...(clinicId ? { 'service-provider': `Organization/${clinicId}` } : {}),
   });
 
   if (!encounters?.length) return null;
-  const encounter: any = encounters[0];
+  const encounter: any = (encounters as any[]).find((enc: any) =>
+    enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL)
+  );
+  if (!encounter) return null;
   const parsed = parseTriageExtension(encounter.extension);
 
   return {
