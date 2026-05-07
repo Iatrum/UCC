@@ -33,7 +33,8 @@ export default async function EditConsultationPage({ params }: Props) {
 
   const [patient, triageData] = await Promise.all([
     getPatientFromMedplum(consultation.patientId, clinicId, medplum),
-    getTriageForPatient(consultation.patientId, medplum, clinicId),
+    getTriageForPatient(consultation.patientId, medplum, clinicId)
+      .catch(() => ({ triage: null, queueAddedAt: null })),
   ]);
 
   if (!patient) {
@@ -42,7 +43,7 @@ export default async function EditConsultationPage({ params }: Props) {
 
   const serializedPatient: SerializedPatient = {
     ...(patient as any),
-    triage: triageData.triage as any,
+    triage: triageData.triage,
     dateOfBirth: safeToISOString((patient as any).dateOfBirth),
     lastVisit: safeToISOString((patient as any).lastVisit),
     upcomingAppointment: safeToISOString((patient as any).upcomingAppointment),

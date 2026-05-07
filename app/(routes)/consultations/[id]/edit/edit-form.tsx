@@ -28,14 +28,13 @@ export default function EditConsultationForm({
   const [clinicalNotes, setClinicalNotes] = useState(initialNotes);
   const [submitting, setSubmitting] = useState(false);
 
-  const vitals = (patient as any).triage?.vitalSigns;
+  const vitals = patient.triage?.vitalSigns;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (submitting) return;
-
     try {
       setSubmitting(true);
+      // Clinical notes are stored as chiefComplaint in FHIR per this app's data model
       const res = await fetch("/api/consultations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
