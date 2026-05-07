@@ -596,11 +596,14 @@ export default function PatientProfileWorkspace({
                     <div className="grid gap-4 md:grid-cols-3">
                       <div>
                         <p className="text-xs text-muted-foreground mb-1.5">Allergies</p>
-                        {medicalHistory.allergies?.length ? (
-                          <ul className="space-y-0.5">
-                            {medicalHistory.allergies.map((a, i) => <li key={i} className="text-sm">{a}</li>)}
-                          </ul>
-                        ) : <p className="text-sm text-muted-foreground">None</p>}
+                        {(() => {
+                          const filtered = (medicalHistory.allergies ?? []).filter((a) => !/^no known/i.test(a.trim()));
+                          return filtered.length ? (
+                            <ul className="space-y-0.5">
+                              {filtered.map((a, i) => <li key={i} className="text-sm">{a}</li>)}
+                            </ul>
+                          ) : <p className="text-sm text-muted-foreground">None</p>;
+                        })()}
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1.5">Conditions</p>

@@ -91,7 +91,6 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
   );
   const medicalAlert = realAllergies.length > 0;
 
-
   const initials = patient.fullName
     .split(" ")
     .filter(Boolean)
@@ -127,7 +126,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
                     <Badge variant="secondary" className="text-[11px]">New patient</Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-[auto_auto_auto_auto] gap-x-6 gap-y-1 text-sm mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-[auto_auto_auto_auto] gap-x-6 gap-y-1 text-sm mt-2">
                   <span className="text-muted-foreground">IC number</span>
                   <span className="font-medium">{patient.nric || "—"}</span>
                   <span className="text-muted-foreground">Phone</span>
@@ -149,7 +148,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
             {/* Right: action buttons */}
             <div className="flex gap-2 flex-wrap justify-end shrink-0">
               <Button asChild size="sm" variant="outline">
-                <Link href={`/patients/${id}/triage`}>
+                <Link href={`/patients/${id}/check-in`}>
                   <ClipboardList className="mr-2 h-4 w-4" />
                   Check-in
                 </Link>
@@ -164,7 +163,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
           </div>
 
           {/* Stat row */}
-          <div className="mt-4 border-t border-border pt-4 grid grid-cols-4 gap-4 text-sm">
+          <div className="mt-4 border-t border-border pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Last visit</p>
               <p className="mt-0.5 font-medium">
@@ -260,7 +259,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
             <CardContent className="px-4 pb-4">
               {hasEmergencyContact ? (
                 <div className="space-y-1 text-sm">
-                  <p className="font-medium">{ec?.name}</p>
+                  <p className="font-medium">{ec?.name || "—"}</p>
                   {ec?.relationship && (
                     <p className="text-xs text-muted-foreground capitalize">{ec.relationship}</p>
                   )}

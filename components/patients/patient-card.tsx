@@ -39,16 +39,6 @@ interface PatientCardProps {
 }
 
 export function PatientCard({ patient, compact = false }: PatientCardProps) {
-  const age = calculateAge(patient.dateOfBirth);
-  const isNewPatient = !patient.lastVisit;
-
-  const initials = patient.fullName
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((n) => n[0].toUpperCase())
-    .join("");
-
   if (compact) {
     return (
       <Card className="border-none shadow-sm bg-gradient-to-br from-primary/5 to-primary/10">
@@ -59,6 +49,16 @@ export function PatientCard({ patient, compact = false }: PatientCardProps) {
       </Card>
     );
   }
+
+  const age = calculateAge(patient.dateOfBirth);
+  const isNewPatient = !patient.lastVisit;
+
+  const initials = patient.fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0].toUpperCase())
+    .join("");
 
   return (
     <Card className="border-none shadow-sm bg-gradient-to-br from-primary/5 to-primary/10">
