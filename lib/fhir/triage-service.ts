@@ -745,45 +745,51 @@ export async function getTriageQueueForToday(
 
   const encounters = (await client.searchResources('Encounter', query)) as any[];
 
-  const patients: SavedPatient[] = [];
-
-  for (const encounter of encounters) {
-    // Double-check ownership at the application layer (defence-in-depth)
+  const validEncounters = encounters.filter((encounter) => {
     try {
       assertEncounterBelongsToClinic(encounter, clinicId);
+      return true;
     } catch {
-      continue; // skip encounters that don't belong to this clinic
+      return false;
     }
+  });
 
-    const subjectRef: string = encounter.subject?.reference || '';
-    const patientId = subjectRef.replace('Patient/', '');
-    if (!patientId) continue;
+  const results = await Promise.allSettled(
+    validEncounters.map(async (encounter) => {
+      const subjectRef: string = encounter.subject?.reference || '';
+      const patientId = subjectRef.replace('Patient/', '');
+      if (!patientId) return null;
 
-    const patient = await getPatientFromMedplum(patientId, clinicId, client);
-    if (!patient) continue;
+      const patient = await getPatientFromMedplum(patientId, clinicId, client, { includeMedicalHistory: false });
+      if (!patient) return null;
 
-    const parsed = parseTriageExtension(encounter.extension);
-    const queueAddedAtIso = (parsed.queueAddedAt ?? encounter.period?.start ?? null)
-      ? new Date(parsed.queueAddedAt ?? encounter.period?.start).toISOString()
-      : null;
-    patients.push({
-      ...patient,
-      triage: parsed.triage,
-      queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
-      queueAddedAt: queueAddedAtIso,
-      visitIntent: parsed.visitIntent,
-      payerType: parsed.payerType,
-      paymentMethod: parsed.paymentMethod,
-      billingPerson: parsed.billingPerson,
-      dependentName: parsed.dependentName,
-      dependentRelationship: parsed.dependentRelationship,
-      dependentPhone: parsed.dependentPhone,
-      assignedClinician: parsed.assignedClinician,
-      registrationSource: parsed.registrationSource,
-      registrationAt: parsed.registrationAt,
-      performedBy: parsed.performedBy,
-    });
-  }
+      const parsed = parseTriageExtension(encounter.extension);
+      const queueAddedAtIso = (parsed.queueAddedAt ?? encounter.period?.start ?? null)
+        ? new Date(parsed.queueAddedAt ?? encounter.period?.start).toISOString()
+        : null;
+      return {
+        ...patient,
+        triage: parsed.triage,
+        queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
+        queueAddedAt: queueAddedAtIso,
+        visitIntent: parsed.visitIntent,
+        payerType: parsed.payerType,
+        paymentMethod: parsed.paymentMethod,
+        billingPerson: parsed.billingPerson,
+        dependentName: parsed.dependentName,
+        dependentRelationship: parsed.dependentRelationship,
+        dependentPhone: parsed.dependentPhone,
+        assignedClinician: parsed.assignedClinician,
+        registrationSource: parsed.registrationSource,
+        registrationAt: parsed.registrationAt,
+        performedBy: parsed.performedBy,
+      } as SavedPatient;
+    })
+  );
+
+  const patients: SavedPatient[] = results
+    .filter((r): r is PromiseFulfilledResult<SavedPatient> => r.status === 'fulfilled' && r.value !== null)
+    .map((r) => r.value);
 
   return patients
     .filter((p) => p.queueStatus)

@@ -495,7 +495,8 @@ export async function savePatientToMedplum(
 export async function getPatientFromMedplum(
   patientId: string,
   clinicId?: string,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  { includeMedicalHistory = true }: { includeMedicalHistory?: boolean } = {}
 ): Promise<SavedPatient | null> {
   try {
     const client = medplum ?? (await getAdminMedplum());
@@ -506,23 +507,16 @@ export async function getPatientFromMedplum(
     }
     const patientData = fhirPatientToPatientData(fhirPatient);
 
-    // Get allergies
-    const allergies = await client.searchResources('AllergyIntolerance', {
-      patient: `Patient/${patientId}`,
-    });
-    patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
-
-    // Get conditions
-    const conditions = await client.searchResources('Condition', {
-      subject: `Patient/${patientId}`,
-    });
-    patientData.medicalHistory!.conditions = conditions.map((c: Condition) => (c as any).code?.text || 'Unknown condition');
-
-    // Get medications
-    const medications = await client.searchResources('MedicationStatement', {
-      subject: `Patient/${patientId}`,
-    });
-    patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
+    if (includeMedicalHistory) {
+      const [allergies, conditions, medications] = await Promise.all([
+        client.searchResources('AllergyIntolerance', { patient: `Patient/${patientId}` }),
+        client.searchResources('Condition', { subject: `Patient/${patientId}` }),
+        client.searchResources('MedicationStatement', { subject: `Patient/${patientId}` }),
+      ]);
+      patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
+      patientData.medicalHistory!.conditions = conditions.map((c: Condition) => (c as any).code?.text || 'Unknown condition');
+      patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
+    }
 
     return patientData;
   } catch (error: any) {
