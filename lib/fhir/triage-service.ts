@@ -503,9 +503,11 @@ export async function checkInPatientInTriage(
   if (
     existing &&
     existing.queueStatus &&
-    existing.queueStatus !== 'completed' &&
-    existing.queueStatus !== 'meds_and_bills'
+    existing.queueStatus !== 'completed'
   ) {
+    if (existing.queueStatus === 'meds_and_bills') {
+      return existing.id;
+    }
     await updateQueueStatusForPatient(patientId, 'arrived', client, clinicId);
     return existing.id;
   }
@@ -792,8 +794,30 @@ export async function getTriageQueueForToday(
     .filter((r): r is PromiseFulfilledResult<SavedPatient> => r.status === 'fulfilled' && r.value !== null)
     .map((r) => r.value);
 
-  return patients
-    .filter((p) => p.queueStatus)
+  const uniquePatients = Array.from(
+    patients.reduce((byPatientId, patient) => {
+      const existing = byPatientId.get(patient.id);
+      if (!existing) {
+        byPatientId.set(patient.id, patient);
+        return byPatientId;
+      }
+
+      const existingIsCompleted = existing.queueStatus === 'completed';
+      const patientIsCompleted = patient.queueStatus === 'completed';
+      if (existingIsCompleted !== patientIsCompleted) {
+        byPatientId.set(patient.id, existingIsCompleted ? patient : existing);
+        return byPatientId;
+      }
+
+      const existingTime = existing.queueAddedAt ? new Date(existing.queueAddedAt).getTime() : 0;
+      const patientTime = patient.queueAddedAt ? new Date(patient.queueAddedAt).getTime() : 0;
+      byPatientId.set(patient.id, patientTime >= existingTime ? patient : existing);
+      return byPatientId;
+    }, new Map<string, SavedPatient>()).values()
+  );
+
+  return uniquePatients
+    .filter((p) => p.queueStatus && p.queueStatus !== 'completed')
     .sort((a, b) => {
       const aTriaged = Boolean((a as any).triage?.isTriaged);
       const bTriaged = Boolean((b as any).triage?.isTriaged);
