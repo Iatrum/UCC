@@ -90,13 +90,21 @@ export default function Home() {
               </a>
             ))}
           </nav>
-          <a
-            href="mailto:hello@iatrum.com?subject=Demo Request"
-            className="rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-            style={{ backgroundColor: "#1c1e4b" }}
-          >
-            Book a Demo
-          </a>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/login"
+              className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+            >
+              Login
+            </Link>
+            <a
+              href="mailto:hello@iatrum.com?subject=Demo Request"
+              className="rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+              style={{ backgroundColor: "#1c1e4b" }}
+            >
+              Book a Demo
+            </a>
+          </div>
         </div>
       </header>
 
