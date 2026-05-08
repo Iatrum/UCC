@@ -13,6 +13,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { fetchOrganizationDetails, saveOrganizationDetails } from '@/lib/org';
 import Image from 'next/image';
 import { SmartTextManager } from '@/components/settings/smart-text-manager';
+import { InsurerManager } from '@/components/settings/insurer-manager';
 
 // Placeholder for user data - replace with actual data fetching/auth context later
 interface UserSettings {
@@ -224,6 +225,18 @@ export default function SettingsPage() {
               Save Organization
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Insurers</CardTitle>
+          <CardDescription>Manage panel insurers available during patient check-in.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InsurerManager />
         </CardContent>
       </Card>
 
