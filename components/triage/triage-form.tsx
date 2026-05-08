@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +25,7 @@ import { Patient } from "@/lib/models";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { fetchInsurers, type Insurer } from "@/lib/insurers";
 
 interface TriageFormProps {
   patient: Patient;
@@ -32,14 +33,16 @@ interface TriageFormProps {
   stayAfterSubmit?: boolean;
 }
 
-const PAYMENT_METHOD_OPTIONS = [
-  { value: "self_pay", label: "Self-pay" },
-  { value: "intracare_sdn_bhd", label: "Intracare Sdn Bhd" },
-];
+const SELF_PAY_OPTION = { value: "self_pay", label: "Self-pay" };
 
 export default function TriageForm({ patient, stayAfterSubmit = false }: TriageFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [panelOptions, setPanelOptions] = useState<Insurer[]>([]);
+
+  useEffect(() => {
+    fetchInsurers().then(setPanelOptions).catch(() => {});
+  }, []);
 
   const [triageLevel, setTriageLevel] = useState<TriageLevel>(patient.triage?.triageLevel ?? 3);
   const [isUrgent, setIsUrgent] = useState((patient.triage?.triageLevel ?? 3) <= 2);
@@ -49,8 +52,7 @@ export default function TriageForm({ patient, stayAfterSubmit = false }: TriageF
     patient.billingPerson === "dependent" ? "dependent" : "self"
   );
   const [paymentMethod, setPaymentMethod] = useState(
-    patient.paymentMethod ??
-      (patient.payerType === "panel" ? "intracare_sdn_bhd" : "self_pay")
+    patient.paymentMethod ?? "self_pay"
   );
   const [assignedClinician, setAssignedClinician] = useState(patient.assignedClinician ?? "");
   const [dependentName, setDependentName] = useState(patient.dependentName ?? "");
@@ -256,9 +258,12 @@ export default function TriageForm({ patient, stayAfterSubmit = false }: TriageF
                         <SelectValue placeholder="Payment method" />
                       </SelectTrigger>
                       <SelectContent>
-                        {PAYMENT_METHOD_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
+                        <SelectItem key={SELF_PAY_OPTION.value} value={SELF_PAY_OPTION.value}>
+                          {SELF_PAY_OPTION.label}
+                        </SelectItem>
+                        {panelOptions.map((insurer) => (
+                          <SelectItem key={insurer.value} value={insurer.value}>
+                            {insurer.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
