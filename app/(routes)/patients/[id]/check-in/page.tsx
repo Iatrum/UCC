@@ -65,24 +65,15 @@ export default async function CheckInPage({ params, searchParams }: CheckInPageP
         </Alert>
       )}
 
-      {(patientWithTriage.medicalHistory?.allergies?.length > 0 ||
-        patientWithTriage.medicalHistory?.conditions?.length > 0) && (
+      {patientWithTriage.medicalHistory?.allergies?.length > 0 && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="space-y-1">
             <div className="font-semibold">Medical Alerts:</div>
-            {patientWithTriage.medicalHistory.allergies?.length > 0 && (
-              <div>
-                <span className="font-medium">Allergies:</span>{" "}
-                {patientWithTriage.medicalHistory.allergies.join(", ")}
-              </div>
-            )}
-            {patientWithTriage.medicalHistory.conditions?.length > 0 && (
-              <div>
-                <span className="font-medium">Conditions:</span>{" "}
-                {patientWithTriage.medicalHistory.conditions.join(", ")}
-              </div>
-            )}
+            <div>
+              <span className="font-medium">Allergies:</span>{" "}
+              {patientWithTriage.medicalHistory.allergies.join(", ")}
+            </div>
           </AlertDescription>
         </Alert>
       )}
