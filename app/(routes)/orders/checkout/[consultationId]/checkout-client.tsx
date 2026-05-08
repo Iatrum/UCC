@@ -153,7 +153,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   );
   const subtotal = checkoutItems.reduce((total, item) => total + item.quantity * item.price, 0);
   const paid = Number.parseFloat(paidAmount) || 0;
-  const balance = Math.max(subtotal - paid, 0);
+  const balance = subtotal - paid;
   const handleCompleteVisitation = async () => {
     if (!details || completing || balance > 0) return;
 
@@ -376,8 +376,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
               </div>
               <div className="rounded-md border bg-muted/30 p-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Balance</span>
-                  <span className="font-semibold">{currency(balance)}</span>
+                  <span className="text-muted-foreground">{balance < 0 ? "Change" : "Balance"}</span>
+                  <span className={`font-semibold${balance < 0 ? " text-green-600" : ""}`}>
+                    {currency(balance < 0 ? Math.abs(balance) : balance)}
+                  </span>
                 </div>
               </div>
               {completionError ? (

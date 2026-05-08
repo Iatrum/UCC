@@ -293,7 +293,7 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
           const patientId = consultation.patientId || enc.subject?.reference?.replace('Patient/', '');
           if (!patientId) return null;
 
-          const patient = await getPatientFromMedplum(patientId, undefined, medplum);
+          const patient = await getPatientFromMedplum(patientId, undefined, medplum, { includeMedicalHistory: false });
 
           return {
             id: consultation.id,

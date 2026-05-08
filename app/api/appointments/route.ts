@@ -34,7 +34,7 @@ async function getAppointmentForClinic(
 ): Promise<SavedAppointment | null> {
   const appointment = await getAppointmentFromMedplum(medplum, appointmentId);
   if (!appointment) return null;
-  const patient = await getPatientFromMedplum(appointment.patientId, clinicId, medplum);
+  const patient = await getPatientFromMedplum(appointment.patientId, clinicId, medplum, { includeMedicalHistory: false });
   if (!patient) return null;
   return appointment;
 }
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const patient = await getPatientFromMedplum(appointmentData.patientId, clinicId, medplum);
+    const patient = await getPatientFromMedplum(appointmentData.patientId, clinicId, medplum, { includeMedicalHistory: false });
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (patientId) {
-      const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+      const patient = await getPatientFromMedplum(patientId, clinicId, medplum, { includeMedicalHistory: false });
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
     const filtered = (
       await Promise.all(
         all.map(async (appt) => {
-          const patient = await getPatientFromMedplum(appt.patientId, clinicId, medplum);
+          const patient = await getPatientFromMedplum(appt.patientId, clinicId, medplum, { includeMedicalHistory: false });
           return patient ? appt : null;
         })
       )

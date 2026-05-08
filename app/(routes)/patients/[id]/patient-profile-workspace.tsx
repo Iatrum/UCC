@@ -31,7 +31,7 @@ import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
 import ReferralMCSection from "./referral-mc-section";
 
-type ProfileTab = "history" | "labs-imaging" | "referral-mc" | "documents";
+type ProfileTab = "history" | "details" | "labs-imaging" | "referral-mc" | "documents";
 type DrawerMode = "consult" | "treatment";
 
 type MedicalHistory = {
@@ -393,44 +393,40 @@ export default function PatientProfileWorkspace({
   return (
     <>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-3">
-        {/* Header: mirrors the content row layout so right tabs align with panel */}
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <TabsList className="w-auto">
-              <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
-              <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
-              <TabsTrigger value="referral-mc" className="px-3 text-xs">Referral / MC</TabsTrigger>
-              <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
-            </TabsList>
-          </div>
-          <div className={cn(panelOpen ? "w-[480px] shrink-0" : "w-auto shrink-0")}>
-            <Tabs value={panelOpen ? drawerMode : ""}>
-              <TabsList>
-                <TabsTrigger
-                  value="consult"
-                  className="px-3 text-xs"
-                  onClick={() => {
-                    if (drawerMode === "consult" && panelOpen) setPanelOpen(false);
-                    else { setDrawerMode("consult"); setPanelOpen(true); }
-                  }}
-                >Consult</TabsTrigger>
-                <TabsTrigger
-                  value="treatment"
-                  className="px-3 text-xs"
-                  onClick={() => {
-                    if (drawerMode === "treatment" && panelOpen) setPanelOpen(false);
-                    else { setDrawerMode("treatment"); setPanelOpen(true); }
-                  }}
-                >Treatment</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
+        <TabsList className="w-auto">
+          <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
+          <TabsTrigger value="details" className="px-3 text-xs">Patient Details</TabsTrigger>
+          <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
+          <TabsTrigger value="referral-mc" className="px-3 text-xs">Referral / MC</TabsTrigger>
+          <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
+        </TabsList>
 
-        {/* Content row: main tab content + action panel side by side (items-start avoids stretching panel to left tab height) */}
+        {/* Content row: main tab content + action panel side by side */}
         <div className="flex min-w-0 items-start gap-4">
           <div className="min-w-0 flex-1">
             <TabsContent value="history" className="mt-0">
+              <div className="flex justify-end mb-3">
+                <Tabs value={panelOpen ? drawerMode : ""}>
+                  <TabsList>
+                    <TabsTrigger
+                      value="consult"
+                      className="px-3 text-xs"
+                      onClick={() => {
+                        if (drawerMode === "consult" && panelOpen) setPanelOpen(false);
+                        else { setDrawerMode("consult"); setPanelOpen(true); }
+                      }}
+                    >Consult</TabsTrigger>
+                    <TabsTrigger
+                      value="treatment"
+                      className="px-3 text-xs"
+                      onClick={() => {
+                        if (drawerMode === "treatment" && panelOpen) setPanelOpen(false);
+                        else { setDrawerMode("treatment"); setPanelOpen(true); }
+                      }}
+                    >Treatment</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
               <Card>
                 <CardContent>
                   {consultations.length > 0 ? (
@@ -464,7 +460,7 @@ export default function PatientProfileWorkspace({
                           >
                             <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
                             <TableCell>Consultation</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint}</TableCell>
+                            <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint || "—"}</TableCell>
                             <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
                             <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
                             <TableCell className="text-right">
@@ -544,6 +540,91 @@ export default function PatientProfileWorkspace({
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="details" className="mt-0">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <p className="text-sm font-medium">Contact</p>
+                    <dl className="space-y-1.5 text-sm">
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground w-24 shrink-0">Phone</dt>
+                        <dd className="font-medium">{patient.phone || "—"}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground w-24 shrink-0">Email</dt>
+                        <dd className="font-medium break-all">{patient.email || "—"}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground w-24 shrink-0">Address</dt>
+                        <dd className="font-medium">{patient.address || "—"}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="text-muted-foreground w-24 shrink-0">Postal code</dt>
+                        <dd className="font-medium">{patient.postalCode || "—"}</dd>
+                      </div>
+                    </dl>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <p className="text-sm font-medium">Emergency contact</p>
+                    {patient.emergencyContact?.name?.trim() || patient.emergencyContact?.phone?.trim() ? (
+                      <dl className="space-y-1.5 text-sm">
+                        <div className="flex gap-2">
+                          <dt className="text-muted-foreground w-24 shrink-0">Name</dt>
+                          <dd className="font-medium">{patient.emergencyContact.name || "—"}</dd>
+                        </div>
+                        <div className="flex gap-2">
+                          <dt className="text-muted-foreground w-24 shrink-0">Relationship</dt>
+                          <dd className="font-medium capitalize">{patient.emergencyContact.relationship || "—"}</dd>
+                        </div>
+                        <div className="flex gap-2">
+                          <dt className="text-muted-foreground w-24 shrink-0">Phone</dt>
+                          <dd className="font-medium">{patient.emergencyContact.phone || "—"}</dd>
+                        </div>
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Not recorded</p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="md:col-span-2">
+                  <CardContent className="p-4">
+                    <p className="text-sm font-medium mb-3">Medical history</p>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Allergies</p>
+                        {(() => {
+                          const filtered = (medicalHistory.allergies ?? []).filter((a) => !/^no known/i.test(a.trim()));
+                          return filtered.length ? (
+                            <ul className="space-y-0.5">
+                              {filtered.map((a, i) => <li key={i} className="text-sm">{a}</li>)}
+                            </ul>
+                          ) : <p className="text-sm text-muted-foreground">None</p>;
+                        })()}
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Conditions</p>
+                        {medicalHistory.conditions?.length ? (
+                          <ul className="space-y-0.5">
+                            {medicalHistory.conditions.map((c, i) => <li key={i} className="text-sm">{c}</li>)}
+                          </ul>
+                        ) : <p className="text-sm text-muted-foreground">None</p>}
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Medications</p>
+                        {medicalHistory.medications?.length ? (
+                          <ul className="space-y-0.5">
+                            {medicalHistory.medications.map((m, i) => <li key={i} className="text-sm">{m}</li>)}
+                          </ul>
+                        ) : <p className="text-sm text-muted-foreground">None</p>}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="labs-imaging" className="mt-0">

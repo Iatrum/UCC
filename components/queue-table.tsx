@@ -80,7 +80,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to update status');
       }
-      router.push(`/patients/${patient.id}/consultation`);
+      router.push(`/patients/${patient.id}`);
       
       toast({
         title: "Starting Consultation",

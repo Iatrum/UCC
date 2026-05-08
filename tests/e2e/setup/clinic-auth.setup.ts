@@ -1,8 +1,8 @@
 /**
  * Clinic authentication setup
  *
- * Logs in to klinikputeri.iatrum.com once and persists the session cookie
- * to tests/e2e/.auth/klinikputeri.json so that all clinic tests can reuse it
+ * Logs in to the demo clinic once and persists the session cookie
+ * to tests/e2e/.auth/demo.json so that all clinic tests can reuse it
  * without paying the login round-trip cost on every test.
  *
  * Run automatically as a dependency of the "clinic" project in playwright.config.ts.
@@ -10,15 +10,15 @@
 
 import { test as setup, expect } from "@playwright/test";
 import path from "path";
-import { KLINIK_PUTERI_URL, KLINIK_PUTERI_EMAIL, KLINIK_PUTERI_PASSWORD } from "../support/env";
+import { DEMO_CLINIC_URL, DEMO_CLINIC_EMAIL, DEMO_CLINIC_PASSWORD } from "../support/env";
 
-const SESSION_FILE = path.join(__dirname, "../.auth/klinikputeri.json");
+const SESSION_FILE = path.join(__dirname, "../.auth/demo.json");
 
-setup("authenticate as Klinik Puteri staff", async ({ page }) => {
-  const response = await page.request.post(`${KLINIK_PUTERI_URL}/api/auth/login`, {
+setup("authenticate as Demo staff", async ({ page }) => {
+  const response = await page.request.post(`${DEMO_CLINIC_URL}/api/auth/login`, {
     data: {
-      email: KLINIK_PUTERI_EMAIL,
-      password: KLINIK_PUTERI_PASSWORD,
+      email: DEMO_CLINIC_EMAIL,
+      password: DEMO_CLINIC_PASSWORD,
     },
     timeout: 30_000,
   });
@@ -27,7 +27,7 @@ setup("authenticate as Klinik Puteri staff", async ({ page }) => {
   await expect
     .poll(
       async () => {
-        const res = await page.request.get(`${KLINIK_PUTERI_URL}/api/auth/me`, {
+        const res = await page.request.get(`${DEMO_CLINIC_URL}/api/auth/me`, {
           headers: {
             Cookie: (await page.context().cookies())
               .map((cookie) => `${cookie.name}=${cookie.value}`)
@@ -40,7 +40,7 @@ setup("authenticate as Klinik Puteri staff", async ({ page }) => {
     )
     .toBe(200);
 
-  await page.goto(`${KLINIK_PUTERI_URL}/dashboard`, {
+  await page.goto(`${DEMO_CLINIC_URL}/dashboard`, {
     waitUntil: "domcontentloaded",
     timeout: 30_000,
   });

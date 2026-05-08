@@ -89,7 +89,7 @@ export default function ReferralLetterButton({ sourceText, patient }: ReferralLe
           }
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Referral Letter Draft</DialogTitle>
             <DialogDescription>
@@ -149,7 +149,7 @@ export default function ReferralLetterButton({ sourceText, patient }: ReferralLe
               className="min-h-[320px]"
               placeholder="Referral letter content"
             />
-            <div className="h-[380px] border rounded-md overflow-hidden">
+            <div className="h-[500px] border rounded-md overflow-hidden">
               {showPreview ? (
                 <PDFViewer className="h-full w-full">
                   <ReferralDocument

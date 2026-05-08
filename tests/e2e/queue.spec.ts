@@ -7,18 +7,18 @@
  *   → Consultation is completed from the queue
  *   → Status advances to Meds & Bills
  *
- * Run as the "clinic" project (klinikputeri.iatrum.com).
+ * Run as the "clinic" project.
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { KLINIK_PUTERI_URL } from "./support/env";
+import { DEMO_CLINIC_URL } from "./support/env";
 
 const RUN_ID = Date.now();
 const PATIENT_NAME = `Queue Test ${RUN_ID}`;
 // Valid Malaysian NRIC format: YYMMDD-SS-NNNN
 // Use a fixed valid DOB (1990-01-01) + state code 14 + unique 4-digit serial
 const PATIENT_NRIC = `900101-14-${String(RUN_ID).slice(-4).padStart(4, "0")}`;
-const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.iatrum.com";
+const CLINIC_URL = DEMO_CLINIC_URL || "https://demo.drhidayat.com";
 
 async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
   const trigger = page.getByRole("combobox").first();

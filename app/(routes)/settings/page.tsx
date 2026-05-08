@@ -13,7 +13,6 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { fetchOrganizationDetails, saveOrganizationDetails } from '@/lib/org';
 import Image from 'next/image';
 import { SmartTextManager } from '@/components/settings/smart-text-manager';
-import { ModuleManager } from '@/components/settings/module-manager';
 import { InsurerManager } from '@/components/settings/insurer-manager';
 
 // Placeholder for user data - replace with actual data fetching/auth context later
@@ -250,18 +249,6 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <SmartTextManager />
-        </CardContent>
-      </Card>
-
-      <Separator />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Feature Modules</CardTitle>
-          <CardDescription>Enable or disable features based on your clinic&apos;s requirements.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ModuleManager />
         </CardContent>
       </Card>
 

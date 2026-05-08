@@ -22,6 +22,7 @@ export interface PatientData {
   id?: string;
   fullName: string;
   nric: string;
+  active?: boolean;
   dateOfBirth: Date | string;
   gender: 'male' | 'female' | 'other';
   email?: string;
@@ -135,6 +136,7 @@ function fhirPatientToPatientData(fhirPatient: FHIRPatient): SavedPatient {
     gender: (fhirPatient.gender as 'male' | 'female' | 'other') || 'other',
     email: emailContact?.value,
     phone: phoneContact?.value || '',
+    active: fhirPatient.active !== false,
     address: fhirPatient.address?.[0]?.text || '',
     postalCode: fhirPatient.address?.[0]?.postalCode,
     emergencyContact: emergencyContact ? {
@@ -493,7 +495,8 @@ export async function savePatientToMedplum(
 export async function getPatientFromMedplum(
   patientId: string,
   clinicId?: string,
-  medplum?: MedplumClient
+  medplum?: MedplumClient,
+  { includeMedicalHistory = true }: { includeMedicalHistory?: boolean } = {}
 ): Promise<SavedPatient | null> {
   try {
     const client = medplum ?? (await getAdminMedplum());
@@ -504,23 +507,16 @@ export async function getPatientFromMedplum(
     }
     const patientData = fhirPatientToPatientData(fhirPatient);
 
-    // Get allergies
-    const allergies = await client.searchResources('AllergyIntolerance', {
-      patient: `Patient/${patientId}`,
-    });
-    patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
-
-    // Get conditions
-    const conditions = await client.searchResources('Condition', {
-      subject: `Patient/${patientId}`,
-    });
-    patientData.medicalHistory!.conditions = conditions.map((c: Condition) => (c as any).code?.text || 'Unknown condition');
-
-    // Get medications
-    const medications = await client.searchResources('MedicationStatement', {
-      subject: `Patient/${patientId}`,
-    });
-    patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
+    if (includeMedicalHistory) {
+      const [allergies, conditions, medications] = await Promise.all([
+        client.searchResources('AllergyIntolerance', { patient: `Patient/${patientId}` }),
+        client.searchResources('Condition', { subject: `Patient/${patientId}` }),
+        client.searchResources('MedicationStatement', { subject: `Patient/${patientId}` }),
+      ]);
+      patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
+      patientData.medicalHistory!.conditions = conditions.map((c: Condition) => (c as any).code?.text || 'Unknown condition');
+      patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
+    }
 
     return patientData;
   } catch (error: any) {
@@ -636,6 +632,7 @@ export async function searchPatientsInMedplum(
     const patients = await getAllPatientsFromMedplum(300, clinicId, medplum);
 
     return patients
+      .filter((patient) => patient.active !== false)
       .filter((patient) => {
         const fullName = patient.fullName?.toLowerCase() ?? '';
         const nric = patient.nric?.toLowerCase() ?? '';
@@ -675,7 +672,8 @@ export async function getAllPatientsFromMedplum(
 
     return patients
       .filter((patient) => matchesClinic(patient as any, clinicId))
-      .map(fhirPatientToPatientData);
+      .map(fhirPatientToPatientData)
+      .filter((patient) => patient.active !== false);
   } catch (error) {
     console.error('Failed to get patients from Medplum:', error);
     return [];
@@ -734,5 +732,9 @@ export async function archivePatientInMedplum(
 ): Promise<void> {
   const existingPatient = await medplum.readResource('Patient', patientId);
   if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
-  await medplum.updateResource({ ...existingPatient, active: false });
+  await medplum.updateResource(addManagingOrganization({
+    ...existingPatient,
+    identifier: addClinicIdentifier(existingPatient.identifier, clinicId),
+    active: false,
+  }, clinicId));
 }

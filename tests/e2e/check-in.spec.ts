@@ -10,13 +10,13 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { KLINIK_PUTERI_URL } from "./support/env";
+import { DEMO_CLINIC_URL } from "./support/env";
 
 const RUN_ID = String(Date.now()).slice(-4).padStart(4, "0");
 const PATIENT_NAME = `CheckIn E2E ${RUN_ID}`;
 // Valid Malaysian NRIC format: YYMMDD-SS-NNNN
 const PATIENT_NRIC = `900101-10-${RUN_ID}`;
-const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.iatrum.com";
+const CLINIC_URL = DEMO_CLINIC_URL || "https://demo.drhidayat.com";
 
 async function selectGender(page: Page, gender: "male" | "female"): Promise<void> {
   const trigger = page.getByRole("combobox").first();
@@ -69,7 +69,7 @@ test.describe("Reception / check-in API", () => {
 
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({
-      storageState: "tests/e2e/.auth/klinikputeri.json",
+      storageState: "tests/e2e/.auth/demo.json",
     });
     const page = await ctx.newPage();
     patient = await createTestPatient(page);

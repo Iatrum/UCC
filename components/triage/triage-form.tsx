@@ -137,9 +137,8 @@ export default function TriageForm({ patient, stayAfterSubmit = false }: TriageF
 
       if (!stayAfterSubmit) {
         if (visitIntent === "otc") {
-          router.push(
-            `/orders?source=registration-otc&patientId=${patient.id}&patientName=${encodeURIComponent(patient.fullName)}`
-          );
+          const { encounterId } = await response.json();
+          router.push(`/orders/checkout/${encounterId}?patientId=${patient.id}`);
         } else {
           router.push("/dashboard");
         }

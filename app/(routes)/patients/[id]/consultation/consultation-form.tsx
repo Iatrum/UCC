@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, FormEvent, KeyboardEvent } from "react";
+import { useState, useEffect, useMemo, useCallback, FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor, type SmartTextParams } from "@/components/ui/rich-text-editor";
 import Link from "next/link";
 import { ArrowLeft, Mic } from "lucide-react";
 import { Prescription, ProcedureRecord } from "@/lib/models";
@@ -242,86 +242,21 @@ export default function ConsultationForm({
     return [...fromPrescriptions, ...fromProcedures];
   }, [initialConsultation?.prescriptions, initialConsultation?.procedures]);
 
-  const handleSmartTextKeyDown = useCallback(
-    (field: string, setter: (value: string) => void) =>
-      async (event: KeyboardEvent<HTMLTextAreaElement>) => {
-        const triggerKeys = new Set([" ", "Enter", "Tab"]);
-        if (!triggerKeys.has(event.key)) {
-          return;
-        }
-
-        const textarea = event.currentTarget;
-        const selectionStart = textarea.selectionStart ?? 0;
-        const selectionEnd = textarea.selectionEnd ?? 0;
-
-        if (selectionStart !== selectionEnd) {
-          return;
-        }
-
-        const currentValue = textarea.value;
-        const preceding = currentValue.slice(0, selectionStart);
-        const match = preceding.match(/(?:^|\s)(\.[a-zA-Z0-9_-]+)$/);
-
-        if (!match) {
-          return;
-        }
-
-        const commandKey = match[1].toLowerCase();
-        const startIndex = selectionStart - commandKey.length;
-
-        if (startIndex < 0) {
-          return;
-        }
-
-        event.preventDefault();
-        const triggerKey = event.key;
-
-        setSmartTextState({
-          field,
-          command: commandKey,
-          status: "loading",
-        });
-
+  const createSmartTextHandler = useCallback(
+    (field: string) =>
+      async ({ commandKey, insertReplacement }: SmartTextParams) => {
+        setSmartTextState({ field, command: commandKey, status: "loading" });
         try {
           const result = await executeSmartTextCommand(commandKey, smartTextContext);
-
           if (!result) {
-            setSmartTextState({
-              field,
-              command: commandKey,
-              status: "error",
-              message: "Unknown smart text command.",
-            });
+            setSmartTextState({ field, command: commandKey, status: "error", message: "Unknown smart text command." });
             return;
           }
-
-          const trailing = triggerKey === "Enter" ? "\n" : triggerKey === " " ? " " : "";
-          const before = currentValue.slice(0, startIndex);
-          const after = currentValue.slice(selectionEnd);
-          const nextValue = `${before}${result.text}${trailing}${after}`;
-
-          setter(nextValue);
-
-          const cursor = before.length + result.text.length + trailing.length;
-          requestAnimationFrame(() => {
-            textarea.selectionStart = cursor;
-            textarea.selectionEnd = cursor;
-          });
-
-          setSmartTextState({
-            field,
-            command: commandKey,
-            status: "success",
-            message: result.meta ?? "Smart text inserted.",
-          });
+          insertReplacement(result.text, "");
+          setSmartTextState({ field, command: commandKey, status: "success", message: result.meta ?? "Smart text inserted." });
         } catch (error) {
           console.error("Smart text insertion failed:", error);
-          setSmartTextState({
-            field,
-            command: commandKey,
-            status: "error",
-            message: "Failed to insert smart text. Try again.",
-          });
+          setSmartTextState({ field, command: commandKey, status: "error", message: "Failed to insert smart text. Try again." });
         }
       },
     [smartTextContext]
@@ -353,7 +288,8 @@ export default function ConsultationForm({
 
     try {
       const stored = localStorage.getItem(key);
-      if (stored && stored.trim() && stored.trim() !== clinicalNotes.trim()) {
+      const currentText = clinicalNotes.replace(/<[^>]*>/g, "").trim();
+      if (stored && stored.trim() && stored.trim() !== currentText) {
         setClinicalNotes(stored);
         toast({
           title: "Transcription imported",
@@ -371,7 +307,8 @@ export default function ConsultationForm({
     if (submitting) return;
 
     // Validate form
-    if (!clinicalNotes.trim() || !diagnosis.trim()) {
+    const stripHtml = (html: string) => html.replace(/<[^>]*>/g, "").trim();
+    if (!stripHtml(clinicalNotes) || !diagnosis.trim()) {
       toast({
         title: "Validation Error",
         description: "Please fill in Chief Complaint and Diagnosis",
@@ -421,10 +358,12 @@ export default function ConsultationForm({
         .filter(Boolean);
       const docRequestLine =
         mcReferralNames.length > 0 ? `Requested documents: ${mcReferralNames.join("; ")}` : "";
-      const notesWithDocuments =
-        additionalNotes.trim() && docRequestLine
-          ? `${additionalNotes.trim()}\n\n${docRequestLine}`
-          : additionalNotes.trim() || docRequestLine;
+      const hasAdditionalNotes = additionalNotes.replace(/<[^>]*>/g, "").trim().length > 0;
+      const notesWithDocuments = hasAdditionalNotes && docRequestLine
+        ? `${additionalNotes}<p>${docRequestLine}</p>`
+        : hasAdditionalNotes
+          ? additionalNotes
+          : docRequestLine;
 
       const consultationData = {
         patientId,
@@ -723,19 +662,19 @@ export default function ConsultationForm({
           {/* Middle: Chief Complaint & Diagnosis (largest column) */}
           <div className="md:col-span-6 space-y-3">
             <div className="space-y-1">
-              <Textarea
+              <RichTextEditor
                 placeholder="Clinical notes"
-                className="min-h-[200px]"
+                minHeight="200px"
                 value={clinicalNotes}
-                onChange={(e) => setClinicalNotes(e.target.value)}
-                onKeyDown={handleSmartTextKeyDown("clinicalNotes", setClinicalNotes)}
+                onChange={setClinicalNotes}
+                onSmartTextCommand={createSmartTextHandler("clinicalNotes")}
               />
               {smartTextMessage("clinicalNotes")}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {SOAP_REWRITE_ENABLED ? (
                 <SoapRewriteButton
-                  sourceText={clinicalNotes}
+                  sourceText={clinicalNotes.replace(/<[^>]*>/g, "")}
                   onInsert={(note) => setClinicalNotes(note)}
                 />
               ) : null}
@@ -748,7 +687,7 @@ export default function ConsultationForm({
                 </Button>
               ) : null}
               <ReferralLetterButton
-                sourceText={[clinicalNotes, diagnosis, additionalNotes].filter(Boolean).join("\n\n")}
+                sourceText={[clinicalNotes, diagnosis, additionalNotes].map((s) => s.replace(/<[^>]*>/g, "")).filter(Boolean).join("\n\n")}
                 patient={patient}
               />
             </div>
@@ -759,22 +698,22 @@ export default function ConsultationForm({
               onChange={(e) => setDiagnosis(e.target.value)}
             />
             <div className="space-y-1">
-              <Textarea
+              <RichTextEditor
                 placeholder="Progress note"
-                className="min-h-[120px]"
+                minHeight="120px"
                 value={progressNote}
-                onChange={(e) => setProgressNote(e.target.value)}
-                onKeyDown={handleSmartTextKeyDown("progressNote", setProgressNote)}
+                onChange={setProgressNote}
+                onSmartTextCommand={createSmartTextHandler("progressNote")}
               />
               {smartTextMessage("progressNote")}
             </div>
             <div className="space-y-1">
-              <Textarea
+              <RichTextEditor
                 placeholder="Additional notes"
-                className="min-h-[160px]"
+                minHeight="160px"
                 value={additionalNotes}
-                onChange={(e) => setAdditionalNotes(e.target.value)}
-                onKeyDown={handleSmartTextKeyDown("additionalNotes", setAdditionalNotes)}
+                onChange={setAdditionalNotes}
+                onSmartTextCommand={createSmartTextHandler("additionalNotes")}
               />
               {smartTextMessage("additionalNotes")}
             </div>

@@ -60,6 +60,21 @@ export async function getReferral(referralId: string): Promise<Referral | null> 
 }
 
 /**
+ * Delete a referral by ID
+ */
+export async function deleteReferral(referralId: string): Promise<void> {
+  const response = await fetch('/api/referrals', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ referralId }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to delete referral');
+  }
+}
+
+/**
  * Get referrals for a patient
  */
 export async function getPatientReferrals(patientId: string): Promise<Referral[]> {
