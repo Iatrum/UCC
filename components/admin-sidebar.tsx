@@ -17,6 +17,7 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  Puzzle,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -32,6 +33,7 @@ export default function AdminSidebar() {
     { name: "Organisations", href: adminPath("/organisation"), icon: Building2 },
     { name: "Branches", href: adminPath("/clinics"), icon: GitBranch },
     { name: "Users", href: adminPath("/users"), icon: Users },
+    { name: "Modules", href: adminPath("/modules"), icon: Puzzle },
     { name: "Settings", href: adminPath("/settings"), icon: Settings },
   ];
 
