@@ -48,7 +48,7 @@ export default async function RootLayout({
     if (parts.length < 3) return true;
     return parts[0] === "www";
   })();
-  const isRootPath = pathname === "/" || pathname === "";
+  const isRootPath = pathname === "/";
   const isMarketingPage = isApexHost && isRootPath && !isAdminContext;
 
   // On a non-apex host (e.g. demo.drhidayat.com) `/` is not the marketing
