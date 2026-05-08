@@ -315,7 +315,11 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
       )
     ).filter(Boolean) as BillableConsultation[];
 
-    return consultations.sort((a, b) => {
+    const uniqueConsultations = Array.from(
+      new Map(consultations.map((consultation) => [consultation.id, consultation])).values()
+    );
+
+    return uniqueConsultations.sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;
       const dateB = b.date ? new Date(b.date).getTime() : 0;
       return dateB - dateA;

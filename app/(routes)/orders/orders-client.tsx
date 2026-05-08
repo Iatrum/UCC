@@ -60,7 +60,7 @@ export default function OrdersClient({ initialConsultations, otcContext, checkou
 
       <Card>
         <CardHeader>
-          <CardTitle>Completed Consultations</CardTitle>
+          <CardTitle>Ready for Billing</CardTitle>
           <CardDescription>Select a patient to open checkout.</CardDescription>
         </CardHeader>
         <CardContent>
