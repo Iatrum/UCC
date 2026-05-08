@@ -19,7 +19,7 @@ export default async function OrdersPage({ searchParams }: Props) {
   const checkout = typeof resolvedParams.checkout === "string" ? resolvedParams.checkout : "";
   const invoiceId = typeof resolvedParams.invoiceId === "string" ? resolvedParams.invoiceId : "";
 
-  const statuses: QueueStatus[] = ['meds_and_bills', 'completed'];
+  const statuses: QueueStatus[] = ['meds_and_bills'];
   const consultations = await getConsultationsWithDetails(statuses);
 
   return (
