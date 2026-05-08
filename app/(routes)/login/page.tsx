@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ function isLocalHost(hostname: string): boolean {
   return hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
 }
 
-export default function Login() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -176,5 +176,13 @@ export default function Login() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function Login() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }
