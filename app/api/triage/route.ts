@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       // non-blocking
     }
 
-    await saveTriageEncounter(patientId, {
+    const encounterId = await saveTriageEncounter(patientId, {
       triageLevel: triageLevel as TriageLevel,
       chiefComplaint,
       vitalSigns: vitalSigns as VitalSigns,
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       triageBy,
     }, medplum, clinicId);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, encounterId });
   } catch (error) {
     return handleRouteError(error, "POST /api/triage");
   }

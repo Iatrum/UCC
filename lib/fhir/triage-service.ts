@@ -382,7 +382,7 @@ export async function saveTriageEncounter(
   triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>,
   medplum: MedplumClient,
   clinicId?: string
-): Promise<void> {
+): Promise<string> {
   const client = medplum;
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
@@ -396,7 +396,7 @@ export async function saveTriageEncounter(
     : false;
   const reusableEncounter = existingStartedToday ? existing : null;
 
-  const queueStatus: QueueStatus = 'waiting';
+  const queueStatus: QueueStatus = triageData.visitIntent === 'otc' ? 'meds_and_bills' : 'waiting';
   const triageAtIso =
     reusableEncounter?.triage?.triageAt?.toString() ||
     reusableEncounter?.queueAddedAt?.toString() ||
@@ -472,6 +472,7 @@ export async function saveTriageEncounter(
 
   await createChiefComplaintObservation(client, encounterId, `Patient/${patientId}`, triagePayload.chiefComplaint);
   await createVitalsObservations(client, encounterId, `Patient/${patientId}`, triagePayload.vitalSigns || {});
+  return encounterId;
 }
 
 export async function checkInPatientInTriage(
