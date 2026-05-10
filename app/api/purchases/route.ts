@@ -224,10 +224,10 @@ export async function PATCH(req: NextRequest) {
       };
       const created = await medplum.createResource(toBasic(newData, clinicId));
 
-      // Link the source document and mark it as converted
+      // Link the source document; only RFQ gets status:'converted' — PO keeps its existing status
       const updatedSource = {
         ...current,
-        status: 'converted',
+        ...(sourceType === 'rfq' ? { status: 'converted' } : {}),
         convertedDocumentIds: [...(current.convertedDocumentIds ?? []), created.id],
       };
       await medplum.updateResource({ ...toBasic(updatedSource, clinicId), id });
