@@ -514,7 +514,7 @@ export async function getPatientFromMedplum(
         client.searchResources('MedicationStatement', { subject: `Patient/${patientId}` }),
       ]);
       patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
-      patientData.medicalHistory!.conditions = conditions.map((c: Condition) => (c as any).code?.text || 'Unknown condition');
+      patientData.medicalHistory!.conditions = conditions.filter((c: Condition) => !(c as any).encounter).map((c: Condition) => (c as any).code?.text || 'Unknown condition');
       patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
     }
 
