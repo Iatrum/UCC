@@ -508,14 +508,17 @@ export async function getPatientFromMedplum(
     const patientData = fhirPatientToPatientData(fhirPatient);
 
     if (includeMedicalHistory) {
-      const [allergies, conditions, medications] = await Promise.all([
+      const [allergies, conditions, medications, recentEncounters] = await Promise.all([
         client.searchResources('AllergyIntolerance', { patient: `Patient/${patientId}` }),
         client.searchResources('Condition', { subject: `Patient/${patientId}` }),
         client.searchResources('MedicationStatement', { subject: `Patient/${patientId}` }),
+        client.searchResources('Encounter', { subject: `Patient/${patientId}`, status: 'finished', _sort: '-date', _count: '1' }),
       ]);
       patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
       patientData.medicalHistory!.conditions = conditions.filter((c: Condition) => !(c as any).encounter).map((c: Condition) => (c as any).code?.text || 'Unknown condition');
       patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
+      const visitDate = (recentEncounters[0] as any)?.period?.start;
+      if (visitDate) patientData.lastVisit = new Date(visitDate);
     }
 
     return patientData;
@@ -663,16 +666,44 @@ export async function getAllPatientsFromMedplum(
 
     // Scope by clinic identifier only; `matchesClinic` still enforces org + identifier.
     // A combined `organization` search param was overly strict for some records and is unnecessary here.
-    const patients = await client.searchResources('Patient', {
-      _count: String(limit),
-      _sort: '-_lastUpdated',
-      active: 'true',
-      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
-    });
+    const [patients, encounters] = await Promise.all([
+      client.searchResources('Patient', {
+        _count: String(limit),
+        _sort: '-_lastUpdated',
+        active: 'true',
+        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+      }),
+      client.searchResources('Encounter', {
+        status: 'finished',
+        _sort: '-date',
+        _count: '500',
+        ...(clinicId ? {
+          identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+          'service-provider': `Organization/${clinicId}`,
+        } : {}),
+      }),
+    ]);
+
+    // Build patientId → most recent visit date (encounters already sorted by -date)
+    const lastVisitByPatientId = new Map<string, Date>();
+    for (const encounter of encounters) {
+      const ref = (encounter as any).subject?.reference as string | undefined;
+      const visitDate = (encounter as any).period?.start as string | undefined;
+      if (!ref || !visitDate) continue;
+      const pid = ref.startsWith('Patient/') ? ref.slice(8) : ref;
+      if (!lastVisitByPatientId.has(pid)) {
+        lastVisitByPatientId.set(pid, new Date(visitDate));
+      }
+    }
 
     return patients
       .filter((patient) => matchesClinic(patient as any, clinicId))
-      .map(fhirPatientToPatientData)
+      .map((patient) => {
+        const data = fhirPatientToPatientData(patient);
+        const lv = lastVisitByPatientId.get(data.id);
+        if (lv) data.lastVisit = lv;
+        return data;
+      })
       .filter((patient) => patient.active !== false);
   } catch (error) {
     console.error('Failed to get patients from Medplum:', error);
