@@ -224,9 +224,10 @@ export async function PATCH(req: NextRequest) {
       };
       const created = await medplum.createResource(toBasic(newData, clinicId));
 
-      // Link the source document
+      // Link the source document and mark it as converted
       const updatedSource = {
         ...current,
+        status: 'converted',
         convertedDocumentIds: [...(current.convertedDocumentIds ?? []), created.id],
       };
       await medplum.updateResource({ ...toBasic(updatedSource, clinicId), id });

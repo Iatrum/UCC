@@ -313,7 +313,7 @@ export function PurchaseOrdersPanel({
                       <TableCell>RM {order.amountDue.toFixed(2)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          {order.documentType === "rfq" ? (
+                          {order.documentType === "rfq" && order.status !== "converted" ? (
                             <Button
                               size="sm"
                               variant="outline"
