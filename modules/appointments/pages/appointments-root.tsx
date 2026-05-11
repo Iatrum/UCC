@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { CalendarDays, List } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import UpcomingAppointmentsTable, { normalizeAppointmentStatus } from "@/modules/appointments/components/upcoming-appointments-table";
+import AppointmentsCalendarView from "@/components/appointments/calendar-view";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
 
@@ -47,6 +49,7 @@ export default function AppointmentsRootPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "calendar">("list");
 
   useEffect(() => {
     let cancelled = false;
@@ -185,17 +188,55 @@ export default function AppointmentsRootPage() {
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Upcoming appointments</h2>
-          <span className="text-sm text-muted-foreground">
-            Showing {upcomingAppointments.length} upcoming
-          </span>
+          <h2 className="text-lg font-semibold">
+            {view === "list" ? "Upcoming appointments" : "Calendar"}
+          </h2>
+          <div className="flex items-center gap-2">
+            {view === "list" && (
+              <span className="text-sm text-muted-foreground">
+                Showing {upcomingAppointments.length} upcoming
+              </span>
+            )}
+            <div className="flex overflow-hidden rounded-md border border-input">
+              <button
+                type="button"
+                onClick={() => setView("list")}
+                className={[
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors",
+                  view === "list"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted",
+                ].join(" ")}
+              >
+                <List className="h-3.5 w-3.5" />
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("calendar")}
+                className={[
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors",
+                  view === "calendar"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted",
+                ].join(" ")}
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                Calendar
+              </button>
+            </div>
+          </div>
         </div>
 
-        <UpcomingAppointmentsTable
-          appointments={upcomingAppointments}
-          loading={loading}
-          onRefresh={loadAppointments}
-        />
+        {view === "list" ? (
+          <UpcomingAppointmentsTable
+            appointments={upcomingAppointments}
+            loading={loading}
+            onRefresh={loadAppointments}
+          />
+        ) : (
+          <AppointmentsCalendarView appointments={appointments} />
+        )}
       </section>
     </div>
   );

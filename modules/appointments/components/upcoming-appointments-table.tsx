@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useToast } from "@/components/ui/use-toast";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
 
@@ -87,7 +90,38 @@ interface Props {
   onRefresh?: () => void | Promise<void>;
 }
 
-export default function UpcomingAppointmentsTable({ appointments, loading }: Props) {
+export default function UpcomingAppointmentsTable({ appointments, loading, onRefresh }: Props) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [checkingIn, setCheckingIn] = useState<string | null>(null);
+
+  async function handleCheckIn(appointment: UpcomingAppointment) {
+    if (!appointment.id || !appointment.patientId) return;
+    setCheckingIn(appointment.id);
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointmentId: appointment.id, status: "arrived" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update appointment");
+      }
+      toast({ title: "Checked in", description: `${appointment.patientName} has been checked in.` });
+      await onRefresh?.();
+      router.push(`/patients/${appointment.patientId}/check-in`);
+    } catch (err) {
+      toast({
+        title: "Check-in failed",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setCheckingIn(null);
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -147,15 +181,14 @@ export default function UpcomingAppointmentsTable({ appointments, loading }: Pro
                 </TableCell>
                 <TableCell className="w-px whitespace-nowrap">
                   <div className="flex justify-end gap-2">
-                    {canCheckIn ? (
-                      <Button size="sm" variant="outline" asChild>
-                        <Link href={`/patients/${appointment.patientId}/check-in`}>Check-in</Link>
-                      </Button>
-                    ) : (
-                      <Button size="sm" variant="outline" disabled>
-                        Check-in
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canCheckIn || checkingIn === appointment.id}
+                      onClick={() => handleCheckIn(appointment)}
+                    >
+                      {checkingIn === appointment.id ? "Checking in…" : "Check-in"}
+                    </Button>
                     <Button size="sm" variant="secondary" asChild>
                       <Link href={`/appointments/${appointment.id}`}>View</Link>
                     </Button>
