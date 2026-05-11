@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Table,
@@ -68,6 +68,10 @@ const emptyTreatmentSummary: TreatmentPlanSummary = {
 };
 const emptyTreatmentEntries: TreatmentPlanEntry[] = [];
 const emptyPackages: [] = [];
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, "").trim();
+}
 
 export default function PatientProfileWorkspace({
   patientId,
@@ -198,7 +202,7 @@ export default function PatientProfileWorkspace({
     event.preventDefault();
     if (consultSubmitting) return;
 
-    if (!clinicalNotes.trim() || !diagnosis.trim()) {
+    if (!stripHtml(clinicalNotes) || !diagnosis.trim()) {
       toast({
         title: "Validation Error",
         description: "Please fill in clinical notes and diagnosis before signing.",
@@ -214,7 +218,7 @@ export default function PatientProfileWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patientId,
-          chiefComplaint: clinicalNotes.trim(),
+          chiefComplaint: clinicalNotes,
           diagnosis: diagnosis.trim(),
         }),
       });
@@ -570,11 +574,11 @@ export default function PatientProfileWorkspace({
                 {drawerMode === "consult" && (
                   <form onSubmit={handleConsultSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-                      <Textarea
+                      <RichTextEditor
                         placeholder="Clinical notes"
-                        className="min-h-[360px]"
+                        minHeight="360px"
                         value={clinicalNotes}
-                        onChange={(event) => setClinicalNotes(event.target.value)}
+                        onChange={setClinicalNotes}
                       />
                       <Input
                         placeholder="Condition (diagnosis)"

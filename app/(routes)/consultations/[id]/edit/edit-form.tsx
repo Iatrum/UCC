@@ -28,6 +28,10 @@ interface EditConsultationFormProps {
   patient: SerializedPatient;
 }
 
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, "").trim();
+}
+
 export default function EditConsultationForm({
   consultationId,
   patientId,
@@ -69,6 +73,15 @@ export default function EditConsultationForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!stripHtml(clinicalNotes)) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in clinical notes before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setSubmitting(true);
       // Clinical notes are stored as chiefComplaint in FHIR per this app's data model
