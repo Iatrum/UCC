@@ -224,12 +224,12 @@ export function BillDocument({ data, organization }: BillDocumentProps) {
           </View>
         </View>
 
-        {/* Procedures */}
+        {/* Services and documents */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Procedures</Text>
+          <Text style={styles.sectionTitle}>Services & Documents</Text>
           <View style={styles.table}>
             <View style={styles.tableHeader}>
-              <Text style={styles.tableCellWide}>Procedure</Text>
+              <Text style={styles.tableCellWide}>Item</Text>
               <Text style={styles.tableCellWide}>Description</Text>
               <Text style={styles.tableCell}>Price</Text>
             </View>
@@ -250,7 +250,7 @@ export function BillDocument({ data, organization }: BillDocumentProps) {
             <Text style={styles.totalValue}>${prescriptionTotal.toFixed(2)}</Text>
           </View>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Procedures Subtotal</Text>
+            <Text style={styles.totalLabel}>Services & Documents Subtotal</Text>
             <Text style={styles.totalValue}>${procedureTotal.toFixed(2)}</Text>
           </View>
           <View style={[styles.totalRow, { marginTop: 12 }]}>

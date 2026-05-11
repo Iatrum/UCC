@@ -75,6 +75,28 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").trim();
 }
 
+function patientFacingProcedureNote(value: string | undefined, category?: string) {
+  const text = value?.trim() || "";
+  if (!text) return "";
+
+  if (category === "documents" && text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text) as { kind?: string };
+      if (parsed.kind === "referral" || parsed.kind === "mc") {
+        return "";
+      }
+    } catch {
+      return "";
+    }
+  }
+
+  return text;
+}
+
+function isDocumentProcedure(procedure: ProcedureRecord) {
+  return procedure.category === "documents";
+}
+
 function consultationVisitKey(consultation: ProfileConsultation): string {
   const dateKey = consultation.date ? consultation.date.slice(0, 10) : "";
   return [
@@ -628,16 +650,27 @@ export default function PatientProfileWorkspace({
                                         </ul>
                                       </div>
                                     )}
-                                    {consultation.procedures && consultation.procedures.length > 0 && (
+                                    {consultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
                                       <div>
-                                        <p className="mb-2 text-sm font-medium">Procedures</p>
+                                        <p className="mb-2 text-sm font-medium">Services</p>
                                         <ul className="space-y-1">
-                                          {consultation.procedures.map((proc, i) => (
-                                            <li key={i} className="text-sm text-muted-foreground">
-                                              {proc.name}
-                                              {proc.notes ? ` — ${proc.notes}` : ""}
-                                            </li>
-                                          ))}
+                                          {consultation.procedures
+                                            .filter((proc) => !isDocumentProcedure(proc))
+                                            .map((proc, i) => (
+                                              <ProcedureListItem key={i} procedure={proc} />
+                                            ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {consultation.procedures?.some(isDocumentProcedure) && (
+                                      <div>
+                                        <p className="mb-2 text-sm font-medium">Documents</p>
+                                        <ul className="space-y-1">
+                                          {consultation.procedures
+                                            .filter(isDocumentProcedure)
+                                            .map((proc, i) => (
+                                              <ProcedureListItem key={i} procedure={proc} />
+                                            ))}
                                         </ul>
                                       </div>
                                     )}
@@ -739,5 +772,16 @@ export default function PatientProfileWorkspace({
       </Tabs>
 
     </>
+  );
+}
+
+function ProcedureListItem({ procedure }: { procedure: ProcedureRecord }) {
+  const note = patientFacingProcedureNote(procedure.notes, procedure.category);
+
+  return (
+    <li className="text-sm text-muted-foreground">
+      {procedure.name}
+      {note ? ` — ${note}` : ""}
+    </li>
   );
 }

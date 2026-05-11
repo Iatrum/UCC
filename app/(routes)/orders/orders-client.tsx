@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import Link from "next/link";
 import { BillableConsultation } from '@/lib/types';
 import BillingTable from "@/components/billing/billing-table";
+import { useToast } from "@/components/ui/use-toast";
 
 interface OrdersClientProps {
   initialConsultations: BillableConsultation[];
@@ -19,11 +20,29 @@ interface OrdersClientProps {
 }
 
 export default function OrdersClient({ initialConsultations, otcContext, checkoutComplete }: OrdersClientProps) {
+  const { toast } = useToast();
+  const checkoutToastShown = useRef(false);
   const [consultations, setConsultations] = useState<BillableConsultation[]>(initialConsultations);
 
   useEffect(() => {
     setConsultations(initialConsultations);
   }, [initialConsultations]);
+
+  useEffect(() => {
+    if (!checkoutComplete || checkoutToastShown.current) return;
+
+    checkoutToastShown.current = true;
+    toast({
+      title: "Checkout completed",
+      description: `Invoice ${checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record"} was saved.`,
+    });
+
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("checkout");
+    cleanUrl.searchParams.delete("invoiceId");
+    cleanUrl.searchParams.delete("invoiceNumber");
+    window.history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+  }, [checkoutComplete, toast]);
 
   useEffect(() => {
     let active = true;
@@ -65,19 +84,6 @@ export default function OrdersClient({ initialConsultations, otcContext, checkou
                 Open patient profile
               </Link>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {checkoutComplete ? (
-        <Card className="border-emerald-500/30 bg-emerald-500/10">
-          <CardContent className="pt-6">
-            <p className="text-sm font-medium text-emerald-900 dark:text-emerald-200">
-              Checkout completed
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Invoice {checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record"} was saved and the visit was marked completed.
-            </p>
           </CardContent>
         </Card>
       ) : null}
