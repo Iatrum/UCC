@@ -33,7 +33,7 @@ export async function loginToMedplumUi(
 // ── Clinic EMR login (subdomain) ─────────────────────────────────────────────
 
 /**
- * Log in to the clinic EMR app (e.g. klinikputeri.iatrum.com).
+ * Log in to the clinic EMR app.
  * After success the page lands on /dashboard.
  */
 export async function loginToClinicEMR(

@@ -1,5 +1,14 @@
 export const dynamic = 'force-dynamic';
 
+function decodeHtml(html: string): string {
+  return html
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'");
+}
+
 import { redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -8,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
+import { formatPrescriptionLine } from '@/lib/prescriptions';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -72,14 +82,14 @@ export default async function ConsultationDetails({ params }: Props) {
               {/* Chief Complaint / SOAP Note */}
               <div>
                 <h3 className="font-medium mb-2">Chief Complaint / Clinical Notes</h3>
-                <p className="whitespace-pre-wrap text-sm">{consultation.chiefComplaint || '—'}</p>
+                <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: decodeHtml(consultation.chiefComplaint || '—') }} />
               </div>
 
               {/* Progress Note (AI-generated SOAP) */}
               {consultation.progressNote && (
                 <div>
                   <h3 className="font-medium mb-2">Progress Note (SOAP)</h3>
-                  <p className="whitespace-pre-wrap text-sm">{consultation.progressNote}</p>
+                  <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: decodeHtml(consultation.progressNote) }} />
                 </div>
               )}
 
@@ -93,7 +103,7 @@ export default async function ConsultationDetails({ params }: Props) {
               {consultation.notes && (
                 <div>
                   <h3 className="font-medium mb-2">Additional Notes</h3>
-                  <p className="whitespace-pre-wrap text-sm">{consultation.notes}</p>
+                  <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
                 </div>
               )}
 
@@ -119,9 +129,7 @@ export default async function ConsultationDetails({ params }: Props) {
                   <ul className="space-y-1 text-sm">
                     {consultation.prescriptions.map((prescription, index) => (
                       <li key={index}>
-                        {prescription.medication.name}{' '}
-                        {prescription.frequency}{' '}
-                        {prescription.duration}
+                        {formatPrescriptionLine(prescription)}
                       </li>
                     ))}
                   </ul>

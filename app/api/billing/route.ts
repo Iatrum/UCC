@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   completeCheckoutInvoice,
+  generateInvoiceNumber,
+  getInvoiceNumber,
   getInvoice,
   getPatientInvoices,
   getConsultationInvoice,
@@ -58,9 +60,14 @@ export async function POST(req: NextRequest) {
       paymentMethod: body.paymentMethod,
       paidAmount: body.paidAmount,
       totalAmount: body.totalAmount,
+      invoiceNumber: body.invoiceNumber,
     });
 
-    return NextResponse.json({ success: true, invoiceId: invoice.id });
+    return NextResponse.json({
+      success: true,
+      invoiceId: invoice.id,
+      invoiceNumber: getInvoiceNumber(invoice),
+    });
   } catch (error) {
     if (error instanceof Error && /required|Invalid|must|match|Full payment/.test(error.message)) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
@@ -81,13 +88,16 @@ export async function GET(req: NextRequest) {
     if (invoiceId) {
       const invoice = await getInvoice(medplum, invoiceId);
       if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
-      return NextResponse.json({ success: true, invoice });
+      return NextResponse.json({ success: true, invoice, invoiceNumber: getInvoiceNumber(invoice) });
     }
 
     if (consultationId) {
       const invoice = await getConsultationInvoice(medplum, consultationId);
+      if (!invoice && searchParams.get("previewNumber") === "true") {
+        return NextResponse.json({ success: true, invoice: null, invoiceNumber: await generateInvoiceNumber(medplum) });
+      }
       if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
-      return NextResponse.json({ success: true, invoice });
+      return NextResponse.json({ success: true, invoice, invoiceNumber: getInvoiceNumber(invoice) });
     }
 
     if (patientId) {

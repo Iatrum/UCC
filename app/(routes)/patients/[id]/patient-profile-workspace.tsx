@@ -1,13 +1,13 @@
 "use client";
 
-import { FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Table,
@@ -17,21 +17,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { OrderComposer } from "@/components/orders/order-composer";
+import { OrderComposer, buildSignedDocumentNote } from "@/components/orders/order-composer";
 import PatientDocuments from "@/components/patients/patient-documents";
 import { LabResultsView } from "@/components/labs/lab-results-view";
 import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
+import { formatPrescriptionLine } from "@/lib/prescriptions";
 import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-constants";
 import { IMAGING_PROCEDURES, type ImagingProcedureCode } from "@/lib/fhir/imaging-service";
 import { cn, formatDisplayDate } from "@/lib/utils";
 import type { Prescription, ProcedureRecord } from "@/lib/models";
 import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
+import type { QueueStatus } from "@/lib/types";
 import ReferralMCSection from "./referral-mc-section";
 
-type ProfileTab = "history" | "labs-imaging" | "referral-mc" | "documents";
+type ProfileTab = "history" | "labs-imaging" | "documents";
 type DrawerMode = "consult" | "treatment";
 
 type MedicalHistory = {
@@ -69,6 +71,66 @@ const emptyTreatmentSummary: TreatmentPlanSummary = {
 const emptyTreatmentEntries: TreatmentPlanEntry[] = [];
 const emptyPackages: [] = [];
 
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, "").trim();
+}
+
+function patientFacingProcedureNote(value: string | undefined, category?: string) {
+  const text = value?.trim() || "";
+  if (!text) return "";
+
+  if (category === "documents" && text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text) as { kind?: string };
+      if (parsed.kind === "referral" || parsed.kind === "mc") {
+        return "";
+      }
+    } catch {
+      return "";
+    }
+  }
+
+  return text;
+}
+
+function isDocumentProcedure(procedure: ProcedureRecord) {
+  return procedure.category === "documents";
+}
+
+function consultationVisitKey(consultation: ProfileConsultation): string {
+  const dateKey = consultation.date ? consultation.date.slice(0, 10) : "";
+  return [
+    dateKey,
+    stripHtml(consultation.chiefComplaint).toLowerCase(),
+    consultation.diagnosis.trim().toLowerCase(),
+  ].join("|");
+}
+
+function mergeByVisit(consultations: ProfileConsultation[]): ProfileConsultation[] {
+  const visits = new Map<string, ProfileConsultation>();
+
+  for (const consultation of consultations) {
+    const key = consultationVisitKey(consultation);
+    const existing = visits.get(key);
+
+    if (!existing) {
+      visits.set(key, {
+        ...consultation,
+        procedures: [...(consultation.procedures || [])],
+        prescriptions: [...(consultation.prescriptions || [])],
+      });
+      continue;
+    }
+
+    existing.procedures = [...(existing.procedures || []), ...(consultation.procedures || [])];
+    existing.prescriptions = [...(existing.prescriptions || []), ...(consultation.prescriptions || [])];
+    existing.notes = existing.notes || consultation.notes;
+    existing.progressNote = existing.progressNote || consultation.progressNote;
+  }
+
+  return Array.from(visits.values());
+}
+
 export default function PatientProfileWorkspace({
   patientId,
   patient,
@@ -88,6 +150,7 @@ export default function PatientProfileWorkspace({
   const [treatmentSubmitting, setTreatmentSubmitting] = useState(false);
   const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>(patient.queueStatus ?? null);
   const [procedureOptions, setProcedureOptions] = useState<
     { id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string }[]
   >([]);
@@ -127,11 +190,25 @@ export default function PatientProfileWorkspace({
     };
   }, []);
 
+  useEffect(() => {
+    if (queueStatus !== "arrived" && queueStatus !== "waiting") return;
+
+    void updateQueueStatus("in_consultation").catch((error) => {
+      toast({
+        title: "Queue Status Not Updated",
+        description: error instanceof Error ? error.message : "Failed to mark patient as in consultation.",
+        variant: "destructive",
+      });
+    });
+  }, [queueStatus]);
+
+  const visibleConsultations = useMemo(() => mergeByVisit(consultations), [consultations]);
+
   const latestConsultation = useMemo(() => {
-    return [...consultations]
+    return [...visibleConsultations]
       .filter((consultation) => consultation.chiefComplaint && consultation.diagnosis)
       .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
-  }, [consultations]);
+  }, [visibleConsultations]);
 
   const treatmentItemsCatalog = useMemo(
     () =>
@@ -194,11 +271,34 @@ export default function PatientProfileWorkspace({
     setActiveTab(value as ProfileTab);
   }
 
+  async function updateQueueStatus(status: Exclude<QueueStatus, null>) {
+    const response = await fetch("/api/queue", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patientId, status }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Failed to update queue status");
+    }
+    setQueueStatus(status);
+  }
+
+  function openConsultPanel() {
+    if (drawerMode === "consult" && panelOpen) {
+      setPanelOpen(false);
+      return;
+    }
+
+    setDrawerMode("consult");
+    setPanelOpen(true);
+  }
+
   async function handleConsultSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (consultSubmitting) return;
 
-    if (!clinicalNotes.trim() || !diagnosis.trim()) {
+    if (!stripHtml(clinicalNotes) || !diagnosis.trim()) {
       toast({
         title: "Validation Error",
         description: "Please fill in clinical notes and diagnosis before signing.",
@@ -214,7 +314,7 @@ export default function PatientProfileWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patientId,
-          chiefComplaint: clinicalNotes.trim(),
+          chiefComplaint: clinicalNotes,
           diagnosis: diagnosis.trim(),
         }),
       });
@@ -223,10 +323,46 @@ export default function PatientProfileWorkspace({
         throw new Error(data?.error || "Failed to save consultation");
       }
 
+      const signedConsultationId = typeof data.consultationId === "string" ? data.consultationId : "";
+      if (signedConsultationId && treatmentEntries.length > 0) {
+        try {
+          const targetDraftId = `profile-treatment-${patientId}-${signedConsultationId}`;
+          for (const entry of treatmentEntries) {
+            const draftResponse = await fetch("/api/consultations/plan", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                draftId: targetDraftId,
+                patientId,
+                consultationId: signedConsultationId,
+                entry,
+              }),
+            });
+            const draftData = await draftResponse.json().catch(() => ({}));
+            if (!draftResponse.ok || !draftData?.success) {
+              throw new Error(draftData?.error || "Failed to move treatment draft to signed consult.");
+            }
+          }
+        } catch (draftError) {
+          console.error("Failed to move treatment draft after consult sign:", draftError);
+          toast({
+            title: "Treatment Draft Not Moved",
+            description:
+              draftError instanceof Error
+                ? draftError.message
+                : "The consult was signed, but the existing treatment draft may need to be re-added.",
+            variant: "destructive",
+          });
+        }
+      }
+
       toast({
         title: "Consult Signed",
         description: "Clinical notes and diagnosis were saved.",
       });
+      if (queueStatus && queueStatus !== "completed") {
+        setQueueStatus("meds_and_bills");
+      }
       setClinicalNotes("");
       setDiagnosis("");
       setPanelOpen(false);
@@ -255,6 +391,15 @@ export default function PatientProfileWorkspace({
       return;
     }
 
+    if (!latestConsultation.id) {
+      toast({
+        title: "Consult Missing ID",
+        description: "Refresh the patient profile and try signing treatment again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (treatmentEntries.length === 0) {
       toast({
         title: "No Treatment Added",
@@ -264,9 +409,12 @@ export default function PatientProfileWorkspace({
       return;
     }
 
-    const medicationEntries = treatmentEntries.filter((entry) => entry.tab === "items");
-    const serviceEntries = treatmentEntries.filter((entry) => entry.tab === "services" || entry.tab === "packages");
-    const documentEntries = treatmentEntries.filter((entry) => entry.tab === "documents");
+    const orderedTreatmentEntries = [...treatmentEntries]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((entry, orderIndex) => ({ ...entry, orderIndex }));
+    const medicationEntries = orderedTreatmentEntries.filter((entry) => entry.tab === "items");
+    const serviceEntries = orderedTreatmentEntries.filter((entry) => entry.tab === "services" || entry.tab === "packages");
+    const documentEntries = orderedTreatmentEntries.filter((entry) => entry.tab === "documents");
     const prescriptions: Prescription[] = medicationEntries.map((entry) => ({
       medication: {
         id: entry.catalogRef || entry.id,
@@ -275,12 +423,19 @@ export default function PatientProfileWorkspace({
       },
       frequency: entry.frequency || "",
       duration: entry.duration || "",
+      quantity: entry.quantity,
+      orderIndex: entry.orderIndex,
+      category: "items",
       price: entry.unitPrice,
     }));
-    const procedures: ProcedureRecord[] = serviceEntries.map((entry) => ({
+    const billableProcedureEntries = [...serviceEntries, ...documentEntries];
+    const procedures: ProcedureRecord[] = billableProcedureEntries.map((entry) => ({
       name: entry.name,
+      quantity: entry.quantity,
+      orderIndex: entry.orderIndex,
+      category: entry.tab,
       price: entry.unitPrice,
-      notes: entry.instruction,
+      notes: entry.tab === "documents" ? buildSignedDocumentNote(entry) : entry.instruction,
       procedureId: entry.catalogRef,
     }));
     const labSelections = documentEntries
@@ -292,35 +447,23 @@ export default function PatientProfileWorkspace({
       .map((entry) => entry.meta?.code as ImagingProcedureCode)
       .filter(Boolean);
 
-    const baseTreatmentNotes = `Treatment visit based on consultation from ${formatDisplayDate(latestConsultation.date)}.`;
-    const mcReferralNames = documentEntries
-      .filter((entry) => entry.meta?.kind === "mc" || entry.meta?.kind === "referral")
-      .map((entry) => entry.name.trim())
-      .filter(Boolean);
-    const treatmentNotes =
-      mcReferralNames.length > 0
-        ? `${baseTreatmentNotes}\n\nRequested documents: ${mcReferralNames.join("; ")}`
-        : baseTreatmentNotes;
-
     try {
       setTreatmentSubmitting(true);
-      const response = await fetch("/api/consultations", {
+      const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientId,
-          chiefComplaint: latestConsultation.chiefComplaint,
-          diagnosis: latestConsultation.diagnosis,
-          notes: treatmentNotes,
+          consultationId: latestConsultation.id,
           procedures,
           prescriptions,
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success || !data?.consultationId) {
+      if (!response.ok || !data?.success) {
         throw new Error(data?.error || "Failed to save treatment");
       }
 
+      const consultationId = latestConsultation.id;
       const orderErrors: string[] = [];
       if (labSelections.length) {
         try {
@@ -329,7 +472,7 @@ export default function PatientProfileWorkspace({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               patientId,
-              encounterId: data.consultationId,
+              encounterId: consultationId,
               tests: labSelections,
               priority: "routine",
               clinicalNotes: latestConsultation.chiefComplaint,
@@ -352,7 +495,7 @@ export default function PatientProfileWorkspace({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               patientId,
-              encounterId: data.consultationId,
+              encounterId: consultationId,
               procedures: imagingSelections,
               priority: "routine",
               clinicalIndication: latestConsultation.diagnosis || latestConsultation.chiefComplaint,
@@ -393,47 +536,40 @@ export default function PatientProfileWorkspace({
   return (
     <>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-3">
-        {/* Header: mirrors the content row layout so right tabs align with panel */}
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <TabsList className="w-auto">
-              <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
-              <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
-              <TabsTrigger value="referral-mc" className="px-3 text-xs">Referral / MC</TabsTrigger>
-              <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
-            </TabsList>
-          </div>
-          <div className={cn(panelOpen ? "w-[480px] shrink-0" : "w-auto shrink-0")}>
-            <Tabs value={panelOpen ? drawerMode : ""}>
-              <TabsList>
-                <TabsTrigger
-                  value="consult"
-                  className="px-3 text-xs"
-                  onClick={() => {
-                    if (drawerMode === "consult" && panelOpen) setPanelOpen(false);
-                    else { setDrawerMode("consult"); setPanelOpen(true); }
-                  }}
-                >Consult</TabsTrigger>
-                <TabsTrigger
-                  value="treatment"
-                  className="px-3 text-xs"
-                  onClick={() => {
-                    if (drawerMode === "treatment" && panelOpen) setPanelOpen(false);
-                    else { setDrawerMode("treatment"); setPanelOpen(true); }
-                  }}
-                >Treatment</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
+        <TabsList className="w-auto">
+          <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
+          <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
+          <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
+        </TabsList>
 
-        {/* Content row: main tab content + action panel side by side (items-start avoids stretching panel to left tab height) */}
+        {/* Content row: main tab content + action panel side by side */}
         <div className="flex min-w-0 items-start gap-4">
           <div className="min-w-0 flex-1">
             <TabsContent value="history" className="mt-0">
+              <div className="flex justify-end mb-3">
+                <Tabs value={panelOpen ? drawerMode : ""}>
+                  <TabsList>
+                    <TabsTrigger
+                      value="consult"
+                      className="px-3 text-xs"
+                      onClick={() => {
+                        openConsultPanel();
+                      }}
+                    >Consult</TabsTrigger>
+                    <TabsTrigger
+                      value="treatment"
+                      className="px-3 text-xs"
+                      onClick={() => {
+                        if (drawerMode === "treatment" && panelOpen) setPanelOpen(false);
+                        else { setDrawerMode("treatment"); setPanelOpen(true); }
+                      }}
+                    >Treatment</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
               <Card>
                 <CardContent>
-                  {consultations.length > 0 ? (
+                  {visibleConsultations.length > 0 ? (
                     <>
                       <Table>
                       <TableHeader>
@@ -447,97 +583,112 @@ export default function PatientProfileWorkspace({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {consultations.map((consultation) => (
-                          <TableRow
-                            key={consultation.id}
-                            data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
-                            aria-selected={selectedConsultation?.id === consultation.id}
-                            className={cn(
-                              "cursor-pointer",
-                              selectedConsultation?.id === consultation.id && "bg-muted/50"
+                        {visibleConsultations.map((consultation) => (
+                          <Fragment key={consultation.id}>
+                            <TableRow
+                              data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
+                              aria-selected={selectedConsultation?.id === consultation.id}
+                              className={cn(
+                                "cursor-pointer",
+                                selectedConsultation?.id === consultation.id && "bg-muted/50"
+                              )}
+                              onClick={() => {
+                                setSelectedConsultation((current) =>
+                                  current?.id === consultation.id ? null : consultation
+                                );
+                              }}
+                            >
+                              <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
+                              <TableCell>Consultation</TableCell>
+                              <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint?.replace(/<[^>]*>/g, "") || "—"}</TableCell>
+                              <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
+                              <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                  <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/consultations/${consultation.id}`}>View</Link>
+                                  </Button>
+                                  <Button size="sm" asChild>
+                                    <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {selectedConsultation?.id === consultation.id && (
+                              <TableRow className="hover:bg-transparent">
+                                <TableCell colSpan={6} className="bg-muted/30 px-6 pb-5 pt-3">
+                                  <div className="space-y-4">
+                                    <div>
+                                      <p className="mb-1 text-sm font-medium">Clinical Notes</p>
+                                      <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
+                                    </div>
+                                    <div>
+                                      <p className="mb-1 text-sm font-medium">Diagnosis</p>
+                                      <p className="text-sm text-muted-foreground">{consultation.diagnosis || "—"}</p>
+                                    </div>
+                                    {consultation.notes && (
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Notes</p>
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
+                                      </div>
+                                    )}
+                                    {consultation.progressNote && (
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Progress Note</p>
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
+                                      </div>
+                                    )}
+                                    {consultation.prescriptions && consultation.prescriptions.length > 0 && (
+                                      <div>
+                                        <p className="mb-2 text-sm font-medium">Prescriptions</p>
+                                        <ul className="space-y-1">
+                                          {consultation.prescriptions.map((rx, i) => (
+                                            <li key={i} className="text-sm text-muted-foreground">
+                                              {formatPrescriptionLine(rx)}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {consultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
+                                      <div>
+                                        <p className="mb-2 text-sm font-medium">Services</p>
+                                        <ul className="space-y-1">
+                                          {consultation.procedures
+                                            .filter((proc) => !isDocumentProcedure(proc))
+                                            .map((proc, i) => (
+                                              <ProcedureListItem key={i} procedure={proc} />
+                                            ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {consultation.procedures?.some(isDocumentProcedure) && (
+                                      <div>
+                                        <p className="mb-2 text-sm font-medium">Documents</p>
+                                        <ul className="space-y-1">
+                                          {consultation.procedures
+                                            .filter(isDocumentProcedure)
+                                            .map((proc, i) => (
+                                              <ProcedureListItem key={i} procedure={proc} />
+                                            ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {consultation.id && (
+                                      <div className="flex flex-wrap gap-2 border-t pt-3">
+                                        <Button variant="outline" size="sm" asChild>
+                                          <Link href={`/consultations/${consultation.id}`}>Open full</Link>
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
                             )}
-                            onClick={() => {
-                              setSelectedConsultation((current) =>
-                                current?.id === consultation.id ? null : consultation
-                              );
-                            }}
-                          >
-                            <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
-                            <TableCell>Consultation</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint}</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
-                            <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                <Button variant="outline" size="sm" asChild>
-                                  <Link href={`/consultations/${consultation.id}`}>View</Link>
-                                </Button>
-                                <Button size="sm" asChild>
-                                  <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>
-                    {selectedConsultation && (
-                      <div className="mt-6 space-y-5 border-t pt-6">
-                        <div>
-                          <h3 className="text-lg font-semibold leading-tight">
-                            {formatDisplayDate(selectedConsultation.date)}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">{selectedConsultation.chiefComplaint}</p>
-                        </div>
-                        <div>
-                          <p className="mb-1 text-sm font-medium">Diagnosis</p>
-                          <p className="text-sm text-muted-foreground">{selectedConsultation.diagnosis || "—"}</p>
-                        </div>
-                        {selectedConsultation.notes && (
-                          <div>
-                            <p className="mb-1 text-sm font-medium">Notes</p>
-                            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{selectedConsultation.notes}</p>
-                          </div>
-                        )}
-                        {selectedConsultation.progressNote && (
-                          <div>
-                            <p className="mb-1 text-sm font-medium">Progress Note</p>
-                            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{selectedConsultation.progressNote}</p>
-                          </div>
-                        )}
-                        {selectedConsultation.prescriptions && selectedConsultation.prescriptions.length > 0 && (
-                          <div>
-                            <p className="mb-2 text-sm font-medium">Prescriptions</p>
-                            <ul className="space-y-1">
-                              {selectedConsultation.prescriptions.map((rx, i) => (
-                                <li key={i} className="text-sm text-muted-foreground">
-                                  {rx.medication?.name} — {rx.frequency}, {rx.duration}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {selectedConsultation.procedures && selectedConsultation.procedures.length > 0 && (
-                          <div>
-                            <p className="mb-2 text-sm font-medium">Procedures</p>
-                            <ul className="space-y-1">
-                              {selectedConsultation.procedures.map((proc, i) => (
-                                <li key={i} className="text-sm text-muted-foreground">
-                                  {proc.name}{proc.notes ? ` — ${proc.notes}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {selectedConsultation.id && (
-                          <div className="flex flex-wrap gap-2 border-t pt-4">
-                            <Button variant="outline" size="sm" asChild>
-                              <Link href={`/consultations/${selectedConsultation.id}`}>Open full</Link>
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    )}
                     </>
                   ) : (
                     <p className="text-muted-foreground">No consultation history found.</p>
@@ -546,6 +697,7 @@ export default function PatientProfileWorkspace({
               </Card>
             </TabsContent>
 
+
             <TabsContent value="labs-imaging" className="mt-0">
               <div className="grid gap-4 lg:grid-cols-2">
                 <LabResultsView patientId={patientId} />
@@ -553,14 +705,13 @@ export default function PatientProfileWorkspace({
               </div>
             </TabsContent>
 
-            <TabsContent value="referral-mc" className="mt-0">
-              <Suspense fallback={<div>Loading form...</div>}>
-                <ReferralMCSection patient={patient} />
-              </Suspense>
-            </TabsContent>
-
             <TabsContent value="documents" className="mt-0">
-              <PatientDocuments patientId={patientId} />
+              <div className="grid gap-4">
+                <Suspense fallback={<div>Loading documents...</div>}>
+                  <ReferralMCSection patient={patient} consultations={visibleConsultations} />
+                </Suspense>
+                <PatientDocuments patientId={patientId} />
+              </div>
             </TabsContent>
           </div>
 
@@ -571,11 +722,11 @@ export default function PatientProfileWorkspace({
                 {drawerMode === "consult" && (
                   <form onSubmit={handleConsultSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-                      <Textarea
+                      <RichTextEditor
                         placeholder="Clinical notes"
-                        className="min-h-[360px]"
+                        minHeight="360px"
                         value={clinicalNotes}
-                        onChange={(event) => setClinicalNotes(event.target.value)}
+                        onChange={setClinicalNotes}
                       />
                       <Input
                         placeholder="Condition (diagnosis)"
@@ -594,9 +745,11 @@ export default function PatientProfileWorkspace({
                   <form onSubmit={handleTreatmentSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
                       <OrderComposer
-                        draftId={`profile-treatment-${patientId}`}
+                        draftId={`profile-treatment-${patientId}-${latestConsultation?.id || "pending"}`}
                         patientId={patientId}
+                        consultationId={latestConsultation?.id}
                         initialEntries={emptyTreatmentEntries}
+                        persistDrafts
                         items={treatmentItemsCatalog}
                         services={treatmentServicesCatalog}
                         packages={emptyPackages}
@@ -604,6 +757,7 @@ export default function PatientProfileWorkspace({
                         onPlanChange={handleTreatmentPlanChange}
                         submitLabel="Sign"
                         submitting={treatmentSubmitting}
+                        patient={patient}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
@@ -618,5 +772,16 @@ export default function PatientProfileWorkspace({
       </Tabs>
 
     </>
+  );
+}
+
+function ProcedureListItem({ procedure }: { procedure: ProcedureRecord }) {
+  const note = patientFacingProcedureNote(procedure.notes, procedure.category);
+
+  return (
+    <li className="text-sm text-muted-foreground">
+      {procedure.name}
+      {note ? ` — ${note}` : ""}
+    </li>
   );
 }

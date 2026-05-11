@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -20,26 +20,23 @@ function resolveAdminOrigin(): string | null {
   }
 
   const parts = hostname.split(".");
-  const targetHost =
-    parts.length >= 3
-      ? ["admin", ...parts.slice(1)].join(".")
-      : process.env.NEXT_PUBLIC_BASE_DOMAIN
-        ? `admin.${process.env.NEXT_PUBLIC_BASE_DOMAIN}`
-        : null;
-
-  if (!targetHost || targetHost === hostname) {
+  // Already on the base domain — return same origin so caller falls through
+  // to router.replace("/admin") without a cross-origin redirect.
+  if (parts.length < 3) {
     return origin;
   }
 
+  // On a clinic subdomain — redirect to base domain instead of admin subdomain.
+  const baseDomain = parts.slice(-2).join(".");
   const suffix = port ? `:${port}` : "";
-  return `${protocol}//${targetHost}${suffix}`;
+  return `${protocol}//${baseDomain}${suffix}`;
 }
 
 function isLocalHost(hostname: string): boolean {
   return hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
 }
 
-export default function Login() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -176,5 +173,13 @@ export default function Login() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function Login() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

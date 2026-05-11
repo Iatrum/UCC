@@ -70,6 +70,9 @@ export interface Consultation {
 export interface ProcedureRecord {
   name: string;
   price?: number;
+  quantity?: number;
+  orderIndex?: number;
+  category?: "items" | "services" | "packages" | "documents";
   notes?: string;
   procedureId?: string;
   codingSystem?: string;
@@ -85,6 +88,9 @@ export interface Prescription {
   };
   frequency: string;
   duration: string;
+  quantity?: number;
+  orderIndex?: number;
+  category?: "items" | "services" | "packages" | "documents";
   expiryDate?: string;
   price?: number;
 }
@@ -288,34 +294,58 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
             return null;
           }
 
-          const consultation = await getConsultationFromMedplum(enc.id, undefined, medplum);
-          if (!consultation) return null;
-          const patientId = consultation.patientId || enc.subject?.reference?.replace('Patient/', '');
+          const queueEncounterConsultation = await getConsultationFromMedplum(enc.id, undefined, medplum);
+          const patientId =
+            queueEncounterConsultation?.patientId ||
+            enc.subject?.reference?.replace('Patient/', '');
           if (!patientId) return null;
 
-          const patient = await getPatientFromMedplum(patientId, undefined, medplum);
+          const patient = await getPatientFromMedplum(patientId, undefined, medplum, { includeMedicalHistory: false });
+          const patientConsultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
+          const clinicalConsultation =
+            patientConsultations
+              .filter((consultation) =>
+                Boolean(
+                  consultation.id &&
+                    (
+                      consultation.diagnosis ||
+                      consultation.notes ||
+                      consultation.progressNote ||
+                      consultation.procedures?.length ||
+                      consultation.prescriptions?.length
+                    )
+                )
+              )
+              .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0] ||
+            queueEncounterConsultation;
+
+          if (!clinicalConsultation) return null;
 
           return {
-            id: consultation.id,
+            id: clinicalConsultation.id,
             patientId,
-            patientFullName: patient?.fullName ?? consultation.patientName ?? '',
+            patientFullName: patient?.fullName ?? clinicalConsultation.patientName ?? '',
             queueStatus,
-            date: safeToISOString((consultation as any).date) ?? null,
-            createdAt: safeToISOString((consultation as any).createdAt) ?? null,
-            updatedAt: safeToISOString((consultation as any).updatedAt) ?? null,
-            type: (consultation as any).type,
-            doctor: (consultation as any).doctor,
-            chiefComplaint: (consultation as any).chiefComplaint,
-            diagnosis: (consultation as any).diagnosis,
-            procedures: (consultation as any).procedures,
-            notes: (consultation as any).notes,
-            prescriptions: (consultation as any).prescriptions,
+            date: safeToISOString((clinicalConsultation as any).date) ?? null,
+            createdAt: safeToISOString((clinicalConsultation as any).createdAt) ?? null,
+            updatedAt: safeToISOString((clinicalConsultation as any).updatedAt) ?? null,
+            type: (clinicalConsultation as any).type,
+            doctor: (clinicalConsultation as any).doctor,
+            chiefComplaint: (clinicalConsultation as any).chiefComplaint,
+            diagnosis: (clinicalConsultation as any).diagnosis,
+            procedures: (clinicalConsultation as any).procedures,
+            notes: (clinicalConsultation as any).notes,
+            prescriptions: (clinicalConsultation as any).prescriptions,
           } satisfies BillableConsultation;
         })
       )
     ).filter(Boolean) as BillableConsultation[];
 
-    return consultations.sort((a, b) => {
+    const uniqueConsultations = Array.from(
+      new Map(consultations.map((consultation) => [consultation.id, consultation])).values()
+    );
+
+    return uniqueConsultations.sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;
       const dateB = b.date ? new Date(b.date).getTime() : 0;
       return dateB - dateA;

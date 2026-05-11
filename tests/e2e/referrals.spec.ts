@@ -13,12 +13,12 @@
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
-  KLINIK_PUTERI_URL,
-  KLINIK_PUTERI_EMAIL,
-  KLINIK_PUTERI_PASSWORD,
+  DEMO_CLINIC_URL,
+  DEMO_CLINIC_EMAIL,
+  DEMO_CLINIC_PASSWORD,
 } from "./support/env";
 
-const CLINIC_URL = KLINIK_PUTERI_URL || "https://klinikputeri.iatrum.com";
+const CLINIC_URL = DEMO_CLINIC_URL || "https://demo.drhidayat.com";
 const RUN_ID = String(Date.now()).slice(-4).padStart(4, "0");
 const PATIENT_NAME = `Referral E2E ${RUN_ID}`;
 const PATIENT_NRIC = `910101-10-${RUN_ID}`;
@@ -81,8 +81,8 @@ async function ensureClinicSession(page: Page): Promise<void> {
     return;
   }
 
-  await page.locator('input[type="email"]').fill(KLINIK_PUTERI_EMAIL);
-  await page.locator('input[type="password"]').fill(KLINIK_PUTERI_PASSWORD);
+  await page.locator('input[type="email"]').fill(DEMO_CLINIC_EMAIL);
+  await page.locator('input[type="password"]').fill(DEMO_CLINIC_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL((url) => !url.pathname.includes("/login"), {
     timeout: 30_000,

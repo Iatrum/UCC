@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const statuses: QueueStatus[] = ['meds_and_bills', 'completed'];
+    const statuses: QueueStatus[] = ['meds_and_bills'];
     const consultations = await getConsultationsWithDetails(statuses);
     return NextResponse.json({ consultations });
   } catch (error) {

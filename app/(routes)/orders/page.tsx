@@ -18,8 +18,9 @@ export default async function OrdersPage({ searchParams }: Props) {
   const source = typeof resolvedParams.source === "string" ? resolvedParams.source : "";
   const checkout = typeof resolvedParams.checkout === "string" ? resolvedParams.checkout : "";
   const invoiceId = typeof resolvedParams.invoiceId === "string" ? resolvedParams.invoiceId : "";
+  const invoiceNumber = typeof resolvedParams.invoiceNumber === "string" ? resolvedParams.invoiceNumber : "";
 
-  const statuses: QueueStatus[] = ['meds_and_bills', 'completed'];
+  const statuses: QueueStatus[] = ['meds_and_bills'];
   const consultations = await getConsultationsWithDetails(statuses);
 
   return (
@@ -32,7 +33,7 @@ export default async function OrdersPage({ searchParams }: Props) {
       }
       checkoutComplete={
         checkout === "completed"
-          ? { invoiceId }
+          ? { invoiceId, invoiceNumber }
           : undefined
       }
     />

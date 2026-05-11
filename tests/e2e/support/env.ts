@@ -10,21 +10,21 @@ export const ADMIN_PASSWORD = process.env.MEDPLUM_ADMIN_PASSWORD || "";
 
 // ── Clinic-specific ─────────────────────────────────────────────────────────
 
-export const KLINIK_PUTERI_URL =
-  process.env.CLINIC_URL || "https://demo.drhidayat.com";
+export const DEMO_CLINIC_URL =
+  process.env.CLINIC_URL || process.env.EMR_CLINIC_URL || "https://demo.drhidayat.com";
 
-export const KLINIK_PUTERI_EMAIL =
-  process.env.KLINIK_PUTERI_EMAIL || "";
+export const DEMO_CLINIC_EMAIL =
+  process.env.DEMO_CLINIC_EMAIL || "";
 
-export const KLINIK_PUTERI_PASSWORD =
-  process.env.KLINIK_PUTERI_PASSWORD || "";
+export const DEMO_CLINIC_PASSWORD =
+  process.env.DEMO_CLINIC_PASSWORD || "";
 
 // All clinic users (for credential smoke tests)
 export const CLINIC_USERS = [
   {
-    email: KLINIK_PUTERI_EMAIL,
-    password: KLINIK_PUTERI_PASSWORD,
-    label: "Klinik Puteri Admin",
+    email: DEMO_CLINIC_EMAIL,
+    password: DEMO_CLINIC_PASSWORD,
+    label: "Demo Admin",
   },
   {
     email: "apex-group-admin@iatrum.com",

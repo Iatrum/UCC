@@ -6,6 +6,7 @@
 export interface PatientInput {
   fullName: string;
   nric: string;
+  active?: boolean;
   dateOfBirth: Date | string;
   gender: 'male' | 'female' | 'other';
   email?: string;

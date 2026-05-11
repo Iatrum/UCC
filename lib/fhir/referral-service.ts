@@ -24,6 +24,24 @@ export interface SavedReferral extends ReferralData {
   createdAt: Date;
 }
 
+const REFERRAL_CATEGORY_SYSTEM = 'https://ucc.emr/service-request-category';
+const REFERRAL_CATEGORY_CODE = 'referral';
+const REFERRAL_CODE_PREFIX = 'Referral to ';
+
+function isReferralServiceRequest(serviceRequest: ServiceRequest): boolean {
+  const hasReferralCategory = serviceRequest.category?.some((category) =>
+    category.coding?.some(
+      (coding) => coding.system === REFERRAL_CATEGORY_SYSTEM && coding.code === REFERRAL_CATEGORY_CODE
+    )
+  );
+  return Boolean(hasReferralCategory || serviceRequest.code?.text?.startsWith(REFERRAL_CODE_PREFIX));
+}
+
+function specialtyFromServiceRequest(serviceRequest: ServiceRequest): string {
+  const text = serviceRequest.code?.text || '';
+  return text.startsWith(REFERRAL_CODE_PREFIX) ? text.slice(REFERRAL_CODE_PREFIX.length) : text;
+}
+
 /**
  * Save referral to Medplum as ServiceRequest
  */
@@ -37,8 +55,20 @@ export async function saveReferralToMedplum(medplum: MedplumClient, referralData
       reference: `Patient/${referralData.patientId}`,
     },
     code: {
-      text: `Referral to ${referralData.specialty}`,
+      text: `${REFERRAL_CODE_PREFIX}${referralData.specialty}`,
     },
+    category: [
+      {
+        coding: [
+          {
+            system: REFERRAL_CATEGORY_SYSTEM,
+            code: REFERRAL_CATEGORY_CODE,
+            display: 'Referral',
+          },
+        ],
+        text: 'Referral',
+      },
+    ],
     reasonCode: referralData.reason ? [{ text: referralData.reason }] : undefined,
     note: referralData.clinicalInfo ? [{ text: referralData.clinicalInfo }] : undefined,
     performer: [
@@ -66,6 +96,9 @@ export async function saveReferralToMedplum(medplum: MedplumClient, referralData
 export async function getReferralFromMedplum(medplum: MedplumClient, referralId: string): Promise<SavedReferral | null> {
   try {
     const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
+    if (!isReferralServiceRequest(serviceRequest)) {
+      return null;
+    }
 
     const performerDisplay = serviceRequest.performer?.[0]?.display || '';
     const [facility, department] = performerDisplay.split(' - ');
@@ -73,7 +106,7 @@ export async function getReferralFromMedplum(medplum: MedplumClient, referralId:
     return {
       id: serviceRequest.id!,
       patientId: serviceRequest.subject?.reference?.replace('Patient/', '') || '',
-      specialty: serviceRequest.code?.text || '',
+      specialty: specialtyFromServiceRequest(serviceRequest),
       facility: facility || '',
       department,
       doctorName: serviceRequest.requester?.display,
@@ -129,6 +162,9 @@ export async function getPatientReferralsFromMedplum(medplum: MedplumClient, pat
 
     const mapped = await Promise.all(
       serviceRequests.map(async (sr) => {
+        if (!isReferralServiceRequest(sr)) {
+          return null;
+        }
         const saved = await getReferralFromMedplum(medplum, sr.id!);
         return saved;
       })

@@ -1,5 +1,6 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Extension, Invoice, InvoiceLineItem } from "@medplum/fhirtypes";
+import { randomUUID } from "crypto";
 import { updateQueueStatusForPatient } from "@/lib/fhir/triage-service";
 
 export type CheckoutPaymentMethod = "cash" | "card" | "qr" | "panel";
@@ -21,10 +22,12 @@ export type CompleteCheckoutInput = {
   paymentMethod: CheckoutPaymentMethod;
   paidAmount: number;
   totalAmount: number;
+  invoiceNumber?: string;
 };
 
 const CURRENCY = "MYR";
 const INVOICE_IDENTIFIER_SYSTEM = "https://ucc.emr/invoice/consultation";
+const INVOICE_NUMBER_IDENTIFIER_SYSTEM = "https://ucc.emr/invoice/number";
 const ENCOUNTER_EXTENSION_URL = "https://ucc.emr/invoice/encounter";
 const CLINIC_EXTENSION_URL = "https://ucc.emr/invoice/clinic-id";
 const PAYMENT_METHOD_EXTENSION_URL = "https://ucc.emr/invoice/payment-method";
@@ -42,6 +45,91 @@ function roundMoney(value: number): number {
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function getInvoiceNumber(invoice: Pick<Invoice, "identifier" | "id"> | null | undefined): string {
+  return getStoredInvoiceNumber(invoice) || invoice?.id || "";
+}
+
+function getStoredInvoiceNumber(invoice: Pick<Invoice, "identifier"> | null | undefined): string {
+  return invoice?.identifier?.find((identifier) => identifier.system === INVOICE_NUMBER_IDENTIFIER_SYSTEM)?.value || "";
+}
+
+function formatInvoiceNumber(date: Date): string {
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+  return `INV-${yyyy}${mm}${dd}-${suffix}`;
+}
+
+function isValidInvoiceNumber(value: string): boolean {
+  return /^[A-Z0-9/-]{1,50}$/.test(value);
+}
+
+async function isInvoiceNumberAvailable(
+  medplum: MedplumClient,
+  invoiceNumber: string,
+  existingInvoiceId?: string
+): Promise<boolean> {
+  const existing = await medplum.searchResources("Invoice", {
+    identifier: `${INVOICE_NUMBER_IDENTIFIER_SYSTEM}|${invoiceNumber}`,
+    _count: "1",
+  });
+  return !existing?.some((invoice) => invoice.id !== existingInvoiceId);
+}
+
+export async function generateInvoiceNumber(medplum: MedplumClient, date = new Date()): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const invoiceNumber = formatInvoiceNumber(date);
+    if (await isInvoiceNumberAvailable(medplum, invoiceNumber)) {
+      return invoiceNumber;
+    }
+  }
+
+  throw new Error("Failed to generate a unique invoice number");
+}
+
+function buildInvoiceIdentifiers(existing: Invoice | undefined, consultationId: string, invoiceNumber: string) {
+  const preservedIdentifiers =
+    existing?.identifier?.filter(
+      (identifier) =>
+        identifier.system !== INVOICE_IDENTIFIER_SYSTEM &&
+        identifier.system !== INVOICE_NUMBER_IDENTIFIER_SYSTEM
+    ) || [];
+
+  return [
+    ...preservedIdentifiers,
+    {
+      system: INVOICE_IDENTIFIER_SYSTEM,
+      value: consultationId,
+    },
+    {
+      system: INVOICE_NUMBER_IDENTIFIER_SYSTEM,
+      value: invoiceNumber,
+    },
+  ];
+}
+
+async function resolveInvoiceNumber(
+  medplum: MedplumClient,
+  existing: Invoice | undefined,
+  proposedInvoiceNumber: string | undefined,
+  date: Date
+): Promise<string> {
+  const storedInvoiceNumber = getStoredInvoiceNumber(existing);
+  if (storedInvoiceNumber) return storedInvoiceNumber;
+
+  const cleaned = cleanText(proposedInvoiceNumber).toUpperCase();
+  if (
+    cleaned &&
+    isValidInvoiceNumber(cleaned) &&
+    await isInvoiceNumberAvailable(medplum, cleaned, existing?.id)
+  ) {
+    return cleaned;
+  }
+
+  return generateInvoiceNumber(medplum, date);
 }
 
 function moneyExtension(url: string, value: number): Extension {
@@ -173,19 +261,16 @@ export async function completeCheckoutInvoice(
 ): Promise<Invoice> {
   const { normalizedItems, normalizedPaidAmount, normalizedTotalAmount } = validateCheckoutInput(input);
   const balance = roundMoney(Math.max(normalizedTotalAmount - normalizedPaidAmount, 0));
-  const now = new Date().toISOString();
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
   const existing = await findExistingInvoice(medplum, input.consultationId);
+  const invoiceNumber = await resolveInvoiceNumber(medplum, existing, input.invoiceNumber, nowDate);
 
   const invoice: Invoice = {
     ...(existing ?? {}),
     resourceType: "Invoice",
     status: "balanced",
-    identifier: [
-      {
-        system: INVOICE_IDENTIFIER_SYSTEM,
-        value: input.consultationId,
-      },
-    ],
+    identifier: buildInvoiceIdentifiers(existing, input.consultationId, invoiceNumber),
     type: {
       text: "Clinic checkout invoice",
       coding: [

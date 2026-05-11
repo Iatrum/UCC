@@ -382,7 +382,7 @@ export async function saveTriageEncounter(
   triageData: Omit<TriageData, 'triageAt' | 'isTriaged'>,
   medplum: MedplumClient,
   clinicId?: string
-): Promise<void> {
+): Promise<string> {
   const client = medplum;
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
@@ -396,7 +396,7 @@ export async function saveTriageEncounter(
     : false;
   const reusableEncounter = existingStartedToday ? existing : null;
 
-  const queueStatus: QueueStatus = 'waiting';
+  const queueStatus: QueueStatus = triageData.visitIntent === 'otc' ? 'meds_and_bills' : 'waiting';
   const triageAtIso =
     reusableEncounter?.triage?.triageAt?.toString() ||
     reusableEncounter?.queueAddedAt?.toString() ||
@@ -472,6 +472,7 @@ export async function saveTriageEncounter(
 
   await createChiefComplaintObservation(client, encounterId, `Patient/${patientId}`, triagePayload.chiefComplaint);
   await createVitalsObservations(client, encounterId, `Patient/${patientId}`, triagePayload.vitalSigns || {});
+  return encounterId;
 }
 
 export async function checkInPatientInTriage(
@@ -502,9 +503,11 @@ export async function checkInPatientInTriage(
   if (
     existing &&
     existing.queueStatus &&
-    existing.queueStatus !== 'completed' &&
-    existing.queueStatus !== 'meds_and_bills'
+    existing.queueStatus !== 'completed'
   ) {
+    if (existing.queueStatus === 'meds_and_bills') {
+      return existing.id;
+    }
     await updateQueueStatusForPatient(patientId, 'arrived', client, clinicId);
     return existing.id;
   }
@@ -674,16 +677,22 @@ export async function getActiveTriageEncounter(
   clinicId?: string
 ): Promise<TriageSummary & { id: string } | null> {
   const client = medplum;
+  // Fetch a small batch so we can skip consultation Encounters (status=finished,
+  // no triage extension) that sort ahead of the real triage Encounter after a
+  // consultation is saved.
   const encounters = await client.searchResources('Encounter', {
     subject: `Patient/${patientId}`,
     status: 'arrived,triaged,in-progress,finished',
-    _count: '1',
+    _count: '10',
     _sort: '-_lastUpdated',
     ...(clinicId ? { 'service-provider': `Organization/${clinicId}` } : {}),
   });
 
   if (!encounters?.length) return null;
-  const encounter: any = encounters[0];
+  const encounter: any = (encounters as any[]).find((enc: any) =>
+    enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL)
+  );
+  if (!encounter) return null;
   const parsed = parseTriageExtension(encounter.extension);
 
   return {
@@ -739,48 +748,76 @@ export async function getTriageQueueForToday(
 
   const encounters = (await client.searchResources('Encounter', query)) as any[];
 
-  const patients: SavedPatient[] = [];
-
-  for (const encounter of encounters) {
-    // Double-check ownership at the application layer (defence-in-depth)
+  const validEncounters = encounters.filter((encounter) => {
     try {
       assertEncounterBelongsToClinic(encounter, clinicId);
+      return true;
     } catch {
-      continue; // skip encounters that don't belong to this clinic
+      return false;
     }
+  });
 
-    const subjectRef: string = encounter.subject?.reference || '';
-    const patientId = subjectRef.replace('Patient/', '');
-    if (!patientId) continue;
+  const results = await Promise.allSettled(
+    validEncounters.map(async (encounter) => {
+      const subjectRef: string = encounter.subject?.reference || '';
+      const patientId = subjectRef.replace('Patient/', '');
+      if (!patientId) return null;
 
-    const patient = await getPatientFromMedplum(patientId, clinicId, client);
-    if (!patient) continue;
+      const patient = await getPatientFromMedplum(patientId, clinicId, client, { includeMedicalHistory: false });
+      if (!patient) return null;
 
-    const parsed = parseTriageExtension(encounter.extension);
-    const queueAddedAtIso = (parsed.queueAddedAt ?? encounter.period?.start ?? null)
-      ? new Date(parsed.queueAddedAt ?? encounter.period?.start).toISOString()
-      : null;
-    patients.push({
-      ...patient,
-      triage: parsed.triage,
-      queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
-      queueAddedAt: queueAddedAtIso,
-      visitIntent: parsed.visitIntent,
-      payerType: parsed.payerType,
-      paymentMethod: parsed.paymentMethod,
-      billingPerson: parsed.billingPerson,
-      dependentName: parsed.dependentName,
-      dependentRelationship: parsed.dependentRelationship,
-      dependentPhone: parsed.dependentPhone,
-      assignedClinician: parsed.assignedClinician,
-      registrationSource: parsed.registrationSource,
-      registrationAt: parsed.registrationAt,
-      performedBy: parsed.performedBy,
-    });
-  }
+      const parsed = parseTriageExtension(encounter.extension);
+      const queueAddedAtIso = (parsed.queueAddedAt ?? encounter.period?.start ?? null)
+        ? new Date(parsed.queueAddedAt ?? encounter.period?.start).toISOString()
+        : null;
+      return {
+        ...patient,
+        triage: parsed.triage,
+        queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
+        queueAddedAt: queueAddedAtIso,
+        visitIntent: parsed.visitIntent,
+        payerType: parsed.payerType,
+        paymentMethod: parsed.paymentMethod,
+        billingPerson: parsed.billingPerson,
+        dependentName: parsed.dependentName,
+        dependentRelationship: parsed.dependentRelationship,
+        dependentPhone: parsed.dependentPhone,
+        assignedClinician: parsed.assignedClinician,
+        registrationSource: parsed.registrationSource,
+        registrationAt: parsed.registrationAt,
+        performedBy: parsed.performedBy,
+      } as SavedPatient;
+    })
+  );
 
-  return patients
-    .filter((p) => p.queueStatus)
+  const patients: SavedPatient[] = results
+    .filter((r): r is PromiseFulfilledResult<SavedPatient> => r.status === 'fulfilled' && r.value !== null)
+    .map((r) => r.value);
+
+  const uniquePatients = Array.from(
+    patients.reduce((byPatientId, patient) => {
+      const existing = byPatientId.get(patient.id);
+      if (!existing) {
+        byPatientId.set(patient.id, patient);
+        return byPatientId;
+      }
+
+      const existingIsCompleted = existing.queueStatus === 'completed';
+      const patientIsCompleted = patient.queueStatus === 'completed';
+      if (existingIsCompleted !== patientIsCompleted) {
+        byPatientId.set(patient.id, existingIsCompleted ? patient : existing);
+        return byPatientId;
+      }
+
+      const existingTime = existing.queueAddedAt ? new Date(existing.queueAddedAt).getTime() : 0;
+      const patientTime = patient.queueAddedAt ? new Date(patient.queueAddedAt).getTime() : 0;
+      byPatientId.set(patient.id, patientTime >= existingTime ? patient : existing);
+      return byPatientId;
+    }, new Map<string, SavedPatient>()).values()
+  );
+
+  return uniquePatients
+    .filter((p) => p.queueStatus && p.queueStatus !== 'completed')
     .sort((a, b) => {
       const aTriaged = Boolean((a as any).triage?.isTriaged);
       const bTriaged = Boolean((b as any).triage?.isTriaged);

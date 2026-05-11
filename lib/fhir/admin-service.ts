@@ -237,8 +237,8 @@ export async function updateOrganizationDetailsInMedplum(
 }
 
 /**
- * Delete an Organization. Refuses if the clinic still has assigned users
- * (PractitionerRole) or child organisations, to avoid orphaning data.
+ * Delete an Organization. Automatically removes any PractitionerRole
+ * assignments first. Refuses if the clinic still has child organisations.
  */
 export async function deleteOrganizationFromMedplum(
   organizationId: string
@@ -252,7 +252,7 @@ export async function deleteOrganizationFromMedplum(
     }),
     medplum.searchResources("PractitionerRole", {
       organization: `Organization/${organizationId}`,
-      _count: "5",
+      _count: "100",
     }),
   ]);
 
@@ -260,10 +260,14 @@ export async function deleteOrganizationFromMedplum(
     throw new Error("Cannot delete a clinic that still has branches.");
   }
 
-  if ((practitionerRoles?.length ?? 0) > 0) {
-    throw new Error(
-      "Cannot delete a clinic that still has assigned users. Remove user assignments first."
-    );
+  for (const role of practitionerRoles ?? []) {
+    if (role.id) {
+      try {
+        await medplum.deleteResource("PractitionerRole", role.id);
+      } catch (err) {
+        console.warn("[deleteOrganization] failed to delete PractitionerRole", role.id, err);
+      }
+    }
   }
 
   await medplum.deleteResource("Organization", organizationId);

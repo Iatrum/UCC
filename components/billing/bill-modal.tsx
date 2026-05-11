@@ -19,6 +19,7 @@ import {
   fetchOrganizationDetails,
   type OrganizationDetails,
 } from "@/lib/org";
+import { formatPrescriptionDetails } from "@/lib/prescriptions";
 
 interface BillModalProps {
   isOpen: boolean;
@@ -28,6 +29,24 @@ interface BillModalProps {
 }
 
 const DEFAULT_CONSULTATION_FEE = 50;
+
+function patientFacingProcedureNote(value: string | undefined, category?: string) {
+  const text = value?.trim() || "";
+  if (!text) return "";
+
+  if (category === "documents" && text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text) as { kind?: string };
+      if (parsed.kind === "referral" || parsed.kind === "mc") {
+        return "";
+      }
+    } catch {
+      return "";
+    }
+  }
+
+  return text;
+}
 
 export default function BillModal({ isOpen, onClose, isLoading, data }: BillModalProps) {
   const { patient, consultation } = data || {};
@@ -111,12 +130,12 @@ export default function BillModal({ isOpen, onClose, isLoading, data }: BillModa
   const buildBillData = (patient: Patient, consultation: Consultation) => {
     const prescriptions = (consultation.prescriptions || []).map((p) => ({
       name: p.medication?.name || 'Medication',
-      dosage: [p.medication?.strength, p.frequency, p.duration].filter(Boolean).join(' · '),
+      dosage: formatPrescriptionDetails(p),
       price: p.price ?? 0,
     }));
     const procedures = (consultation.procedures || []).map((proc) => ({
       name: proc.name,
-      description: proc.notes || '',
+      description: patientFacingProcedureNote(proc.notes, proc.category),
       price: proc.price ?? 0,
     }));
     const hasBillableItems =

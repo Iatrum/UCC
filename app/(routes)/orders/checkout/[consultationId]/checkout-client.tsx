@@ -8,12 +8,22 @@ import {
   ArrowLeft,
   CheckCircle2,
   CreditCard,
+  Eye,
   FileText,
+  Printer,
   ReceiptText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +31,8 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
+import { formatPrescriptionDetails } from "@/lib/prescriptions";
+import type { TreatmentPlanEntry } from "@/lib/treatment-plan";
 
 type CheckoutClientProps = {
   consultationId: string;
@@ -30,6 +42,7 @@ type CheckoutClientProps = {
 type OrderDetails = {
   patient: Patient;
   consultation: Consultation;
+  draftEntries: TreatmentPlanEntry[];
 };
 
 type CheckoutItem = {
@@ -37,13 +50,14 @@ type CheckoutItem = {
   name: string;
   description: string;
   type: "Item" | "Service";
+  category: "items" | "services" | "packages" | "documents";
   quantity: number;
   price: number;
+  orderIndex?: number;
+  fallbackIndex: number;
 };
 
 type PaymentMethod = "cash" | "card" | "qr" | "panel";
-
-const DEFAULT_CONSULTATION_FEE = 50;
 
 function currency(amount: number) {
   return new Intl.NumberFormat("en-MY", {
@@ -52,45 +66,205 @@ function currency(amount: number) {
   }).format(amount);
 }
 
+function patientFacingDescription(value: string | undefined, category?: string) {
+  const text = value?.trim() || "";
+  if (!text) return "";
+
+  if (category === "documents" && text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text) as { kind?: string };
+      if (parsed.kind === "referral" || parsed.kind === "mc") {
+        return "";
+      }
+    } catch {
+      return "";
+    }
+  }
+
+  return text;
+}
+
 function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
   if (!consultation) return [];
 
   const procedures = (consultation.procedures || []).map((procedure, index) => ({
     id: `procedure-${index}`,
-    name: procedure.name || "Procedure",
-    description: procedure.notes || "Clinical service",
+    name: procedure.name || "Service",
+    description: patientFacingDescription(procedure.notes, procedure.category),
     type: "Service" as const,
-    quantity: 1,
+    category: procedure.category || "services",
+    quantity: procedure.quantity ?? 1,
     price: procedure.price ?? 0,
+    orderIndex: procedure.orderIndex,
+    fallbackIndex: index,
   }));
 
+  const procedureCount = procedures.length;
   const prescriptions = (consultation.prescriptions || []).map((prescription, index) => ({
     id: `prescription-${index}`,
     name: prescription.medication?.name || "Medication",
-    description: [prescription.medication?.strength, prescription.frequency, prescription.duration]
-      .filter(Boolean)
-      .join(" · "),
+    description: formatPrescriptionDetails(prescription),
     type: "Item" as const,
-    quantity: 1,
+    category: prescription.category || "items",
+    quantity: prescription.quantity ?? 1,
     price: prescription.price ?? 0,
+    orderIndex: prescription.orderIndex,
+    fallbackIndex: procedureCount + index,
   }));
 
-  const items = [...procedures, ...prescriptions];
+  const items = [...procedures, ...prescriptions].sort((a, b) => {
+    const aOrder = Number.isInteger(a.orderIndex) ? Number(a.orderIndex) : Number.POSITIVE_INFINITY;
+    const bOrder = Number.isInteger(b.orderIndex) ? Number(b.orderIndex) : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.fallbackIndex - b.fallbackIndex;
+  });
 
   if (items.length > 0) {
     return items;
   }
 
-  return [
-    {
-      id: "consultation-fee",
-      name: "Consultation Fee",
-      description: consultation.chiefComplaint || "Default consultation charge",
-      type: "Service",
-      quantity: 1,
-      price: DEFAULT_CONSULTATION_FEE,
-    },
-  ];
+  return [];
+}
+
+function buildDraftCheckoutItems(entries: TreatmentPlanEntry[]): CheckoutItem[] {
+  return [...entries]
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((entry, index) => ({
+      id: entry.id,
+      name: entry.name,
+      description: entry.instruction || formatDraftDetails(entry),
+      type: entry.tab === "items" ? "Item" as const : "Service" as const,
+      category: entry.tab,
+      quantity: entry.quantity,
+      price: entry.unitPrice,
+      orderIndex: index,
+      fallbackIndex: index,
+    }));
+}
+
+function formatDraftDetails(entry: TreatmentPlanEntry): string {
+  return [entry.dosage, entry.frequency, entry.duration].filter(Boolean).join(" · ");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function buildPrintableBillHtml({
+  invoiceNumber,
+  date,
+  patientName,
+  billToName,
+  paymentMethod,
+  paid,
+  balance,
+  total,
+  items,
+}: {
+  invoiceNumber: string;
+  date: string;
+  patientName: string;
+  billToName: string;
+  paymentMethod: PaymentMethod;
+  paid: number;
+  balance: number;
+  total: number;
+  items: CheckoutItem[];
+}) {
+  const rows = items
+    .map(
+      (item) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${escapeHtml(item.description || "")}</span>
+          </td>
+          <td>${escapeHtml(String(item.quantity))}</td>
+          <td>${escapeHtml(currency(item.price))}</td>
+          <td>${escapeHtml(currency(item.quantity * item.price))}</td>
+        </tr>`
+    )
+    .join("");
+
+  return `<!doctype html>
+    <html>
+      <head>
+        <title>${escapeHtml(invoiceNumber || "Patient bill")}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #fff; color: #111827; font-family: Arial, sans-serif; font-size: 13px; }
+          .bill { width: 720px; margin: 0 auto; padding: 32px; }
+          .top { display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid #d1d5db; padding-bottom: 18px; }
+          h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
+          .muted { color: #6b7280; }
+          .meta { text-align: right; line-height: 1.6; }
+          .section { margin-top: 22px; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+          .label { color: #6b7280; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { text-align: left; color: #6b7280; font-size: 11px; border-bottom: 1px solid #d1d5db; padding: 8px 0; }
+          td { border-bottom: 1px solid #e5e7eb; padding: 10px 0; vertical-align: top; }
+          td span { display: block; margin-top: 2px; color: #6b7280; font-size: 12px; }
+          th:nth-child(n+2), td:nth-child(n+2) { text-align: right; }
+          .totals { margin-left: auto; width: 260px; margin-top: 20px; }
+          .line { display: flex; justify-content: space-between; padding: 5px 0; }
+          .total { border-top: 1px solid #111827; margin-top: 6px; padding-top: 8px; font-weight: 700; font-size: 15px; }
+          .footer { margin-top: 28px; padding-top: 14px; border-top: 1px solid #e5e7eb; color: #6b7280; text-align: center; font-size: 12px; }
+          @page { margin: 14mm; }
+          @media print { .bill { width: auto; margin: 0; padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <main class="bill">
+          <div class="top">
+            <div>
+              <h1>Patient Bill</h1>
+              <div class="muted">Clinic checkout invoice</div>
+            </div>
+            <div class="meta">
+              <div><strong>${escapeHtml(invoiceNumber || "Invoice pending")}</strong></div>
+              <div>${escapeHtml(date)}</div>
+            </div>
+          </div>
+          <div class="section grid">
+            <div>
+              <div class="label">Patient</div>
+              <div><strong>${escapeHtml(patientName)}</strong></div>
+            </div>
+            <div>
+              <div class="label">Bill to</div>
+              <div><strong>${escapeHtml(billToName)}</strong></div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="label">Items</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Qty</th>
+                  <th>Unit</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <div class="totals">
+            <div class="line"><span>Subtotal</span><strong>${escapeHtml(currency(total))}</strong></div>
+            <div class="line"><span>Paid (${escapeHtml(paymentMethod.toUpperCase())})</span><strong>${escapeHtml(currency(paid))}</strong></div>
+            <div class="line"><span>${balance < 0 ? "Change" : "Balance"}</span><strong>${escapeHtml(currency(balance < 0 ? Math.abs(balance) : balance))}</strong></div>
+            <div class="line total"><span>Total</span><strong>${escapeHtml(currency(total))}</strong></div>
+          </div>
+          <div class="footer">Thank you.</div>
+        </main>
+      </body>
+    </html>`;
 }
 
 export default function CheckoutClient({ consultationId, patientId }: CheckoutClientProps) {
@@ -100,8 +274,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const [error, setError] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [paidAmount, setPaidAmount] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+  const [billPreviewOpen, setBillPreviewOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -117,17 +293,38 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       setError(null);
 
       try {
-        const response = await fetch(
-          `/api/orders?consultationId=${encodeURIComponent(consultationId)}&patientId=${encodeURIComponent(patientId)}`
-        );
-        const payload = await response.json().catch(() => ({}));
+        const [orderResponse, invoiceResponse, draftResponse] = await Promise.all([
+          fetch(
+            `/api/orders?consultationId=${encodeURIComponent(consultationId)}&patientId=${encodeURIComponent(patientId)}`
+          ),
+          fetch(
+            `/api/billing?consultationId=${encodeURIComponent(consultationId)}&previewNumber=true`,
+            { cache: "no-store" }
+          ),
+          fetch(
+            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${patientId}-${consultationId}`)}&patientId=${encodeURIComponent(patientId)}&consultationId=${encodeURIComponent(consultationId)}`,
+            { cache: "no-store" }
+          ),
+        ]);
+        const payload = await orderResponse.json().catch(() => ({}));
+        const invoicePayload = await invoiceResponse.json().catch(() => ({}));
+        const draftPayload = await draftResponse.json().catch(() => ({}));
 
-        if (!response.ok || !payload.patient || !payload.consultation) {
+        if (!orderResponse.ok || !payload.patient || !payload.consultation) {
           throw new Error(payload.error || "Failed to load checkout details.");
         }
 
         if (active) {
-          setDetails({ patient: payload.patient, consultation: payload.consultation });
+          setDetails({
+            patient: payload.patient,
+            consultation: payload.consultation,
+            draftEntries: draftResponse.ok && draftPayload?.success
+              ? draftPayload.plan?.entries || []
+              : [],
+          });
+          if (invoiceResponse.ok && invoicePayload?.invoiceNumber) {
+            setInvoiceNumber(String(invoicePayload.invoiceNumber));
+          }
         }
       } catch (err) {
         if (active) {
@@ -148,12 +345,15 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   }, [consultationId, patientId]);
 
   const checkoutItems = useMemo(
-    () => buildCheckoutItems(details?.consultation ?? null),
-    [details?.consultation]
+    () => {
+      const signedItems = buildCheckoutItems(details?.consultation ?? null);
+      return signedItems.length > 0 ? signedItems : buildDraftCheckoutItems(details?.draftEntries || []);
+    },
+    [details?.consultation, details?.draftEntries]
   );
   const subtotal = checkoutItems.reduce((total, item) => total + item.quantity * item.price, 0);
   const paid = Number.parseFloat(paidAmount) || 0;
-  const balance = Math.max(subtotal - paid, 0);
+  const balance = subtotal - paid;
   const handleCompleteVisitation = async () => {
     if (!details || completing || balance > 0) return;
 
@@ -171,6 +371,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           paymentMethod,
           paidAmount: paid,
           totalAmount: subtotal,
+          invoiceNumber,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -179,7 +380,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         throw new Error(payload.error || "Failed to complete checkout.");
       }
 
-      router.push(`/orders?checkout=completed&invoiceId=${encodeURIComponent(payload.invoiceId || "")}`);
+      const params = new URLSearchParams({ checkout: "completed" });
+      if (payload.invoiceId) params.set("invoiceId", payload.invoiceId);
+      if (payload.invoiceNumber) params.set("invoiceNumber", payload.invoiceNumber);
+      router.push(`/orders?${params.toString()}`);
     } catch (err) {
       setCompletionError(err instanceof Error ? err.message : "Failed to complete checkout.");
     } finally {
@@ -219,6 +423,35 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     patient.billingPerson === "dependent" && patient.dependentName
       ? patient.dependentName
       : patient.fullName;
+  const billDate = formatDisplayDate(consultation.date);
+  const canPreviewBill = checkoutItems.length > 0;
+  const handlePrintBill = () => {
+    if (!canPreviewBill) return;
+
+    const printWindow = window.open("", "_blank", "width=840,height=900");
+    if (!printWindow) {
+      setCompletionError("Unable to open print preview. Please allow pop-ups for this site.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(
+      buildPrintableBillHtml({
+        invoiceNumber,
+        date: billDate,
+        patientName: patient.fullName,
+        billToName,
+        paymentMethod,
+        paid,
+        balance,
+        total: subtotal,
+        items: checkoutItems,
+      })
+    );
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
 
   return (
     <main className="w-full space-y-6 px-3 py-8 sm:px-4 lg:px-5 2xl:px-6">
@@ -232,11 +465,11 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           </Button>
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight">Draft invoice</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Invoice</h1>
               <Badge variant="secondary">Checkout</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {patient.fullName} · {formatDisplayDate(consultation.date)}
+              {patient.fullName} · {billDate}
             </p>
           </div>
         </div>
@@ -288,6 +521,16 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         <div>
           <Card>
             <CardContent className="pt-6">
+              <div className="mb-4 grid gap-3 rounded-md border bg-muted/20 px-4 py-3 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Invoice No.</p>
+                  <p className="mt-1 font-semibold">{invoiceNumber || "Generating..."}</p>
+                </div>
+                <div className="sm:text-right">
+                  <p className="text-xs font-medium text-muted-foreground">Date</p>
+                  <p className="mt-1 font-medium">{billDate}</p>
+                </div>
+              </div>
               <Tabs defaultValue="all">
                 <TabsList className="mb-4 flex w-full overflow-x-auto md:w-fit">
                   <TabsTrigger value="all">All</TabsTrigger>
@@ -300,16 +543,16 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
                   <TreatmentRows items={checkoutItems} />
                 </TabsContent>
                 <TabsContent value="items">
-                  <TreatmentRows items={checkoutItems.filter((item) => item.type === "Item")} emptyText="No items added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "items")} emptyText="No items added." />
                 </TabsContent>
                 <TabsContent value="services">
-                  <TreatmentRows items={checkoutItems.filter((item) => item.type === "Service")} emptyText="No services added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "services")} emptyText="No services added." />
                 </TabsContent>
                 <TabsContent value="packages">
-                  <EmptyPanel text="No packages added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "packages")} emptyText="No packages added." />
                 </TabsContent>
                 <TabsContent value="documents">
-                  <EmptyPanel text="No chargeable documents added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "documents")} emptyText="No chargeable documents added." />
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -338,6 +581,43 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
                 <span>Total</span>
                 <span>{currency(subtotal)}</span>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Patient bill
+              </CardTitle>
+              <CardDescription>Preview or print the bill before completing visitation.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button
+                variant="outline"
+                className="w-full"
+                type="button"
+                disabled={!canPreviewBill}
+                onClick={() => setBillPreviewOpen(true)}
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                Preview bill
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                type="button"
+                disabled={!canPreviewBill}
+                onClick={handlePrintBill}
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                Print bill
+              </Button>
+              {!canPreviewBill ? (
+                <p className="text-xs text-muted-foreground">
+                  Add at least one billable item before previewing or printing.
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -376,8 +656,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
               </div>
               <div className="rounded-md border bg-muted/30 p-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Balance</span>
-                  <span className="font-semibold">{currency(balance)}</span>
+                  <span className="text-muted-foreground">{balance < 0 ? "Change" : "Balance"}</span>
+                  <span className={`font-semibold${balance < 0 ? " text-green-600" : ""}`}>
+                    {currency(balance < 0 ? Math.abs(balance) : balance)}
+                  </span>
                 </div>
               </div>
               {completionError ? (
@@ -412,13 +694,44 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           </Card>
         </aside>
       </div>
+
+      <Dialog open={billPreviewOpen} onOpenChange={setBillPreviewOpen}>
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Patient bill preview</DialogTitle>
+            <DialogDescription>
+              {invoiceNumber || "Invoice pending"} · {patient.fullName}
+            </DialogDescription>
+          </DialogHeader>
+          <BillPreview
+            invoiceNumber={invoiceNumber}
+            date={billDate}
+            patientName={patient.fullName}
+            billToName={billToName}
+            items={checkoutItems}
+            subtotal={subtotal}
+            paid={paid}
+            balance={balance}
+            paymentMethod={paymentMethod}
+          />
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setBillPreviewOpen(false)}>
+              Close
+            </Button>
+            <Button type="button" onClick={handlePrintBill} disabled={!canPreviewBill}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print bill
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
 
 function TreatmentRows({
   items,
-  emptyText = "No treatment added.",
+  emptyText = "No billable items added.",
 }: {
   items: CheckoutItem[];
   emptyText?: string;
@@ -430,7 +743,7 @@ function TreatmentRows({
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="grid grid-cols-[1fr_80px_120px] bg-muted/60 px-4 py-2 text-xs font-medium text-muted-foreground">
-        <span>Treatment</span>
+        <span>Item</span>
         <span className="text-right">Qty</span>
         <span className="text-right">Amount</span>
       </div>
@@ -441,12 +754,109 @@ function TreatmentRows({
               <p className="font-medium">{item.name}</p>
               <Badge variant="outline">{item.type}</Badge>
             </div>
-            <p className="mt-1 truncate text-xs text-muted-foreground">{item.description || "No description"}</p>
+            {item.description ? (
+              <p className="mt-1 truncate text-xs text-muted-foreground">{item.description}</p>
+            ) : null}
           </div>
           <span className="text-right">{item.quantity}</span>
           <span className="text-right font-medium">{currency(item.quantity * item.price)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function BillPreview({
+  invoiceNumber,
+  date,
+  patientName,
+  billToName,
+  items,
+  subtotal,
+  paid,
+  balance,
+  paymentMethod,
+}: {
+  invoiceNumber: string;
+  date: string;
+  patientName: string;
+  billToName: string;
+  items: CheckoutItem[];
+  subtotal: number;
+  paid: number;
+  balance: number;
+  paymentMethod: PaymentMethod;
+}) {
+  return (
+    <div className="rounded-md border bg-white p-6 text-sm text-slate-950 shadow-sm">
+      <div className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold tracking-normal">Patient Bill</h2>
+          <p className="mt-1 text-slate-500">Clinic checkout invoice</p>
+        </div>
+        <div className="text-left sm:text-right">
+          <p className="font-semibold">{invoiceNumber || "Invoice pending"}</p>
+          <p className="mt-1 text-slate-500">{date}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 py-5 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-medium uppercase text-slate-500">Patient</p>
+          <p className="mt-1 font-semibold">{patientName}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase text-slate-500">Bill to</p>
+          <p className="mt-1 font-semibold">{billToName}</p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-md border">
+        <div className="grid grid-cols-[1fr_56px_96px] bg-slate-50 px-3 py-2 text-xs font-medium uppercase text-slate-500 sm:grid-cols-[1fr_64px_110px_110px]">
+          <span>Item</span>
+          <span className="text-right">Qty</span>
+          <span className="text-right">Unit</span>
+          <span className="hidden text-right sm:block">Amount</span>
+        </div>
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="grid grid-cols-[1fr_56px_96px] items-start border-t px-3 py-3 sm:grid-cols-[1fr_64px_110px_110px]"
+          >
+            <div className="min-w-0">
+              <p className="font-medium">{item.name}</p>
+              {item.description ? (
+                <p className="mt-1 text-xs text-slate-500">{item.description}</p>
+              ) : null}
+              <p className="mt-1 text-xs font-medium sm:hidden">{currency(item.quantity * item.price)}</p>
+            </div>
+            <span className="text-right">{item.quantity}</span>
+            <span className="text-right">{currency(item.price)}</span>
+            <span className="hidden text-right font-medium sm:block">{currency(item.quantity * item.price)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="ml-auto mt-5 w-full max-w-xs space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">Subtotal</span>
+          <span className="font-medium">{currency(subtotal)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">Paid ({paymentMethod.toUpperCase()})</span>
+          <span className="font-medium">{currency(paid)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">{balance < 0 ? "Change" : "Balance"}</span>
+          <span className="font-medium">{currency(balance < 0 ? Math.abs(balance) : balance)}</span>
+        </div>
+        <div className="flex items-center justify-between border-t pt-2 text-base font-semibold">
+          <span>Total</span>
+          <span>{currency(subtotal)}</span>
+        </div>
+      </div>
+
+      <p className="mt-6 border-t pt-4 text-center text-xs text-slate-500">Thank you.</p>
     </div>
   );
 }
