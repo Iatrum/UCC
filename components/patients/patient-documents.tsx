@@ -146,7 +146,12 @@ export default function PatientDocuments({ patientId }: Props) {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const message = String(err?.error || "");
-        if (message.includes("invalid_grant") || message.includes("Invalid JWT Signature")) {
+        if (
+          message.includes("invalid_grant") ||
+          message.includes("Invalid JWT Signature") ||
+          message.includes("bucket does not exist") ||
+          message.includes("specified bucket")
+        ) {
           await uploadWithBrowserFirebase(selectedFiles.filter((file) => file.type === "application/pdf"));
           toast({ title: "Upload complete" });
           fetchDocs();
