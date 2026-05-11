@@ -1,5 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: [
+    '@tiptap/react',
+    '@tiptap/core',
+    '@tiptap/pm',
+    '@tiptap/starter-kit',
+    '@tiptap/extension-placeholder',
+  ],
   outputFileTracingRoot: __dirname,
   allowedDevOrigins: ["127.0.0.1"],
   experimental: {

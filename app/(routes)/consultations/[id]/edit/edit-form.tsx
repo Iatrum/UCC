@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
 import { PatientCard, type SerializedPatient } from "@/components/patients/patient-card";
 
@@ -131,11 +131,11 @@ export default function EditConsultationForm({
 
           {/* Main: clinical notes + diagnosis + action */}
           <div className="md:col-span-9 space-y-4">
-            <Textarea
+            <RichTextEditor
               placeholder="Clinical notes"
-              className="min-h-[360px]"
+              minHeight="360px"
               value={clinicalNotes}
-              onChange={(e) => setClinicalNotes(e.target.value)}
+              onChange={setClinicalNotes}
             />
             <Input
               placeholder="Condition (diagnosis)"
