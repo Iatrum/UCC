@@ -30,6 +30,7 @@ import { cn, formatDisplayDate } from "@/lib/utils";
 import type { Prescription, ProcedureRecord } from "@/lib/models";
 import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
+import type { QueueStatus } from "@/lib/types";
 import ReferralMCSection from "./referral-mc-section";
 
 type ProfileTab = "history" | "labs-imaging" | "documents";
@@ -127,6 +128,7 @@ export default function PatientProfileWorkspace({
   const [treatmentSubmitting, setTreatmentSubmitting] = useState(false);
   const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>(patient.queueStatus ?? null);
   const [procedureOptions, setProcedureOptions] = useState<
     { id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string }[]
   >([]);
@@ -165,6 +167,18 @@ export default function PatientProfileWorkspace({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (queueStatus !== "arrived" && queueStatus !== "waiting") return;
+
+    void updateQueueStatus("in_consultation").catch((error) => {
+      toast({
+        title: "Queue Status Not Updated",
+        description: error instanceof Error ? error.message : "Failed to mark patient as in consultation.",
+        variant: "destructive",
+      });
+    });
+  }, [queueStatus]);
 
   const visibleConsultations = useMemo(() => mergeByVisit(consultations), [consultations]);
 
@@ -235,6 +249,29 @@ export default function PatientProfileWorkspace({
     setActiveTab(value as ProfileTab);
   }
 
+  async function updateQueueStatus(status: Exclude<QueueStatus, null>) {
+    const response = await fetch("/api/queue", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patientId, status }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Failed to update queue status");
+    }
+    setQueueStatus(status);
+  }
+
+  function openConsultPanel() {
+    if (drawerMode === "consult" && panelOpen) {
+      setPanelOpen(false);
+      return;
+    }
+
+    setDrawerMode("consult");
+    setPanelOpen(true);
+  }
+
   async function handleConsultSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (consultSubmitting) return;
@@ -268,6 +305,9 @@ export default function PatientProfileWorkspace({
         title: "Consult Signed",
         description: "Clinical notes and diagnosis were saved.",
       });
+      if (queueStatus && queueStatus !== "completed") {
+        setQueueStatus("meds_and_bills");
+      }
       setClinicalNotes("");
       setDiagnosis("");
       setPanelOpen(false);
@@ -314,9 +354,12 @@ export default function PatientProfileWorkspace({
       return;
     }
 
-    const medicationEntries = treatmentEntries.filter((entry) => entry.tab === "items");
-    const serviceEntries = treatmentEntries.filter((entry) => entry.tab === "services" || entry.tab === "packages");
-    const documentEntries = treatmentEntries.filter((entry) => entry.tab === "documents");
+    const orderedTreatmentEntries = [...treatmentEntries]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((entry, orderIndex) => ({ ...entry, orderIndex }));
+    const medicationEntries = orderedTreatmentEntries.filter((entry) => entry.tab === "items");
+    const serviceEntries = orderedTreatmentEntries.filter((entry) => entry.tab === "services" || entry.tab === "packages");
+    const documentEntries = orderedTreatmentEntries.filter((entry) => entry.tab === "documents");
     const prescriptions: Prescription[] = medicationEntries.map((entry) => ({
       medication: {
         id: entry.catalogRef || entry.id,
@@ -326,6 +369,7 @@ export default function PatientProfileWorkspace({
       frequency: entry.frequency || "",
       duration: entry.duration || "",
       quantity: entry.quantity,
+      orderIndex: entry.orderIndex,
       category: "items",
       price: entry.unitPrice,
     }));
@@ -333,6 +377,7 @@ export default function PatientProfileWorkspace({
     const procedures: ProcedureRecord[] = billableProcedureEntries.map((entry) => ({
       name: entry.name,
       quantity: entry.quantity,
+      orderIndex: entry.orderIndex,
       category: entry.tab,
       price: entry.unitPrice,
       notes: entry.tab === "documents" ? buildSignedDocumentNote(entry) : entry.instruction,
@@ -453,8 +498,7 @@ export default function PatientProfileWorkspace({
                       value="consult"
                       className="px-3 text-xs"
                       onClick={() => {
-                        if (drawerMode === "consult" && panelOpen) setPanelOpen(false);
-                        else { setDrawerMode("consult"); setPanelOpen(true); }
+                        openConsultPanel();
                       }}
                     >Consult</TabsTrigger>
                     <TabsTrigger
