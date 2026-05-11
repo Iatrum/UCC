@@ -71,6 +71,7 @@ export interface ProcedureRecord {
   name: string;
   price?: number;
   quantity?: number;
+  category?: "items" | "services" | "packages" | "documents";
   notes?: string;
   procedureId?: string;
   codingSystem?: string;
@@ -87,6 +88,7 @@ export interface Prescription {
   frequency: string;
   duration: string;
   quantity?: number;
+  category?: "items" | "services" | "packages" | "documents";
   expiryDate?: string;
   price?: number;
 }

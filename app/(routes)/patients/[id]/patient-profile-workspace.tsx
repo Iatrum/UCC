@@ -335,11 +335,14 @@ export default function PatientProfileWorkspace({
       frequency: entry.frequency || "",
       duration: entry.duration || "",
       quantity: entry.quantity,
+      category: "items",
       price: entry.unitPrice,
     }));
-    const procedures: ProcedureRecord[] = serviceEntries.map((entry) => ({
+    const billableProcedureEntries = [...serviceEntries, ...documentEntries];
+    const procedures: ProcedureRecord[] = billableProcedureEntries.map((entry) => ({
       name: entry.name,
       quantity: entry.quantity,
+      category: entry.tab,
       price: entry.unitPrice,
       notes: entry.instruction,
       procedureId: entry.catalogRef,
