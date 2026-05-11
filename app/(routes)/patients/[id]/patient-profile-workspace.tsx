@@ -685,6 +685,7 @@ export default function PatientProfileWorkspace({
                         onPlanChange={handleTreatmentPlanChange}
                         submitLabel="Sign"
                         submitting={treatmentSubmitting}
+                        patient={patient}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>

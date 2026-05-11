@@ -736,6 +736,7 @@ export default function ConsultationForm({
               }}
               submitLabel={isEditMode ? "Update Consultation" : "Sign Order"}
               submitting={submitting}
+              patient={patient}
             />
             <div className="rounded-md border p-3 text-xs text-muted-foreground">
               Autosaved draft total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
