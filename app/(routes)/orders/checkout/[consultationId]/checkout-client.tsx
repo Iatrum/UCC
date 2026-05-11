@@ -60,7 +60,7 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
     name: procedure.name || "Procedure",
     description: procedure.notes || "Clinical service",
     type: "Service" as const,
-    quantity: 1,
+    quantity: procedure.quantity ?? 1,
     price: procedure.price ?? 0,
   }));
 
@@ -71,7 +71,7 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
       .filter(Boolean)
       .join(" · "),
     type: "Item" as const,
-    quantity: 1,
+    quantity: prescription.quantity ?? 1,
     price: prescription.price ?? 0,
   }));
 
