@@ -6,16 +6,25 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
 import { PatientCard, type SerializedPatient } from "@/components/patients/patient-card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface EditConsultationFormProps {
   consultationId: string;
   patientId: string;
   initialNotes: string;
-  initialDiagnosis: string;
   patient: SerializedPatient;
 }
 
@@ -23,16 +32,40 @@ export default function EditConsultationForm({
   consultationId,
   patientId,
   initialNotes,
-  initialDiagnosis,
   patient,
 }: EditConsultationFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [clinicalNotes, setClinicalNotes] = useState(initialNotes);
-  const [diagnosis, setDiagnosis] = useState(initialDiagnosis);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const vitals = patient.triage?.vitalSigns;
+
+  async function handleDelete() {
+    try {
+      setDeleting(true);
+      const res = await fetch("/api/consultations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ consultationId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Failed to delete consultation");
+      }
+      toast({ title: "Consultation Deleted", description: "The consultation has been removed." });
+      router.push(`/patients/${patientId}`);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete consultation.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -42,13 +75,13 @@ export default function EditConsultationForm({
       const res = await fetch("/api/consultations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ consultationId, chiefComplaint: clinicalNotes, diagnosis }),
+        body: JSON.stringify({ consultationId, chiefComplaint: clinicalNotes }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Failed to update consultation");
       }
-      toast({ title: "Consultation Updated", description: "Clinical notes and diagnosis have been saved." });
+      toast({ title: "Consultation Updated", description: "Clinical notes have been saved." });
       router.push(`/patients/${patientId}`);
     } catch (error) {
       toast({
@@ -75,7 +108,7 @@ export default function EditConsultationForm({
 
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Edit Consultation</h1>
-        <p className="text-sm text-muted-foreground">Update the clinical notes and diagnosis below.</p>
+        <p className="text-sm text-muted-foreground">Update the clinical notes below.</p>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -129,7 +162,7 @@ export default function EditConsultationForm({
             </Card>
           </div>
 
-          {/* Main: clinical notes + diagnosis + action */}
+          {/* Main: clinical notes + action */}
           <div className="md:col-span-9 space-y-4">
             <RichTextEditor
               placeholder="Clinical notes"
@@ -137,14 +170,35 @@ export default function EditConsultationForm({
               value={clinicalNotes}
               onChange={setClinicalNotes}
             />
-            <Input
-              placeholder="Condition (diagnosis)"
-              value={diagnosis}
-              onChange={(e) => setDiagnosis(e.target.value)}
-            />
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving…" : "Update Consultation"}
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Saving…" : "Update Consultation"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" variant="destructive" disabled={deleting}>
+                    {deleting ? "Deleting…" : "Delete Consultation"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this consultation?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently remove the consultation and all linked records (diagnosis, prescriptions, procedures). This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
         </div>
       </form>

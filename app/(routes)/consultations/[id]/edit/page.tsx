@@ -58,7 +58,6 @@ export default async function EditConsultationPage({ params }: Props) {
         consultationId={id}
         patientId={consultation.patientId}
         initialNotes={consultation.chiefComplaint || ''}
-        initialDiagnosis={consultation.diagnosis || ''}
         patient={serializedPatient}
       />
     </main>
