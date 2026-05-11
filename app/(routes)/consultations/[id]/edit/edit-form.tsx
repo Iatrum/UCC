@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { PatientCard, type SerializedPatient } from "@/components/patients/patient-card";
@@ -14,6 +15,7 @@ interface EditConsultationFormProps {
   consultationId: string;
   patientId: string;
   initialNotes: string;
+  initialDiagnosis: string;
   patient: SerializedPatient;
 }
 
@@ -21,11 +23,13 @@ export default function EditConsultationForm({
   consultationId,
   patientId,
   initialNotes,
+  initialDiagnosis,
   patient,
 }: EditConsultationFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [clinicalNotes, setClinicalNotes] = useState(initialNotes);
+  const [diagnosis, setDiagnosis] = useState(initialDiagnosis);
   const [submitting, setSubmitting] = useState(false);
 
   const vitals = patient.triage?.vitalSigns;
@@ -38,13 +42,13 @@ export default function EditConsultationForm({
       const res = await fetch("/api/consultations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ consultationId, chiefComplaint: clinicalNotes }),
+        body: JSON.stringify({ consultationId, chiefComplaint: clinicalNotes, diagnosis }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Failed to update consultation");
       }
-      toast({ title: "Consultation Updated", description: "Clinical notes have been saved." });
+      toast({ title: "Consultation Updated", description: "Clinical notes and diagnosis have been saved." });
       router.push(`/patients/${patientId}`);
     } catch (error) {
       toast({
@@ -71,7 +75,7 @@ export default function EditConsultationForm({
 
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Edit Consultation</h1>
-        <p className="text-sm text-muted-foreground">Update the clinical notes below.</p>
+        <p className="text-sm text-muted-foreground">Update the clinical notes and diagnosis below.</p>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -125,13 +129,18 @@ export default function EditConsultationForm({
             </Card>
           </div>
 
-          {/* Main: clinical notes + action */}
+          {/* Main: clinical notes + diagnosis + action */}
           <div className="md:col-span-9 space-y-4">
             <Textarea
               placeholder="Clinical notes"
               className="min-h-[360px]"
               value={clinicalNotes}
               onChange={(e) => setClinicalNotes(e.target.value)}
+            />
+            <Input
+              placeholder="Condition (diagnosis)"
+              value={diagnosis}
+              onChange={(e) => setDiagnosis(e.target.value)}
             />
             <Button type="submit" disabled={submitting}>
               {submitting ? "Saving…" : "Update Consultation"}
