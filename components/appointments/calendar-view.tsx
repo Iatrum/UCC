@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
+type ViewMode = "Month" | "Week" | "Day";
 
 export interface CalendarAppointment {
   id: string;
@@ -17,6 +18,9 @@ export interface CalendarAppointment {
   status: AppointmentStatus;
   scheduledAt: Date | string;
 }
+
+const SLOT_START = 8;
+const SLOT_END = 20;
 
 const PILL_CLASSES: Record<AppointmentStatus, string> = {
   scheduled: "bg-indigo-50 text-indigo-900 border border-indigo-200",
@@ -50,7 +54,7 @@ const TODAY_BADGE_CLASSES: Record<AppointmentStatus, string> = {
   no_show: "bg-red-100 text-red-900 border border-dashed border-red-600 hover:bg-red-100",
 };
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -72,9 +76,8 @@ function toDateKey(date: Date): string {
 function buildMonthGrid(year: number, month: number): { date: Date; isCurrentMonth: boolean }[] {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
-  const leadingDays = firstDay.getDay(); // 0 = Sunday
+  const leadingDays = firstDay.getDay();
   const cells: { date: Date; isCurrentMonth: boolean }[] = [];
-
   for (let i = leadingDays; i > 0; i--) {
     cells.push({ date: new Date(year, month, 1 - i), isCurrentMonth: false });
   }
@@ -85,13 +88,48 @@ function buildMonthGrid(year: number, month: number): { date: Date; isCurrentMon
   for (let d = 1; d <= trailing; d++) {
     cells.push({ date: new Date(year, month + 1, d), isCurrentMonth: false });
   }
-
   return cells;
+}
+
+function buildWeekDays(anchorDate: Date): Date[] {
+  const sunday = new Date(anchorDate);
+  sunday.setDate(anchorDate.getDate() - anchorDate.getDay());
+  sunday.setHours(0, 0, 0, 0);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sunday);
+    d.setDate(sunday.getDate() + i);
+    return d;
+  });
+}
+
+function buildTimeSlots(start: number, end: number): number[] {
+  const slots: number[] = [];
+  for (let h = start; h <= end; h++) slots.push(h);
+  return slots;
 }
 
 function formatTime(date: Date | string): string {
   const d = date instanceof Date ? date : new Date(date);
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatHour(hour: number): string {
+  if (hour === 0) return "12 AM";
+  if (hour < 12) return `${hour} AM`;
+  if (hour === 12) return "12 PM";
+  return `${hour - 12} PM`;
+}
+
+function getApptHour(appt: CalendarAppointment): number {
+  const d = appt.scheduledAt instanceof Date ? appt.scheduledAt : new Date(appt.scheduledAt);
+  return d.getHours();
+}
+
+function formatPanelTime(scheduledAt: Date | string, mode: ViewMode): string {
+  const d = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (mode === "Week") return `${WEEKDAYS_SHORT[d.getDay()]} ${time}`;
+  return time;
 }
 
 interface Props {
@@ -102,14 +140,17 @@ export default function AppointmentsCalendarView({ appointments }: Props) {
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toDateKey(today), [today]);
 
-  const [currentDate, setCurrentDate] = useState(
+  const [viewMode, setViewMode] = useState<ViewMode>("Month");
+  const [currentDate, setCurrentDate] = useState<Date>(
     () => new Date(today.getFullYear(), today.getMonth(), 1)
   );
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  const grid = useMemo(() => buildMonthGrid(year, month), [year, month]);
+  const monthGrid = useMemo(() => buildMonthGrid(year, month), [year, month]);
+  const weekDays = useMemo(() => buildWeekDays(currentDate), [currentDate]);
+  const timeSlots = useMemo(() => buildTimeSlots(SLOT_START, SLOT_END), []);
 
   const appointmentsByDate = useMemo(() => {
     const map = new Map<string, CalendarAppointment[]>();
@@ -122,61 +163,159 @@ export default function AppointmentsCalendarView({ appointments }: Props) {
     return map;
   }, [appointments]);
 
-  const todayAppointments = useMemo(
+  // Pre-computed values for Day view
+  const currentDateKey = toDateKey(currentDate);
+  const isCurrentDayToday = currentDateKey === todayKey;
+
+  const currentDayAppts = useMemo(
     () =>
-      (appointmentsByDate.get(todayKey) ?? []).slice().sort(
+      (appointmentsByDate.get(currentDateKey) ?? []).slice().sort(
         (a, b) =>
           new Date(a.scheduledAt as string).getTime() -
           new Date(b.scheduledAt as string).getTime()
       ),
-    [appointmentsByDate, todayKey]
+    [appointmentsByDate, currentDateKey]
   );
+
+  const currentDayOutsideAppts = useMemo(
+    () => currentDayAppts.filter((a) => getApptHour(a) < SLOT_START || getApptHour(a) > SLOT_END),
+    [currentDayAppts]
+  );
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+
+  function handlePrev() {
+    if (viewMode === "Month") {
+      setCurrentDate(new Date(year, month - 1, 1));
+    } else if (viewMode === "Week") {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() - 7);
+      setCurrentDate(d);
+    } else {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() - 1);
+      setCurrentDate(d);
+    }
+  }
+
+  function handleNext() {
+    if (viewMode === "Month") {
+      setCurrentDate(new Date(year, month + 1, 1));
+    } else if (viewMode === "Week") {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + 7);
+      setCurrentDate(d);
+    } else {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + 1);
+      setCurrentDate(d);
+    }
+  }
+
+  function handleToday() {
+    if (viewMode === "Month") {
+      setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    } else {
+      setCurrentDate(new Date(today));
+    }
+  }
+
+  function handleViewMode(mode: ViewMode) {
+    if (mode === viewMode) return;
+    if (mode === "Month") {
+      // Normalize to 1st of the month containing currentDate
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+    } else if (viewMode === "Month") {
+      // Switching away from Month: anchor to today
+      setCurrentDate(new Date(today));
+    }
+    // Week ↔ Day: keep currentDate as-is
+    setViewMode(mode);
+  }
+
+  // ── Derived display values ──────────────────────────────────────────────────
+
+  const headerLabel = useMemo(() => {
+    if (viewMode === "Month") return `${MONTH_NAMES[month]} ${year}`;
+    if (viewMode === "Week") {
+      const first = weekDays[0];
+      const last = weekDays[6];
+      const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return `${fmt(first)} – ${fmt(last)}, ${last.getFullYear()}`;
+    }
+    return currentDate.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [viewMode, month, year, weekDays, currentDate]);
+
+  const prevAriaLabel =
+    viewMode === "Month" ? "Previous month" :
+    viewMode === "Week"  ? "Previous week"  : "Previous day";
+
+  const nextAriaLabel =
+    viewMode === "Month" ? "Next month" :
+    viewMode === "Week"  ? "Next week"  : "Next day";
+
+  // ── Panel ───────────────────────────────────────────────────────────────────
+
+  const panelTitle =
+    viewMode === "Month" ? "Today's appointments" :
+    viewMode === "Week"  ? "This week's appointments" :
+    `Appointments for ${currentDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}`;
+
+  const panelAppointments = useMemo(() => {
+    let appts: CalendarAppointment[];
+    if (viewMode === "Month") {
+      appts = appointmentsByDate.get(todayKey) ?? [];
+    } else if (viewMode === "Week") {
+      appts = [];
+      for (const day of weekDays) {
+        appts.push(...(appointmentsByDate.get(toDateKey(day)) ?? []));
+      }
+    } else {
+      appts = appointmentsByDate.get(currentDateKey) ?? [];
+    }
+    return appts.slice().sort(
+      (a, b) =>
+        new Date(a.scheduledAt as string).getTime() -
+        new Date(b.scheduledAt as string).getTime()
+    );
+  }, [viewMode, appointmentsByDate, todayKey, weekDays, currentDateKey]);
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
+
       {/* ── Header ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
-            aria-label="Previous month"
-          >
+          <Button variant="outline" size="sm" onClick={handlePrev} aria-label={prevAriaLabel}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1))}
-          >
+          <Button variant="outline" size="sm" onClick={handleToday}>
             Today
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
-            aria-label="Next month"
-          >
+          <Button variant="outline" size="sm" onClick={handleNext} aria-label={nextAriaLabel}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <h2 className="ml-1 text-lg font-semibold">
-            {MONTH_NAMES[month]} {year}
-          </h2>
+          <h2 className="ml-1 text-lg font-semibold">{headerLabel}</h2>
         </div>
 
-        {/* View mode toggle — Week and Day are placeholders */}
         <div className="flex overflow-hidden rounded-md border border-input">
           {(["Month", "Week", "Day"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
-              disabled={mode !== "Month"}
+              onClick={() => handleViewMode(mode)}
               className={[
                 "px-3 py-1.5 text-sm font-medium transition-colors",
-                mode === "Month"
+                viewMode === mode
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40",
+                  : "text-muted-foreground hover:bg-muted",
               ].join(" ")}
             >
               {mode}
@@ -185,104 +324,257 @@ export default function AppointmentsCalendarView({ appointments }: Props) {
         </div>
       </div>
 
-      {/* ── Calendar grid ── */}
-      <div className="overflow-hidden rounded-lg border border-border">
-        {/* Weekday headers */}
-        <div className="grid grid-cols-7 border-b border-border bg-muted/40">
-          {WEEKDAYS.map((day) => (
-            <div
-              key={day}
-              className="py-2 text-center text-xs font-medium text-muted-foreground"
-            >
-              {day}
-            </div>
-          ))}
+      {/* ── Month View ── */}
+      {viewMode === "Month" && (
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className="grid grid-cols-7 border-b border-border bg-muted/40">
+            {WEEKDAYS_SHORT.map((day) => (
+              <div key={day} className="py-2 text-center text-xs font-medium text-muted-foreground">
+                {day}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {monthGrid.map(({ date, isCurrentMonth }, idx) => {
+              const key = toDateKey(date);
+              const dayAppts = appointmentsByDate.get(key) ?? [];
+              const isToday = key === todayKey;
+              const visible = dayAppts.slice(0, 2);
+              const overflow = dayAppts.length - visible.length;
+              const isLastCol = idx % 7 === 6;
+              const isLastRow = idx >= 35;
+              return (
+                <div
+                  key={idx}
+                  className={[
+                    "min-h-[96px] p-1.5",
+                    !isLastCol && "border-r border-border",
+                    !isLastRow && "border-b border-border",
+                    isCurrentMonth ? "bg-background" : "bg-muted/20",
+                  ].filter(Boolean).join(" ")}
+                >
+                  <div className="mb-1 flex justify-end">
+                    <span
+                      className={[
+                        "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
+                        isToday
+                          ? "bg-primary text-primary-foreground"
+                          : isCurrentMonth
+                            ? "text-foreground"
+                            : "text-muted-foreground/50",
+                      ].join(" ")}
+                    >
+                      {date.getDate()}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {visible.map((appt) => (
+                      <div
+                        key={appt.id}
+                        title={`${appt.patientName} · ${formatTime(appt.scheduledAt)}`}
+                        className={[
+                          "flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
+                          PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
+                        ].join(" ")}
+                      >
+                        <span className={["h-1.5 w-1.5 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
+                        <span className="truncate">{formatTime(appt.scheduledAt)} {appt.patientName}</span>
+                      </div>
+                    ))}
+                    {overflow > 0 && (
+                      <div className="px-1 text-[11px] text-muted-foreground">+{overflow} more</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
+      )}
 
-        {/* Day cells — 6 rows × 7 cols = 42 cells */}
-        <div className="grid grid-cols-7">
-          {grid.map(({ date, isCurrentMonth }, idx) => {
-            const key = toDateKey(date);
-            const dayAppts = appointmentsByDate.get(key) ?? [];
-            const isToday = key === todayKey;
-            const visible = dayAppts.slice(0, 2);
-            const overflow = dayAppts.length - visible.length;
-            const isLastCol = idx % 7 === 6;
-            const isLastRow = idx >= 35;
+      {/* ── Week View ── */}
+      {viewMode === "Week" && (
+        <div className="overflow-x-auto">
+          <div className="min-w-[500px] overflow-hidden rounded-lg border border-border">
+            <div className="grid grid-cols-7 divide-x divide-border">
+              {weekDays.map((day, i) => {
+                const key = toDateKey(day);
+                const isToday = key === todayKey;
+                const dayAppts = (appointmentsByDate.get(key) ?? []).slice().sort(
+                  (a, b) =>
+                    new Date(a.scheduledAt as string).getTime() -
+                    new Date(b.scheduledAt as string).getTime()
+                );
+                return (
+                  <div key={i} className="flex min-w-0 flex-col overflow-hidden">
+                    {/* Day header */}
+                    <div
+                      className={[
+                        "border-b border-border px-1 py-2 text-center",
+                        isToday ? "bg-primary" : "bg-muted/40",
+                      ].join(" ")}
+                    >
+                      <p
+                        className={[
+                          "text-[11px] font-medium uppercase tracking-wide",
+                          isToday ? "text-primary-foreground/80" : "text-muted-foreground",
+                        ].join(" ")}
+                      >
+                        {WEEKDAYS_SHORT[day.getDay()]}
+                      </p>
+                      <p
+                        className={[
+                          "mt-0.5 text-sm font-bold leading-none",
+                          isToday ? "text-primary-foreground" : "text-foreground",
+                        ].join(" ")}
+                      >
+                        {day.getDate()}
+                      </p>
+                    </div>
+                    {/* Appointment list */}
+                    <div className="flex flex-1 flex-col items-start gap-2 p-2 min-h-[600px]">
+                      {dayAppts.map((appt) => (
+                        <div
+                          key={appt.id}
+                          title={`${appt.patientName} · ${formatTime(appt.scheduledAt)}`}
+                          className={[
+                            "flex w-full max-w-full items-center gap-1 overflow-hidden rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
+                            PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
+                          ].join(" ")}
+                        >
+                          <span className={["h-1.5 w-1.5 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
+                          <span className="truncate">{formatTime(appt.scheduledAt)} {appt.patientName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* ── Day View ── */}
+      {viewMode === "Day" && (
+        <div className="overflow-hidden rounded-lg border border-border">
+
+          {/* Day header */}
+          <div className="flex border-b border-border bg-muted/40">
+            <div className="w-14 shrink-0 border-r border-border" />
+            <div className={["flex-1 px-4 py-3", isCurrentDayToday && "bg-primary/5"].filter(Boolean).join(" ")}>
+              <p className="text-sm font-semibold">
+                {currentDate.toLocaleDateString(undefined, {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {currentDayAppts.length === 0
+                  ? "No appointments"
+                  : `${currentDayAppts.length} appointment${currentDayAppts.length !== 1 ? "s" : ""}`}
+              </p>
+            </div>
+          </div>
+
+          {/* Time slot rows */}
+          {timeSlots.map((slot, slotIdx) => {
+            const slotAppts = currentDayAppts.filter((a) => getApptHour(a) === slot);
+            const isLastSlot = slotIdx === timeSlots.length - 1 && currentDayOutsideAppts.length === 0;
             return (
               <div
-                key={idx}
-                className={[
-                  "min-h-[96px] p-1.5",
-                  !isLastCol && "border-r border-border",
-                  !isLastRow && "border-b border-border",
-                  isCurrentMonth ? "bg-background" : "bg-muted/20",
-                ].filter(Boolean).join(" ")}
+                key={slot}
+                className={["flex", !isLastSlot && "border-b border-border"].filter(Boolean).join(" ")}
               >
-                {/* Date number */}
-                <div className="mb-1 flex justify-end">
-                  <span
-                    className={[
-                      "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
-                      isToday
-                        ? "bg-primary text-primary-foreground"
-                        : isCurrentMonth
-                          ? "text-foreground"
-                          : "text-muted-foreground/50",
-                    ].join(" ")}
-                  >
-                    {date.getDate()}
-                  </span>
+                <div className="flex w-14 shrink-0 items-start justify-end border-r border-border px-2 pt-2">
+                  <span className="text-[11px] text-muted-foreground">{formatHour(slot)}</span>
                 </div>
-
-                {/* Pills */}
-                <div className="space-y-0.5">
-                  {visible.map((appt) => (
+                <div
+                  className={[
+                    "min-h-[56px] flex-1 space-y-1.5 px-3 py-1.5",
+                    isCurrentDayToday && "bg-primary/5",
+                  ].filter(Boolean).join(" ")}
+                >
+                  {slotAppts.map((appt) => (
                     <div
                       key={appt.id}
-                      title={`${appt.patientName} · ${formatTime(appt.scheduledAt)}`}
                       className={[
-                        "flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
+                        "rounded-md px-2.5 py-2",
                         PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
                       ].join(" ")}
                     >
-                      <span className={["h-1.5 w-1.5 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
-                      <span className="truncate">{formatTime(appt.scheduledAt)} {appt.patientName}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={["h-2 w-2 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
+                          <span className="truncate text-sm font-medium">{appt.patientName}</span>
+                        </div>
+                        <Badge className={TODAY_BADGE_CLASSES[appt.status]}>
+                          {STATUS_LABELS[appt.status]}
+                        </Badge>
+                      </div>
+                      <div className="ml-4 mt-1 space-y-0.5 text-xs opacity-80">
+                        <p>{formatTime(appt.scheduledAt)}{appt.reason ? ` · ${appt.reason}` : ""}</p>
+                        {appt.clinician && <p className="opacity-75">{appt.clinician}</p>}
+                      </div>
                     </div>
                   ))}
-                  {overflow > 0 && (
-                    <div className="px-1 text-[11px] text-muted-foreground">
-                      +{overflow} more
-                    </div>
-                  )}
                 </div>
               </div>
             );
           })}
-        </div>
-      </div>
 
-      {/* ── Today's appointments panel ── */}
+          {/* Outside-hours overflow */}
+          {currentDayOutsideAppts.length > 0 && (
+            <div className="flex border-t border-border bg-muted/20">
+              <div className="flex w-14 shrink-0 items-center justify-end border-r border-border px-2 py-2">
+                <span className="text-[11px] italic text-muted-foreground">Other</span>
+              </div>
+              <div className="flex-1 space-y-1.5 px-3 py-1.5">
+                {currentDayOutsideAppts.map((appt) => (
+                  <div
+                    key={appt.id}
+                    className={[
+                      "rounded-md px-2.5 py-2",
+                      PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={["h-2 w-2 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
+                        <span className="truncate text-sm font-medium">{appt.patientName}</span>
+                      </div>
+                      <Badge className={TODAY_BADGE_CLASSES[appt.status]}>
+                        {STATUS_LABELS[appt.status]}
+                      </Badge>
+                    </div>
+                    <div className="ml-4 mt-1 space-y-0.5 text-xs opacity-80">
+                      <p>{formatTime(appt.scheduledAt)}{appt.reason ? ` · ${appt.reason}` : ""}</p>
+                      {appt.clinician && <p className="opacity-75">{appt.clinician}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Appointments panel ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            Today&apos;s appointments
-          </CardTitle>
+          <CardTitle className="text-base">{panelTitle}</CardTitle>
         </CardHeader>
         <CardContent>
-          {todayAppointments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No appointments today.</p>
+          {panelAppointments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No appointments.</p>
           ) : (
             <div className="divide-y divide-border">
-              {todayAppointments.map((appt) => (
-                <div
-                  key={appt.id}
-                  className="flex items-center justify-between gap-4 py-2.5"
-                >
+              {panelAppointments.map((appt) => (
+                <div key={appt.id} className="flex items-center justify-between gap-4 py-2.5">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="w-14 shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
-                      {formatTime(appt.scheduledAt)}
+                    <span className="w-20 shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
+                      {formatPanelTime(appt.scheduledAt, viewMode)}
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{appt.patientName}</p>
@@ -310,6 +602,7 @@ export default function AppointmentsCalendarView({ appointments }: Props) {
           </div>
         ))}
       </div>
+
     </div>
   );
 }
