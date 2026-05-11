@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
 import ReferralMCSection from "./referral-mc-section";
 
-type ProfileTab = "history" | "details" | "labs-imaging" | "referral-mc" | "documents";
+type ProfileTab = "history" | "labs-imaging" | "referral-mc" | "documents";
 type DrawerMode = "consult" | "treatment";
 
 type MedicalHistory = {
@@ -395,7 +395,6 @@ export default function PatientProfileWorkspace({
       <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-3">
         <TabsList className="w-auto">
           <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
-          <TabsTrigger value="details" className="px-3 text-xs">Patient Details</TabsTrigger>
           <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
           <TabsTrigger value="referral-mc" className="px-3 text-xs">Referral / MC</TabsTrigger>
           <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
@@ -444,96 +443,99 @@ export default function PatientProfileWorkspace({
                       </TableHeader>
                       <TableBody>
                         {consultations.map((consultation) => (
-                          <TableRow
-                            key={consultation.id}
-                            data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
-                            aria-selected={selectedConsultation?.id === consultation.id}
-                            className={cn(
-                              "cursor-pointer",
-                              selectedConsultation?.id === consultation.id && "bg-muted/50"
+                          <Fragment key={consultation.id}>
+                            <TableRow
+                              data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
+                              aria-selected={selectedConsultation?.id === consultation.id}
+                              className={cn(
+                                "cursor-pointer",
+                                selectedConsultation?.id === consultation.id && "bg-muted/50"
+                              )}
+                              onClick={() => {
+                                setSelectedConsultation((current) =>
+                                  current?.id === consultation.id ? null : consultation
+                                );
+                              }}
+                            >
+                              <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
+                              <TableCell>Consultation</TableCell>
+                              <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint?.replace(/<[^>]*>/g, "") || "—"}</TableCell>
+                              <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
+                              <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                  <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/consultations/${consultation.id}`}>View</Link>
+                                  </Button>
+                                  <Button size="sm" asChild>
+                                    <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {selectedConsultation?.id === consultation.id && (
+                              <TableRow className="hover:bg-transparent">
+                                <TableCell colSpan={6} className="bg-muted/30 px-6 pb-5 pt-3">
+                                  <div className="space-y-4">
+                                    <div>
+                                      <p className="mb-1 text-sm font-medium">Clinical Notes</p>
+                                      <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
+                                    </div>
+                                    <div>
+                                      <p className="mb-1 text-sm font-medium">Diagnosis</p>
+                                      <p className="text-sm text-muted-foreground">{consultation.diagnosis || "—"}</p>
+                                    </div>
+                                    {consultation.notes && (
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Notes</p>
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
+                                      </div>
+                                    )}
+                                    {consultation.progressNote && (
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Progress Note</p>
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
+                                      </div>
+                                    )}
+                                    {consultation.prescriptions && consultation.prescriptions.length > 0 && (
+                                      <div>
+                                        <p className="mb-2 text-sm font-medium">Prescriptions</p>
+                                        <ul className="space-y-1">
+                                          {consultation.prescriptions.map((rx, i) => (
+                                            <li key={i} className="text-sm text-muted-foreground">
+                                              {rx.medication?.name} — {rx.frequency}, {rx.duration}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {consultation.procedures && consultation.procedures.length > 0 && (
+                                      <div>
+                                        <p className="mb-2 text-sm font-medium">Procedures</p>
+                                        <ul className="space-y-1">
+                                          {consultation.procedures.map((proc, i) => (
+                                            <li key={i} className="text-sm text-muted-foreground">
+                                              {proc.name}{proc.notes ? ` — ${proc.notes}` : ""}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {consultation.id && (
+                                      <div className="flex flex-wrap gap-2 border-t pt-3">
+                                        <Button variant="outline" size="sm" asChild>
+                                          <Link href={`/consultations/${consultation.id}`}>Open full</Link>
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
                             )}
-                            onClick={() => {
-                              setSelectedConsultation((current) =>
-                                current?.id === consultation.id ? null : consultation
-                              );
-                            }}
-                          >
-                            <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
-                            <TableCell>Consultation</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint || "—"}</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
-                            <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                <Button variant="outline" size="sm" asChild>
-                                  <Link href={`/consultations/${consultation.id}`}>View</Link>
-                                </Button>
-                                <Button size="sm" asChild>
-                                  <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>
-                    {selectedConsultation && (
-                      <div className="mt-6 space-y-5 border-t pt-6">
-                        <div>
-                          <h3 className="text-lg font-semibold leading-tight">
-                            {formatDisplayDate(selectedConsultation.date)}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">{selectedConsultation.chiefComplaint}</p>
-                        </div>
-                        <div>
-                          <p className="mb-1 text-sm font-medium">Diagnosis</p>
-                          <p className="text-sm text-muted-foreground">{selectedConsultation.diagnosis || "—"}</p>
-                        </div>
-                        {selectedConsultation.notes && (
-                          <div>
-                            <p className="mb-1 text-sm font-medium">Notes</p>
-                            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{selectedConsultation.notes}</p>
-                          </div>
-                        )}
-                        {selectedConsultation.progressNote && (
-                          <div>
-                            <p className="mb-1 text-sm font-medium">Progress Note</p>
-                            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{selectedConsultation.progressNote}</p>
-                          </div>
-                        )}
-                        {selectedConsultation.prescriptions && selectedConsultation.prescriptions.length > 0 && (
-                          <div>
-                            <p className="mb-2 text-sm font-medium">Prescriptions</p>
-                            <ul className="space-y-1">
-                              {selectedConsultation.prescriptions.map((rx, i) => (
-                                <li key={i} className="text-sm text-muted-foreground">
-                                  {rx.medication?.name} — {rx.frequency}, {rx.duration}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {selectedConsultation.procedures && selectedConsultation.procedures.length > 0 && (
-                          <div>
-                            <p className="mb-2 text-sm font-medium">Procedures</p>
-                            <ul className="space-y-1">
-                              {selectedConsultation.procedures.map((proc, i) => (
-                                <li key={i} className="text-sm text-muted-foreground">
-                                  {proc.name}{proc.notes ? ` — ${proc.notes}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {selectedConsultation.id && (
-                          <div className="flex flex-wrap gap-2 border-t pt-4">
-                            <Button variant="outline" size="sm" asChild>
-                              <Link href={`/consultations/${selectedConsultation.id}`}>Open full</Link>
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    )}
                     </>
                   ) : (
                     <p className="text-muted-foreground">No consultation history found.</p>
@@ -542,90 +544,6 @@ export default function PatientProfileWorkspace({
               </Card>
             </TabsContent>
 
-            <TabsContent value="details" className="mt-0">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card>
-                  <CardContent className="p-4 space-y-3">
-                    <p className="text-sm font-medium">Contact</p>
-                    <dl className="space-y-1.5 text-sm">
-                      <div className="flex gap-2">
-                        <dt className="text-muted-foreground w-24 shrink-0">Phone</dt>
-                        <dd className="font-medium">{patient.phone || "—"}</dd>
-                      </div>
-                      <div className="flex gap-2">
-                        <dt className="text-muted-foreground w-24 shrink-0">Email</dt>
-                        <dd className="font-medium break-all">{patient.email || "—"}</dd>
-                      </div>
-                      <div className="flex gap-2">
-                        <dt className="text-muted-foreground w-24 shrink-0">Address</dt>
-                        <dd className="font-medium">{patient.address || "—"}</dd>
-                      </div>
-                      <div className="flex gap-2">
-                        <dt className="text-muted-foreground w-24 shrink-0">Postal code</dt>
-                        <dd className="font-medium">{patient.postalCode || "—"}</dd>
-                      </div>
-                    </dl>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4 space-y-3">
-                    <p className="text-sm font-medium">Emergency contact</p>
-                    {patient.emergencyContact?.name?.trim() || patient.emergencyContact?.phone?.trim() ? (
-                      <dl className="space-y-1.5 text-sm">
-                        <div className="flex gap-2">
-                          <dt className="text-muted-foreground w-24 shrink-0">Name</dt>
-                          <dd className="font-medium">{patient.emergencyContact.name || "—"}</dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="text-muted-foreground w-24 shrink-0">Relationship</dt>
-                          <dd className="font-medium capitalize">{patient.emergencyContact.relationship || "—"}</dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="text-muted-foreground w-24 shrink-0">Phone</dt>
-                          <dd className="font-medium">{patient.emergencyContact.phone || "—"}</dd>
-                        </div>
-                      </dl>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Not recorded</p>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card className="md:col-span-2">
-                  <CardContent className="p-4">
-                    <p className="text-sm font-medium mb-3">Medical history</p>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1.5">Allergies</p>
-                        {(() => {
-                          const filtered = (medicalHistory.allergies ?? []).filter((a) => !/^no known/i.test(a.trim()));
-                          return filtered.length ? (
-                            <ul className="space-y-0.5">
-                              {filtered.map((a, i) => <li key={i} className="text-sm">{a}</li>)}
-                            </ul>
-                          ) : <p className="text-sm text-muted-foreground">None</p>;
-                        })()}
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1.5">Conditions</p>
-                        {medicalHistory.conditions?.length ? (
-                          <ul className="space-y-0.5">
-                            {medicalHistory.conditions.map((c, i) => <li key={i} className="text-sm">{c}</li>)}
-                          </ul>
-                        ) : <p className="text-sm text-muted-foreground">None</p>}
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1.5">Medications</p>
-                        {medicalHistory.medications?.length ? (
-                          <ul className="space-y-0.5">
-                            {medicalHistory.medications.map((m, i) => <li key={i} className="text-sm">{m}</li>)}
-                          </ul>
-                        ) : <p className="text-sm text-muted-foreground">None</p>}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
 
             <TabsContent value="labs-imaging" className="mt-0">
               <div className="grid gap-4 lg:grid-cols-2">
@@ -685,6 +603,7 @@ export default function PatientProfileWorkspace({
                         onPlanChange={handleTreatmentPlanChange}
                         submitLabel="Sign"
                         submitting={treatmentSubmitting}
+                        patient={patient}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
