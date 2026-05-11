@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Table,
@@ -198,7 +198,7 @@ export default function PatientProfileWorkspace({
     event.preventDefault();
     if (consultSubmitting) return;
 
-    if (!clinicalNotes.trim() || !diagnosis.trim()) {
+    if (!clinicalNotes.replace(/<[^>]*>/g, "").trim() || !diagnosis.trim()) {
       toast({
         title: "Validation Error",
         description: "Please fill in clinical notes and diagnosis before signing.",
@@ -652,11 +652,11 @@ export default function PatientProfileWorkspace({
                 {drawerMode === "consult" && (
                   <form onSubmit={handleConsultSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-                      <Textarea
+                      <RichTextEditor
                         placeholder="Clinical notes"
-                        className="min-h-[360px]"
+                        minHeight="360px"
                         value={clinicalNotes}
-                        onChange={(event) => setClinicalNotes(event.target.value)}
+                        onChange={setClinicalNotes}
                       />
                       <Input
                         placeholder="Condition (diagnosis)"
