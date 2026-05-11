@@ -73,6 +73,40 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").trim();
 }
 
+function consultationVisitKey(consultation: ProfileConsultation): string {
+  const dateKey = consultation.date ? consultation.date.slice(0, 10) : "";
+  return [
+    dateKey,
+    stripHtml(consultation.chiefComplaint).toLowerCase(),
+    consultation.diagnosis.trim().toLowerCase(),
+  ].join("|");
+}
+
+function mergeByVisit(consultations: ProfileConsultation[]): ProfileConsultation[] {
+  const visits = new Map<string, ProfileConsultation>();
+
+  for (const consultation of consultations) {
+    const key = consultationVisitKey(consultation);
+    const existing = visits.get(key);
+
+    if (!existing) {
+      visits.set(key, {
+        ...consultation,
+        procedures: [...(consultation.procedures || [])],
+        prescriptions: [...(consultation.prescriptions || [])],
+      });
+      continue;
+    }
+
+    existing.procedures = [...(existing.procedures || []), ...(consultation.procedures || [])];
+    existing.prescriptions = [...(existing.prescriptions || []), ...(consultation.prescriptions || [])];
+    existing.notes = existing.notes || consultation.notes;
+    existing.progressNote = existing.progressNote || consultation.progressNote;
+  }
+
+  return Array.from(visits.values());
+}
+
 export default function PatientProfileWorkspace({
   patientId,
   patient,
@@ -131,11 +165,13 @@ export default function PatientProfileWorkspace({
     };
   }, []);
 
+  const visibleConsultations = useMemo(() => mergeByVisit(consultations), [consultations]);
+
   const latestConsultation = useMemo(() => {
-    return [...consultations]
+    return [...visibleConsultations]
       .filter((consultation) => consultation.chiefComplaint && consultation.diagnosis)
       .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
-  }, [consultations]);
+  }, [visibleConsultations]);
 
   const treatmentItemsCatalog = useMemo(
     () =>
@@ -259,6 +295,15 @@ export default function PatientProfileWorkspace({
       return;
     }
 
+    if (!latestConsultation.id) {
+      toast({
+        title: "Consult Missing ID",
+        description: "Refresh the patient profile and try signing treatment again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (treatmentEntries.length === 0) {
       toast({
         title: "No Treatment Added",
@@ -296,35 +341,23 @@ export default function PatientProfileWorkspace({
       .map((entry) => entry.meta?.code as ImagingProcedureCode)
       .filter(Boolean);
 
-    const baseTreatmentNotes = `Treatment visit based on consultation from ${formatDisplayDate(latestConsultation.date)}.`;
-    const mcReferralNames = documentEntries
-      .filter((entry) => entry.meta?.kind === "mc" || entry.meta?.kind === "referral")
-      .map((entry) => entry.name.trim())
-      .filter(Boolean);
-    const treatmentNotes =
-      mcReferralNames.length > 0
-        ? `${baseTreatmentNotes}\n\nRequested documents: ${mcReferralNames.join("; ")}`
-        : baseTreatmentNotes;
-
     try {
       setTreatmentSubmitting(true);
-      const response = await fetch("/api/consultations", {
+      const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientId,
-          chiefComplaint: latestConsultation.chiefComplaint,
-          diagnosis: latestConsultation.diagnosis,
-          notes: treatmentNotes,
+          consultationId: latestConsultation.id,
           procedures,
           prescriptions,
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success || !data?.consultationId) {
+      if (!response.ok || !data?.success) {
         throw new Error(data?.error || "Failed to save treatment");
       }
 
+      const consultationId = latestConsultation.id;
       const orderErrors: string[] = [];
       if (labSelections.length) {
         try {
@@ -333,7 +366,7 @@ export default function PatientProfileWorkspace({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               patientId,
-              encounterId: data.consultationId,
+              encounterId: consultationId,
               tests: labSelections,
               priority: "routine",
               clinicalNotes: latestConsultation.chiefComplaint,
@@ -356,7 +389,7 @@ export default function PatientProfileWorkspace({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               patientId,
-              encounterId: data.consultationId,
+              encounterId: consultationId,
               procedures: imagingSelections,
               priority: "routine",
               clinicalIndication: latestConsultation.diagnosis || latestConsultation.chiefComplaint,
@@ -432,7 +465,7 @@ export default function PatientProfileWorkspace({
               </div>
               <Card>
                 <CardContent>
-                  {consultations.length > 0 ? (
+                  {visibleConsultations.length > 0 ? (
                     <>
                       <Table>
                       <TableHeader>
@@ -446,7 +479,7 @@ export default function PatientProfileWorkspace({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {consultations.map((consultation) => (
+                        {visibleConsultations.map((consultation) => (
                           <Fragment key={consultation.id}>
                             <TableRow
                               data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
