@@ -1,6 +1,7 @@
 import { getApps, initializeApp, cert, type App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 let adminApp: App;
 
@@ -46,5 +47,13 @@ if (getApps().length === 0) {
 
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
+export const adminStorage = getStorage(adminApp);
 
+export function getAdminStorageBucket() {
+  const bucketName = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  if (!bucketName) {
+    throw new Error('Firebase storage bucket is not configured');
+  }
+  return adminStorage.bucket(bucketName);
+}
 

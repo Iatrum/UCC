@@ -17,12 +17,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { OrderComposer } from "@/components/orders/order-composer";
+import { OrderComposer, buildSignedDocumentNote } from "@/components/orders/order-composer";
 import PatientDocuments from "@/components/patients/patient-documents";
 import { LabResultsView } from "@/components/labs/lab-results-view";
 import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
+import { formatPrescriptionLine } from "@/lib/prescriptions";
 import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-constants";
 import { IMAGING_PROCEDURES, type ImagingProcedureCode } from "@/lib/fhir/imaging-service";
 import { cn, formatDisplayDate } from "@/lib/utils";
@@ -31,7 +32,7 @@ import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
 import ReferralMCSection from "./referral-mc-section";
 
-type ProfileTab = "history" | "labs-imaging" | "referral-mc" | "documents";
+type ProfileTab = "history" | "labs-imaging" | "documents";
 type DrawerMode = "consult" | "treatment";
 
 type MedicalHistory = {
@@ -105,16 +106,6 @@ function mergeByVisit(consultations: ProfileConsultation[]): ProfileConsultation
   }
 
   return Array.from(visits.values());
-}
-
-function prescriptionDetails(prescription: Prescription): string {
-  return [
-    prescription.medication?.strength,
-    prescription.frequency,
-    prescription.duration,
-  ]
-    .filter(Boolean)
-    .join(" · ");
 }
 
 export default function PatientProfileWorkspace({
@@ -344,7 +335,7 @@ export default function PatientProfileWorkspace({
       quantity: entry.quantity,
       category: entry.tab,
       price: entry.unitPrice,
-      notes: entry.instruction,
+      notes: entry.tab === "documents" ? buildSignedDocumentNote(entry) : entry.instruction,
       procedureId: entry.catalogRef,
     }));
     const labSelections = documentEntries
@@ -448,7 +439,6 @@ export default function PatientProfileWorkspace({
         <TabsList className="w-auto">
           <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
           <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
-          <TabsTrigger value="referral-mc" className="px-3 text-xs">Referral / MC</TabsTrigger>
           <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
         </TabsList>
 
@@ -555,8 +545,7 @@ export default function PatientProfileWorkspace({
                                         <ul className="space-y-1">
                                           {consultation.prescriptions.map((rx, i) => (
                                             <li key={i} className="text-sm text-muted-foreground">
-                                              {rx.medication?.name}
-                                              {prescriptionDetails(rx) ? ` — ${prescriptionDetails(rx)}` : ""}
+                                              {formatPrescriptionLine(rx)}
                                             </li>
                                           ))}
                                         </ul>
@@ -606,14 +595,13 @@ export default function PatientProfileWorkspace({
               </div>
             </TabsContent>
 
-            <TabsContent value="referral-mc" className="mt-0">
-              <Suspense fallback={<div>Loading form...</div>}>
-                <ReferralMCSection patient={patient} />
-              </Suspense>
-            </TabsContent>
-
             <TabsContent value="documents" className="mt-0">
-              <PatientDocuments patientId={patientId} />
+              <div className="grid gap-4">
+                <Suspense fallback={<div>Loading documents...</div>}>
+                  <ReferralMCSection patient={patient} consultations={visibleConsultations} />
+                </Suspense>
+                <PatientDocuments patientId={patientId} />
+              </div>
             </TabsContent>
           </div>
 

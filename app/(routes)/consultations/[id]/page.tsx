@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
+import { formatPrescriptionLine } from '@/lib/prescriptions';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -128,9 +129,7 @@ export default async function ConsultationDetails({ params }: Props) {
                   <ul className="space-y-1 text-sm">
                     {consultation.prescriptions.map((prescription, index) => (
                       <li key={index}>
-                        {prescription.medication.name}{' '}
-                        {prescription.frequency}{' '}
-                        {prescription.duration}
+                        {formatPrescriptionLine(prescription)}
                       </li>
                     ))}
                   </ul>

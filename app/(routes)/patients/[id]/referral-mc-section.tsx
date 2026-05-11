@@ -22,7 +22,9 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { getPatientReferrals, deleteReferral, type Referral } from "@/lib/fhir/referral-client";
 import ReferralDocument from "@/components/referrals/referral-document";
+import { McDocument } from "@/components/mc/mc-document";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
+import type { ProcedureRecord } from "@/lib/models";
 
 function formatDateLabel(value: Date | string | null | undefined): string | null {
   if (!value) return null;
@@ -31,17 +33,86 @@ function formatDateLabel(value: Date | string | null | undefined): string | null
   return format(date, "dd MMM yyyy");
 }
 
-interface ReferralMCSectionProps {
-  patient: any;
+function calcMcEndDate(startDate: string | null | undefined, numDays: number): string {
+  if (!startDate || numDays <= 0) return formatDateLabel(new Date()) || "";
+  const date = new Date(startDate);
+  if (Number.isNaN(date.getTime())) return formatDateLabel(new Date()) || "";
+  date.setDate(date.getDate() + numDays - 1);
+  return formatDateLabel(date) || "";
 }
 
-export default function ReferralMCSection({ patient }: ReferralMCSectionProps) {
+interface ReferralMCSectionProps {
+  patient: any;
+  consultations?: Array<{
+    id?: string;
+    date?: string | Date | null;
+    procedures?: ProcedureRecord[];
+  }>;
+}
+
+type SignedDocument = {
+  id: string;
+  kind: "mc" | "referral";
+  title: string;
+  date: string | Date | null | undefined;
+  status?: string;
+  details: Record<string, string>;
+};
+
+function parseSignedDocumentNote(value?: string): Record<string, string> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, string>;
+    }
+  } catch {
+    return {};
+  }
+  return {};
+}
+
+function signedDocumentKind(procedure: ProcedureRecord): "mc" | "referral" | null {
+  const details = parseSignedDocumentNote(procedure.notes);
+  if (details.kind === "mc" || details.kind === "referral") return details.kind;
+
+  const key = `${procedure.procedureId || ""} ${procedure.name || ""}`.toLowerCase();
+  if (key.includes("letter-mc") || key.includes("medical certificate") || /\bmc\b/.test(key)) return "mc";
+  if (key.includes("letter-referral") || key.includes("referral")) return "referral";
+  return null;
+}
+
+function getSignedDocuments(consultations: ReferralMCSectionProps["consultations"] = []): SignedDocument[] {
+  return consultations.flatMap((consultation) =>
+    (consultation.procedures || [])
+      .flatMap((procedure, index): SignedDocument[] => {
+        if (procedure.category !== "documents") return [];
+
+        const details = parseSignedDocumentNote(procedure.notes);
+        const kind = signedDocumentKind(procedure);
+        if (!kind) return [];
+
+        return [{
+          id: `${consultation.id || "consultation"}-${procedure.procedureId || procedure.name}-${index}`,
+          kind,
+          title: details.title || procedure.name || (kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"),
+          date: consultation.date,
+          status: details.status || undefined,
+          details,
+        }];
+      })
+  );
+}
+
+export default function ReferralMCSection({ patient, consultations = [] }: ReferralMCSectionProps) {
   const { toast } = useToast();
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState<Referral | null>(null);
+  const [viewingSigned, setViewingSigned] = useState<SignedDocument | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
+  const signedDocuments = getSignedDocuments(consultations);
 
   useEffect(() => {
     let active = true;
@@ -84,12 +155,50 @@ export default function ReferralMCSection({ patient }: ReferralMCSectionProps) {
     }
   }
 
+  function renderSignedDocument(doc: SignedDocument) {
+    const issuedDate = formatDateLabel(doc.date) || formatDateLabel(new Date()) || "";
+    if (doc.kind === "mc") {
+      const numDays = Number(doc.details.mcDays || 1);
+      const startDate = formatDateLabel(doc.details.mcStartDate) || issuedDate;
+      return (
+        <McDocument
+          patient={patient}
+          issuedDate={issuedDate}
+          startDate={startDate}
+          endDate={calcMcEndDate(doc.details.mcStartDate, numDays)}
+          numDays={numDays}
+          doctorName={doc.details.mcDoctorName || ""}
+          organization={organization}
+        />
+      );
+    }
+
+    return (
+      <ReferralDocument
+        letterText={doc.details.referralContent || ""}
+        organization={organization}
+        metadata={{
+          dateLabel: issuedDate,
+          patientName: patient.fullName,
+          patientId: patient.nric,
+          patientDateOfBirth: formatDateLabel(patient.dateOfBirth),
+          patientPhone: patient.phone ?? null,
+          patientEmail: patient.email ?? null,
+          specialty: doc.details.referralDiagnosis || null,
+          facility: doc.details.referralTo || null,
+          toLine: doc.details.referralTo || null,
+          fromLine: organization?.name ?? null,
+        }}
+      />
+    );
+  }
+
   return (
     <div className="grid gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Patient Documents</CardTitle>
-          <CardDescription>Saved MCs, referral letters, and other patient documents.</CardDescription>
+          <CardTitle>Generated Documents</CardTitle>
+          <CardDescription>Saved MCs and referral letters.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading && (
@@ -98,9 +207,43 @@ export default function ReferralMCSection({ patient }: ReferralMCSectionProps) {
               Loading documents…
             </div>
           )}
-          {!loading && referrals.length === 0 && (
+          {!loading && referrals.length === 0 && signedDocuments.length === 0 && (
             <p className="text-sm text-muted-foreground">No saved documents.</p>
           )}
+          {signedDocuments.map((doc) => (
+            <div key={doc.id} className="flex items-center justify-between rounded-lg border p-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">
+                    {doc.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {[
+                      doc.kind === "mc"
+                        ? [
+                            doc.details.mcDays ? `${doc.details.mcDays} day${doc.details.mcDays === "1" ? "" : "s"}` : null,
+                            doc.details.mcStartDate ? `from ${formatDateLabel(doc.details.mcStartDate)}` : null,
+                            doc.details.mcDiagnosis,
+                          ].filter(Boolean).join(" • ")
+                        : [doc.details.referralTo, doc.details.referralDiagnosis].filter(Boolean).join(" • "),
+                      doc.date ? formatDateLabel(doc.date) : null,
+                      doc.status,
+                    ]
+                      .filter(Boolean)
+                      .join(" — ")}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setViewingSigned(doc)}>
+                  View
+                </Button>
+              </div>
+            </div>
+          ))}
           {referrals.map((r) => (
             <div key={r.id} className="flex items-center justify-between rounded-lg border p-4">
               <div className="flex items-center gap-4">
@@ -136,6 +279,48 @@ export default function ReferralMCSection({ patient }: ReferralMCSectionProps) {
           ))}
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewingSigned} onOpenChange={(open) => !open && setViewingSigned(null)}>
+        <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">
+          <div className="flex h-[90vh] flex-col">
+            <DialogHeader className="space-y-2 border-b px-6 py-4">
+              <DialogTitle>
+                {viewingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
+              </DialogTitle>
+              <DialogDescription>{viewingSigned ? formatDateLabel(viewingSigned.date) : ""}</DialogDescription>
+            </DialogHeader>
+
+            <div className="min-h-0 flex-1 px-6 py-4">
+              {viewingSigned && (
+                <div className="h-full overflow-hidden rounded-lg border">
+                  <PDFViewer className="h-full w-full">
+                    {renderSignedDocument(viewingSigned)}
+                  </PDFViewer>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t px-6 py-4">
+              <Button variant="outline" onClick={() => setViewingSigned(null)}>Close</Button>
+              <Button
+                onClick={async () => {
+                  if (!viewingSigned) return;
+                  const blob = await pdf(renderSignedDocument(viewingSigned)).toBlob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${viewingSigned.kind}-${patient.id}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                disabled={!viewingSigned}
+              >
+                <Download className="mr-2 h-4 w-4" /> Download PDF
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
         <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">

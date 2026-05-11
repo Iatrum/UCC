@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
+import { formatPrescriptionDetails } from "@/lib/prescriptions";
 
 type CheckoutClientProps = {
   consultationId: string;
@@ -69,9 +70,7 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
   const prescriptions = (consultation.prescriptions || []).map((prescription, index) => ({
     id: `prescription-${index}`,
     name: prescription.medication?.name || "Medication",
-    description: [prescription.medication?.strength, prescription.frequency, prescription.duration]
-      .filter(Boolean)
-      .join(" · "),
+    description: formatPrescriptionDetails(prescription),
     type: "Item" as const,
     category: prescription.category || "items",
     quantity: prescription.quantity ?? 1,
