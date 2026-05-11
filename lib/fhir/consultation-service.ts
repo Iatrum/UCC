@@ -25,7 +25,7 @@ export interface ConsultationData {
   patientId: string;
   chiefComplaint: string;
   diagnosis: string;
-  procedures?: Array<{ name: string; price?: number }>;
+  procedures?: Array<{ name: string; price?: number; notes?: string; procedureId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
   notes?: string;
   progressNote?: string;
   prescriptions?: Array<{
@@ -368,6 +368,7 @@ export async function saveConsultationToMedplum(
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
         code: codeable,
+        note: proc.notes ? [{ text: proc.notes }] : undefined,
         performedDateTime: encounterDate,
       }, clinicId));
     }
@@ -481,6 +482,7 @@ export async function getConsultationFromMedplum(
       progressNote: (progressNote as any)?.valueString,
       procedures: procedures.map((proc: Procedure) => ({
         name: (proc as any).code?.text || 'Procedure',
+        notes: proc.note?.[0]?.text,
         price: 0,
       })),
       prescriptions: medications.map((med: MedicationRequest) => ({
@@ -709,12 +711,28 @@ export async function updateConsultationInMedplum(
   if (updates.procedures !== undefined) {
     await Promise.all(procedures.map((p) => client.deleteResource('Procedure', p.id!)));
     for (const proc of updates.procedures as any[]) {
+      const codeable = proc.codingCode || proc.codingDisplay || proc.codingSystem
+        ? {
+            coding: proc.codingCode
+              ? [
+                  {
+                    system: proc.codingSystem || 'http://snomed.info/sct',
+                    code: proc.codingCode,
+                    display: proc.codingDisplay || proc.name,
+                  },
+                ]
+              : undefined,
+            text: proc.codingDisplay || proc.name,
+          }
+        : { text: proc.name };
+
       await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         status: 'completed',
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
-        code: { text: proc.name },
+        code: codeable,
+        note: proc.notes ? [{ text: proc.notes }] : undefined,
         performedDateTime: now,
       }, clinicId));
     }

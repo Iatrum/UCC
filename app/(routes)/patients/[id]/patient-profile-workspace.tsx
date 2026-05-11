@@ -107,6 +107,16 @@ function mergeByVisit(consultations: ProfileConsultation[]): ProfileConsultation
   return Array.from(visits.values());
 }
 
+function prescriptionDetails(prescription: Prescription): string {
+  return [
+    prescription.medication?.strength,
+    prescription.frequency,
+    prescription.duration,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function PatientProfileWorkspace({
   patientId,
   patient,
@@ -540,7 +550,8 @@ export default function PatientProfileWorkspace({
                                         <ul className="space-y-1">
                                           {consultation.prescriptions.map((rx, i) => (
                                             <li key={i} className="text-sm text-muted-foreground">
-                                              {rx.medication?.name} — {rx.frequency}, {rx.duration}
+                                              {rx.medication?.name}
+                                              {prescriptionDetails(rx) ? ` — ${prescriptionDetails(rx)}` : ""}
                                             </li>
                                           ))}
                                         </ul>
@@ -552,7 +563,8 @@ export default function PatientProfileWorkspace({
                                         <ul className="space-y-1">
                                           {consultation.procedures.map((proc, i) => (
                                             <li key={i} className="text-sm text-muted-foreground">
-                                              {proc.name}{proc.notes ? ` — ${proc.notes}` : ""}
+                                              {proc.name}
+                                              {proc.notes ? ` — ${proc.notes}` : ""}
                                             </li>
                                           ))}
                                         </ul>
