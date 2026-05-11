@@ -19,6 +19,7 @@ import {
   fetchOrganizationDetails,
   type OrganizationDetails,
 } from "@/lib/org";
+import { formatPrescriptionDetails } from "@/lib/prescriptions";
 
 interface BillModalProps {
   isOpen: boolean;
@@ -111,7 +112,7 @@ export default function BillModal({ isOpen, onClose, isLoading, data }: BillModa
   const buildBillData = (patient: Patient, consultation: Consultation) => {
     const prescriptions = (consultation.prescriptions || []).map((p) => ({
       name: p.medication?.name || 'Medication',
-      dosage: [p.medication?.strength, p.frequency, p.duration].filter(Boolean).join(' · '),
+      dosage: formatPrescriptionDetails(p),
       price: p.price ?? 0,
     }));
     const procedures = (consultation.procedures || []).map((proc) => ({

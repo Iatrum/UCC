@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
+import { formatPrescriptionDetails } from "@/lib/prescriptions";
 
 type CheckoutClientProps = {
   consultationId: string;
@@ -37,6 +38,7 @@ type CheckoutItem = {
   name: string;
   description: string;
   type: "Item" | "Service";
+  category: "items" | "services" | "packages" | "documents";
   quantity: number;
   price: number;
 };
@@ -60,18 +62,18 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
     name: procedure.name || "Procedure",
     description: procedure.notes || "Clinical service",
     type: "Service" as const,
-    quantity: 1,
+    category: procedure.category || "services",
+    quantity: procedure.quantity ?? 1,
     price: procedure.price ?? 0,
   }));
 
   const prescriptions = (consultation.prescriptions || []).map((prescription, index) => ({
     id: `prescription-${index}`,
     name: prescription.medication?.name || "Medication",
-    description: [prescription.medication?.strength, prescription.frequency, prescription.duration]
-      .filter(Boolean)
-      .join(" · "),
+    description: formatPrescriptionDetails(prescription),
     type: "Item" as const,
-    quantity: 1,
+    category: prescription.category || "items",
+    quantity: prescription.quantity ?? 1,
     price: prescription.price ?? 0,
   }));
 
@@ -87,6 +89,7 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
       name: "Consultation Fee",
       description: consultation.chiefComplaint || "Default consultation charge",
       type: "Service",
+      category: "services",
       quantity: 1,
       price: DEFAULT_CONSULTATION_FEE,
     },
@@ -300,16 +303,16 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
                   <TreatmentRows items={checkoutItems} />
                 </TabsContent>
                 <TabsContent value="items">
-                  <TreatmentRows items={checkoutItems.filter((item) => item.type === "Item")} emptyText="No items added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "items")} emptyText="No items added." />
                 </TabsContent>
                 <TabsContent value="services">
-                  <TreatmentRows items={checkoutItems.filter((item) => item.type === "Service")} emptyText="No services added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "services")} emptyText="No services added." />
                 </TabsContent>
                 <TabsContent value="packages">
-                  <EmptyPanel text="No packages added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "packages")} emptyText="No packages added." />
                 </TabsContent>
                 <TabsContent value="documents">
-                  <EmptyPanel text="No chargeable documents added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "documents")} emptyText="No chargeable documents added." />
                 </TabsContent>
               </Tabs>
             </CardContent>

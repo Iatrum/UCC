@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  deleteObject,
+  getDownloadURL,
   getStorage,
   ref as storageRef,
   uploadBytes,
-  getDownloadURL,
-  deleteObject,
 } from "firebase/storage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,14 @@ type PatientDocument = {
   uploadedAt?: Date | string | null;
   uploadedBy?: string | null;
   storagePath?: string; // used only client-side for bucket deletion
+};
+
+type UploadResult = {
+  title: string;
+  contentType: string;
+  size: number;
+  url: string;
+  storagePath: string;
 };
 
 interface Props {
@@ -75,41 +83,76 @@ export default function PatientDocuments({ patientId }: Props) {
     fetchDocs();
   }, [fetchDocs]);
 
+  async function registerUploadedDocument(upload: UploadResult) {
+    const res = await fetch("/api/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patientId,
+        title: upload.title,
+        contentType: upload.contentType,
+        size: upload.size,
+        url: upload.url,
+        storagePath: upload.storagePath,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || "Failed to register document");
+    }
+  }
+
+  async function uploadWithBrowserFirebase(files: File[]) {
+    const storage = getStorage();
+    for (const file of files) {
+      const path = `patients/${patientId}/documents/${Date.now()}-${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file, { contentType: file.type });
+      const url = await getDownloadURL(ref);
+      await registerUploadedDocument({
+        title: file.name,
+        contentType: file.type,
+        size: file.size,
+        url,
+        storagePath: path,
+      });
+    }
+  }
+
   const onSelectFiles: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    const selectedFiles = Array.from(files);
 
-    const storage = getStorage();
     setUploading(true);
 
     try {
-      for (const file of Array.from(files)) {
+      const formData = new FormData();
+      for (const file of selectedFiles) {
         if (file.type !== "application/pdf") {
           toast({ title: "Invalid file", description: `${file.name} is not a PDF`, variant: "destructive" });
           continue;
         }
-        const path = `patients/${patientId}/documents/${Date.now()}-${file.name}`;
-        const ref = storageRef(storage, path);
-        await uploadBytes(ref, file, { contentType: file.type });
-        const url = await getDownloadURL(ref);
+        formData.append("files", file);
+      }
+      formData.append("patientId", patientId);
 
-        const res = await fetch('/api/documents', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            patientId,
-            title: file.name,
-            contentType: file.type,
-            size: file.size,
-            url,
-            storagePath: path,
-          }),
-        });
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        body: formData,
+      });
 
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error || 'Failed to register document in FHIR');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const message = String(err?.error || "");
+        if (message.includes("invalid_grant") || message.includes("Invalid JWT Signature")) {
+          await uploadWithBrowserFirebase(selectedFiles.filter((file) => file.type === "application/pdf"));
+          toast({ title: "Upload complete" });
+          fetchDocs();
+          return;
         }
+        throw new Error(err?.error || "Failed to upload document");
       }
       toast({ title: "Upload complete" });
       fetchDocs();
@@ -126,12 +169,11 @@ export default function PatientDocuments({ patientId }: Props) {
     const ok = confirm(`Delete ${docItem.title}? This cannot be undone.`);
     if (!ok) return;
     try {
-      // Delete from Storage
-      const storage = getStorage();
       if (docItem.storagePath) {
-        await deleteObject(storageRef(storage, docItem.storagePath));
+        await deleteObject(storageRef(getStorage(), docItem.storagePath)).catch((error) => {
+          console.warn("Browser Firebase Storage delete failed; server will attempt cleanup.", error);
+        });
       }
-      // Delete DocumentReference in Medplum
       const res = await fetch('/api/documents', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -161,7 +203,7 @@ export default function PatientDocuments({ patientId }: Props) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Documents</CardTitle>
+        <CardTitle>Uploaded Files</CardTitle>
         <div className="flex items-center gap-2">
           <label htmlFor="pdf-upload">
             <input

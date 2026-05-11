@@ -21,17 +21,21 @@ import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
 
 // Local types that match your app's interface
+type OrderCategory = 'items' | 'services' | 'packages' | 'documents';
+
 export interface ConsultationData {
   patientId: string;
   chiefComplaint: string;
   diagnosis: string;
-  procedures?: Array<{ name: string; price?: number }>;
+  procedures?: Array<{ name: string; price?: number; quantity?: number; category?: OrderCategory; notes?: string; procedureId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
   notes?: string;
   progressNote?: string;
   prescriptions?: Array<{
     medication: { id: string; name: string };
     frequency: string;
     duration: string;
+    quantity?: number;
+    category?: OrderCategory;
     price?: number;
     strength?: string;
   }>;
@@ -47,6 +51,9 @@ export interface SavedConsultation extends ConsultationData {
 }
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+const ORDER_PRICE_EXTENSION_URL = 'https://ucc.emr/order/unit-price';
+const ORDER_QUANTITY_EXTENSION_URL = 'https://ucc.emr/order/quantity';
+const ORDER_CATEGORY_EXTENSION_URL = 'https://ucc.emr/order/category';
 
 function addClinicIdentifier(identifiers: { system?: string; value?: string }[] | undefined, clinicId?: string) {
   if (!clinicId) return identifiers;
@@ -103,6 +110,32 @@ function withServiceProvider<T extends { [key: string]: any }>(resource: T, clin
     ...resource,
     serviceProvider: { reference: `Organization/${clinicId}` },
   };
+}
+
+function orderExtensions(item: { price?: number; quantity?: number; category?: OrderCategory }) {
+  const extensions = [];
+  if (Number.isFinite(item.price)) {
+    extensions.push({ url: ORDER_PRICE_EXTENSION_URL, valueDecimal: Number(item.price) });
+  }
+  if (Number.isFinite(item.quantity)) {
+    extensions.push({ url: ORDER_QUANTITY_EXTENSION_URL, valueDecimal: Number(item.quantity) });
+  }
+  if (item.category) {
+    extensions.push({ url: ORDER_CATEGORY_EXTENSION_URL, valueString: item.category });
+  }
+  return extensions.length > 0 ? extensions : undefined;
+}
+
+function decimalExtensionValue(resource: { extension?: { url?: string; valueDecimal?: number }[] }, url: string): number | undefined {
+  const value = resource.extension?.find((extension) => extension.url === url)?.valueDecimal;
+  return Number.isFinite(value) ? Number(value) : undefined;
+}
+
+function orderCategoryExtensionValue(resource: { extension?: { url?: string; valueString?: string }[] }): OrderCategory | undefined {
+  const value = resource.extension?.find((extension) => extension.url === ORDER_CATEGORY_EXTENSION_URL)?.valueString;
+  return value === 'items' || value === 'services' || value === 'packages' || value === 'documents'
+    ? value
+    : undefined;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -368,6 +401,8 @@ export async function saveConsultationToMedplum(
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
         code: codeable,
+        note: proc.notes ? [{ text: proc.notes }] : undefined,
+        extension: orderExtensions(proc),
         performedDateTime: encounterDate,
       }, clinicId));
     }
@@ -405,6 +440,7 @@ export async function saveConsultationToMedplum(
             text: `${(rx as any).dosage || ''} ${rx.frequency || ''} for ${rx.duration || ''}`.trim(),
           },
         ],
+        extension: orderExtensions(rx),
         authoredOn: encounterDate,
       }, clinicId));
     }
@@ -481,7 +517,10 @@ export async function getConsultationFromMedplum(
       progressNote: (progressNote as any)?.valueString,
       procedures: procedures.map((proc: Procedure) => ({
         name: (proc as any).code?.text || 'Procedure',
-        price: 0,
+        notes: proc.note?.[0]?.text,
+        quantity: decimalExtensionValue(proc, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
+        category: orderCategoryExtensionValue(proc),
+        price: decimalExtensionValue(proc, ORDER_PRICE_EXTENSION_URL) ?? 0,
       })),
       prescriptions: medications.map((med: MedicationRequest) => ({
         medication: {
@@ -490,7 +529,9 @@ export async function getConsultationFromMedplum(
         },
         frequency: (med as any).dosageInstruction?.[0]?.text || '',
         duration: '',
-        price: 0,
+        quantity: decimalExtensionValue(med, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
+        category: orderCategoryExtensionValue(med),
+        price: decimalExtensionValue(med, ORDER_PRICE_EXTENSION_URL) ?? 0,
       })),
       date: encounter.period?.start ? new Date(encounter.period.start) : new Date(),
       createdAt: encounter.meta?.lastUpdated ? new Date(encounter.meta.lastUpdated) : new Date(),
@@ -709,12 +750,29 @@ export async function updateConsultationInMedplum(
   if (updates.procedures !== undefined) {
     await Promise.all(procedures.map((p) => client.deleteResource('Procedure', p.id!)));
     for (const proc of updates.procedures as any[]) {
+      const codeable = proc.codingCode || proc.codingDisplay || proc.codingSystem
+        ? {
+            coding: proc.codingCode
+              ? [
+                  {
+                    system: proc.codingSystem || 'http://snomed.info/sct',
+                    code: proc.codingCode,
+                    display: proc.codingDisplay || proc.name,
+                  },
+                ]
+              : undefined,
+            text: proc.codingDisplay || proc.name,
+          }
+        : { text: proc.name };
+
       await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         status: 'completed',
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
-        code: { text: proc.name },
+        code: codeable,
+        note: proc.notes ? [{ text: proc.notes }] : undefined,
+        extension: orderExtensions(proc),
         performedDateTime: now,
       }, clinicId));
     }
@@ -745,6 +803,7 @@ export async function updateConsultationInMedplum(
         dosageInstruction: [{
           text: `${rx.dosage || ''} ${rx.frequency || ''} for ${rx.duration || ''}`.trim(),
         }],
+        extension: orderExtensions(rx),
         authoredOn: now,
       }, clinicId));
     }

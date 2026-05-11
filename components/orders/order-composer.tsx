@@ -224,6 +224,25 @@ function documentDisplayName(item: CatalogItem): string {
   return item.name;
 }
 
+export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | undefined {
+  const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
+  if (!kind) return entry.instruction;
+
+  return JSON.stringify({
+    kind,
+    status: entry.meta?.documentStatus || "completed",
+    title: entry.name,
+    instruction: entry.instruction || "",
+    mcDays: entry.meta?.mcDays || "",
+    mcDiagnosis: entry.meta?.mcDiagnosis || "",
+    mcStartDate: entry.meta?.mcStartDate || "",
+    mcDoctorName: entry.meta?.mcDoctorName || "",
+    referralTo: entry.meta?.referralTo || "",
+    referralDiagnosis: entry.meta?.referralDiagnosis || "",
+    referralContent: entry.meta?.referralContent || "",
+  });
+}
+
 function isDraftPersistenceUnavailable(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -486,6 +505,7 @@ export function OrderComposer({
       const next = prev.filter((item) => item.id !== entry.id);
       publishPlan(next);
       setDetailEntryId((id) => (id === entry.id ? null : id));
+      setEditingDocumentEntryId((id) => (id === entry.id ? null : id));
       if (persistenceDisabled) {
         return;
       }
@@ -534,7 +554,7 @@ export function OrderComposer({
         ...(editingDocumentKind === "mc"
           ? { mcDays: String(mcDays), mcDiagnosis, mcStartDate, mcDoctorName }
           : {}),
-        ...(editingDocumentKind === "referral" ? { referralTo, referralDiagnosis } : {}),
+        ...(editingDocumentKind === "referral" ? { referralTo, referralDiagnosis, referralContent } : {}),
       },
     });
     toast({
@@ -630,35 +650,65 @@ export function OrderComposer({
             {sortedEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No line items yet.</p>
             ) : (
-              sortedEntries.map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm hover:bg-muted/50"
-                  onClick={() => {
-                    const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
-                    if (entry.tab === "documents" && kind !== null) {
-                      setMcDays(Number(entry.meta?.mcDays || 1));
-                      setMcDiagnosis(entry.meta?.mcDiagnosis || "");
-                      setReferralTo(entry.meta?.referralTo || "(Insert Hosp name)");
-                      setReferralDiagnosis(entry.meta?.referralDiagnosis || "");
-                      setEditingDocumentEntryId(entry.id);
-                    } else {
-                      setDetailEntryId(entry.id);
-                    }
-                  }}
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-                      {kindLabelForTab(entry.tab)}
-                    </Badge>
-                    <span className="truncate font-medium">{entry.name}</span>
+              sortedEntries.map((entry) => {
+                const openEntry = () => {
+                  const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
+                  if (entry.tab === "documents" && kind !== null) {
+                    setMcDays(Number(entry.meta?.mcDays || 1));
+                    setMcDiagnosis(entry.meta?.mcDiagnosis || "");
+                    setMcStartDate(entry.meta?.mcStartDate || new Date().toISOString().split("T")[0]);
+                    setMcDoctorName(entry.meta?.mcDoctorName || "");
+                    setReferralTo(entry.meta?.referralTo || "(Insert Hosp name)");
+                    setReferralDiagnosis(entry.meta?.referralDiagnosis || "");
+                    setReferralContent(
+                      entry.meta?.referralContent ||
+                        "Please include any medical information you deem relevant for the referral"
+                    );
+                    setEditingDocumentEntryId(entry.id);
+                  } else {
+                    setDetailEntryId(entry.id);
+                  }
+                };
+
+                return (
+                  <div
+                    key={entry.id}
+                    role="button"
+                    tabIndex={0}
+                    className="flex w-full items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm hover:bg-muted/50"
+                    onClick={openEntry}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openEntry();
+                      }
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+                        {kindLabelForTab(entry.tab)}
+                      </Badge>
+                      <span className="truncate font-medium">{entry.name}</span>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {entry.quantity} × RM {entry.unitPrice.toFixed(2)}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove ${entry.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void removeEntry(entry);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {entry.quantity} × RM {entry.unitPrice.toFixed(2)}
-                  </span>
-                </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -780,10 +830,7 @@ export function OrderComposer({
               </div>
             </div>
           ) : null}
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => void handleCompleteDocumentDialog("draft")}>
-              Complete later
-            </Button>
+          <DialogFooter>
             <Button type="button" onClick={() => void handleCompleteDocumentDialog("completed")}>
               Complete document
             </Button>
