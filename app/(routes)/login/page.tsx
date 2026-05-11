@@ -20,19 +20,16 @@ function resolveAdminOrigin(): string | null {
   }
 
   const parts = hostname.split(".");
-  const targetHost =
-    parts.length >= 3
-      ? ["admin", ...parts.slice(1)].join(".")
-      : process.env.NEXT_PUBLIC_BASE_DOMAIN
-        ? `admin.${process.env.NEXT_PUBLIC_BASE_DOMAIN}`
-        : null;
-
-  if (!targetHost || targetHost === hostname) {
+  // Already on the base domain — return same origin so caller falls through
+  // to router.replace("/admin") without a cross-origin redirect.
+  if (parts.length < 3) {
     return origin;
   }
 
+  // On a clinic subdomain — redirect to base domain instead of admin subdomain.
+  const baseDomain = parts.slice(-2).join(".");
   const suffix = port ? `:${port}` : "";
-  return `${protocol}//${targetHost}${suffix}`;
+  return `${protocol}//${baseDomain}${suffix}`;
 }
 
 function isLocalHost(hostname: string): boolean {
