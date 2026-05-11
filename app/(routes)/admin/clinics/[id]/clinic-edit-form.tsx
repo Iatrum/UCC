@@ -240,8 +240,8 @@ export default function ClinicEditForm({
         <CardHeader>
           <CardTitle className="text-destructive">Danger Zone</CardTitle>
           <CardDescription>
-            Deleting a branch is permanent. It will be refused if any users are
-            still assigned.
+            Deleting a branch is permanent. All user assignments to this branch
+            will be removed automatically.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -256,8 +256,8 @@ export default function ClinicEditForm({
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete {clinic.name}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This removes the Medplum Organization resource for this
-                  branch. Users assigned to this branch must be removed first.
+                  This permanently removes the branch and automatically
+                  unassigns any users currently assigned to it.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
