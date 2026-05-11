@@ -68,12 +68,6 @@ const statusClasses: Record<PurchaseOrderStatus, string> = {
   cancelled: "bg-rose-100 text-rose-800",
 };
 
-const DOC_TYPE_ORDER: Record<PurchaseDocumentType, number> = {
-  rfq: 0,
-  purchaseOrder: 1,
-  invoice: 2,
-};
-
 export function PurchaseOrdersPanel({
   medications,
   purchaseOrders,
@@ -115,28 +109,6 @@ export function PurchaseOrdersPanel({
       (order.reference || "").toLowerCase().includes(referenceFilter.toLowerCase());
     return matchesSearch && matchesSupplier && matchesStatus && matchesReference;
   });
-
-  const groups = React.useMemo(() => {
-    const visible = filteredOrders.filter(
-      (order) => !(order.documentType === "rfq" && order.status === "converted")
-    );
-    const map = new Map<string, PurchaseOrder[]>();
-    for (const order of visible) {
-      const key = order.reference?.trim() || "";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(order);
-    }
-    for (const docs of map.values()) {
-      docs.sort(
-        (a, b) =>
-          DOC_TYPE_ORDER[a.documentType || "purchaseOrder"] -
-          DOC_TYPE_ORDER[b.documentType || "purchaseOrder"]
-      );
-    }
-    return [...map.entries()].sort(([refA], [refB]) =>
-      refB.localeCompare(refA, undefined, { numeric: true })
-    );
-  }, [filteredOrders]);
 
   return (
     <div className="space-y-6">
@@ -310,80 +282,67 @@ export function PurchaseOrdersPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {groups.length === 0 ? (
+                {filteredOrders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-12 text-center text-sm text-muted-foreground">
                       No purchase documents yet.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  groups.map(([ref, docs]) => (
-                    <React.Fragment key={ref || "__ungrouped__"}>
-                      <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
-                        <TableCell
-                          colSpan={7}
-                          className="py-2 px-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        >
-                          {ref || "No reference"}
-                        </TableCell>
-                      </TableRow>
-                      {docs.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell>
-                            <Badge variant="secondary" className="bg-slate-100 text-slate-700">
-                              {typeLabels[order.documentType || "purchaseOrder"]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium text-slate-900">{order.supplierName}</TableCell>
-                          <TableCell>{order.reference || "-"}</TableCell>
-                          <TableCell>
-                            <Badge className={statusClasses[order.status]}>{order.status}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            {order.items.reduce(
-                              (sum, item) =>
-                                sum + Number(item.requestedQuantity ?? item.quantity ?? item.receivedQuantity ?? 0),
-                              0
-                            )}{" "}
-                            /{" "}
-                            {order.items.reduce((sum, item) => sum + Number(item.receivedQuantity ?? 0), 0)}
-                          </TableCell>
-                          <TableCell>RM {order.amountDue.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              {order.documentType === "rfq" && order.status !== "converted" ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => onConvert(order.id, "purchaseOrder")}
-                                >
-                                  Create PO
-                                </Button>
-                              ) : null}
-                              {order.documentType === "purchaseOrder" &&
-                              !order.convertedDocumentIds?.length ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => onConvert(order.id, "invoice")}
-                                >
-                                  Create invoice
-                                </Button>
-                              ) : null}
-                              {order.documentType === "purchaseOrder" && order.status !== "received" ? (
-                                <Button size="sm" className="gap-2" onClick={() => onReceive(order.id)}>
-                                  <PackageCheck className="h-4 w-4" />
-                                  Receive
-                                </Button>
-                              ) : null}
-                              {order.documentType === "invoice" && order.status === "ordered" ? (
-                                <span className="text-sm text-muted-foreground">Awaiting payment settlement</span>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </React.Fragment>
+                  filteredOrders.map((order) => (
+                    <TableRow key={order.id}>
+                      <TableCell>
+                        <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+                          {typeLabels[order.documentType || "purchaseOrder"]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium text-slate-900">{order.supplierName}</TableCell>
+                      <TableCell>{order.reference || "-"}</TableCell>
+                      <TableCell>
+                        <Badge className={statusClasses[order.status]}>{order.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {order.items.reduce(
+                          (sum, item) =>
+                            sum + Number(item.requestedQuantity ?? item.quantity ?? item.receivedQuantity ?? 0),
+                          0
+                        )}{" "}
+                        /{" "}
+                        {order.items.reduce((sum, item) => sum + Number(item.receivedQuantity ?? 0), 0)}
+                      </TableCell>
+                      <TableCell>RM {order.amountDue.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          {order.documentType === "rfq" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onConvert(order.id, "purchaseOrder")}
+                            >
+                              Create PO
+                            </Button>
+                          ) : null}
+                          {order.documentType === "purchaseOrder" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onConvert(order.id, "invoice")}
+                            >
+                              Create invoice
+                            </Button>
+                          ) : null}
+                          {order.documentType === "purchaseOrder" && order.status === "ordered" ? (
+                            <Button size="sm" className="gap-2" onClick={() => onReceive(order.id)}>
+                              <PackageCheck className="h-4 w-4" />
+                              Receive
+                            </Button>
+                          ) : null}
+                          {order.documentType === "invoice" && order.status === "ordered" ? (
+                            <span className="text-sm text-muted-foreground">Awaiting payment settlement</span>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
               </TableBody>
