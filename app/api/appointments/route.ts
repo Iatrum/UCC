@@ -52,11 +52,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const patient = await getPatientFromMedplum(appointmentData.patientId, clinicId, medplum, { includeMedicalHistory: false });
-    if (!patient) {
-      return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
-    }
-
     const appointmentId = await saveAppointmentToMedplum(medplum, appointmentData);
     return NextResponse.json({
       success: true,
