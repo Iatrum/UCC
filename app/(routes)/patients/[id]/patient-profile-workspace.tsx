@@ -301,6 +301,39 @@ export default function PatientProfileWorkspace({
         throw new Error(data?.error || "Failed to save consultation");
       }
 
+      const signedConsultationId = typeof data.consultationId === "string" ? data.consultationId : "";
+      if (signedConsultationId && treatmentEntries.length > 0) {
+        try {
+          const targetDraftId = `profile-treatment-${patientId}-${signedConsultationId}`;
+          for (const entry of treatmentEntries) {
+            const draftResponse = await fetch("/api/consultations/plan", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                draftId: targetDraftId,
+                patientId,
+                consultationId: signedConsultationId,
+                entry,
+              }),
+            });
+            const draftData = await draftResponse.json().catch(() => ({}));
+            if (!draftResponse.ok || !draftData?.success) {
+              throw new Error(draftData?.error || "Failed to move treatment draft to signed consult.");
+            }
+          }
+        } catch (draftError) {
+          console.error("Failed to move treatment draft after consult sign:", draftError);
+          toast({
+            title: "Treatment Draft Not Moved",
+            description:
+              draftError instanceof Error
+                ? draftError.message
+                : "The consult was signed, but the existing treatment draft may need to be re-added.",
+            variant: "destructive",
+          });
+        }
+      }
+
       toast({
         title: "Consult Signed",
         description: "Clinical notes and diagnosis were saved.",
@@ -679,9 +712,11 @@ export default function PatientProfileWorkspace({
                   <form onSubmit={handleTreatmentSign} className="flex flex-col h-full">
                     <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
                       <OrderComposer
-                        draftId={`profile-treatment-${patientId}`}
+                        draftId={`profile-treatment-${patientId}-${latestConsultation?.id || "pending"}`}
                         patientId={patientId}
+                        consultationId={latestConsultation?.id}
                         initialEntries={emptyTreatmentEntries}
+                        persistDrafts
                         items={treatmentItemsCatalog}
                         services={treatmentServicesCatalog}
                         packages={emptyPackages}

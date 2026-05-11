@@ -45,6 +45,7 @@ function isPlanStoreUnavailable(error: unknown): boolean {
     message.includes("UNAUTHENTICATED") ||
     message.includes("invalid authentication credentials") ||
     message.includes("Could not load the default credentials") ||
+    message.includes("NOT_FOUND") ||
     message.includes("service account") ||
     message.includes("Firestore")
   );

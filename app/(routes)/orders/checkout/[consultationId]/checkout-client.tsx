@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
 import { formatPrescriptionDetails } from "@/lib/prescriptions";
+import type { TreatmentPlanEntry } from "@/lib/treatment-plan";
 
 type CheckoutClientProps = {
   consultationId: string;
@@ -31,6 +32,7 @@ type CheckoutClientProps = {
 type OrderDetails = {
   patient: Patient;
   consultation: Consultation;
+  draftEntries: TreatmentPlanEntry[];
 };
 
 type CheckoutItem = {
@@ -41,11 +43,11 @@ type CheckoutItem = {
   category: "items" | "services" | "packages" | "documents";
   quantity: number;
   price: number;
+  orderIndex?: number;
+  fallbackIndex: number;
 };
 
 type PaymentMethod = "cash" | "card" | "qr" | "panel";
-
-const DEFAULT_CONSULTATION_FEE = 50;
 
 function currency(amount: number) {
   return new Intl.NumberFormat("en-MY", {
@@ -65,8 +67,11 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
     category: procedure.category || "services",
     quantity: procedure.quantity ?? 1,
     price: procedure.price ?? 0,
+    orderIndex: procedure.orderIndex,
+    fallbackIndex: index,
   }));
 
+  const procedureCount = procedures.length;
   const prescriptions = (consultation.prescriptions || []).map((prescription, index) => ({
     id: `prescription-${index}`,
     name: prescription.medication?.name || "Medication",
@@ -75,25 +80,42 @@ function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
     category: prescription.category || "items",
     quantity: prescription.quantity ?? 1,
     price: prescription.price ?? 0,
+    orderIndex: prescription.orderIndex,
+    fallbackIndex: procedureCount + index,
   }));
 
-  const items = [...procedures, ...prescriptions];
+  const items = [...procedures, ...prescriptions].sort((a, b) => {
+    const aOrder = Number.isInteger(a.orderIndex) ? Number(a.orderIndex) : Number.POSITIVE_INFINITY;
+    const bOrder = Number.isInteger(b.orderIndex) ? Number(b.orderIndex) : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.fallbackIndex - b.fallbackIndex;
+  });
 
   if (items.length > 0) {
     return items;
   }
 
-  return [
-    {
-      id: "consultation-fee",
-      name: "Consultation Fee",
-      description: consultation.chiefComplaint || "Default consultation charge",
-      type: "Service",
-      category: "services",
-      quantity: 1,
-      price: DEFAULT_CONSULTATION_FEE,
-    },
-  ];
+  return [];
+}
+
+function buildDraftCheckoutItems(entries: TreatmentPlanEntry[]): CheckoutItem[] {
+  return [...entries]
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((entry, index) => ({
+      id: entry.id,
+      name: entry.name,
+      description: entry.instruction || formatDraftDetails(entry),
+      type: entry.tab === "items" ? "Item" as const : "Service" as const,
+      category: entry.tab,
+      quantity: entry.quantity,
+      price: entry.unitPrice,
+      orderIndex: index,
+      fallbackIndex: index,
+    }));
+}
+
+function formatDraftDetails(entry: TreatmentPlanEntry): string {
+  return [entry.dosage, entry.frequency, entry.duration].filter(Boolean).join(" · ");
 }
 
 export default function CheckoutClient({ consultationId, patientId }: CheckoutClientProps) {
@@ -103,6 +125,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const [error, setError] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [paidAmount, setPaidAmount] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
 
@@ -120,17 +143,38 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       setError(null);
 
       try {
-        const response = await fetch(
-          `/api/orders?consultationId=${encodeURIComponent(consultationId)}&patientId=${encodeURIComponent(patientId)}`
-        );
-        const payload = await response.json().catch(() => ({}));
+        const [orderResponse, invoiceResponse, draftResponse] = await Promise.all([
+          fetch(
+            `/api/orders?consultationId=${encodeURIComponent(consultationId)}&patientId=${encodeURIComponent(patientId)}`
+          ),
+          fetch(
+            `/api/billing?consultationId=${encodeURIComponent(consultationId)}&previewNumber=true`,
+            { cache: "no-store" }
+          ),
+          fetch(
+            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${patientId}-${consultationId}`)}&patientId=${encodeURIComponent(patientId)}&consultationId=${encodeURIComponent(consultationId)}`,
+            { cache: "no-store" }
+          ),
+        ]);
+        const payload = await orderResponse.json().catch(() => ({}));
+        const invoicePayload = await invoiceResponse.json().catch(() => ({}));
+        const draftPayload = await draftResponse.json().catch(() => ({}));
 
-        if (!response.ok || !payload.patient || !payload.consultation) {
+        if (!orderResponse.ok || !payload.patient || !payload.consultation) {
           throw new Error(payload.error || "Failed to load checkout details.");
         }
 
         if (active) {
-          setDetails({ patient: payload.patient, consultation: payload.consultation });
+          setDetails({
+            patient: payload.patient,
+            consultation: payload.consultation,
+            draftEntries: draftResponse.ok && draftPayload?.success
+              ? draftPayload.plan?.entries || []
+              : [],
+          });
+          if (invoiceResponse.ok && invoicePayload?.invoiceNumber) {
+            setInvoiceNumber(String(invoicePayload.invoiceNumber));
+          }
         }
       } catch (err) {
         if (active) {
@@ -151,8 +195,11 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   }, [consultationId, patientId]);
 
   const checkoutItems = useMemo(
-    () => buildCheckoutItems(details?.consultation ?? null),
-    [details?.consultation]
+    () => {
+      const signedItems = buildCheckoutItems(details?.consultation ?? null);
+      return signedItems.length > 0 ? signedItems : buildDraftCheckoutItems(details?.draftEntries || []);
+    },
+    [details?.consultation, details?.draftEntries]
   );
   const subtotal = checkoutItems.reduce((total, item) => total + item.quantity * item.price, 0);
   const paid = Number.parseFloat(paidAmount) || 0;
@@ -174,6 +221,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           paymentMethod,
           paidAmount: paid,
           totalAmount: subtotal,
+          invoiceNumber,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -182,7 +230,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         throw new Error(payload.error || "Failed to complete checkout.");
       }
 
-      router.push(`/orders?checkout=completed&invoiceId=${encodeURIComponent(payload.invoiceId || "")}`);
+      const params = new URLSearchParams({ checkout: "completed" });
+      if (payload.invoiceId) params.set("invoiceId", payload.invoiceId);
+      if (payload.invoiceNumber) params.set("invoiceNumber", payload.invoiceNumber);
+      router.push(`/orders?${params.toString()}`);
     } catch (err) {
       setCompletionError(err instanceof Error ? err.message : "Failed to complete checkout.");
     } finally {
@@ -235,7 +286,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           </Button>
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight">Draft invoice</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Invoice</h1>
               <Badge variant="secondary">Checkout</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -291,6 +342,16 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         <div>
           <Card>
             <CardContent className="pt-6">
+              <div className="mb-4 grid gap-3 rounded-md border bg-muted/20 px-4 py-3 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Invoice No.</p>
+                  <p className="mt-1 font-semibold">{invoiceNumber || "Generating..."}</p>
+                </div>
+                <div className="sm:text-right">
+                  <p className="text-xs font-medium text-muted-foreground">Date</p>
+                  <p className="mt-1 font-medium">{formatDisplayDate(consultation.date)}</p>
+                </div>
+              </div>
               <Tabs defaultValue="all">
                 <TabsList className="mb-4 flex w-full overflow-x-auto md:w-fit">
                   <TabsTrigger value="all">All</TabsTrigger>

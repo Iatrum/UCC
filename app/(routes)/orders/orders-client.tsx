@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import Link from "next/link";
 import { BillableConsultation } from '@/lib/types';
@@ -14,11 +14,35 @@ interface OrdersClientProps {
   };
   checkoutComplete?: {
     invoiceId?: string;
+    invoiceNumber?: string;
   };
 }
 
 export default function OrdersClient({ initialConsultations, otcContext, checkoutComplete }: OrdersClientProps) {
-  const [consultations] = useState<BillableConsultation[]>(initialConsultations);
+  const [consultations, setConsultations] = useState<BillableConsultation[]>(initialConsultations);
+
+  useEffect(() => {
+    setConsultations(initialConsultations);
+  }, [initialConsultations]);
+
+  useEffect(() => {
+    let active = true;
+
+    fetch("/api/orders/billable", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (active && Array.isArray(payload?.consultations)) {
+          setConsultations(payload.consultations);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to refresh billable consultations:", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-6 container mx-auto py-8">
@@ -52,7 +76,7 @@ export default function OrdersClient({ initialConsultations, otcContext, checkou
               Checkout completed
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Medplum invoice {checkoutComplete.invoiceId || "record"} was saved and the visit was marked completed.
+              Invoice {checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record"} was saved and the visit was marked completed.
             </p>
           </CardContent>
         </Card>

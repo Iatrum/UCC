@@ -27,7 +27,7 @@ export interface ConsultationData {
   patientId: string;
   chiefComplaint: string;
   diagnosis: string;
-  procedures?: Array<{ name: string; price?: number; quantity?: number; category?: OrderCategory; notes?: string; procedureId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
+  procedures?: Array<{ name: string; price?: number; quantity?: number; orderIndex?: number; category?: OrderCategory; notes?: string; procedureId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
   notes?: string;
   progressNote?: string;
   prescriptions?: Array<{
@@ -35,6 +35,7 @@ export interface ConsultationData {
     frequency: string;
     duration: string;
     quantity?: number;
+    orderIndex?: number;
     category?: OrderCategory;
     price?: number;
     strength?: string;
@@ -54,6 +55,7 @@ const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 const ORDER_PRICE_EXTENSION_URL = 'https://ucc.emr/order/unit-price';
 const ORDER_QUANTITY_EXTENSION_URL = 'https://ucc.emr/order/quantity';
 const ORDER_CATEGORY_EXTENSION_URL = 'https://ucc.emr/order/category';
+const ORDER_INDEX_EXTENSION_URL = 'https://ucc.emr/order/index';
 
 function addClinicIdentifier(identifiers: { system?: string; value?: string }[] | undefined, clinicId?: string) {
   if (!clinicId) return identifiers;
@@ -112,13 +114,16 @@ function withServiceProvider<T extends { [key: string]: any }>(resource: T, clin
   };
 }
 
-function orderExtensions(item: { price?: number; quantity?: number; category?: OrderCategory }) {
+function orderExtensions(item: { price?: number; quantity?: number; orderIndex?: number; category?: OrderCategory }) {
   const extensions = [];
   if (Number.isFinite(item.price)) {
     extensions.push({ url: ORDER_PRICE_EXTENSION_URL, valueDecimal: Number(item.price) });
   }
   if (Number.isFinite(item.quantity)) {
     extensions.push({ url: ORDER_QUANTITY_EXTENSION_URL, valueDecimal: Number(item.quantity) });
+  }
+  if (Number.isInteger(item.orderIndex) && Number(item.orderIndex) >= 0) {
+    extensions.push({ url: ORDER_INDEX_EXTENSION_URL, valueInteger: Number(item.orderIndex) });
   }
   if (item.category) {
     extensions.push({ url: ORDER_CATEGORY_EXTENSION_URL, valueString: item.category });
@@ -129,6 +134,11 @@ function orderExtensions(item: { price?: number; quantity?: number; category?: O
 function decimalExtensionValue(resource: { extension?: { url?: string; valueDecimal?: number }[] }, url: string): number | undefined {
   const value = resource.extension?.find((extension) => extension.url === url)?.valueDecimal;
   return Number.isFinite(value) ? Number(value) : undefined;
+}
+
+function integerExtensionValue(resource: { extension?: { url?: string; valueInteger?: number }[] }, url: string): number | undefined {
+  const value = resource.extension?.find((extension) => extension.url === url)?.valueInteger;
+  return Number.isInteger(value) ? Number(value) : undefined;
 }
 
 function orderCategoryExtensionValue(resource: { extension?: { url?: string; valueString?: string }[] }): OrderCategory | undefined {
@@ -519,6 +529,7 @@ export async function getConsultationFromMedplum(
         name: (proc as any).code?.text || 'Procedure',
         notes: proc.note?.[0]?.text,
         quantity: decimalExtensionValue(proc, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
+        orderIndex: integerExtensionValue(proc, ORDER_INDEX_EXTENSION_URL),
         category: orderCategoryExtensionValue(proc),
         price: decimalExtensionValue(proc, ORDER_PRICE_EXTENSION_URL) ?? 0,
       })),
@@ -530,6 +541,7 @@ export async function getConsultationFromMedplum(
         frequency: (med as any).dosageInstruction?.[0]?.text || '',
         duration: '',
         quantity: decimalExtensionValue(med, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
+        orderIndex: integerExtensionValue(med, ORDER_INDEX_EXTENSION_URL),
         category: orderCategoryExtensionValue(med),
         price: decimalExtensionValue(med, ORDER_PRICE_EXTENSION_URL) ?? 0,
       })),
