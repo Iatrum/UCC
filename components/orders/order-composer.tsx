@@ -23,6 +23,8 @@ import {
   type TreatmentPlanSummary,
   type TreatmentPlanTab,
 } from "@/lib/treatment-plan";
+import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
+import { formatDisplayDate } from "@/lib/utils";
 
 type CatalogItem = {
   id: string;
@@ -45,6 +47,146 @@ interface OrderComposerProps {
   onPlanChange?: (entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => void;
   submitLabel?: string;
   submitting?: boolean;
+  patient?: { id: string; fullName: string; nric: string } | null;
+}
+
+function calcMcEndDate(startDate: string, numDays: number): string {
+  if (!startDate || numDays <= 0) return "N/A";
+  const d = new Date(startDate);
+  d.setDate(d.getDate() + numDays - 1);
+  return formatDisplayDate(d);
+}
+
+const PRIMARY = "#1e3a5f";
+const MUTED = "#6b7280";
+const BODY = "#111827";
+
+function DocLetterhead({ organization }: { organization: OrganizationDetails | null }) {
+  const hasLetterhead = Boolean(organization?.name || organization?.address || organization?.phone);
+  if (!hasLetterhead) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 10 }}>
+      {organization?.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img alt="" src={organization.logoUrl} style={{ width: 56, height: 56, objectFit: "contain", marginRight: 12, flexShrink: 0 }} />
+      )}
+      <div>
+        {organization?.name && <p style={{ fontSize: 14, fontWeight: 700, color: PRIMARY, margin: 0, marginBottom: 2 }}>{organization.name}</p>}
+        {organization?.address && <p style={{ fontSize: 9, color: MUTED, margin: 0, lineHeight: 1.4 }}>{organization.address}</p>}
+        {organization?.phone && <p style={{ fontSize: 9, color: MUTED, margin: 0, lineHeight: 1.4 }}>Tel: {organization.phone}</p>}
+      </div>
+    </div>
+  );
+}
+
+function McDocumentPreview({
+  patient,
+  issuedDate,
+  startDate,
+  endDate,
+  numDays,
+  doctorName,
+  organization,
+}: {
+  patient: { fullName: string; nric: string } | null;
+  issuedDate: string;
+  startDate: string;
+  endDate: string;
+  numDays: number;
+  doctorName: string;
+  organization: OrganizationDetails | null;
+}) {
+  return (
+    <div style={{ fontFamily: "Helvetica, Arial, sans-serif", padding: "32px 32px 32px 32px", fontSize: 11, color: BODY, backgroundColor: "white", minHeight: "100%", boxSizing: "border-box" }}>
+      <DocLetterhead organization={organization} />
+      <div style={{ borderBottom: `2px solid ${PRIMARY}` }} />
+      <div style={{ padding: "8px 0", textAlign: "center" }}>
+        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: PRIMARY }}>MEDICAL CERTIFICATE</span>
+      </div>
+      <div style={{ borderBottom: `0.5px solid ${PRIMARY}` }} />
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14, marginBottom: 16 }}>
+        <span style={{ fontSize: 10, color: MUTED, marginRight: 4 }}>Date Issued:</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: BODY }}>{issuedDate}</span>
+      </div>
+      <div style={{ border: "1px solid #d1d5db", borderRadius: 4, padding: "10px 14px", marginBottom: 20, backgroundColor: "#f9fafb" }}>
+        <div style={{ display: "flex", marginBottom: 6 }}>
+          <span style={{ width: 100, fontSize: 10, color: MUTED, fontWeight: 700, flexShrink: 0 }}>Patient Name</span>
+          <span style={{ fontSize: 11, color: BODY }}>{patient?.fullName ?? "—"}</span>
+        </div>
+        <div style={{ display: "flex" }}>
+          <span style={{ width: 100, fontSize: 10, color: MUTED, fontWeight: 700, flexShrink: 0 }}>NRIC / ID</span>
+          <span style={{ fontSize: 11, color: BODY }}>{patient?.nric ?? "—"}</span>
+        </div>
+      </div>
+      <p style={{ fontSize: 11, lineHeight: 1.6, color: BODY, marginBottom: 32 }}>
+        This is to certify that the above-named patient was examined at our clinic and is certified medically unfit for work/school from{" "}
+        <strong>{startDate}</strong> to <strong>{endDate}</strong> ({numDays} day{numDays > 1 ? "s" : ""}).
+      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "auto" }}>
+        <div style={{ width: 200 }}>
+          <div style={{ borderBottom: `1px solid ${BODY}`, width: 160, marginBottom: 6 }} />
+          <p style={{ fontSize: 11, fontWeight: 700, color: BODY, margin: 0, marginBottom: 2 }}>{doctorName || " "}</p>
+          <p style={{ fontSize: 10, color: MUTED, margin: 0, marginBottom: 2 }}>Medical Practitioner</p>
+          <p style={{ fontSize: 10, color: MUTED, margin: 0 }}>Date: {issuedDate}</p>
+        </div>
+        <div style={{ width: 80, height: 80, border: "1px dashed #d1d5db", borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontSize: 8, color: "#9ca3af", textAlign: "center" }}>Clinic</span>
+          <span style={{ fontSize: 8, color: "#9ca3af", textAlign: "center" }}>Stamp</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReferralDocumentPreview({
+  letterText,
+  organization,
+  metadata,
+}: {
+  letterText: string;
+  organization: OrganizationDetails | null;
+  metadata?: { patientName?: string | null; patientId?: string | null; toLine?: string | null } | null;
+}) {
+  const recipientName = metadata?.toLine ?? null;
+  const hasRecipient = Boolean(recipientName);
+  const hasPatient = Boolean(metadata?.patientName);
+  const patientMetaParts = [metadata?.patientId ? `NRIC: ${metadata.patientId}` : null].filter(Boolean).join("  |  ");
+
+  return (
+    <div style={{ fontFamily: "Helvetica, Arial, sans-serif", padding: "32px", fontSize: 11, color: BODY, backgroundColor: "white", minHeight: "100%", boxSizing: "border-box" }}>
+      <DocLetterhead organization={organization} />
+      <div style={{ borderBottom: `2px solid ${PRIMARY}` }} />
+      <div style={{ padding: "8px 0", textAlign: "center" }}>
+        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: PRIMARY }}>REFERRAL LETTER</span>
+      </div>
+      <div style={{ borderBottom: `0.5px solid #d1d5db` }} />
+      {hasRecipient && (
+        <div style={{ marginBottom: 14, marginTop: 14 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: BODY, margin: 0, marginBottom: 3 }}>To:</p>
+          <p style={{ fontSize: 11, color: BODY, margin: 0 }}>{recipientName}</p>
+        </div>
+      )}
+      {hasPatient && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", marginBottom: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: BODY, marginRight: 6, width: 28, flexShrink: 0 }}>Re:</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: BODY }}>{metadata!.patientName}</span>
+          </div>
+          {patientMetaParts && <p style={{ fontSize: 9, color: MUTED, margin: 0, marginLeft: 34 }}>{patientMetaParts}</p>}
+        </div>
+      )}
+      <div style={{ borderBottom: `0.5px solid #d1d5db`, marginBottom: 14 }} />
+      <div style={{ marginBottom: 28 }}>
+        {letterText.split(/\r?\n/).map((line, i) => (
+          <p key={i} style={{ fontSize: 11, lineHeight: 1.6, color: BODY, margin: 0, marginBottom: 6 }}>{line || " "}</p>
+        ))}
+      </div>
+      <div>
+        <div style={{ borderBottom: `1px solid ${BODY}`, width: 160, marginBottom: 6 }} />
+        <p style={{ fontSize: 11, fontWeight: 700, color: BODY, margin: 0, marginBottom: 2 }}>{organization?.name ?? " "}</p>
+      </div>
+    </div>
+  );
 }
 
 const TABS: Array<{ key: TreatmentPlanTab; label: string }> = [
@@ -108,6 +250,7 @@ export function OrderComposer({
   onPlanChange,
   submitLabel = "Sign Order",
   submitting = false,
+  patient = null,
 }: OrderComposerProps) {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -120,11 +263,16 @@ export function OrderComposer({
   const [editingDocumentEntryId, setEditingDocumentEntryId] = React.useState<string | null>(null);
   const [mcDays, setMcDays] = React.useState(1);
   const [mcDiagnosis, setMcDiagnosis] = React.useState("");
+  const [mcStartDate, setMcStartDate] = React.useState(() => new Date().toISOString().split("T")[0]);
+  const [mcDoctorName, setMcDoctorName] = React.useState("");
   const [referralTo, setReferralTo] = React.useState("(Insert Hosp name)");
   const [referralDiagnosis, setReferralDiagnosis] = React.useState("");
   const [referralContent, setReferralContent] = React.useState(
     "Please include any medical information you deem relevant for the referral"
   );
+  const [organization, setOrganization] = React.useState<OrganizationDetails | null>(null);
+  const [orgLoaded, setOrgLoaded] = React.useState(false);
+
 
   const catalogByTab = React.useMemo<Record<TreatmentPlanTab, CatalogItem[]>>(
     () => ({
@@ -184,6 +332,13 @@ export function OrderComposer({
       setEditingDocumentEntryId(null);
     }
   }, [entries, editingDocumentEntryId]);
+
+  React.useEffect(() => {
+    if (!editingDocumentEntry || orgLoaded) return;
+    fetchOrganizationDetails()
+      .then((info) => setOrganization(info))
+      .finally(() => setOrgLoaded(true));
+  }, [editingDocumentEntry, orgLoaded]);
 
   const publishPlan = React.useCallback(
     (nextEntries: TreatmentPlanEntry[]) => {
@@ -376,7 +531,9 @@ export function OrderComposer({
       meta: {
         ...(editingDocumentEntry.meta || {}),
         documentStatus: status,
-        ...(editingDocumentKind === "mc" ? { mcDays: String(mcDays), mcDiagnosis } : {}),
+        ...(editingDocumentKind === "mc"
+          ? { mcDays: String(mcDays), mcDiagnosis, mcStartDate, mcDoctorName }
+          : {}),
         ...(editingDocumentKind === "referral" ? { referralTo, referralDiagnosis } : {}),
       },
     });
@@ -385,6 +542,8 @@ export function OrderComposer({
       description: `${editingDocumentEntry.name} updated.`,
     });
     setEditingDocumentEntryId(null);
+    setMcStartDate(new Date().toISOString().split("T")[0]);
+    setMcDoctorName("");
   }
 
   const updateEntryField = React.useCallback(
@@ -523,7 +682,7 @@ export function OrderComposer({
       </div>
 
       <Dialog open={Boolean(editingDocumentEntry)} onOpenChange={(open) => !open && setEditingDocumentEntryId(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>{editingDocumentEntry?.name ?? "Document"}</DialogTitle>
             <DialogDescription>
@@ -543,6 +702,22 @@ export function OrderComposer({
                   />
                 </div>
                 <div>
+                  <Label className="text-xs">Start date</Label>
+                  <Input
+                    type="date"
+                    value={mcStartDate}
+                    onChange={(event) => setMcStartDate(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Doctor&apos;s name</Label>
+                  <Input
+                    placeholder="Dr. ..."
+                    value={mcDoctorName}
+                    onChange={(event) => setMcDoctorName(event.target.value)}
+                  />
+                </div>
+                <div>
                   <Label className="text-xs">Diagnosis</Label>
                   <Input
                     placeholder="Diagnosis"
@@ -551,14 +726,16 @@ export function OrderComposer({
                   />
                 </div>
               </div>
-              <div className="rounded-lg border bg-muted/30 p-4 text-sm">
-                <p className="mb-3 text-xs font-semibold uppercase text-muted-foreground">Document preview</p>
-                <h3 className="text-center text-lg font-bold">MEDICAL CERTIFICATE</h3>
-                <p className="mt-4">To whom it may concern,</p>
-                <p className="mt-2">
-                  This is to certify that the patient was seen and is medically unfit for work/school for {mcDays} day(s).
-                </p>
-                <p className="mt-2">Diagnosis: {mcDiagnosis || "{{diagnosis}}"}</p>
+              <div className="rounded-lg border overflow-auto h-[420px]">
+                <McDocumentPreview
+                  patient={patient}
+                  issuedDate={formatDisplayDate(new Date())}
+                  startDate={formatDisplayDate(new Date(mcStartDate))}
+                  endDate={calcMcEndDate(mcStartDate, mcDays)}
+                  numDays={mcDays}
+                  doctorName={mcDoctorName}
+                  organization={organization}
+                />
               </div>
             </div>
           ) : null}
@@ -590,13 +767,16 @@ export function OrderComposer({
                   <p>Patient name · Doctor name · Visit date · Identification · Age · Time in · Diagnosis</p>
                 </div>
               </div>
-              <div className="rounded-lg border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
-                <p className="mb-3 text-xs font-semibold uppercase text-muted-foreground">Document preview</p>
-                <h3 className="text-center text-lg font-bold">REFERRAL LETTER</h3>
-                <p className="mt-4">Referral to: {referralTo}</p>
-                <p className="mt-2">Patient name: {"{{patient_name}}"}</p>
-                <p>Diagnosis: {referralDiagnosis || "{{diagnosis}}"}</p>
-                <p className="mt-3">{referralContent}</p>
+              <div className="rounded-lg border overflow-auto h-[420px]">
+                <ReferralDocumentPreview
+                  letterText={referralContent}
+                  organization={organization}
+                  metadata={{
+                    patientName: patient?.fullName ?? null,
+                    patientId: patient?.nric ?? null,
+                    toLine: referralTo,
+                  }}
+                />
               </div>
             </div>
           ) : null}
