@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
-type ViewMode = "Month" | "Week" | "Day";
+export type ViewMode = "Month" | "Week" | "Day";
 
 export interface CalendarAppointment {
   id: string;
@@ -134,16 +134,29 @@ function formatPanelTime(scheduledAt: Date | string, mode: ViewMode): string {
 
 interface Props {
   appointments: CalendarAppointment[];
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
 }
 
-export default function AppointmentsCalendarView({ appointments }: Props) {
+export default function AppointmentsCalendarView({ appointments, viewMode, onViewModeChange }: Props) {
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toDateKey(today), [today]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("Month");
   const [currentDate, setCurrentDate] = useState<Date>(
     () => new Date(today.getFullYear(), today.getMonth(), 1)
   );
+
+  const prevViewModeRef = useRef<ViewMode>(viewMode);
+  useEffect(() => {
+    const prev = prevViewModeRef.current;
+    if (prev === viewMode) return;
+    prevViewModeRef.current = viewMode;
+    if (viewMode === "Month") {
+      setCurrentDate((cd) => new Date(cd.getFullYear(), cd.getMonth(), 1));
+    } else if (prev === "Month") {
+      setCurrentDate(new Date(today));
+    }
+  }, [viewMode, today]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -220,19 +233,6 @@ export default function AppointmentsCalendarView({ appointments }: Props) {
     }
   }
 
-  function handleViewMode(mode: ViewMode) {
-    if (mode === viewMode) return;
-    if (mode === "Month") {
-      // Normalize to 1st of the month containing currentDate
-      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
-    } else if (viewMode === "Month") {
-      // Switching away from Month: anchor to today
-      setCurrentDate(new Date(today));
-    }
-    // Week ↔ Day: keep currentDate as-is
-    setViewMode(mode);
-  }
-
   // ── Derived display values ──────────────────────────────────────────────────
 
   const headerLabel = useMemo(() => {
@@ -291,37 +291,17 @@ export default function AppointmentsCalendarView({ appointments }: Props) {
     <div className="space-y-4">
 
       {/* ── Header ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handlePrev} aria-label={prevAriaLabel}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleToday}>
-            Today
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleNext} aria-label={nextAriaLabel}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <h2 className="ml-1 text-lg font-semibold">{headerLabel}</h2>
-        </div>
-
-        <div className="flex overflow-hidden rounded-md border border-input">
-          {(["Month", "Week", "Day"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => handleViewMode(mode)}
-              className={[
-                "px-3 py-1.5 text-sm font-medium transition-colors",
-                viewMode === mode
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted",
-              ].join(" ")}
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={handlePrev} aria-label={prevAriaLabel}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleToday}>
+          Today
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleNext} aria-label={nextAriaLabel}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <h2 className="ml-1 text-lg font-semibold">{headerLabel}</h2>
       </div>
 
       {/* ── Month View ── */}
