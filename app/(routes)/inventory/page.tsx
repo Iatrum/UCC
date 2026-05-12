@@ -13,7 +13,6 @@ import {
 import { AddMedicationForm } from "@/components/inventory/add-medication-form";
 import { InventoryTable } from "@/components/inventory/inventory-table";
 import { PurchaseOrdersPanel } from "@/components/inventory/purchase-orders-panel";
-import ProceduresTable from "@/components/inventory/procedures-table";
 import { SuppliersPanel } from "@/components/inventory/suppliers-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -37,13 +36,6 @@ import {
   updateMedication,
 } from "@/lib/inventory";
 import {
-  createProcedure,
-  deleteProcedure,
-  getProcedures,
-  type ProcedureItem,
-  updateProcedure,
-} from "@/lib/procedures";
-import {
   convertPurchaseDocument,
   createPurchaseOrder,
   createSupplier,
@@ -57,18 +49,16 @@ import {
   updateSupplier,
 } from "@/lib/purchase-hub";
 
-type InventoryTab = "overview" | "items" | "purchases" | "procedures";
+type InventoryTab = "overview" | "items" | "purchases";
 
 export default function InventoryPage() {
   const [activeTab, setActiveTab] = React.useState<InventoryTab>("overview");
   const [showAddDialog, setShowAddDialog] = React.useState(false);
   const [medications, setMedications] = React.useState<Medication[]>([]);
-  const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
   const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
   const [autoCreateDocType, setAutoCreateDocType] = React.useState<PurchaseDocumentType | null>(null);
   const [searchTerm, setSearchTerm] = React.useState("");
-  const [procSearch, setProcSearch] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -78,14 +68,12 @@ export default function InventoryPage() {
 
   async function loadInventoryWorkspace() {
     try {
-      const [medicationData, procedureData, supplierData, purchaseOrderData] = await Promise.all([
+      const [medicationData, supplierData, purchaseOrderData] = await Promise.all([
         getMedications(),
-        getProcedures(),
         getSuppliers(),
         getPurchaseOrders(),
       ]);
       setMedications(medicationData);
-      setProcedures(procedureData);
       setSuppliers(supplierData);
       setPurchaseOrders(purchaseOrderData);
       setError(null);
@@ -99,10 +87,6 @@ export default function InventoryPage() {
 
   async function reloadMedications() {
     setMedications(await getMedications());
-  }
-
-  async function reloadProcedures() {
-    setProcedures(await getProcedures());
   }
 
   async function reloadSuppliers() {
@@ -382,7 +366,6 @@ export default function InventoryPage() {
           <TabsTrigger value="overview" className="rounded-xl">Overview</TabsTrigger>
           <TabsTrigger value="items" className="rounded-xl">Items</TabsTrigger>
           <TabsTrigger value="purchases" className="rounded-xl">Purchases</TabsTrigger>
-          <TabsTrigger value="procedures" className="rounded-xl">Procedures</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -626,36 +609,6 @@ export default function InventoryPage() {
             onUpdate={handleUpdateSupplier}
             onDelete={handleDeleteSupplier}
           />
-        </TabsContent>
-
-        <TabsContent value="procedures" className="space-y-6">
-          <Card className="border-slate-200/80 shadow-sm">
-            <CardHeader>
-              <CardTitle>Procedures and charges</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Maintain billable procedures separately from medication stock and purchase documents.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <ProceduresTable
-                procedures={procedures}
-                searchTerm={procSearch}
-                onSearchChange={setProcSearch}
-                onCreate={async (data) => {
-                  await createProcedure(data);
-                  await reloadProcedures();
-                }}
-                onUpdate={async (id, data) => {
-                  await updateProcedure(id, data);
-                  await reloadProcedures();
-                }}
-                onDelete={async (id) => {
-                  await deleteProcedure(id);
-                  await reloadProcedures();
-                }}
-              />
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
     </div>
