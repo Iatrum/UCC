@@ -207,7 +207,7 @@ export default function SettingsPage() {
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
             <WorkflowIcon><Stethoscope className="h-4 w-4" /></WorkflowIcon>
             <div>
-              <CardTitle>Patient Profile</CardTitle>
+              <CardTitle>Service Catalogs</CardTitle>
               <CardDescription>Orderable catalogs used by the treatment composer, labs, imaging, and generated letters.</CardDescription>
             </div>
           </CardHeader>
