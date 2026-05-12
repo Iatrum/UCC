@@ -151,9 +151,10 @@ export async function getPatientAppointmentsFromMedplum(medplum: MedplumClient, 
  */
 export async function getUpcomingAppointments(medplum: MedplumClient, limit = 50): Promise<SavedAppointment[]> {
   try {
-    const now = new Date().toISOString();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
     const appointments = await medplum.searchResources('Appointment', {
-      date: `ge${now}`,
+      date: `ge${startOfToday.toISOString()}`,
       _sort: 'date',
       _count: String(limit),
     });

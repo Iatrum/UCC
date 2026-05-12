@@ -86,8 +86,7 @@ export default function AppointmentsRootPage() {
     return appointments
       .filter((appointment) => {
         if (!appointment.scheduledAt) return false;
-        const scheduled = appointment.scheduledAt instanceof Date ? appointment.scheduledAt : new Date(appointment.scheduledAt);
-        return scheduled.getTime() >= now.getTime() && activeStatuses.includes(appointment.status);
+        return activeStatuses.includes(appointment.status);
       })
       .sort((a, b) => {
         const aTime = new Date(a.scheduledAt as any).getTime();
