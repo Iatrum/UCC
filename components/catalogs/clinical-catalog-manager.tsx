@@ -12,13 +12,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
+import ProceduresTable from "@/components/inventory/procedures-table";
 import {
   defaultCatalogItems,
   type ClinicalCatalogItem,
   type ClinicalCatalogType,
 } from "@/lib/clinical-catalog";
+import {
+  createProcedure,
+  deleteProcedure,
+  getProcedures,
+  type ProcedureItem,
+  updateProcedure,
+} from "@/lib/procedures";
 
-const TYPE_LABELS: Record<ClinicalCatalogType, string> = {
+export type CatalogManagerType = ClinicalCatalogType | "procedure";
+
+const TYPE_LABELS: Record<CatalogManagerType, string> = {
+  procedure: "Procedures",
   lab: "Lab Tests",
   imaging: "Imaging",
   document: "Document Types",
@@ -38,15 +49,15 @@ const EMPTY_FORM: Omit<ClinicalCatalogItem, "id"> = {
 };
 
 export interface ClinicalCatalogManagerProps {
-  types?: ClinicalCatalogType[];
-  defaultType?: ClinicalCatalogType;
+  types?: CatalogManagerType[];
+  defaultType?: CatalogManagerType;
   showFallbackNotice?: boolean;
   className?: string;
   onCatalogChange?: (type: ClinicalCatalogType, items: ClinicalCatalogItem[]) => void;
 }
 
 export function ClinicalCatalogManager({
-  types = ["lab", "imaging", "document"],
+  types = ["procedure", "lab", "imaging", "document"],
   defaultType,
   showFallbackNotice = true,
   className,
@@ -57,7 +68,7 @@ export function ClinicalCatalogManager({
     () => types.filter((type, index, list) => list.indexOf(type) === index),
     [types]
   );
-  const [activeType, setActiveType] = React.useState<ClinicalCatalogType>(
+  const [activeType, setActiveType] = React.useState<CatalogManagerType>(
     defaultType && visibleTypes.includes(defaultType) ? defaultType : visibleTypes[0] || "lab"
   );
   const [items, setItems] = React.useState<Record<ClinicalCatalogType, ClinicalCatalogItem[]>>({
@@ -71,6 +82,9 @@ export function ClinicalCatalogManager({
   const [creating, setCreating] = React.useState(false);
   const [savingDefaults, setSavingDefaults] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<Record<string, boolean>>({});
+  const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
+  const [procedureSearch, setProcedureSearch] = React.useState("");
+  const [procedureLoading, setProcedureLoading] = React.useState(false);
 
   const loadType = React.useCallback(async (type: ClinicalCatalogType) => {
     setLoading(true);
@@ -96,16 +110,36 @@ export function ClinicalCatalogManager({
 
   React.useEffect(() => {
     if (!visibleTypes.includes(activeType)) {
-      setActiveType(visibleTypes[0] || "lab");
+      setActiveType(visibleTypes[0] || "procedure");
     }
   }, [activeType, visibleTypes]);
 
   React.useEffect(() => {
+    if (activeType === "procedure") {
+      void loadProcedures();
+      return;
+    }
     void loadType(activeType);
   }, [activeType, loadType]);
 
-  const savedItems = items[activeType];
-  const rows = savedItems.length ? savedItems : defaultCatalogItems(activeType);
+  async function loadProcedures() {
+    setProcedureLoading(true);
+    try {
+      setProcedures(await getProcedures());
+    } catch (error) {
+      toast({
+        title: "Procedures unavailable",
+        description: error instanceof Error ? error.message : "Failed to load procedures.",
+        variant: "destructive",
+      });
+    } finally {
+      setProcedureLoading(false);
+    }
+  }
+
+  const clinicalType = activeType === "procedure" ? "lab" : activeType;
+  const savedItems = activeType === "procedure" ? [] : items[clinicalType];
+  const rows = activeType === "procedure" ? [] : savedItems.length ? savedItems : defaultCatalogItems(clinicalType);
   const filteredRows = rows.filter((item) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -113,7 +147,7 @@ export function ClinicalCatalogManager({
       (value || "").toLowerCase().includes(q)
     );
   });
-  const usingFallback = savedItems.length === 0;
+  const usingFallback = activeType !== "procedure" && savedItems.length === 0;
 
   async function saveItem(item: Omit<ClinicalCatalogItem, "id">, id?: string) {
     const method = id ? "PATCH" : "POST";
@@ -135,7 +169,9 @@ export function ClinicalCatalogManager({
     if (!response.ok || data?.success === false) {
       throw new Error(data?.error || "Failed to delete catalog item.");
     }
-    await loadType(activeType);
+    if (activeType !== "procedure") {
+      await loadType(activeType);
+    }
   }
 
   async function createDefaults(type: ClinicalCatalogType) {
@@ -170,7 +206,7 @@ export function ClinicalCatalogManager({
 
   return (
     <div className={["space-y-4", className].filter(Boolean).join(" ")}>
-      <Tabs value={activeType} onValueChange={(value) => setActiveType(value as ClinicalCatalogType)}>
+      <Tabs value={activeType} onValueChange={(value) => setActiveType(value as CatalogManagerType)}>
         {visibleTypes.length > 1 && (
           <TabsList>
             {visibleTypes.map((type) => (
@@ -180,6 +216,36 @@ export function ClinicalCatalogManager({
         )}
         {visibleTypes.map((type) => (
           <TabsContent key={type} value={type} className="mt-4 space-y-4">
+            {type === "procedure" ? (
+              procedureLoading ? (
+                <div className="rounded-md border py-8 text-center text-sm text-muted-foreground">
+                  Loading procedures...
+                </div>
+              ) : (
+                <ProceduresTable
+                  procedures={procedures}
+                  searchTerm={procedureSearch}
+                  onSearchChange={setProcedureSearch}
+                  onCreate={async (data) => {
+                    await createProcedure(data);
+                    await loadProcedures();
+                    toast({ title: "Procedure saved" });
+                  }}
+                  onUpdate={async (id, data) => {
+                    await updateProcedure(id, data);
+                    await loadProcedures();
+                    toast({ title: "Procedure updated" });
+                  }}
+                  onDelete={async (id) => {
+                    if (!window.confirm("Delete this procedure?")) return;
+                    await deleteProcedure(id);
+                    await loadProcedures();
+                    toast({ title: "Procedure deleted" });
+                  }}
+                />
+              )
+            ) : (
+              <>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
                 <Search className="h-4 w-4 text-muted-foreground" />
@@ -236,6 +302,8 @@ export function ClinicalCatalogManager({
                 }
               }}
             />
+              </>
+            )}
           </TabsContent>
         ))}
       </Tabs>
@@ -246,7 +314,7 @@ export function ClinicalCatalogManager({
             <DialogTitle>Add {TYPE_LABELS[activeType].replace(/s$/, "")}</DialogTitle>
           </DialogHeader>
           <CatalogForm
-            initial={{ ...EMPTY_FORM, type: activeType, system: defaultSystem(activeType) }}
+            initial={{ ...EMPTY_FORM, type: clinicalType, system: defaultSystem(clinicalType) }}
             onCancel={() => setCreating(false)}
             onSubmit={async (item) => {
               try {
