@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   createClinicalCatalogItem,
-  deleteClinicalCatalogItem,
+  deleteClinicalCatalogItemForClinic,
   getClinicalCatalogItems,
   updateClinicalCatalogItem,
   type ClinicalCatalogType,
@@ -12,6 +12,14 @@ import { handleRouteError } from '@/lib/server/route-helpers';
 function parseType(value: string | null): ClinicalCatalogType | undefined {
   if (value === 'lab' || value === 'imaging' || value === 'document') return value;
   return undefined;
+}
+
+function catalogNotFound(error: unknown): boolean {
+  return error instanceof Error && error.message === 'Catalog item not found';
+}
+
+function catalogNotFoundResponse() {
+  return NextResponse.json({ success: false, error: 'Catalog item not found' }, { status: 404 });
 }
 
 export async function GET(request: NextRequest) {
@@ -57,31 +65,36 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const { id, ...updates } = await request.json();
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
+    if (updates.type !== undefined && !parseType(updates.type)) {
+      return NextResponse.json({ success: false, error: 'Invalid catalog type' }, { status: 400 });
+    }
 
-    await updateClinicalCatalogItem(medplum, id, updates);
+    await updateClinicalCatalogItem(medplum, clinicId, id, updates);
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (catalogNotFound(error)) return catalogNotFoundResponse();
     return handleRouteError(error, 'PATCH /api/catalogs');
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
 
-    await deleteClinicalCatalogItem(medplum, id);
+    await deleteClinicalCatalogItemForClinic(medplum, clinicId, id);
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (catalogNotFound(error)) return catalogNotFoundResponse();
     return handleRouteError(error, 'DELETE /api/catalogs');
   }
 }

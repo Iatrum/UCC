@@ -69,6 +69,8 @@ export function ClinicalCatalogManager({
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<ClinicalCatalogItem | null>(null);
   const [creating, setCreating] = React.useState(false);
+  const [savingDefaults, setSavingDefaults] = React.useState(false);
+  const [deletingIds, setDeletingIds] = React.useState<Record<string, boolean>>({});
 
   const loadType = React.useCallback(async (type: ClinicalCatalogType) => {
     setLoading(true);
@@ -136,6 +138,36 @@ export function ClinicalCatalogManager({
     await loadType(activeType);
   }
 
+  async function createDefaults(type: ClinicalCatalogType) {
+    const defaults = defaultCatalogItems(type);
+    setSavingDefaults(true);
+    try {
+      for (const item of defaults) {
+        await saveItem({
+          type: item.type,
+          name: item.name,
+          code: item.code,
+          system: item.system,
+          display: item.display,
+          category: item.category,
+          modality: item.modality,
+          defaultPrice: item.defaultPrice,
+          active: item.active,
+          notes: item.notes,
+        });
+      }
+      toast({ title: "Catalog defaults created", description: `${TYPE_LABELS[type]} are now editable for this clinic.` });
+    } catch (error) {
+      toast({
+        title: "Defaults not created",
+        description: error instanceof Error ? error.message : "Failed to create default catalog items.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingDefaults(false);
+    }
+  }
+
   return (
     <div className={["space-y-4", className].filter(Boolean).join(" ")}>
       <Tabs value={activeType} onValueChange={(value) => setActiveType(value as ClinicalCatalogType)}>
@@ -164,16 +196,28 @@ export function ClinicalCatalogManager({
               </Button>
             </div>
             {showFallbackNotice && usingFallback && (
-              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                Showing built-in defaults. Add catalog items here to replace the static fallback for this clinic.
+              <div className="flex flex-col gap-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <span>Showing built-in defaults. Create them in this clinic catalog to edit or delete them.</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={savingDefaults}
+                  onClick={() => void createDefaults(type)}
+                >
+                  {savingDefaults ? "Creating..." : "Create Defaults"}
+                </Button>
               </div>
             )}
             <CatalogTable
               rows={filteredRows}
               loading={loading}
               usingFallback={usingFallback}
+              deletingIds={deletingIds}
               onEdit={setEditing}
               onDelete={async (id) => {
+                if (!window.confirm("Delete this catalog item?")) return;
+                setDeletingIds((prev) => ({ ...prev, [id]: true }));
                 try {
                   await deleteItem(id);
                   toast({ title: "Catalog item deleted" });
@@ -182,6 +226,12 @@ export function ClinicalCatalogManager({
                     title: "Delete failed",
                     description: error instanceof Error ? error.message : "Failed to delete catalog item.",
                     variant: "destructive",
+                  });
+                } finally {
+                  setDeletingIds((prev) => {
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
                   });
                 }
               }}
@@ -199,9 +249,18 @@ export function ClinicalCatalogManager({
             initial={{ ...EMPTY_FORM, type: activeType, system: defaultSystem(activeType) }}
             onCancel={() => setCreating(false)}
             onSubmit={async (item) => {
-              await saveItem(item);
-              setCreating(false);
-              toast({ title: "Catalog item saved" });
+              try {
+                await saveItem(item);
+                setCreating(false);
+                toast({ title: "Catalog item saved" });
+              } catch (error) {
+                toast({
+                  title: "Save failed",
+                  description: error instanceof Error ? error.message : "Failed to save catalog item.",
+                  variant: "destructive",
+                });
+                throw error;
+              }
             }}
           />
         </DialogContent>
@@ -217,9 +276,18 @@ export function ClinicalCatalogManager({
               initial={editing}
               onCancel={() => setEditing(null)}
               onSubmit={async (item) => {
-                await saveItem(item, editing.id);
-                setEditing(null);
-                toast({ title: "Catalog item updated" });
+                try {
+                  await saveItem(item, editing.id);
+                  setEditing(null);
+                  toast({ title: "Catalog item updated" });
+                } catch (error) {
+                  toast({
+                    title: "Update failed",
+                    description: error instanceof Error ? error.message : "Failed to update catalog item.",
+                    variant: "destructive",
+                  });
+                  throw error;
+                }
               }}
             />
           )}
@@ -233,12 +301,14 @@ function CatalogTable({
   rows,
   loading,
   usingFallback,
+  deletingIds,
   onEdit,
   onDelete,
 }: {
   rows: ClinicalCatalogItem[];
   loading: boolean;
   usingFallback: boolean;
+  deletingIds: Record<string, boolean>;
   onEdit: (item: ClinicalCatalogItem) => void;
   onDelete: (id: string) => void;
 }) {
@@ -286,7 +356,7 @@ function CatalogTable({
                   <Button type="button" variant="ghost" size="icon" disabled={usingFallback} onClick={() => onEdit(item)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button type="button" variant="ghost" size="icon" disabled={usingFallback} onClick={() => onDelete(item.id)}>
+                  <Button type="button" variant="ghost" size="icon" disabled={usingFallback || deletingIds[item.id]} onClick={() => onDelete(item.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>

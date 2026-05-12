@@ -94,6 +94,14 @@ async function readDefinition(medplum: MedplumClient, id: string): Promise<Charg
   }
 }
 
+function belongsToClinic(definition: ChargeItemDefinition, clinicId: string): boolean {
+  return Boolean(
+    definition.identifier?.some(
+      (identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
+    )
+  );
+}
+
 export async function getClinicalCatalogItems(
   medplum: MedplumClient,
   clinicId: string,
@@ -143,11 +151,13 @@ export async function createClinicalCatalogItem(
 
 export async function updateClinicalCatalogItem(
   medplum: MedplumClient,
+  clinicId: string,
   id: string,
   updates: Partial<ClinicalCatalogItem>
 ): Promise<void> {
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
+  if (!belongsToClinic(existing, clinicId)) throw new Error('Catalog item not found');
 
   const current = mapDefinition(existing);
   if (!current) throw new Error('Catalog item not found');
@@ -178,5 +188,16 @@ export async function updateClinicalCatalogItem(
 }
 
 export async function deleteClinicalCatalogItem(medplum: MedplumClient, id: string): Promise<void> {
+  await medplum.deleteResource('ChargeItemDefinition', id);
+}
+
+export async function deleteClinicalCatalogItemForClinic(
+  medplum: MedplumClient,
+  clinicId: string,
+  id: string
+): Promise<void> {
+  const existing = await readDefinition(medplum, id);
+  if (!existing) throw new Error('Catalog item not found');
+  if (!belongsToClinic(existing, clinicId)) throw new Error('Catalog item not found');
   await medplum.deleteResource('ChargeItemDefinition', id);
 }
