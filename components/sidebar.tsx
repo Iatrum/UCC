@@ -94,7 +94,11 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
   }, [enabledModules]);
 
   // Hide sidebar entirely on public routes like login/logout
-  if (pathname?.startsWith('/login') || pathname?.startsWith('/signup')) {
+  if (
+    pathname?.startsWith('/login') ||
+    pathname?.startsWith('/signup') ||
+    pathname?.startsWith('/admin')
+  ) {
     return null;
   }
 

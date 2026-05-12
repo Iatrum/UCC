@@ -132,7 +132,9 @@ function ProcedureForm({ initial, onSubmit, onCancel }: { initial?: Partial<Proc
   const [system, setSystem] = React.useState(initial?.codingSystem || '');
   const [display, setDisplay] = React.useState(initial?.codingDisplay || '');
   const [category, setCategory] = React.useState(initial?.category || '');
-  const [defaultPrice, setDefaultPrice] = React.useState<number>(typeof initial?.defaultPrice === 'number' ? (initial!.defaultPrice as number) : 0);
+  const [defaultPrice, setDefaultPrice] = React.useState<string>(
+    typeof initial?.defaultPrice === 'number' && initial.defaultPrice > 0 ? String(initial.defaultPrice) : ''
+  );
   const [notes, setNotes] = React.useState(initial?.notes || '');
 
   return (
@@ -166,7 +168,7 @@ function ProcedureForm({ initial, onSubmit, onCancel }: { initial?: Partial<Proc
         </div>
         <div>
           <Label>Default Price</Label>
-          <Input type="number" min="0" step="0.01" value={defaultPrice} onChange={(e) => setDefaultPrice(Number(e.target.value))} />
+          <Input type="number" min="0" step="0.01" value={defaultPrice} onChange={(e) => setDefaultPrice(e.target.value)} />
         </div>
       </div>
       <div>
@@ -180,4 +182,3 @@ function ProcedureForm({ initial, onSubmit, onCancel }: { initial?: Partial<Proc
     </form>
   );
 }
-

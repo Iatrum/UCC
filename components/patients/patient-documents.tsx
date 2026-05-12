@@ -48,11 +48,13 @@ export default function PatientDocuments({ patientId }: Props) {
   const [docs, setDocs] = useState<PatientDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchDocs = useCallback(async () => {
     if (!patientId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await fetch(`/api/documents?patientId=${encodeURIComponent(patientId)}`);
       if (!res.ok) {
@@ -73,6 +75,7 @@ export default function PatientDocuments({ patientId }: Props) {
       setDocs(items);
     } catch (err: any) {
       console.error(err);
+      setLoadError(err?.message || "Please try again");
       toast({ title: "Unable to load documents", description: err?.message || "Please try again", variant: "destructive" });
     } finally {
       setLoading(false);
@@ -235,8 +238,21 @@ export default function PatientDocuments({ patientId }: Props) {
       <CardContent>
         {loading ? (
           <div className="text-sm text-muted-foreground">Loading documents...</div>
+        ) : loadError ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+            <p className="text-sm font-medium text-destructive">Unable to load uploaded files.</p>
+            <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
+            <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => fetchDocs()}>
+              Retry
+            </Button>
+          </div>
         ) : docs.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No documents uploaded.</div>
+          <div className="rounded-lg border border-dashed p-4">
+            <p className="text-sm font-medium">No uploaded files yet.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Upload PDFs for external reports, scans, or clinic records.
+            </p>
+          </div>
         ) : (
           <div className="relative border rounded-lg overflow-hidden">
             <Table>

@@ -11,19 +11,11 @@ export const IMAGING_PROCEDURES = {
   KNEE_XRAY: { code: '37362-1', display: 'Knee X-ray', modality: 'DX', system: 'http://loinc.org' },
   HEAD_CT: { code: '30799-1', display: 'Head CT without contrast', modality: 'CT', system: 'http://loinc.org' },
   HEAD_CT_CONTRAST: { code: '24727-0', display: 'Head CT with contrast', modality: 'CT', system: 'http://loinc.org' },
-  CHEST_CT: { code: '30800-7', display: 'Chest CT without contrast', modality: 'CT', system: 'http://loinc.org' },
-  ABDOMEN_CT: { code: '30807-2', display: 'Abdomen CT without contrast', modality: 'CT', system: 'http://loinc.org' },
-  CTPA: { code: '42273-8', display: 'CT Pulmonary Angiography', modality: 'CT', system: 'http://loinc.org' },
-  BRAIN_MRI: { code: '24556-3', display: 'Brain MRI', modality: 'MR', system: 'http://loinc.org' },
   SPINE_MRI: { code: '24604-1', display: 'Spine MRI', modality: 'MR', system: 'http://loinc.org' },
-  KNEE_MRI: { code: '24610-8', display: 'Knee MRI', modality: 'MR', system: 'http://loinc.org' },
-  ABDOMEN_US: { code: '24626-4', display: 'Abdomen Ultrasound', modality: 'US', system: 'http://loinc.org' },
   PELVIS_US: { code: '24638-9', display: 'Pelvis Ultrasound', modality: 'US', system: 'http://loinc.org' },
   OBSTETRIC_US: { code: '11525-3', display: 'Obstetric Ultrasound', modality: 'US', system: 'http://loinc.org' },
   THYROID_US: { code: '24651-2', display: 'Thyroid Ultrasound', modality: 'US', system: 'http://loinc.org' },
-  ECHO: { code: '18752-6', display: 'Echocardiography', modality: 'US', system: 'http://loinc.org' },
   MAMMOGRAM: { code: '37027-2', display: 'Mammography', modality: 'MG', system: 'http://loinc.org' },
-  MAMMOGRAM_BILATERAL: { code: '24604-1', display: 'Bilateral Mammography', modality: 'MG', system: 'http://loinc.org' },
 } as const;
 
 export type ImagingProcedureCode = keyof typeof IMAGING_PROCEDURES;

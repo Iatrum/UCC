@@ -7,7 +7,7 @@ import { CalendarDays, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import UpcomingAppointmentsTable, { normalizeAppointmentStatus } from "@/modules/appointments/components/upcoming-appointments-table";
-import AppointmentsCalendarView from "@/components/appointments/calendar-view";
+import AppointmentsCalendarView, { type ViewMode } from "@/components/appointments/calendar-view";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
 
@@ -50,6 +50,7 @@ export default function AppointmentsRootPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "calendar">("list");
+  const [calendarViewMode, setCalendarViewMode] = useState<ViewMode>("Month");
 
   useEffect(() => {
     let cancelled = false;
@@ -188,44 +189,53 @@ export default function AppointmentsRootPage() {
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {view === "list" ? "Upcoming appointments" : "Calendar"}
-          </h2>
-          <div className="flex items-center gap-2">
-            {view === "list" && (
-              <span className="text-sm text-muted-foreground">
-                Showing {upcomingAppointments.length} upcoming
-              </span>
-            )}
-            <div className="flex overflow-hidden rounded-md border border-input">
-              <button
-                type="button"
-                onClick={() => setView("list")}
-                className={[
-                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors",
-                  view === "list"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted",
-                ].join(" ")}
-              >
-                <List className="h-3.5 w-3.5" />
-                List
-              </button>
-              <button
-                type="button"
-                onClick={() => setView("calendar")}
-                className={[
-                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors",
-                  view === "calendar"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted",
-                ].join(" ")}
-              >
-                <CalendarDays className="h-3.5 w-3.5" />
-                Calendar
-              </button>
-            </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className={[
+                "flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                view === "list"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-foreground hover:bg-muted",
+              ].join(" ")}
+            >
+              <List className="h-3.5 w-3.5" />
+              List
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("calendar")}
+              className={[
+                "flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                view === "calendar"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-foreground hover:bg-muted",
+              ].join(" ")}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Calendar
+            </button>
           </div>
+          {view === "calendar" && (
+            <div className="flex items-center gap-1">
+              {(["Month", "Week", "Day"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setCalendarViewMode(mode)}
+                  className={[
+                    "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                    calendarViewMode === mode
+                      ? "bg-primary text-primary-foreground"
+                      : "text-foreground hover:bg-muted",
+                  ].join(" ")}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {view === "list" ? (
@@ -235,7 +245,11 @@ export default function AppointmentsRootPage() {
             onRefresh={loadAppointments}
           />
         ) : (
-          <AppointmentsCalendarView appointments={appointments} />
+          <AppointmentsCalendarView
+            appointments={appointments}
+            viewMode={calendarViewMode}
+            onViewModeChange={setCalendarViewMode}
+          />
         )}
       </section>
     </div>

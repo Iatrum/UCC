@@ -24,8 +24,7 @@ import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
 import { formatPrescriptionLine } from "@/lib/prescriptions";
-import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-constants";
-import { IMAGING_PROCEDURES, type ImagingProcedureCode } from "@/lib/fhir/imaging-service";
+import { getClinicalCatalog, type ClinicalCatalogItem } from "@/lib/clinical-catalog";
 import { cn, formatDisplayDate } from "@/lib/utils";
 import type { Prescription, ProcedureRecord } from "@/lib/models";
 import type { SerializedPatient } from "@/components/patients/patient-card";
@@ -70,6 +69,11 @@ const emptyTreatmentSummary: TreatmentPlanSummary = {
 };
 const emptyTreatmentEntries: TreatmentPlanEntry[] = [];
 const emptyPackages: [] = [];
+const consultationServiceCatalogItem = {
+  id: "consultation-fee",
+  name: "Consultation Fee",
+  unitPrice: 0,
+};
 
 function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").trim();
@@ -91,6 +95,10 @@ function patientFacingProcedureNote(value: string | undefined, category?: string
   }
 
   return text;
+}
+
+function consultationPreviewText(value: string | undefined) {
+  return stripHtml(value || "") || "—";
 }
 
 function isDocumentProcedure(procedure: ProcedureRecord) {
@@ -155,13 +163,22 @@ export default function PatientProfileWorkspace({
     { id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string }[]
   >([]);
   const [medicationOptions, setMedicationOptions] = useState<{ id: string; name: string; unitPrice: number }[]>([]);
+  const [labCatalog, setLabCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [imagingCatalog, setImagingCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [documentCatalog, setDocumentCatalog] = useState<ClinicalCatalogItem[]>([]);
 
   useEffect(() => {
     let active = true;
 
     (async () => {
       try {
-        const [procedures, medications] = await Promise.all([getProcedures(), getMedications()]);
+        const [procedures, medications, labs, imaging, documents] = await Promise.all([
+          getProcedures(),
+          getMedications(),
+          getClinicalCatalog("lab"),
+          getClinicalCatalog("imaging"),
+          getClinicalCatalog("document"),
+        ]);
         if (!active) return;
         setProcedureOptions(
           procedures.map((procedure) => ({
@@ -180,6 +197,9 @@ export default function PatientProfileWorkspace({
             unitPrice: medication.unitPrice || 0,
           }))
         );
+        setLabCatalog(labs.filter((item) => item.active));
+        setImagingCatalog(imaging.filter((item) => item.active));
+        setDocumentCatalog(documents.filter((item) => item.active));
       } catch (error) {
         console.error("Failed to load treatment catalogs:", error);
       }
@@ -221,45 +241,64 @@ export default function PatientProfileWorkspace({
   );
 
   const treatmentServicesCatalog = useMemo(
-    () =>
-      procedureOptions.map((item) => ({
+    () => {
+      const catalog = procedureOptions.map((item) => ({
         id: item.id,
         name: item.label,
         unitPrice: item.price || 0,
-      })),
-    [procedureOptions]
+      }));
+      const labServices = labCatalog.map((item) => ({
+        id: `lab-${item.id}`,
+        name: `Lab: ${item.display || item.name}`,
+        unitPrice: item.defaultPrice || 0,
+        meta: {
+          kind: "lab",
+          code: item.code || item.id,
+          display: item.display || item.name,
+          system: item.system || "",
+        },
+      }));
+      const imagingServices = imagingCatalog
+        .filter((item) => !item.modality || item.modality === "DX")
+        .map((item) => ({
+          id: `imaging-${item.id}`,
+          name: `Imaging: ${item.display || item.name}${item.modality ? ` (${item.modality})` : ""}`,
+          unitPrice: item.defaultPrice || 0,
+          meta: {
+            kind: "imaging",
+            code: item.code || item.id,
+            display: item.display || item.name,
+            system: item.system || "",
+            modality: item.modality || "",
+          },
+        }));
+      const hasConsultationService = catalog.some((item) => /\bconsultation\b/i.test(item.name));
+      const serviceCatalog = hasConsultationService ? catalog : [consultationServiceCatalogItem, ...catalog];
+
+      return [...serviceCatalog, ...labServices, ...imagingServices];
+    },
+    [imagingCatalog, labCatalog, procedureOptions]
   );
 
   const treatmentDocumentsCatalog = useMemo(
     () => [
-      {
-        id: "letter-mc",
-        name: "Medical certificate (MC)",
-        unitPrice: 0,
-        meta: { kind: "mc" },
-      },
-      {
-        id: "letter-referral",
-        name: "Referral letter",
-        unitPrice: 0,
-        meta: { kind: "referral" },
-      },
-      ...Object.entries(LAB_TESTS).map(([code, meta]) => ({
-        id: `lab-${code}`,
-        name: `Lab: ${meta.display}`,
-        unitPrice: 0,
-        meta: { kind: "lab", code },
-      })),
-      ...Object.entries(IMAGING_PROCEDURES)
-        .filter(([, meta]) => meta.modality === "DX")
-        .map(([code, meta]) => ({
-          id: `imaging-${code}`,
-          name: `Imaging: ${meta.display} (${meta.modality})`,
-          unitPrice: 0,
-          meta: { kind: "imaging", code },
-        })),
+      ...documentCatalog.flatMap((item) => {
+        const key = `${item.code || item.id} ${item.name}`.toLowerCase();
+        const kind = key.includes("mc") || key.includes("medical certificate")
+          ? "mc"
+          : key.includes("referral")
+            ? "referral"
+            : null;
+        if (!kind) return [];
+        return [{
+          id: item.code === "letter-mc" || item.id === "letter-mc" ? "letter-mc" : item.code === "letter-referral" || item.id === "letter-referral" ? "letter-referral" : item.id,
+          name: item.display || item.name,
+          unitPrice: item.defaultPrice || 0,
+          meta: { kind },
+        }];
+      }),
     ],
-    []
+    [documentCatalog]
   );
 
   const handleTreatmentPlanChange = useCallback((entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => {
@@ -438,14 +477,22 @@ export default function PatientProfileWorkspace({
       notes: entry.tab === "documents" ? buildSignedDocumentNote(entry) : entry.instruction,
       procedureId: entry.catalogRef,
     }));
-    const labSelections = documentEntries
+    const clinicalServiceEntries = [...serviceEntries, ...documentEntries];
+    const labSelections = clinicalServiceEntries
       .filter((entry) => entry.meta?.kind === "lab")
-      .map((entry) => entry.meta?.code as LabTestCode)
-      .filter(Boolean);
-    const imagingSelections = documentEntries
+      .map((entry) => ({
+        code: entry.meta?.code || entry.catalogRef || entry.id,
+        display: entry.meta?.display || entry.name.replace(/^Lab:\s*/, ""),
+        system: entry.meta?.system || "http://loinc.org",
+      }));
+    const imagingSelections = clinicalServiceEntries
       .filter((entry) => entry.meta?.kind === "imaging")
-      .map((entry) => entry.meta?.code as ImagingProcedureCode)
-      .filter(Boolean);
+      .map((entry) => ({
+        code: entry.meta?.code || entry.catalogRef || entry.id,
+        display: entry.meta?.display || entry.name.replace(/^Imaging:\s*/, ""),
+        system: entry.meta?.system || "http://loinc.org",
+        modality: entry.meta?.modality || "DX",
+      }));
 
     try {
       setTreatmentSubmitting(true);
@@ -542,11 +589,11 @@ export default function PatientProfileWorkspace({
           <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
         </TabsList>
 
-        {/* Content row: main tab content + action panel side by side */}
-        <div className="flex min-w-0 items-start gap-4">
+        {/* Content row: main tab content + action panel */}
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <TabsContent value="history" className="mt-0">
-              <div className="flex justify-end mb-3">
+              <div className="mb-3 flex justify-end">
                 <Tabs value={panelOpen ? drawerMode : ""}>
                   <TabsList>
                     <TabsTrigger
@@ -568,130 +615,240 @@ export default function PatientProfileWorkspace({
                 </Tabs>
               </div>
               <Card>
-                <CardContent>
+                <CardContent className="space-y-4">
                   {visibleConsultations.length > 0 ? (
                     <>
-                      <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Complaint</TableHead>
-                          <TableHead>Diagnosis</TableHead>
-                          <TableHead>Prescriptions</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                      <div className="md:hidden space-y-3">
                         {visibleConsultations.map((consultation) => (
-                          <Fragment key={consultation.id}>
-                            <TableRow
-                              data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
-                              aria-selected={selectedConsultation?.id === consultation.id}
-                              className={cn(
-                                "cursor-pointer",
-                                selectedConsultation?.id === consultation.id && "bg-muted/50"
-                              )}
-                              onClick={() => {
-                                setSelectedConsultation((current) =>
-                                  current?.id === consultation.id ? null : consultation
-                                );
-                              }}
-                            >
-                              <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
-                              <TableCell>Consultation</TableCell>
-                              <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint?.replace(/<[^>]*>/g, "") || "—"}</TableCell>
-                              <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
-                              <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                  <Button variant="outline" size="sm" asChild>
-                                    <Link href={`/consultations/${consultation.id}`}>View</Link>
-                                  </Button>
-                                  <Button size="sm" asChild>
-                                    <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {selectedConsultation?.id === consultation.id && (
-                              <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={6} className="bg-muted/30 px-6 pb-5 pt-3">
-                                  <div className="space-y-4">
-                                    <div>
-                                      <p className="mb-1 text-sm font-medium">Clinical Notes</p>
-                                      <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
-                                    </div>
-                                    <div>
-                                      <p className="mb-1 text-sm font-medium">Diagnosis</p>
-                                      <p className="text-sm text-muted-foreground">{consultation.diagnosis || "—"}</p>
-                                    </div>
-                                    {consultation.notes && (
-                                      <div>
-                                        <p className="mb-1 text-sm font-medium">Notes</p>
-                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
-                                      </div>
-                                    )}
-                                    {consultation.progressNote && (
-                                      <div>
-                                        <p className="mb-1 text-sm font-medium">Progress Note</p>
-                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
-                                      </div>
-                                    )}
-                                    {consultation.prescriptions && consultation.prescriptions.length > 0 && (
-                                      <div>
-                                        <p className="mb-2 text-sm font-medium">Prescriptions</p>
-                                        <ul className="space-y-1">
-                                          {consultation.prescriptions.map((rx, i) => (
-                                            <li key={i} className="text-sm text-muted-foreground">
-                                              {formatPrescriptionLine(rx)}
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {consultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
-                                      <div>
-                                        <p className="mb-2 text-sm font-medium">Services</p>
-                                        <ul className="space-y-1">
-                                          {consultation.procedures
-                                            .filter((proc) => !isDocumentProcedure(proc))
-                                            .map((proc, i) => (
-                                              <ProcedureListItem key={i} procedure={proc} />
-                                            ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {consultation.procedures?.some(isDocumentProcedure) && (
-                                      <div>
-                                        <p className="mb-2 text-sm font-medium">Documents</p>
-                                        <ul className="space-y-1">
-                                          {consultation.procedures
-                                            .filter(isDocumentProcedure)
-                                            .map((proc, i) => (
-                                              <ProcedureListItem key={i} procedure={proc} />
-                                            ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {consultation.id && (
-                                      <div className="flex flex-wrap gap-2 border-t pt-3">
-                                        <Button variant="outline" size="sm" asChild>
-                                          <Link href={`/consultations/${consultation.id}`}>Open full</Link>
-                                        </Button>
-                                      </div>
-                                    )}
+                          <button
+                            key={consultation.id}
+                            type="button"
+                            className={cn(
+                              "w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/40",
+                              selectedConsultation?.id === consultation.id && "border-primary bg-muted/40"
+                            )}
+                            onClick={() => {
+                              setSelectedConsultation((current) =>
+                                current?.id === consultation.id ? null : consultation
+                              );
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium">{formatDisplayDate(consultation.date)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Consultation</p>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{consultation.prescriptions?.length || 0} items</p>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Clinical notes</p>
+                                <p className="text-sm">{consultationPreviewText(consultation.chiefComplaint)}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Diagnosis</p>
+                                <p className="text-sm">{consultation.diagnosis || "—"}</p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                        {selectedConsultation && (
+                          <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                            <div>
+                              <p className="text-sm font-medium">{formatDisplayDate(selectedConsultation.date)}</p>
+                              <p className="text-sm text-muted-foreground">{consultationPreviewText(selectedConsultation.chiefComplaint)}</p>
+                            </div>
+                            <div>
+                              <p className="mb-1 text-sm font-medium">Diagnosis</p>
+                              <p className="text-sm text-muted-foreground">{selectedConsultation.diagnosis || "—"}</p>
+                            </div>
+                            {selectedConsultation.notes && (
+                              <div>
+                                <p className="mb-1 text-sm font-medium">Notes</p>
+                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: selectedConsultation.notes }} />
+                              </div>
+                            )}
+                            {selectedConsultation.progressNote && (
+                              <div>
+                                <p className="mb-1 text-sm font-medium">Progress Note</p>
+                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: selectedConsultation.progressNote }} />
+                              </div>
+                            )}
+                            {selectedConsultation.prescriptions && selectedConsultation.prescriptions.length > 0 && (
+                              <div>
+                                <p className="mb-2 text-sm font-medium">Prescriptions</p>
+                                <ul className="space-y-1">
+                                  {selectedConsultation.prescriptions.map((rx, i) => (
+                                    <li key={i} className="text-sm text-muted-foreground">
+                                      {formatPrescriptionLine(rx)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedConsultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
+                              <div>
+                                <p className="mb-2 text-sm font-medium">Services</p>
+                                <ul className="space-y-1">
+                                  {selectedConsultation.procedures
+                                    .filter((proc) => !isDocumentProcedure(proc))
+                                    .map((proc, i) => (
+                                      <ProcedureListItem key={i} procedure={proc} />
+                                    ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedConsultation.procedures?.some(isDocumentProcedure) && (
+                              <div>
+                                <p className="mb-2 text-sm font-medium">Documents</p>
+                                <ul className="space-y-1">
+                                  {selectedConsultation.procedures
+                                    .filter(isDocumentProcedure)
+                                    .map((proc, i) => (
+                                      <ProcedureListItem key={i} procedure={proc} />
+                                    ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedConsultation.id && (
+                              <div className="flex flex-wrap gap-2 border-t pt-3">
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={`/consultations/${selectedConsultation.id}`}>Open full</Link>
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="hidden md:block">
+                        <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Complaint</TableHead>
+                            <TableHead>Diagnosis</TableHead>
+                            <TableHead>Prescriptions</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visibleConsultations.map((consultation) => (
+                            <Fragment key={consultation.id}>
+                              <TableRow
+                                data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
+                                aria-selected={selectedConsultation?.id === consultation.id}
+                                className={cn(
+                                  "cursor-pointer",
+                                  selectedConsultation?.id === consultation.id && "bg-muted/50"
+                                )}
+                                onClick={() => {
+                                  setSelectedConsultation((current) =>
+                                    current?.id === consultation.id ? null : consultation
+                                  );
+                                }}
+                              >
+                                <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
+                                <TableCell>Consultation</TableCell>
+                                <TableCell className="max-w-[200px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
+                                <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
+                                <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <Button variant="outline" size="sm" asChild>
+                                      <Link href={`/consultations/${consultation.id}`}>View</Link>
+                                    </Button>
+                                    <Button size="sm" asChild>
+                                      <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
+                                    </Button>
                                   </div>
                                 </TableCell>
                               </TableRow>
-                            )}
-                          </Fragment>
-                        ))}
-                      </TableBody>
-                    </Table>
+                              {selectedConsultation?.id === consultation.id && (
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={6} className="bg-muted/30 px-6 pb-5 pt-3">
+                                    <div className="space-y-4">
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Clinical Notes</p>
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
+                                      </div>
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Diagnosis</p>
+                                        <p className="text-sm text-muted-foreground">{consultation.diagnosis || "—"}</p>
+                                      </div>
+                                      {consultation.notes && (
+                                        <div>
+                                          <p className="mb-1 text-sm font-medium">Notes</p>
+                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
+                                        </div>
+                                      )}
+                                      {consultation.progressNote && (
+                                        <div>
+                                          <p className="mb-1 text-sm font-medium">Progress Note</p>
+                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
+                                        </div>
+                                      )}
+                                      {consultation.prescriptions && consultation.prescriptions.length > 0 && (
+                                        <div>
+                                          <p className="mb-2 text-sm font-medium">Prescriptions</p>
+                                          <ul className="space-y-1">
+                                            {consultation.prescriptions.map((rx, i) => (
+                                              <li key={i} className="text-sm text-muted-foreground">
+                                                {formatPrescriptionLine(rx)}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {consultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
+                                        <div>
+                                          <p className="mb-2 text-sm font-medium">Services</p>
+                                          <ul className="space-y-1">
+                                            {consultation.procedures
+                                              .filter((proc) => !isDocumentProcedure(proc))
+                                              .map((proc, i) => (
+                                                <ProcedureListItem key={i} procedure={proc} />
+                                              ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {consultation.procedures?.some(isDocumentProcedure) && (
+                                        <div>
+                                          <p className="mb-2 text-sm font-medium">Documents</p>
+                                          <ul className="space-y-1">
+                                            {consultation.procedures
+                                              .filter(isDocumentProcedure)
+                                              .map((proc, i) => (
+                                                <ProcedureListItem key={i} procedure={proc} />
+                                              ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {consultation.id && (
+                                        <div className="flex flex-wrap gap-2 border-t pt-3">
+                                          <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/consultations/${consultation.id}`}>Open full</Link>
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      </div>
                     </>
                   ) : (
-                    <p className="text-muted-foreground">No consultation history found.</p>
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">No consultation history yet.</p>
+                      <p className="mt-1">Start the first consult to build the record here.</p>
+                      <Button type="button" variant="outline" size="sm" className="mt-4" onClick={openConsultPanel}>
+                        Start consult
+                      </Button>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -715,13 +872,21 @@ export default function PatientProfileWorkspace({
             </TabsContent>
           </div>
 
-          {/* Right column: panel content (omitted when closed so main column uses full width) */}
           {panelOpen && (
-            <div className="w-[480px] shrink-0 flex flex-col gap-2">
-              <div className="flex flex-1 flex-col rounded-lg border bg-card shadow-sm">
+            <div className="w-full lg:w-[480px] lg:shrink-0 lg:sticky lg:top-6">
+              <div className="flex flex-col rounded-lg border bg-card shadow-sm">
+                <div className="flex items-center justify-between border-b px-5 py-3">
+                  <div>
+                    <p className="text-sm font-medium capitalize">{drawerMode}</p>
+                    <p className="text-xs text-muted-foreground">Patient profile workspace</p>
+                  </div>
+                  <Button variant="ghost" size="sm" type="button" onClick={() => setPanelOpen(false)}>
+                    Close
+                  </Button>
+                </div>
                 {drawerMode === "consult" && (
-                  <form onSubmit={handleConsultSign} className="flex flex-col h-full">
-                    <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                  <form onSubmit={handleConsultSign} className="flex flex-col">
+                    <div className="space-y-4 px-5 py-4">
                       <RichTextEditor
                         placeholder="Clinical notes"
                         minHeight="360px"
@@ -742,8 +907,8 @@ export default function PatientProfileWorkspace({
                   </form>
                 )}
                 {drawerMode === "treatment" && (
-                  <form onSubmit={handleTreatmentSign} className="flex flex-col h-full">
-                    <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+                  <form onSubmit={handleTreatmentSign} className="flex flex-col">
+                    <div className="space-y-3 px-5 py-4">
                       <OrderComposer
                         draftId={`profile-treatment-${patientId}-${latestConsultation?.id || "pending"}`}
                         patientId={patientId}
@@ -762,6 +927,11 @@ export default function PatientProfileWorkspace({
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
                       </div>
+                    </div>
+                    <div className="border-t px-5 py-4">
+                      <Button type="submit" disabled={treatmentSubmitting} className="w-full">
+                        {treatmentSubmitting ? "Signing..." : "Sign"}
+                      </Button>
                     </div>
                   </form>
                 )}

@@ -19,6 +19,7 @@ import { findDiagnosisByText } from './terminologies/diagnoses';
 import { findMedicationByName } from './terminologies/medications';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
+import { formatMedicationNameWithStrength } from '@/lib/prescriptions';
 
 // Local types that match your app's interface
 type OrderCategory = 'items' | 'services' | 'packages' | 'documents';
@@ -423,7 +424,7 @@ export async function saveConsultationToMedplum(
     for (const rx of consultation.prescriptions as any[]) {
       const medicationCode = findMedicationByName(rx.medication.name);
       const medicationCodeableConcept: any = {
-        text: `${rx.medication.name}${rx.medication.strength ? ` ${rx.medication.strength}` : ''}`,
+        text: formatMedicationNameWithStrength(rx.medication.name, rx.medication.strength),
       };
       if (medicationCode?.rxnorm) {
         medicationCodeableConcept.coding = [
@@ -796,7 +797,7 @@ export async function updateConsultationInMedplum(
     for (const rx of updates.prescriptions as any[]) {
       const medicationCode = findMedicationByName(rx.medication.name);
       const medicationCodeableConcept: any = {
-        text: `${rx.medication.name}${rx.medication.strength ? ` ${rx.medication.strength}` : ''}`,
+        text: formatMedicationNameWithStrength(rx.medication.name, rx.medication.strength),
       };
       if (medicationCode?.rxnorm) {
         medicationCodeableConcept.coding = [{
