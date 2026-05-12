@@ -926,11 +926,6 @@ export default function PatientProfileWorkspace({
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
                       </div>
                     </div>
-                    <div className="border-t px-5 py-4">
-                      <Button type="submit" disabled={treatmentSubmitting} className="w-full">
-                        {treatmentSubmitting ? "Signing..." : "Sign"}
-                      </Button>
-                    </div>
                   </form>
                 )}
               </div>
