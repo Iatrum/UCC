@@ -13,11 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import ProceduresTable from "@/components/inventory/procedures-table";
-import {
-  defaultCatalogItems,
-  type ClinicalCatalogItem,
-  type ClinicalCatalogType,
-} from "@/lib/clinical-catalog";
+import { type ClinicalCatalogItem, type ClinicalCatalogType } from "@/lib/clinical-catalog";
 import {
   createProcedure,
   deleteProcedure,
@@ -51,7 +47,6 @@ const EMPTY_FORM: Omit<ClinicalCatalogItem, "id"> = {
 export interface ClinicalCatalogManagerProps {
   types?: CatalogManagerType[];
   defaultType?: CatalogManagerType;
-  showFallbackNotice?: boolean;
   className?: string;
   onCatalogChange?: (type: ClinicalCatalogType, items: ClinicalCatalogItem[]) => void;
 }
@@ -59,7 +54,6 @@ export interface ClinicalCatalogManagerProps {
 export function ClinicalCatalogManager({
   types = ["lab", "imaging", "document", "procedure"],
   defaultType,
-  showFallbackNotice = true,
   className,
   onCatalogChange,
 }: ClinicalCatalogManagerProps) {
@@ -79,9 +73,7 @@ export function ClinicalCatalogManager({
   const [loading, setLoading] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<ClinicalCatalogItem | null>(null);
-  const [editingFallback, setEditingFallback] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
-  const [savingDefaults, setSavingDefaults] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<Record<string, boolean>>({});
   const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
   const [procedureSearch, setProcedureSearch] = React.useState("");
@@ -140,7 +132,7 @@ export function ClinicalCatalogManager({
 
   const clinicalType = activeType === "procedure" ? "lab" : activeType;
   const savedItems = activeType === "procedure" ? [] : items[clinicalType];
-  const rows = activeType === "procedure" ? [] : savedItems.length ? savedItems : defaultCatalogItems(clinicalType);
+  const rows = activeType === "procedure" ? [] : savedItems;
   const filteredRows = rows.filter((item) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -148,7 +140,6 @@ export function ClinicalCatalogManager({
       (value || "").toLowerCase().includes(q)
     );
   });
-  const usingFallback = activeType !== "procedure" && savedItems.length === 0;
 
   async function persistItem(item: Omit<ClinicalCatalogItem, "id">, id?: string) {
     const method = id ? "PATCH" : "POST";
@@ -176,68 +167,6 @@ export function ClinicalCatalogManager({
     }
     if (activeType !== "procedure") {
       await loadType(activeType);
-    }
-  }
-
-  async function createDefaults(type: ClinicalCatalogType) {
-    const defaults = defaultCatalogItems(type);
-    setSavingDefaults(true);
-    try {
-      for (const item of defaults) {
-        await persistItem({
-          type: item.type,
-          name: item.name,
-          code: item.code,
-          system: item.system,
-          display: item.display,
-          category: item.category,
-          modality: item.modality,
-          defaultPrice: item.defaultPrice,
-          active: item.active,
-          notes: item.notes,
-        });
-      }
-      await loadType(type);
-      toast({ title: "Catalog defaults created", description: `${TYPE_LABELS[type]} are now editable for this clinic.` });
-    } catch (error) {
-      toast({
-        title: "Defaults not created",
-        description: error instanceof Error ? error.message : "Failed to create default catalog items.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingDefaults(false);
-    }
-  }
-
-  async function deleteFallbackItem(type: ClinicalCatalogType, id: string) {
-    const defaults = defaultCatalogItems(type).filter((item) => item.id !== id);
-    setSavingDefaults(true);
-    try {
-      for (const item of defaults) {
-        await persistItem({
-          type: item.type,
-          name: item.name,
-          code: item.code,
-          system: item.system,
-          display: item.display,
-          category: item.category,
-          modality: item.modality,
-          defaultPrice: item.defaultPrice,
-          active: item.active,
-          notes: item.notes,
-        });
-      }
-      await loadType(type);
-      toast({ title: "Catalog item deleted" });
-    } catch (error) {
-      toast({
-        title: "Delete failed",
-        description: error instanceof Error ? error.message : "Failed to delete catalog item.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingDefaults(false);
     }
   }
 
@@ -298,34 +227,13 @@ export function ClinicalCatalogManager({
                 Add {TYPE_LABELS[type].replace(/s$/, "")}
               </Button>
             </div>
-            {showFallbackNotice && usingFallback && (
-              <div className="flex flex-col gap-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                <span>Showing built-in defaults. Create them in this clinic catalog to edit or delete them.</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={savingDefaults}
-                  onClick={() => void createDefaults(type)}
-                >
-                  {savingDefaults ? "Creating..." : "Create Defaults"}
-                </Button>
-              </div>
-            )}
             <CatalogTable
               rows={filteredRows}
               loading={loading}
               deletingIds={deletingIds}
-              onEdit={(item) => {
-                setEditingFallback(usingFallback);
-                setEditing(item);
-              }}
+              onEdit={setEditing}
               onDelete={async (id) => {
                 if (!window.confirm("Delete this catalog item?")) return;
-                if (usingFallback) {
-                  await deleteFallbackItem(type, id);
-                  return;
-                }
                 setDeletingIds((prev) => ({ ...prev, [id]: true }));
                 try {
                   await deleteItem(id);
@@ -380,7 +288,6 @@ export function ClinicalCatalogManager({
       <Dialog open={Boolean(editing)} onOpenChange={(open) => {
         if (!open) {
           setEditing(null);
-          setEditingFallback(false);
         }
       }}>
         <DialogContent>
@@ -393,9 +300,8 @@ export function ClinicalCatalogManager({
               onCancel={() => setEditing(null)}
               onSubmit={async (item) => {
                 try {
-                  await saveItem(item, editingFallback ? undefined : editing.id);
+                  await saveItem(item, editing.id);
                   setEditing(null);
-                  setEditingFallback(false);
                   toast({ title: "Catalog item updated" });
                 } catch (error) {
                   toast({
