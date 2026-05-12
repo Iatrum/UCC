@@ -98,6 +98,10 @@ function patientFacingProcedureNote(value: string | undefined, category?: string
   return text;
 }
 
+function consultationPreviewText(value: string | undefined) {
+  return stripHtml(value || "") || "—";
+}
+
 function isDocumentProcedure(procedure: ProcedureRecord) {
   return procedure.category === "documents";
 }
@@ -551,11 +555,11 @@ export default function PatientProfileWorkspace({
           <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
         </TabsList>
 
-        {/* Content row: main tab content + action panel side by side */}
-        <div className="flex min-w-0 items-start gap-4">
+        {/* Content row: main tab content + action panel */}
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <TabsContent value="history" className="mt-0">
-              <div className="flex justify-end mb-3">
+              <div className="mb-3 flex justify-end">
                 <Tabs value={panelOpen ? drawerMode : ""}>
                   <TabsList>
                     <TabsTrigger
@@ -577,130 +581,240 @@ export default function PatientProfileWorkspace({
                 </Tabs>
               </div>
               <Card>
-                <CardContent>
+                <CardContent className="space-y-4">
                   {visibleConsultations.length > 0 ? (
                     <>
-                      <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Complaint</TableHead>
-                          <TableHead>Diagnosis</TableHead>
-                          <TableHead>Prescriptions</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                      <div className="md:hidden space-y-3">
                         {visibleConsultations.map((consultation) => (
-                          <Fragment key={consultation.id}>
-                            <TableRow
-                              data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
-                              aria-selected={selectedConsultation?.id === consultation.id}
-                              className={cn(
-                                "cursor-pointer",
-                                selectedConsultation?.id === consultation.id && "bg-muted/50"
-                              )}
-                              onClick={() => {
-                                setSelectedConsultation((current) =>
-                                  current?.id === consultation.id ? null : consultation
-                                );
-                              }}
-                            >
-                              <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
-                              <TableCell>Consultation</TableCell>
-                              <TableCell className="max-w-[200px] truncate">{consultation.chiefComplaint?.replace(/<[^>]*>/g, "") || "—"}</TableCell>
-                              <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
-                              <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                  <Button variant="outline" size="sm" asChild>
-                                    <Link href={`/consultations/${consultation.id}`}>View</Link>
-                                  </Button>
-                                  <Button size="sm" asChild>
-                                    <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {selectedConsultation?.id === consultation.id && (
-                              <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={6} className="bg-muted/30 px-6 pb-5 pt-3">
-                                  <div className="space-y-4">
-                                    <div>
-                                      <p className="mb-1 text-sm font-medium">Clinical Notes</p>
-                                      <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
-                                    </div>
-                                    <div>
-                                      <p className="mb-1 text-sm font-medium">Diagnosis</p>
-                                      <p className="text-sm text-muted-foreground">{consultation.diagnosis || "—"}</p>
-                                    </div>
-                                    {consultation.notes && (
-                                      <div>
-                                        <p className="mb-1 text-sm font-medium">Notes</p>
-                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
-                                      </div>
-                                    )}
-                                    {consultation.progressNote && (
-                                      <div>
-                                        <p className="mb-1 text-sm font-medium">Progress Note</p>
-                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
-                                      </div>
-                                    )}
-                                    {consultation.prescriptions && consultation.prescriptions.length > 0 && (
-                                      <div>
-                                        <p className="mb-2 text-sm font-medium">Prescriptions</p>
-                                        <ul className="space-y-1">
-                                          {consultation.prescriptions.map((rx, i) => (
-                                            <li key={i} className="text-sm text-muted-foreground">
-                                              {formatPrescriptionLine(rx)}
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {consultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
-                                      <div>
-                                        <p className="mb-2 text-sm font-medium">Services</p>
-                                        <ul className="space-y-1">
-                                          {consultation.procedures
-                                            .filter((proc) => !isDocumentProcedure(proc))
-                                            .map((proc, i) => (
-                                              <ProcedureListItem key={i} procedure={proc} />
-                                            ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {consultation.procedures?.some(isDocumentProcedure) && (
-                                      <div>
-                                        <p className="mb-2 text-sm font-medium">Documents</p>
-                                        <ul className="space-y-1">
-                                          {consultation.procedures
-                                            .filter(isDocumentProcedure)
-                                            .map((proc, i) => (
-                                              <ProcedureListItem key={i} procedure={proc} />
-                                            ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {consultation.id && (
-                                      <div className="flex flex-wrap gap-2 border-t pt-3">
-                                        <Button variant="outline" size="sm" asChild>
-                                          <Link href={`/consultations/${consultation.id}`}>Open full</Link>
-                                        </Button>
-                                      </div>
-                                    )}
+                          <button
+                            key={consultation.id}
+                            type="button"
+                            className={cn(
+                              "w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/40",
+                              selectedConsultation?.id === consultation.id && "border-primary bg-muted/40"
+                            )}
+                            onClick={() => {
+                              setSelectedConsultation((current) =>
+                                current?.id === consultation.id ? null : consultation
+                              );
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium">{formatDisplayDate(consultation.date)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Consultation</p>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{consultation.prescriptions?.length || 0} items</p>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Clinical notes</p>
+                                <p className="text-sm">{consultationPreviewText(consultation.chiefComplaint)}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Diagnosis</p>
+                                <p className="text-sm">{consultation.diagnosis || "—"}</p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                        {selectedConsultation && (
+                          <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                            <div>
+                              <p className="text-sm font-medium">{formatDisplayDate(selectedConsultation.date)}</p>
+                              <p className="text-sm text-muted-foreground">{consultationPreviewText(selectedConsultation.chiefComplaint)}</p>
+                            </div>
+                            <div>
+                              <p className="mb-1 text-sm font-medium">Diagnosis</p>
+                              <p className="text-sm text-muted-foreground">{selectedConsultation.diagnosis || "—"}</p>
+                            </div>
+                            {selectedConsultation.notes && (
+                              <div>
+                                <p className="mb-1 text-sm font-medium">Notes</p>
+                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: selectedConsultation.notes }} />
+                              </div>
+                            )}
+                            {selectedConsultation.progressNote && (
+                              <div>
+                                <p className="mb-1 text-sm font-medium">Progress Note</p>
+                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: selectedConsultation.progressNote }} />
+                              </div>
+                            )}
+                            {selectedConsultation.prescriptions && selectedConsultation.prescriptions.length > 0 && (
+                              <div>
+                                <p className="mb-2 text-sm font-medium">Prescriptions</p>
+                                <ul className="space-y-1">
+                                  {selectedConsultation.prescriptions.map((rx, i) => (
+                                    <li key={i} className="text-sm text-muted-foreground">
+                                      {formatPrescriptionLine(rx)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedConsultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
+                              <div>
+                                <p className="mb-2 text-sm font-medium">Services</p>
+                                <ul className="space-y-1">
+                                  {selectedConsultation.procedures
+                                    .filter((proc) => !isDocumentProcedure(proc))
+                                    .map((proc, i) => (
+                                      <ProcedureListItem key={i} procedure={proc} />
+                                    ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedConsultation.procedures?.some(isDocumentProcedure) && (
+                              <div>
+                                <p className="mb-2 text-sm font-medium">Documents</p>
+                                <ul className="space-y-1">
+                                  {selectedConsultation.procedures
+                                    .filter(isDocumentProcedure)
+                                    .map((proc, i) => (
+                                      <ProcedureListItem key={i} procedure={proc} />
+                                    ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedConsultation.id && (
+                              <div className="flex flex-wrap gap-2 border-t pt-3">
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={`/consultations/${selectedConsultation.id}`}>Open full</Link>
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="hidden md:block">
+                        <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Complaint</TableHead>
+                            <TableHead>Diagnosis</TableHead>
+                            <TableHead>Prescriptions</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visibleConsultations.map((consultation) => (
+                            <Fragment key={consultation.id}>
+                              <TableRow
+                                data-selected={selectedConsultation?.id === consultation.id ? true : undefined}
+                                aria-selected={selectedConsultation?.id === consultation.id}
+                                className={cn(
+                                  "cursor-pointer",
+                                  selectedConsultation?.id === consultation.id && "bg-muted/50"
+                                )}
+                                onClick={() => {
+                                  setSelectedConsultation((current) =>
+                                    current?.id === consultation.id ? null : consultation
+                                  );
+                                }}
+                              >
+                                <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
+                                <TableCell>Consultation</TableCell>
+                                <TableCell className="max-w-[200px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
+                                <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
+                                <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <Button variant="outline" size="sm" asChild>
+                                      <Link href={`/consultations/${consultation.id}`}>View</Link>
+                                    </Button>
+                                    <Button size="sm" asChild>
+                                      <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
+                                    </Button>
                                   </div>
                                 </TableCell>
                               </TableRow>
-                            )}
-                          </Fragment>
-                        ))}
-                      </TableBody>
-                    </Table>
+                              {selectedConsultation?.id === consultation.id && (
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={6} className="bg-muted/30 px-6 pb-5 pt-3">
+                                    <div className="space-y-4">
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Clinical Notes</p>
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
+                                      </div>
+                                      <div>
+                                        <p className="mb-1 text-sm font-medium">Diagnosis</p>
+                                        <p className="text-sm text-muted-foreground">{consultation.diagnosis || "—"}</p>
+                                      </div>
+                                      {consultation.notes && (
+                                        <div>
+                                          <p className="mb-1 text-sm font-medium">Notes</p>
+                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
+                                        </div>
+                                      )}
+                                      {consultation.progressNote && (
+                                        <div>
+                                          <p className="mb-1 text-sm font-medium">Progress Note</p>
+                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
+                                        </div>
+                                      )}
+                                      {consultation.prescriptions && consultation.prescriptions.length > 0 && (
+                                        <div>
+                                          <p className="mb-2 text-sm font-medium">Prescriptions</p>
+                                          <ul className="space-y-1">
+                                            {consultation.prescriptions.map((rx, i) => (
+                                              <li key={i} className="text-sm text-muted-foreground">
+                                                {formatPrescriptionLine(rx)}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {consultation.procedures?.some((proc) => !isDocumentProcedure(proc)) && (
+                                        <div>
+                                          <p className="mb-2 text-sm font-medium">Services</p>
+                                          <ul className="space-y-1">
+                                            {consultation.procedures
+                                              .filter((proc) => !isDocumentProcedure(proc))
+                                              .map((proc, i) => (
+                                                <ProcedureListItem key={i} procedure={proc} />
+                                              ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {consultation.procedures?.some(isDocumentProcedure) && (
+                                        <div>
+                                          <p className="mb-2 text-sm font-medium">Documents</p>
+                                          <ul className="space-y-1">
+                                            {consultation.procedures
+                                              .filter(isDocumentProcedure)
+                                              .map((proc, i) => (
+                                                <ProcedureListItem key={i} procedure={proc} />
+                                              ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      {consultation.id && (
+                                        <div className="flex flex-wrap gap-2 border-t pt-3">
+                                          <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/consultations/${consultation.id}`}>Open full</Link>
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      </div>
                     </>
                   ) : (
-                    <p className="text-muted-foreground">No consultation history found.</p>
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">No consultation history yet.</p>
+                      <p className="mt-1">Start the first consult to build the record here.</p>
+                      <Button type="button" variant="outline" size="sm" className="mt-4" onClick={openConsultPanel}>
+                        Start consult
+                      </Button>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -724,13 +838,21 @@ export default function PatientProfileWorkspace({
             </TabsContent>
           </div>
 
-          {/* Right column: panel content (omitted when closed so main column uses full width) */}
           {panelOpen && (
-            <div className="w-[480px] shrink-0 flex flex-col gap-2">
-              <div className="flex flex-1 flex-col rounded-lg border bg-card shadow-sm">
+            <div className="w-full lg:w-[480px] lg:shrink-0 lg:sticky lg:top-6">
+              <div className="flex flex-col rounded-lg border bg-card shadow-sm">
+                <div className="flex items-center justify-between border-b px-5 py-3">
+                  <div>
+                    <p className="text-sm font-medium capitalize">{drawerMode}</p>
+                    <p className="text-xs text-muted-foreground">Patient profile workspace</p>
+                  </div>
+                  <Button variant="ghost" size="sm" type="button" onClick={() => setPanelOpen(false)}>
+                    Close
+                  </Button>
+                </div>
                 {drawerMode === "consult" && (
-                  <form onSubmit={handleConsultSign} className="flex flex-col h-full">
-                    <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                  <form onSubmit={handleConsultSign} className="flex flex-col">
+                    <div className="space-y-4 px-5 py-4">
                       <RichTextEditor
                         placeholder="Clinical notes"
                         minHeight="360px"
@@ -751,8 +873,8 @@ export default function PatientProfileWorkspace({
                   </form>
                 )}
                 {drawerMode === "treatment" && (
-                  <form onSubmit={handleTreatmentSign} className="flex flex-col h-full">
-                    <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+                  <form onSubmit={handleTreatmentSign} className="flex flex-col">
+                    <div className="space-y-3 px-5 py-4">
                       <OrderComposer
                         draftId={`profile-treatment-${patientId}-${latestConsultation?.id || "pending"}`}
                         patientId={patientId}
@@ -771,6 +893,11 @@ export default function PatientProfileWorkspace({
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
                       </div>
+                    </div>
+                    <div className="border-t px-5 py-4">
+                      <Button type="submit" disabled={treatmentSubmitting} className="w-full">
+                        {treatmentSubmitting ? "Signing..." : "Sign"}
+                      </Button>
                     </div>
                   </form>
                 )}
