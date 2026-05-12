@@ -60,6 +60,11 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
 
   // Load enabled modules dynamically
   useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const applyResponsiveCollapse = () => setIsCollapsed(media.matches);
+    applyResponsiveCollapse();
+    media.addEventListener("change", applyResponsiveCollapse);
+
     const loadModules = () => {
       const enabled = getEnabledModules();
       const moduleNav = enabled
@@ -83,6 +88,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
     window.addEventListener('modulesReset', handleModuleChange);
 
     return () => {
+      media.removeEventListener("change", applyResponsiveCollapse);
       window.removeEventListener('moduleToggle', handleModuleChange);
       window.removeEventListener('modulesReset', handleModuleChange);
     };
