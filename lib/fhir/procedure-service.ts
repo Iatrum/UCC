@@ -15,12 +15,21 @@ export interface ProcedureItem {
 }
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+const CATALOG_TYPE_IDENTIFIER_SYSTEM = 'https://ucc.emr/catalog-type';
+const CATALOG_TYPE_EXTENSION_URL = 'https://ucc.emr/catalog-type';
 const PROCEDURE_CATEGORY_EXTENSION_URL = 'https://ucc.emr/procedure-category';
 const PRICE_CURRENCY = 'MYR';
 
 function getCategory(definition: ChargeItemDefinition): string | undefined {
   const categoryExt = definition.extension?.find((ext) => ext.url === PROCEDURE_CATEGORY_EXTENSION_URL);
   return (categoryExt as { valueString?: string } | undefined)?.valueString || undefined;
+}
+
+function isServiceCatalogDefinition(definition: ChargeItemDefinition): boolean {
+  return Boolean(
+    definition.identifier?.some((identifier) => identifier.system === CATALOG_TYPE_IDENTIFIER_SYSTEM) ||
+      definition.extension?.some((extension) => extension.url === CATALOG_TYPE_EXTENSION_URL)
+  );
 }
 
 function getDefaultPrice(definition: ChargeItemDefinition): number {
@@ -121,6 +130,7 @@ export async function getProcedureByIdFromMedplum(
   id: string
 ): Promise<ProcedureItem | null> {
   const definition = await getDefinitionById(medplum, id);
+  if (definition && isServiceCatalogDefinition(definition)) return null;
   return definition ? mapDefinitionToProcedure(definition) : null;
 }
 
@@ -131,7 +141,7 @@ export async function getProceduresFromMedplum(
   const definitions = await medplum.searchResources('ChargeItemDefinition', {
     identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
   });
-  return definitions.map(mapDefinitionToProcedure);
+  return definitions.filter((definition) => !isServiceCatalogDefinition(definition)).map(mapDefinitionToProcedure);
 }
 
 export async function createProcedureInMedplum(
@@ -167,6 +177,9 @@ export async function updateProcedureInMedplum(
 ): Promise<void> {
   const existing = await getDefinitionById(medplum, id);
   if (!existing) {
+    throw new Error('Procedure not found');
+  }
+  if (isServiceCatalogDefinition(existing)) {
     throw new Error('Procedure not found');
   }
 
@@ -206,5 +219,9 @@ export async function deleteProcedureInMedplum(
   medplum: MedplumClient,
   id: string
 ): Promise<void> {
+  const existing = await getDefinitionById(medplum, id);
+  if (!existing || isServiceCatalogDefinition(existing)) {
+    throw new Error('Procedure not found');
+  }
   await medplum.deleteResource('ChargeItemDefinition', id);
 }
