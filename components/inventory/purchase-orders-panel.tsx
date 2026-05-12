@@ -440,17 +440,17 @@ function PurchaseOrderForm({
   const [dueDate, setDueDate] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [status, setStatus] = React.useState<PurchaseOrderStatus>(documentType === "rfq" ? "draft" : "ordered");
-  const [taxAmount, setTaxAmount] = React.useState(0);
-  const [adjustmentAmount, setAdjustmentAmount] = React.useState(0);
-  const [deliveryCharge, setDeliveryCharge] = React.useState(0);
-  const [paidAmount, setPaidAmount] = React.useState(0);
+  const [taxAmount, setTaxAmount] = React.useState("");
+  const [adjustmentAmount, setAdjustmentAmount] = React.useState("");
+  const [deliveryCharge, setDeliveryCharge] = React.useState("");
+  const [paidAmount, setPaidAmount] = React.useState("");
   const [items, setItems] = React.useState([
     {
       medicationId: "",
       medicationName: "",
-      requestedQuantity: 1,
-      receivedQuantity: documentType === "invoice" ? 1 : 0,
-      unitCost: 0,
+      requestedQuantity: "1",
+      receivedQuantity: documentType === "invoice" ? "1" : "",
+      unitCost: "",
       batchNumber: "",
       expiryDate: "",
     },
@@ -461,8 +461,8 @@ function PurchaseOrderForm({
     (sum, item) => sum + (Number(item.requestedQuantity) || 0) * (Number(item.unitCost) || 0),
     0
   );
-  const total = subtotal + taxAmount + adjustmentAmount + deliveryCharge;
-  const amountDue = Math.max(0, total - paidAmount);
+  const total = subtotal + (Number(taxAmount) || 0) + (Number(adjustmentAmount) || 0) + (Number(deliveryCharge) || 0);
+  const amountDue = Math.max(0, total - (Number(paidAmount) || 0));
 
   function updateItem(index: number, next: Partial<(typeof items)[number]>) {
     setItems((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...next } : item)));
@@ -474,7 +474,14 @@ function PurchaseOrderForm({
       onSubmit={async (event) => {
         event.preventDefault();
         if (!supplier) return;
-        const normalizedItems = items.filter((item) => item.medicationId && item.requestedQuantity > 0);
+        const normalizedItems = items
+          .filter((item) => item.medicationId && Number(item.requestedQuantity) > 0)
+          .map((item) => ({
+            ...item,
+            requestedQuantity: Number(item.requestedQuantity) || 0,
+            receivedQuantity: Number(item.receivedQuantity) || 0,
+            unitCost: Number(item.unitCost) || 0,
+          }));
         await onSubmit({
           documentType,
           reference: reference.trim() || undefined,
@@ -485,10 +492,10 @@ function PurchaseOrderForm({
           dueDate,
           notes,
           status,
-          taxAmount,
-          adjustmentAmount,
-          deliveryCharge,
-          paidAmount,
+          taxAmount: Number(taxAmount) || 0,
+          adjustmentAmount: Number(adjustmentAmount) || 0,
+          deliveryCharge: Number(deliveryCharge) || 0,
+          paidAmount: Number(paidAmount) || 0,
           items: normalizedItems,
         });
       }}
@@ -558,9 +565,9 @@ function PurchaseOrderForm({
                 {
                   medicationId: "",
                   medicationName: "",
-                  requestedQuantity: 1,
-                  receivedQuantity: 0,
-                  unitCost: 0,
+                  requestedQuantity: "1",
+                  receivedQuantity: "",
+                  unitCost: "",
                   batchNumber: "",
                   expiryDate: "",
                 },
@@ -584,7 +591,7 @@ function PurchaseOrderForm({
                     updateItem(index, {
                       medicationId: value,
                       medicationName: medication?.name || "",
-                      unitCost: medication?.unitPrice || 0,
+                      unitCost: medication?.unitPrice ? String(medication.unitPrice) : "",
                     });
                   }}
                 >
@@ -606,7 +613,7 @@ function PurchaseOrderForm({
                   type="number"
                   min="1"
                   value={item.requestedQuantity}
-                  onChange={(event) => updateItem(index, { requestedQuantity: Number(event.target.value) || 0 })}
+                  onChange={(event) => updateItem(index, { requestedQuantity: event.target.value })}
                 />
               </div>
               <div className="space-y-2 md:col-span-1">
@@ -615,7 +622,7 @@ function PurchaseOrderForm({
                   type="number"
                   min="0"
                   value={item.receivedQuantity}
-                  onChange={(event) => updateItem(index, { receivedQuantity: Number(event.target.value) || 0 })}
+                  onChange={(event) => updateItem(index, { receivedQuantity: event.target.value })}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -625,7 +632,7 @@ function PurchaseOrderForm({
                   min="0"
                   step="0.01"
                   value={item.unitCost}
-                  onChange={(event) => updateItem(index, { unitCost: Number(event.target.value) || 0 })}
+                  onChange={(event) => updateItem(index, { unitCost: event.target.value })}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -659,19 +666,19 @@ function PurchaseOrderForm({
       <div className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-4">
         <div className="space-y-2">
           <Label>Tax</Label>
-          <Input type="number" value={taxAmount} onChange={(event) => setTaxAmount(Number(event.target.value) || 0)} />
+          <Input type="number" value={taxAmount} onChange={(event) => setTaxAmount(event.target.value)} />
         </div>
         <div className="space-y-2">
           <Label>Adjustment</Label>
-          <Input type="number" value={adjustmentAmount} onChange={(event) => setAdjustmentAmount(Number(event.target.value) || 0)} />
+          <Input type="number" value={adjustmentAmount} onChange={(event) => setAdjustmentAmount(event.target.value)} />
         </div>
         <div className="space-y-2">
           <Label>Delivery</Label>
-          <Input type="number" value={deliveryCharge} onChange={(event) => setDeliveryCharge(Number(event.target.value) || 0)} />
+          <Input type="number" value={deliveryCharge} onChange={(event) => setDeliveryCharge(event.target.value)} />
         </div>
         <div className="space-y-2">
           <Label>Paid</Label>
-          <Input type="number" value={paidAmount} onChange={(event) => setPaidAmount(Number(event.target.value) || 0)} />
+          <Input type="number" value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} />
         </div>
       </div>
 

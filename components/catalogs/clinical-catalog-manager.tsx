@@ -5,6 +5,16 @@ import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -80,6 +90,8 @@ export function ClinicalCatalogManager({
   const [editingDocumentDefault, setEditingDocumentDefault] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<Record<string, boolean>>({});
+  const [procedureDeleteTarget, setProcedureDeleteTarget] = React.useState<ProcedureItem | null>(null);
+  const [catalogDeleteTarget, setCatalogDeleteTarget] = React.useState<ClinicalCatalogItem | null>(null);
   const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
   const [procedureSearch, setProcedureSearch] = React.useState("");
   const [procedureLoading, setProcedureLoading] = React.useState(false);
@@ -233,10 +245,7 @@ export function ClinicalCatalogManager({
                     toast({ title: "Procedure updated" });
                   }}
                   onDelete={async (id) => {
-                    if (!window.confirm("Delete this procedure?")) return;
-                    await deleteProcedure(id);
-                    await loadProcedures();
-                    toast({ title: "Procedure deleted" });
+                    setProcedureDeleteTarget(procedures.find((procedure) => procedure.id === id) ?? null);
                   }}
                 />
               )
@@ -265,8 +274,58 @@ export function ClinicalCatalogManager({
                 setEditingDocumentDefault(usingDocumentDefaults);
                 setEditing(item);
               }}
-              onDelete={async (id) => {
-                if (!window.confirm("Delete this catalog item?")) return;
+              onDelete={(item) => setCatalogDeleteTarget(item)}
+            />
+              </>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
+
+      <AlertDialog open={Boolean(procedureDeleteTarget)} onOpenChange={(open) => !open && setProcedureDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete procedure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {procedureDeleteTarget
+                ? `This will remove "${procedureDeleteTarget.name}" from procedure options.`
+                : "This will remove the selected procedure from procedure options."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!procedureDeleteTarget) return;
+                await deleteProcedure(procedureDeleteTarget.id);
+                setProcedureDeleteTarget(null);
+                await loadProcedures();
+                toast({ title: "Procedure deleted" });
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(catalogDeleteTarget)} onOpenChange={(open) => !open && setCatalogDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete catalog item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {catalogDeleteTarget
+                ? `This will remove "${catalogDeleteTarget.name}" from this catalog.`
+                : "This will remove the selected catalog item."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                const target = catalogDeleteTarget;
+                if (!target) return;
+                const id = target.id;
                 setDeletingIds((prev) => ({ ...prev, [id]: true }));
                 try {
                   if (usingDocumentDefaults) {
@@ -275,6 +334,7 @@ export function ClinicalCatalogManager({
                     await deleteItem(id);
                   }
                   toast({ title: "Catalog item deleted" });
+                  setCatalogDeleteTarget(null);
                 } catch (error) {
                   toast({
                     title: "Delete failed",
@@ -289,12 +349,12 @@ export function ClinicalCatalogManager({
                   });
                 }
               }}
-            />
-              </>
-            )}
-          </TabsContent>
-        ))}
-      </Tabs>
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
@@ -370,7 +430,7 @@ function CatalogTable({
   loading: boolean;
   deletingIds: Record<string, boolean>;
   onEdit: (item: ClinicalCatalogItem) => void;
-  onDelete: (id: string) => void;
+  onDelete: (item: ClinicalCatalogItem) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-md border">
@@ -413,10 +473,25 @@ function CatalogTable({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-1">
-                  <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(item)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Edit catalog item ${item.name}`}
+                    title={`Edit catalog item ${item.name}`}
+                    onClick={() => onEdit(item)}
+                  >
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button type="button" variant="ghost" size="icon" disabled={deletingIds[item.id]} onClick={() => onDelete(item.id)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Delete catalog item ${item.name}`}
+                    title={`Delete catalog item ${item.name}`}
+                    disabled={deletingIds[item.id]}
+                    onClick={() => onDelete(item)}
+                  >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
@@ -438,7 +513,7 @@ function CatalogForm({
   onSubmit: (item: Omit<ClinicalCatalogItem, "id">) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [form, setForm] = React.useState<Omit<ClinicalCatalogItem, "id">>({
+  const [form, setForm] = React.useState<Omit<ClinicalCatalogItem, "id" | "defaultPrice"> & { defaultPrice: string }>({
     type: initial.type,
     name: initial.name || "",
     code: initial.code || "",
@@ -446,7 +521,7 @@ function CatalogForm({
     display: initial.display || "",
     category: initial.category || "",
     modality: initial.modality || "",
-    defaultPrice: initial.defaultPrice || 0,
+    defaultPrice: initial.defaultPrice ? String(initial.defaultPrice) : "",
     active: initial.active !== false,
     notes: initial.notes || "",
   });
@@ -468,7 +543,7 @@ function CatalogForm({
             category: form.category?.trim() || undefined,
             modality: form.modality?.trim() || undefined,
             notes: form.notes?.trim() || undefined,
-            defaultPrice: Number(form.defaultPrice || 0),
+            defaultPrice: Number(form.defaultPrice) || 0,
           });
         } finally {
           setSaving(false);
@@ -520,7 +595,7 @@ function CatalogForm({
             min="0"
             step="0.01"
             value={form.defaultPrice}
-            onChange={(event) => setForm({ ...form, defaultPrice: Number(event.target.value || 0) })}
+            onChange={(event) => setForm({ ...form, defaultPrice: event.target.value })}
           />
         </div>
         <div className="flex items-center justify-between rounded-md border px-3 py-2">

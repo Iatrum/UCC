@@ -20,6 +20,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { fetchInsurers, addInsurer, updateInsurer, deleteInsurer, type Insurer } from "@/lib/insurers";
@@ -30,6 +40,9 @@ export function InsurerManager() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Insurer | null>(null);
   const [formData, setFormData] = useState({ name: "", value: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Insurer | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -50,12 +63,14 @@ export function InsurerManager() {
   const handleAdd = () => {
     setEditing(null);
     setFormData({ name: "", value: "" });
+    setSaveError("");
     setOpen(true);
   };
 
   const handleEdit = (insurer: Insurer) => {
     setEditing(insurer);
     setFormData({ name: insurer.name, value: insurer.value });
+    setSaveError("");
     setOpen(true);
   };
 
@@ -67,10 +82,14 @@ export function InsurerManager() {
     const value = formData.value.trim() || slugify(formData.name);
 
     if (!name || !value) {
-      toast({ title: "Validation Error", description: "Name is required", variant: "destructive" });
+      const message = "Name is required.";
+      setSaveError(message);
+      toast({ title: "Validation Error", description: message, variant: "destructive" });
       return;
     }
 
+    setSaving(true);
+    setSaveError("");
     try {
       if (editing?.id) {
         await updateInsurer(editing.id, { name, value });
@@ -81,18 +100,22 @@ export function InsurerManager() {
       }
       setOpen(false);
       load();
-    } catch {
-      toast({ title: "Error", description: "Failed to save insurer", variant: "destructive" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save insurer.";
+      setSaveError(message);
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (insurer: Insurer) => {
-    if (!insurer.id) return;
-    if (!confirm(`Delete insurer "${insurer.name}"?`)) return;
+  const handleDelete = async () => {
+    if (!deleteTarget?.id) return;
 
     try {
-      await deleteInsurer(insurer.id);
+      await deleteInsurer(deleteTarget.id);
       toast({ title: "Success", description: "Insurer deleted" });
+      setDeleteTarget(null);
       load();
     } catch {
       toast({ title: "Error", description: "Failed to delete insurer", variant: "destructive" });
@@ -138,10 +161,22 @@ export function InsurerManager() {
                   <TableCell className="font-mono text-sm text-muted-foreground">{insurer.value}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(insurer)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Edit insurer ${insurer.name}`}
+                        title={`Edit insurer ${insurer.name}`}
+                        onClick={() => handleEdit(insurer)}
+                      >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(insurer)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete insurer ${insurer.name}`}
+                        title={`Delete insurer ${insurer.name}`}
+                        onClick={() => setDeleteTarget(insurer)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -187,11 +222,34 @@ export function InsurerManager() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave}>Save</Button>
+            {saveError ? (
+              <p className="mr-auto text-sm text-destructive" role="alert">
+                {saveError}
+              </p>
+            ) : null}
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete insurer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `This will remove "${deleteTarget.name}" from panel insurer options.`
+                : "This will remove the selected insurer from panel insurer options."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleDelete()}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
