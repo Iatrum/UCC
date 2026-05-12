@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { format } from "date-fns";
 import { PDFViewer, pdf } from "@react-pdf/renderer";
 import { Download, FileText, Loader2, Trash2 } from "lucide-react";
@@ -108,19 +108,24 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   const { toast } = useToast();
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Referral | null>(null);
   const [viewingSigned, setViewingSigned] = useState<SignedDocument | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const signedDocuments = getSignedDocuments(consultations);
 
-  useEffect(() => {
+  const loadReferrals = useCallback(() => {
     let active = true;
     (async () => {
       try {
+        setLoadError(null);
         const list = await getPatientReferrals(patient.id);
         if (!active) return;
         setReferrals(list as any);
+      } catch (error) {
+        if (!active) return;
+        setLoadError(error instanceof Error ? error.message : "Failed to load documents.");
       } finally {
         if (active) setLoading(false);
       }
@@ -129,6 +134,8 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       active = false;
     };
   }, [patient.id]);
+
+  useEffect(() => loadReferrals(), [loadReferrals]);
 
   useEffect(() => {
     let active = true;
@@ -207,8 +214,22 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               Loading documents…
             </div>
           )}
-          {!loading && referrals.length === 0 && signedDocuments.length === 0 && (
-            <p className="text-sm text-muted-foreground">No saved documents.</p>
+          {!loading && loadError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <p className="text-sm font-medium text-destructive">Could not load generated documents.</p>
+              <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
+              <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => loadReferrals()}>
+                Retry
+              </Button>
+            </div>
+          )}
+          {!loading && !loadError && referrals.length === 0 && signedDocuments.length === 0 && (
+            <div className="rounded-lg border border-dashed p-4">
+              <p className="text-sm font-medium">No generated documents yet.</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Signed MCs and referral letters will appear here after a consult is completed.
+              </p>
+            </div>
           )}
           {signedDocuments.map((doc) => (
             <div key={doc.id} className="flex items-center justify-between rounded-lg border p-4">
@@ -277,6 +298,9 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               </div>
             </div>
           ))}
+          {!loading && !loadError && referrals.length === 0 && signedDocuments.length > 0 && (
+            <p className="text-sm text-muted-foreground">Referral letters are not saved yet.</p>
+          )}
         </CardContent>
       </Card>
 
