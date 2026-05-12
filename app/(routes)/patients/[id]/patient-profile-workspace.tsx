@@ -247,11 +247,37 @@ export default function PatientProfileWorkspace({
         name: item.label,
         unitPrice: item.price || 0,
       }));
+      const labServices = labCatalog.map((item) => ({
+        id: `lab-${item.id}`,
+        name: `Lab: ${item.display || item.name}`,
+        unitPrice: item.defaultPrice || 0,
+        meta: {
+          kind: "lab",
+          code: item.code || item.id,
+          display: item.display || item.name,
+          system: item.system || "",
+        },
+      }));
+      const imagingServices = imagingCatalog
+        .filter((item) => !item.modality || item.modality === "DX")
+        .map((item) => ({
+          id: `imaging-${item.id}`,
+          name: `Imaging: ${item.display || item.name}${item.modality ? ` (${item.modality})` : ""}`,
+          unitPrice: item.defaultPrice || 0,
+          meta: {
+            kind: "imaging",
+            code: item.code || item.id,
+            display: item.display || item.name,
+            system: item.system || "",
+            modality: item.modality || "",
+          },
+        }));
       const hasConsultationService = catalog.some((item) => /\bconsultation\b/i.test(item.name));
+      const serviceCatalog = hasConsultationService ? catalog : [consultationServiceCatalogItem, ...catalog];
 
-      return hasConsultationService ? catalog : [consultationServiceCatalogItem, ...catalog];
+      return [...serviceCatalog, ...labServices, ...imagingServices];
     },
-    [procedureOptions]
+    [imagingCatalog, labCatalog, procedureOptions]
   );
 
   const treatmentDocumentsCatalog = useMemo(
@@ -271,33 +297,8 @@ export default function PatientProfileWorkspace({
           meta: { kind },
         }];
       }),
-      ...labCatalog.map((item) => ({
-        id: `lab-${item.id}`,
-        name: `Lab: ${item.display || item.name}`,
-        unitPrice: item.defaultPrice || 0,
-        meta: {
-          kind: "lab",
-          code: item.code || item.id,
-          display: item.display || item.name,
-          system: item.system || "",
-        },
-      })),
-      ...imagingCatalog
-        .filter((item) => !item.modality || item.modality === "DX")
-        .map((item) => ({
-          id: `imaging-${item.id}`,
-          name: `Imaging: ${item.display || item.name}${item.modality ? ` (${item.modality})` : ""}`,
-          unitPrice: item.defaultPrice || 0,
-          meta: {
-            kind: "imaging",
-            code: item.code || item.id,
-            display: item.display || item.name,
-            system: item.system || "",
-            modality: item.modality || "",
-          },
-        })),
     ],
-    [documentCatalog, imagingCatalog, labCatalog]
+    [documentCatalog]
   );
 
   const handleTreatmentPlanChange = useCallback((entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => {
@@ -476,14 +477,15 @@ export default function PatientProfileWorkspace({
       notes: entry.tab === "documents" ? buildSignedDocumentNote(entry) : entry.instruction,
       procedureId: entry.catalogRef,
     }));
-    const labSelections = documentEntries
+    const clinicalServiceEntries = [...serviceEntries, ...documentEntries];
+    const labSelections = clinicalServiceEntries
       .filter((entry) => entry.meta?.kind === "lab")
       .map((entry) => ({
         code: entry.meta?.code || entry.catalogRef || entry.id,
         display: entry.meta?.display || entry.name.replace(/^Lab:\s*/, ""),
         system: entry.meta?.system || "http://loinc.org",
       }));
-    const imagingSelections = documentEntries
+    const imagingSelections = clinicalServiceEntries
       .filter((entry) => entry.meta?.kind === "imaging")
       .map((entry) => ({
         code: entry.meta?.code || entry.catalogRef || entry.id,
