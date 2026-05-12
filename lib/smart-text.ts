@@ -307,26 +307,7 @@ export async function executeSmartTextCommand(
     return command.run(context);
   }
 
-  // Load custom snippet from Firestore
-  try {
-    const { db } = await import("./firebase");
-    const { collection, query, where, getDocs } = await import("firebase/firestore");
-    
-    const q = query(collection(db, "smartText"), where("key", "==", key));
-    const snapshot = await getDocs(q);
-    
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
-      const data = doc.data();
-      return {
-        text: data.text || "",
-        meta: data.label || "Custom smart text",
-      };
-    }
-  } catch (error) {
-    console.error("Error loading custom smart text:", error);
-  }
-
+  // Custom Smart Text is disabled until its storage path is finalized.
   return null;
 }
 

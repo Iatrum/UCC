@@ -11,7 +11,6 @@ import { useToast } from "@/components/ui/use-toast";
 import { storage } from '@/lib/firebase';
 import { useMedplumAuth } from '@/lib/auth-medplum';
 import { fetchOrganizationDetails, saveOrganizationDetails } from '@/lib/org';
-import { SmartTextManager } from '@/components/settings/smart-text-manager';
 import { InsurerManager } from '@/components/settings/insurer-manager';
 import { ClinicalCatalogManager } from '@/components/catalogs/clinical-catalog-manager';
 
@@ -225,7 +224,12 @@ export default function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <SmartTextManager />
+            <div className="rounded-md border border-dashed p-6">
+              <p className="text-sm font-medium">Smart Text is disabled for now.</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Built-in note shortcuts can be re-enabled after the storage path is finalized.
+              </p>
+            </div>
           </CardContent>
         </Card>
 
