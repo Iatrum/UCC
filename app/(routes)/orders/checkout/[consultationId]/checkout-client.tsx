@@ -91,11 +91,18 @@ function checkoutItemType(category: CheckoutItem["category"]): CheckoutItem["typ
   return "Service";
 }
 
+function normalizeProcedureCategory(procedure: Consultation["procedures"][number]): CheckoutItem["category"] {
+  if (procedure.category === "documents" && /^(Lab|Imaging):/i.test(procedure.name || "")) {
+    return "services";
+  }
+  return procedure.category || "services";
+}
+
 function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
   if (!consultation) return [];
 
   const procedures = (consultation.procedures || []).map((procedure, index) => {
-    const category = procedure.category || "services";
+    const category = normalizeProcedureCategory(procedure);
     return {
       id: `procedure-${index}`,
       name: procedure.name || "Service",
