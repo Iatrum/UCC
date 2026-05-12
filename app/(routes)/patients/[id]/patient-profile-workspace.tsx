@@ -70,6 +70,11 @@ const emptyTreatmentSummary: TreatmentPlanSummary = {
 };
 const emptyTreatmentEntries: TreatmentPlanEntry[] = [];
 const emptyPackages: [] = [];
+const consultationServiceCatalogItem = {
+  id: "consultation-fee",
+  name: "Consultation Fee",
+  unitPrice: 0,
+};
 
 function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").trim();
@@ -221,12 +226,16 @@ export default function PatientProfileWorkspace({
   );
 
   const treatmentServicesCatalog = useMemo(
-    () =>
-      procedureOptions.map((item) => ({
+    () => {
+      const catalog = procedureOptions.map((item) => ({
         id: item.id,
         name: item.label,
         unitPrice: item.price || 0,
-      })),
+      }));
+      const hasConsultationService = catalog.some((item) => /\bconsultation\b/i.test(item.name));
+
+      return hasConsultationService ? catalog : [consultationServiceCatalogItem, ...catalog];
+    },
     [procedureOptions]
   );
 

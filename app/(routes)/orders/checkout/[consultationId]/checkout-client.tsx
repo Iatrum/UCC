@@ -31,7 +31,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
-import { formatPrescriptionDetails } from "@/lib/prescriptions";
+import { formatMedicationNameWithStrength, formatPrescriptionDetails } from "@/lib/prescriptions";
 import type { TreatmentPlanEntry } from "@/lib/treatment-plan";
 
 type CheckoutClientProps = {
@@ -49,7 +49,7 @@ type CheckoutItem = {
   id: string;
   name: string;
   description: string;
-  type: "Item" | "Service";
+  type: "Item" | "Service" | "Package" | "Document";
   category: "items" | "services" | "packages" | "documents";
   quantity: number;
   price: number;
@@ -84,33 +84,46 @@ function patientFacingDescription(value: string | undefined, category?: string) 
   return text;
 }
 
+function checkoutItemType(category: CheckoutItem["category"]): CheckoutItem["type"] {
+  if (category === "items") return "Item";
+  if (category === "packages") return "Package";
+  if (category === "documents") return "Document";
+  return "Service";
+}
+
 function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
   if (!consultation) return [];
 
-  const procedures = (consultation.procedures || []).map((procedure, index) => ({
-    id: `procedure-${index}`,
-    name: procedure.name || "Service",
-    description: patientFacingDescription(procedure.notes, procedure.category),
-    type: "Service" as const,
-    category: procedure.category || "services",
-    quantity: procedure.quantity ?? 1,
-    price: procedure.price ?? 0,
-    orderIndex: procedure.orderIndex,
-    fallbackIndex: index,
-  }));
+  const procedures = (consultation.procedures || []).map((procedure, index) => {
+    const category = procedure.category || "services";
+    return {
+      id: `procedure-${index}`,
+      name: procedure.name || "Service",
+      description: patientFacingDescription(procedure.notes, procedure.category),
+      type: checkoutItemType(category),
+      category,
+      quantity: procedure.quantity ?? 1,
+      price: procedure.price ?? 0,
+      orderIndex: procedure.orderIndex,
+      fallbackIndex: index,
+    };
+  });
 
   const procedureCount = procedures.length;
-  const prescriptions = (consultation.prescriptions || []).map((prescription, index) => ({
-    id: `prescription-${index}`,
-    name: prescription.medication?.name || "Medication",
-    description: formatPrescriptionDetails(prescription),
-    type: "Item" as const,
-    category: prescription.category || "items",
-    quantity: prescription.quantity ?? 1,
-    price: prescription.price ?? 0,
-    orderIndex: prescription.orderIndex,
-    fallbackIndex: procedureCount + index,
-  }));
+  const prescriptions = (consultation.prescriptions || []).map((prescription, index) => {
+    const category = prescription.category || "items";
+    return {
+      id: `prescription-${index}`,
+      name: formatMedicationNameWithStrength(prescription.medication?.name, prescription.medication?.strength),
+      description: formatPrescriptionDetails(prescription),
+      type: checkoutItemType(category),
+      category,
+      quantity: prescription.quantity ?? 1,
+      price: prescription.price ?? 0,
+      orderIndex: prescription.orderIndex,
+      fallbackIndex: procedureCount + index,
+    };
+  });
 
   const items = [...procedures, ...prescriptions].sort((a, b) => {
     const aOrder = Number.isInteger(a.orderIndex) ? Number(a.orderIndex) : Number.POSITIVE_INFINITY;
@@ -133,7 +146,7 @@ function buildDraftCheckoutItems(entries: TreatmentPlanEntry[]): CheckoutItem[] 
       id: entry.id,
       name: entry.name,
       description: entry.instruction || formatDraftDetails(entry),
-      type: entry.tab === "items" ? "Item" as const : "Service" as const,
+      type: checkoutItemType(entry.tab),
       category: entry.tab,
       quantity: entry.quantity,
       price: entry.unitPrice,
