@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { IMAGING_PROCEDURES, type ImagingProcedureCode } from '@/lib/fhir/imaging-constants';
+import { getClinicalCatalog, type ClinicalCatalogItem } from '@/lib/clinical-catalog';
 import { toast } from 'sonner';
 
 interface ImagingOrderFormProps {
@@ -18,22 +18,26 @@ interface ImagingOrderFormProps {
 }
 
 // Group procedures by modality type
-const IMAGING_CATEGORIES = {
-  'X-Ray': ['CHEST_XRAY', 'CHEST_XRAY_2V', 'ABDOMEN_XRAY', 'SPINE_LUMBAR_XRAY', 'KNEE_XRAY'] as ImagingProcedureCode[],
-  'CT Scan': ['HEAD_CT', 'HEAD_CT_CONTRAST', 'CHEST_CT', 'ABDOMEN_CT', 'CTPA'] as ImagingProcedureCode[],
-  'MRI': ['BRAIN_MRI', 'SPINE_MRI', 'KNEE_MRI'] as ImagingProcedureCode[],
-  'Ultrasound': ['ABDOMEN_US', 'PELVIS_US', 'OBSTETRIC_US', 'THYROID_US', 'ECHO'] as ImagingProcedureCode[],
-  'Mammography': ['MAMMOGRAM', 'MAMMOGRAM_BILATERAL'] as ImagingProcedureCode[],
-};
-
 export function ImagingOrderForm({ patientId, encounterId, onOrderPlaced }: ImagingOrderFormProps) {
-  const [selectedProcedures, setSelectedProcedures] = useState<Set<ImagingProcedureCode>>(new Set());
+  const [catalog, setCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [selectedProcedures, setSelectedProcedures] = useState<Set<string>>(new Set());
+  const [activeCategory, setActiveCategory] = useState('');
   const [priority, setPriority] = useState<'routine' | 'urgent' | 'stat'>('routine');
   const [clinicalIndication, setClinicalIndication] = useState('');
   const [clinicalQuestion, setClinicalQuestion] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const toggleProcedure = (procedureCode: ImagingProcedureCode) => {
+  useEffect(() => {
+    void getClinicalCatalog('imaging').then((items) => {
+      const activeItems = items.filter((item) => item.active);
+      setCatalog(activeItems);
+      setActiveCategory((current) => current || activeItems[0]?.category || activeItems[0]?.modality || 'General');
+    });
+  }, []);
+
+  const categories = Array.from(new Set(catalog.map((item) => item.category || item.modality || 'General')));
+
+  const toggleProcedure = (procedureCode: string) => {
     const newSelected = new Set(selectedProcedures);
     if (newSelected.has(procedureCode)) {
       newSelected.delete(procedureCode);
@@ -58,7 +62,15 @@ export function ImagingOrderForm({ patientId, encounterId, onOrderPlaced }: Imag
         body: JSON.stringify({
           patientId,
           encounterId,
-          procedures: Array.from(selectedProcedures),
+          procedures: Array.from(selectedProcedures)
+            .map((id) => catalog.find((item) => item.id === id))
+            .filter(Boolean)
+            .map((item) => ({
+              code: item!.code || item!.id,
+              display: item!.display || item!.name,
+              system: item!.system || 'http://loinc.org',
+              modality: item!.modality || 'DX',
+            })),
           priority,
           clinicalIndication: clinicalIndication || undefined,
           clinicalQuestion: clinicalQuestion || undefined,
@@ -139,33 +151,31 @@ export function ImagingOrderForm({ patientId, encounterId, onOrderPlaced }: Imag
             )}
           </div>
 
-          <Tabs defaultValue="X-Ray" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="X-Ray">X-Ray</TabsTrigger>
-              <TabsTrigger value="CT Scan">CT</TabsTrigger>
-              <TabsTrigger value="MRI">MRI</TabsTrigger>
-              <TabsTrigger value="Ultrasound">US</TabsTrigger>
-              <TabsTrigger value="Mammography">Mammo</TabsTrigger>
+          <Tabs value={activeCategory || categories[0] || 'General'} onValueChange={setActiveCategory} className="w-full">
+            <TabsList className="flex w-full flex-wrap">
+              {categories.map((category) => (
+                <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
+              ))}
             </TabsList>
 
-            {Object.entries(IMAGING_CATEGORIES).map(([category, procedures]) => (
+            {categories.map((category) => (
               <TabsContent key={category} value={category} className="space-y-4">
                 <div className="grid grid-cols-1 gap-4">
-                  {procedures.map((procedureCode) => (
-                    <div key={procedureCode} className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent">
+                  {catalog.filter((item) => (item.category || item.modality || 'General') === category).map((procedure) => (
+                    <div key={procedure.id} className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent">
                       <Checkbox
-                        id={procedureCode}
-                        checked={selectedProcedures.has(procedureCode)}
-                        onCheckedChange={() => toggleProcedure(procedureCode)}
+                        id={procedure.id}
+                        checked={selectedProcedures.has(procedure.id)}
+                        onCheckedChange={() => toggleProcedure(procedure.id)}
                       />
                       <Label
-                        htmlFor={procedureCode}
+                        htmlFor={procedure.id}
                         className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1 cursor-pointer"
                       >
-                        {IMAGING_PROCEDURES[procedureCode].display}
+                        {procedure.display || procedure.name}
                       </Label>
                       <Badge variant="outline" className="text-xs">
-                        {IMAGING_PROCEDURES[procedureCode].modality}
+                        {procedure.modality || 'DX'}
                       </Badge>
                     </div>
                   ))}
@@ -218,8 +228,6 @@ export function ImagingOrderForm({ patientId, encounterId, onOrderPlaced }: Imag
     </Card>
   );
 }
-
-
 
 
 

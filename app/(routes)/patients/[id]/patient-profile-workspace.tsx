@@ -24,8 +24,7 @@ import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
 import { formatPrescriptionLine } from "@/lib/prescriptions";
-import { LAB_TESTS, type LabTestCode } from "@/lib/fhir/lab-constants";
-import { IMAGING_PROCEDURES, type ImagingProcedureCode } from "@/lib/fhir/imaging-service";
+import { getClinicalCatalog, type ClinicalCatalogItem } from "@/lib/clinical-catalog";
 import { cn, formatDisplayDate } from "@/lib/utils";
 import type { Prescription, ProcedureRecord } from "@/lib/models";
 import type { SerializedPatient } from "@/components/patients/patient-card";
@@ -160,13 +159,22 @@ export default function PatientProfileWorkspace({
     { id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string }[]
   >([]);
   const [medicationOptions, setMedicationOptions] = useState<{ id: string; name: string; unitPrice: number }[]>([]);
+  const [labCatalog, setLabCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [imagingCatalog, setImagingCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [documentCatalog, setDocumentCatalog] = useState<ClinicalCatalogItem[]>([]);
 
   useEffect(() => {
     let active = true;
 
     (async () => {
       try {
-        const [procedures, medications] = await Promise.all([getProcedures(), getMedications()]);
+        const [procedures, medications, labs, imaging, documents] = await Promise.all([
+          getProcedures(),
+          getMedications(),
+          getClinicalCatalog("lab"),
+          getClinicalCatalog("imaging"),
+          getClinicalCatalog("document"),
+        ]);
         if (!active) return;
         setProcedureOptions(
           procedures.map((procedure) => ({
@@ -185,6 +193,9 @@ export default function PatientProfileWorkspace({
             unitPrice: medication.unitPrice || 0,
           }))
         );
+        setLabCatalog(labs.filter((item) => item.active));
+        setImagingCatalog(imaging.filter((item) => item.active));
+        setDocumentCatalog(documents.filter((item) => item.active));
       } catch (error) {
         console.error("Failed to load treatment catalogs:", error);
       }
@@ -241,34 +252,48 @@ export default function PatientProfileWorkspace({
 
   const treatmentDocumentsCatalog = useMemo(
     () => [
-      {
-        id: "letter-mc",
-        name: "Medical certificate (MC)",
-        unitPrice: 0,
-        meta: { kind: "mc" },
-      },
-      {
-        id: "letter-referral",
-        name: "Referral letter",
-        unitPrice: 0,
-        meta: { kind: "referral" },
-      },
-      ...Object.entries(LAB_TESTS).map(([code, meta]) => ({
-        id: `lab-${code}`,
-        name: `Lab: ${meta.display}`,
-        unitPrice: 0,
-        meta: { kind: "lab", code },
+      ...documentCatalog.flatMap((item) => {
+        const key = `${item.code || item.id} ${item.name}`.toLowerCase();
+        const kind = key.includes("mc") || key.includes("medical certificate")
+          ? "mc"
+          : key.includes("referral")
+            ? "referral"
+            : null;
+        if (!kind) return [];
+        return [{
+          id: item.code === "letter-mc" || item.id === "letter-mc" ? "letter-mc" : item.code === "letter-referral" || item.id === "letter-referral" ? "letter-referral" : item.id,
+          name: item.display || item.name,
+          unitPrice: item.defaultPrice || 0,
+          meta: { kind },
+        }];
+      }),
+      ...labCatalog.map((item) => ({
+        id: `lab-${item.id}`,
+        name: `Lab: ${item.display || item.name}`,
+        unitPrice: item.defaultPrice || 0,
+        meta: {
+          kind: "lab",
+          code: item.code || item.id,
+          display: item.display || item.name,
+          system: item.system || "",
+        },
       })),
-      ...Object.entries(IMAGING_PROCEDURES)
-        .filter(([, meta]) => meta.modality === "DX")
-        .map(([code, meta]) => ({
-          id: `imaging-${code}`,
-          name: `Imaging: ${meta.display} (${meta.modality})`,
-          unitPrice: 0,
-          meta: { kind: "imaging", code },
+      ...imagingCatalog
+        .filter((item) => !item.modality || item.modality === "DX")
+        .map((item) => ({
+          id: `imaging-${item.id}`,
+          name: `Imaging: ${item.display || item.name}${item.modality ? ` (${item.modality})` : ""}`,
+          unitPrice: item.defaultPrice || 0,
+          meta: {
+            kind: "imaging",
+            code: item.code || item.id,
+            display: item.display || item.name,
+            system: item.system || "",
+            modality: item.modality || "",
+          },
         })),
     ],
-    []
+    [documentCatalog, imagingCatalog, labCatalog]
   );
 
   const handleTreatmentPlanChange = useCallback((entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => {
@@ -449,12 +474,19 @@ export default function PatientProfileWorkspace({
     }));
     const labSelections = documentEntries
       .filter((entry) => entry.meta?.kind === "lab")
-      .map((entry) => entry.meta?.code as LabTestCode)
-      .filter(Boolean);
+      .map((entry) => ({
+        code: entry.meta?.code || entry.catalogRef || entry.id,
+        display: entry.meta?.display || entry.name.replace(/^Lab:\s*/, ""),
+        system: entry.meta?.system || "http://loinc.org",
+      }));
     const imagingSelections = documentEntries
       .filter((entry) => entry.meta?.kind === "imaging")
-      .map((entry) => entry.meta?.code as ImagingProcedureCode)
-      .filter(Boolean);
+      .map((entry) => ({
+        code: entry.meta?.code || entry.catalogRef || entry.id,
+        display: entry.meta?.display || entry.name.replace(/^Imaging:\s*/, ""),
+        system: entry.meta?.system || "http://loinc.org",
+        modality: entry.meta?.modality || "DX",
+      }));
 
     try {
       setTreatmentSubmitting(true);
