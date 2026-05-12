@@ -57,7 +57,7 @@ export interface ClinicalCatalogManagerProps {
 }
 
 export function ClinicalCatalogManager({
-  types = ["procedure", "lab", "imaging", "document"],
+  types = ["lab", "imaging", "document", "procedure"],
   defaultType,
   showFallbackNotice = true,
   className,
@@ -111,7 +111,7 @@ export function ClinicalCatalogManager({
 
   React.useEffect(() => {
     if (!visibleTypes.includes(activeType)) {
-      setActiveType(visibleTypes[0] || "procedure");
+      setActiveType(visibleTypes[0] || "lab");
     }
   }, [activeType, visibleTypes]);
 
