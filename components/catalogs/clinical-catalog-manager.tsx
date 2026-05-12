@@ -13,7 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import ProceduresTable from "@/components/inventory/procedures-table";
-import { type ClinicalCatalogItem, type ClinicalCatalogType } from "@/lib/clinical-catalog";
+import {
+  DEFAULT_DOCUMENT_CATALOG,
+  type ClinicalCatalogItem,
+  type ClinicalCatalogType,
+} from "@/lib/clinical-catalog";
 import {
   createProcedure,
   deleteProcedure,
@@ -73,6 +77,7 @@ export function ClinicalCatalogManager({
   const [loading, setLoading] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<ClinicalCatalogItem | null>(null);
+  const [editingDocumentDefault, setEditingDocumentDefault] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<Record<string, boolean>>({});
   const [procedures, setProcedures] = React.useState<ProcedureItem[]>([]);
@@ -132,7 +137,13 @@ export function ClinicalCatalogManager({
 
   const clinicalType = activeType === "procedure" ? "lab" : activeType;
   const savedItems = activeType === "procedure" ? [] : items[clinicalType];
-  const rows = activeType === "procedure" ? [] : savedItems;
+  const rows =
+    activeType === "procedure"
+      ? []
+      : savedItems.length || clinicalType !== "document"
+        ? savedItems
+        : DEFAULT_DOCUMENT_CATALOG;
+  const usingDocumentDefaults = activeType === "document" && savedItems.length === 0;
   const filteredRows = rows.filter((item) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -168,6 +179,25 @@ export function ClinicalCatalogManager({
     if (activeType !== "procedure") {
       await loadType(activeType);
     }
+  }
+
+  async function deleteDocumentDefault(id: string) {
+    const remainingDefaults = DEFAULT_DOCUMENT_CATALOG.filter((item) => item.id !== id);
+    for (const item of remainingDefaults) {
+      await persistItem({
+        type: item.type,
+        name: item.name,
+        code: item.code,
+        system: item.system,
+        display: item.display,
+        category: item.category,
+        modality: item.modality,
+        defaultPrice: item.defaultPrice,
+        active: item.active,
+        notes: item.notes,
+      });
+    }
+    await loadType("document");
   }
 
   return (
@@ -231,12 +261,19 @@ export function ClinicalCatalogManager({
               rows={filteredRows}
               loading={loading}
               deletingIds={deletingIds}
-              onEdit={setEditing}
+              onEdit={(item) => {
+                setEditingDocumentDefault(usingDocumentDefaults);
+                setEditing(item);
+              }}
               onDelete={async (id) => {
                 if (!window.confirm("Delete this catalog item?")) return;
                 setDeletingIds((prev) => ({ ...prev, [id]: true }));
                 try {
-                  await deleteItem(id);
+                  if (usingDocumentDefaults) {
+                    await deleteDocumentDefault(id);
+                  } else {
+                    await deleteItem(id);
+                  }
                   toast({ title: "Catalog item deleted" });
                 } catch (error) {
                   toast({
@@ -288,6 +325,7 @@ export function ClinicalCatalogManager({
       <Dialog open={Boolean(editing)} onOpenChange={(open) => {
         if (!open) {
           setEditing(null);
+          setEditingDocumentDefault(false);
         }
       }}>
         <DialogContent>
@@ -300,8 +338,9 @@ export function ClinicalCatalogManager({
               onCancel={() => setEditing(null)}
               onSubmit={async (item) => {
                 try {
-                  await saveItem(item, editing.id);
+                  await saveItem(item, editingDocumentDefault ? undefined : editing.id);
                   setEditing(null);
+                  setEditingDocumentDefault(false);
                   toast({ title: "Catalog item updated" });
                 } catch (error) {
                   toast({
