@@ -54,16 +54,17 @@ export function resolvePortalPresentation(args: {
   pathname: string;
   clinicCookieValue: string | null | undefined;
 }): { isAdminShell: boolean; clinicIdForValidation: string | null } {
+  const pathname = args.pathname;
+  if (pathname.startsWith("/admin")) {
+    return { isAdminShell: true, clinicIdForValidation: null };
+  }
+
   const ctx = deriveSubdomainContext(args.host);
   if (ctx.type === "admin") {
     return { isAdminShell: true, clinicIdForValidation: null };
   }
   if (ctx.type === "clinic") {
     return { isAdminShell: false, clinicIdForValidation: ctx.clinicId };
-  }
-  const pathname = args.pathname;
-  if (pathname.startsWith("/admin")) {
-    return { isAdminShell: true, clinicIdForValidation: null };
   }
   const fromCookie = args.clinicCookieValue?.trim() || null;
   return { isAdminShell: false, clinicIdForValidation: fromCookie };
