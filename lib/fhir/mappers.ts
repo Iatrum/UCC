@@ -3,6 +3,7 @@ import { saveFhirResource } from "./firestore";
 import { createFhirResource, isMedplumConfigured } from "./medplum-direct";
 import { findDiagnosisByText } from "./terminologies/diagnoses";
 import { findMedicationByName } from "./terminologies/medications";
+import { formatMedicationNameWithStrength } from "@/lib/prescriptions";
 import { validateFhirResource, logValidation } from "./validation";
 
 type PatientInput = Omit<AppPatient, 'email' | 'postalCode' | 'address' | 'emergencyContact' | 'medicalHistory'> & {
@@ -221,7 +222,7 @@ export async function toFhirMedicationRequest(patientRef: string, encounterRef: 
 
   // Build medication code with RxNorm if available
   const medicationCodeableConcept: any = {
-    text: `${p.medication.name}${p.medication.strength ? ' ' + p.medication.strength : ''}`
+    text: formatMedicationNameWithStrength(p.medication.name, p.medication.strength)
   };
 
   if (medicationCode?.rxnorm) {
@@ -297,5 +298,4 @@ export async function toFhirServiceRequest(patientRef: string, encounterRef: str
   const created = await createFhirResource(resource);
   return { reference: `ServiceRequest/${created.id}`, id: created.id };
 }
-
 

@@ -9,7 +9,7 @@ export type CheckoutInvoiceItem = {
   id: string;
   name: string;
   description?: string;
-  type: "Item" | "Service";
+  type: "Item" | "Service" | "Package" | "Document";
   quantity: number;
   price: number;
 };
@@ -209,7 +209,7 @@ function validateCheckoutInput(input: CompleteCheckoutInput): {
     normalizedItems.some(
       (item) =>
         !item.name ||
-        !["Item", "Service"].includes(item.type) ||
+        !["Item", "Service", "Package", "Document"].includes(item.type) ||
         !Number.isFinite(item.quantity) ||
         item.quantity <= 0 ||
         !Number.isFinite(item.price) ||
