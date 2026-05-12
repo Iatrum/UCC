@@ -27,8 +27,24 @@ function formatAddedAt(value?: string | Date | null) {
   if (!value) return 'N/A';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'N/A';
-  const iso = date.toISOString();
-  return iso.slice(11, 19); // HH:MM:SS (UTC) to avoid hydration mismatch
+
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const time = date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  if (isToday) return time;
+
+  return `${date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  })}, ${time}`;
 }
 
 function formatLabel(value: string) {
