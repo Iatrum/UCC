@@ -57,7 +57,7 @@ import {
   updateSupplier,
 } from "@/lib/purchase-hub";
 
-type InventoryTab = "overview" | "items" | "purchases" | "suppliers" | "procedures";
+type InventoryTab = "overview" | "items" | "purchases" | "procedures";
 
 export default function InventoryPage() {
   const [activeTab, setActiveTab] = React.useState<InventoryTab>("overview");
@@ -382,7 +382,6 @@ export default function InventoryPage() {
           <TabsTrigger value="overview" className="rounded-xl">Overview</TabsTrigger>
           <TabsTrigger value="items" className="rounded-xl">Items</TabsTrigger>
           <TabsTrigger value="purchases" className="rounded-xl">Purchases</TabsTrigger>
-          <TabsTrigger value="suppliers" className="rounded-xl">Suppliers</TabsTrigger>
           <TabsTrigger value="procedures" className="rounded-xl">Procedures</TabsTrigger>
         </TabsList>
 
@@ -621,9 +620,6 @@ export default function InventoryPage() {
             onReceive={handleReceivePurchaseOrder}
             onConvert={handleConvertPurchaseDocument}
           />
-        </TabsContent>
-
-        <TabsContent value="suppliers" className="space-y-6">
           <SuppliersPanel
             suppliers={suppliers}
             onCreate={handleCreateSupplier}
