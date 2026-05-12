@@ -1,7 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, CheckCircle2, ClipboardList, PackageCheck, Plus, Receipt } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  PackageCheck,
+  Plus,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +74,8 @@ const statusClasses: Record<PurchaseOrderStatus, string> = {
   cancelled: "bg-rose-100 text-rose-800",
 };
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+
 export function PurchaseOrdersPanel({
   medications,
   purchaseOrders,
@@ -86,6 +94,8 @@ export function PurchaseOrdersPanel({
   const [showCreateOrder, setShowCreateOrder] = React.useState(false);
   const [selectedDocumentType, setSelectedDocumentType] =
     React.useState<PurchaseDocumentType>("purchaseOrder");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
 
   React.useEffect(() => {
     if (autoCreate) {
@@ -95,112 +105,40 @@ export function PurchaseOrdersPanel({
     }
   }, [autoCreate]);
 
-  const filteredOrders = purchaseOrders.filter((order) => {
-    const query = searchTerm.toLowerCase();
-    const matchesSearch =
-      order.supplierName.toLowerCase().includes(query) ||
-      (order.reference || "").toLowerCase().includes(query) ||
-      order.status.toLowerCase().includes(query) ||
-      order.items.some((item) => item.medicationName.toLowerCase().includes(query));
-    const matchesSupplier = supplierFilter === "all" || order.supplierId === supplierFilter;
-    const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-    const matchesReference =
-      referenceFilter.trim().length === 0 ||
-      (order.reference || "").toLowerCase().includes(referenceFilter.toLowerCase());
-    return matchesSearch && matchesSupplier && matchesStatus && matchesReference;
-  });
+  const filteredOrders = React.useMemo(
+    () =>
+      purchaseOrders.filter((order) => {
+        const query = searchTerm.toLowerCase();
+        const matchesSearch =
+          order.supplierName.toLowerCase().includes(query) ||
+          (order.reference || "").toLowerCase().includes(query) ||
+          order.status.toLowerCase().includes(query) ||
+          order.items.some((item) => item.medicationName.toLowerCase().includes(query));
+        const matchesSupplier = supplierFilter === "all" || order.supplierId === supplierFilter;
+        const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+        const matchesReference =
+          referenceFilter.trim().length === 0 ||
+          (order.reference || "").toLowerCase().includes(referenceFilter.toLowerCase());
+        return matchesSearch && matchesSupplier && matchesStatus && matchesReference;
+      }),
+    [purchaseOrders, referenceFilter, searchTerm, statusFilter, supplierFilter]
+  );
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = filteredOrders.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, filteredOrders.length);
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [pageSize, referenceFilter, searchTerm, statusFilter, supplierFilter]);
+
+  React.useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle>Payment</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            <PurchaseMetricCard
-              icon={<Receipt className="h-4 w-4 text-amber-700" />}
-              label="Pending"
-              value={`RM ${purchaseOrders
-                .filter((po) => po.status !== "received")
-                .reduce((sum, po) => sum + po.amountDue, 0)
-                .toFixed(2)}`}
-            />
-            <PurchaseMetricCard
-              icon={<ClipboardList className="h-4 w-4 text-rose-700" />}
-              label="Ordered"
-              value={`${purchaseOrders.filter((po) => po.status === "ordered").length} docs`}
-            />
-            <PurchaseMetricCard
-              icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
-              label="Paid or received"
-              value={`RM ${purchaseOrders
-                .filter((po) => po.status === "received")
-                .reduce((sum, po) => sum + po.paidAmount, 0)
-                .toFixed(2)}`}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle>Inventory</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <p className="text-2xl font-semibold tracking-tight text-slate-950">
-                {purchaseOrders
-                  .filter((po) => po.status === "received")
-                  .reduce(
-                    (sum, po) =>
-                      sum +
-                      po.items.reduce(
-                        (itemSum, item) =>
-                          itemSum +
-                          Number(item.receivedQuantity ?? item.requestedQuantity ?? item.quantity ?? 0),
-                        0
-                      ),
-                    0
-                  )}{" "}
-                stock received
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {purchaseOrders
-                  .filter((po) => po.status === "ordered")
-                  .reduce(
-                    (sum, po) =>
-                      sum +
-                      po.items.reduce(
-                        (itemSum, item) =>
-                          itemSum +
-                          Number(item.requestedQuantity ?? item.quantity ?? item.receivedQuantity ?? 0),
-                        0
-                      ),
-                    0
-                  )}{" "}
-                stock pending
-              </p>
-            </div>
-            <div className="h-2 rounded-full bg-slate-100">
-              <div
-                className="h-2 rounded-full bg-emerald-400"
-                style={{
-                  width: `${
-                    purchaseOrders.length === 0
-                      ? 0
-                      : Math.round(
-                          (purchaseOrders.filter((po) => po.status === "received").length /
-                            purchaseOrders.length) *
-                            100
-                        )
-                  }%`,
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card className="border-slate-200/80 shadow-sm">
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -262,6 +200,8 @@ export function PurchaseOrdersPanel({
                   setSupplierFilter("all");
                   setReferenceFilter("");
                   setStatusFilter("all");
+                  setSearchTerm("");
+                  setPage(1);
                 }}
               >
                 Reset filters
@@ -289,7 +229,7 @@ export function PurchaseOrdersPanel({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredOrders.map((order) => (
+                  paginatedOrders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell>
                         <Badge variant="secondary" className="bg-slate-100 text-slate-700">
@@ -348,6 +288,56 @@ export function PurchaseOrdersPanel({
               </TableBody>
             </Table>
           </div>
+          {filteredOrders.length > 0 ? (
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                Showing {pageStart}-{pageEnd} of {filteredOrders.length} documents
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(value) => {
+                    setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number]);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-[118px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size} / page
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={currentPage <= 1}
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Previous
+                </Button>
+                <span className="min-w-20 text-center">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={currentPage >= totalPages}
+                >
+                  Next
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -402,26 +392,6 @@ export function PurchaseOrdersPanel({
           />
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function PurchaseMetricCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
     </div>
   );
 }

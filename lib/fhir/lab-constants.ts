@@ -5,7 +5,6 @@
 
 export const LAB_TESTS = {
   CBC: { code: '58410-2', display: 'Complete Blood Count (CBC) panel', system: 'http://loinc.org' },
-  RENAL_PROFILE: { code: '24323-8', display: 'Basic metabolic/renal panel', system: 'http://loinc.org' },
   LFT: { code: '24325-3', display: 'Hepatic function (LFT) panel', system: 'http://loinc.org' },
 } as const;
 

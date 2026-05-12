@@ -44,14 +44,40 @@ export const IMAGING_MODALITIES = {
 
 export type ModalityCode = keyof typeof IMAGING_MODALITIES;
 
+export type ImagingOrderProcedure = ImagingProcedureCode | {
+  code: string;
+  display: string;
+  system?: string;
+  modality?: string;
+};
+
 export interface ImagingOrderRequest {
   patientId: string;
   encounterId?: string;
-  procedures: ImagingProcedureCode[];
+  procedures: ImagingOrderProcedure[];
   priority?: 'routine' | 'urgent' | 'asap' | 'stat';
   clinicalIndication?: string;
   clinicalQuestion?: string;
   orderedBy?: string;
+}
+
+function resolveImagingProcedure(procedure: ImagingOrderProcedure): {
+  code: string;
+  display: string;
+  system: string;
+  modality: string;
+} {
+  if (typeof procedure === 'string') {
+    const known = IMAGING_PROCEDURES[procedure as ImagingProcedureCode];
+    return known || { code: procedure, display: procedure, system: 'http://loinc.org', modality: 'DX' };
+  }
+
+  return {
+    code: procedure.code,
+    display: procedure.display || procedure.code,
+    system: procedure.system || 'http://loinc.org',
+    modality: procedure.modality || 'DX',
+  };
 }
 
 /**
@@ -65,7 +91,7 @@ export async function createImagingOrder(order: ImagingOrderRequest, medplum: Me
   const serviceRequests: ServiceRequest[] = [];
   
   for (const procedureCode of order.procedures) {
-    const procedure = IMAGING_PROCEDURES[procedureCode];
+    const procedure = resolveImagingProcedure(procedureCode);
     const modality = IMAGING_MODALITIES[procedure.modality as ModalityCode];
     
     const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
@@ -526,5 +552,4 @@ export async function deleteImagingOrder(serviceRequestId: string, medplum: Medp
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ImagingOrder ServiceRequest ${serviceRequestId}`);
 }
-
 

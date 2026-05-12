@@ -22,13 +22,32 @@ import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } fr
 
 export { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult };
 
+export type LabOrderTest = LabTestCode | {
+  code: string;
+  display: string;
+  system?: string;
+};
+
 export interface LabOrderRequest {
   patientId: string;
   encounterId?: string;
-  tests: LabTestCode[];
+  tests: LabOrderTest[];
   priority?: 'routine' | 'urgent' | 'asap' | 'stat';
   clinicalNotes?: string;
   orderedBy?: string;
+}
+
+function resolveLabTest(test: LabOrderTest): { code: string; display: string; system: string } {
+  if (typeof test === 'string') {
+    const known = LAB_TESTS[test as LabTestCode];
+    return known || { code: test, display: test, system: 'http://loinc.org' };
+  }
+
+  return {
+    code: test.code,
+    display: test.display || test.code,
+    system: test.system || 'http://loinc.org',
+  };
 }
 
 /**
@@ -43,7 +62,7 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
   const serviceRequests: ServiceRequest[] = [];
   
   for (const testCode of order.tests) {
-    const test = LAB_TESTS[testCode];
+    const test = resolveLabTest(testCode);
     
     const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
       resourceType: 'ServiceRequest',
@@ -423,7 +442,6 @@ export async function getEncounterLabResults(encounterId: string, medplum: Medpl
 
   return summaries;
 }
-
 
 
 

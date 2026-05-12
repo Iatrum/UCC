@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { LAB_TESTS, type LabTestCode } from '@/lib/fhir/lab-constants';
+import { getClinicalCatalog, type ClinicalCatalogItem } from '@/lib/clinical-catalog';
 import { toast } from 'sonner';
 
 interface LabOrderFormProps {
@@ -18,17 +18,25 @@ interface LabOrderFormProps {
 }
 
 // Group tests by category (restricted)
-const LAB_TEST_CATEGORIES = {
-  Panels: ['CBC', 'RENAL_PROFILE', 'LFT'] as LabTestCode[],
-};
-
 export function LabOrderForm({ patientId, encounterId, onOrderPlaced }: LabOrderFormProps) {
-  const [selectedTests, setSelectedTests] = useState<Set<LabTestCode>>(new Set());
+  const [catalog, setCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
+  const [activeCategory, setActiveCategory] = useState('');
   const [priority, setPriority] = useState<'routine' | 'urgent' | 'stat'>('routine');
   const [clinicalNotes, setClinicalNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const toggleTest = (testCode: LabTestCode) => {
+  useEffect(() => {
+    void getClinicalCatalog('lab').then((items) => {
+      const activeItems = items.filter((item) => item.active);
+      setCatalog(activeItems);
+      setActiveCategory((current) => current || activeItems[0]?.category || 'General');
+    });
+  }, []);
+
+  const categories = Array.from(new Set(catalog.map((item) => item.category || 'General')));
+
+  const toggleTest = (testCode: string) => {
     const newSelected = new Set(selectedTests);
     if (newSelected.has(testCode)) {
       newSelected.delete(testCode);
@@ -38,9 +46,11 @@ export function LabOrderForm({ patientId, encounterId, onOrderPlaced }: LabOrder
     setSelectedTests(newSelected);
   };
 
-  const selectCategory = (category: keyof typeof LAB_TEST_CATEGORIES) => {
+  const selectCategory = (category: string) => {
     const newSelected = new Set(selectedTests);
-    LAB_TEST_CATEGORIES[category].forEach(test => newSelected.add(test));
+    catalog
+      .filter((test) => (test.category || 'General') === category)
+      .forEach(test => newSelected.add(test.id));
     setSelectedTests(newSelected);
   };
 
@@ -59,7 +69,14 @@ export function LabOrderForm({ patientId, encounterId, onOrderPlaced }: LabOrder
         body: JSON.stringify({
           patientId,
           encounterId,
-          tests: Array.from(selectedTests),
+          tests: Array.from(selectedTests)
+            .map((id) => catalog.find((item) => item.id === id))
+            .filter(Boolean)
+            .map((item) => ({
+              code: item!.code || item!.id,
+              display: item!.display || item!.name,
+              system: item!.system || 'http://loinc.org',
+            })),
           priority,
           clinicalNotes: clinicalNotes || undefined,
         }),
@@ -138,38 +155,42 @@ export function LabOrderForm({ patientId, encounterId, onOrderPlaced }: LabOrder
             )}
           </div>
 
-          <Tabs defaultValue="Panels" className="w-full">
-            <TabsList className="grid w-full grid-cols-1">
-              <TabsTrigger value="Panels">Panels</TabsTrigger>
+          <Tabs value={activeCategory || categories[0] || 'General'} onValueChange={setActiveCategory} className="w-full">
+            <TabsList className="flex w-full flex-wrap">
+              {categories.map((category) => (
+                <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
+              ))}
             </TabsList>
 
-            <TabsContent value="Panels" className="space-y-4">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => selectCategory('Panels')}
-              >
-                Select All Panels
-              </Button>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {LAB_TEST_CATEGORIES.Panels.map((testCode) => (
-                  <div key={testCode} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={testCode}
-                      checked={selectedTests.has(testCode)}
-                      onCheckedChange={() => toggleTest(testCode)}
-                    />
-                    <Label
-                      htmlFor={testCode}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                    >
-                      {LAB_TESTS[testCode].display}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
+            {categories.map((category) => (
+              <TabsContent key={category} value={category} className="space-y-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectCategory(category)}
+                >
+                  Select All {category}
+                </Button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {catalog.filter((test) => (test.category || 'General') === category).map((test) => (
+                    <div key={test.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={test.id}
+                        checked={selectedTests.has(test.id)}
+                        onCheckedChange={() => toggleTest(test.id)}
+                      />
+                      <Label
+                        htmlFor={test.id}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {test.display || test.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </TabsContent>
+            ))}
           </Tabs>
         </div>
 
@@ -197,10 +218,6 @@ export function LabOrderForm({ patientId, encounterId, onOrderPlaced }: LabOrder
     </Card>
   );
 }
-
-
-
-
 
 
 
