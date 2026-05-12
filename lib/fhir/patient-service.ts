@@ -118,7 +118,7 @@ function addManagingOrganization<T extends { [key: string]: any }>(resource: T, 
 /**
  * Convert FHIR Patient to app PatientData format
  */
-function fhirPatientToPatientData(fhirPatient: FHIRPatient): SavedPatient {
+export function fhirPatientToPatientData(fhirPatient: FHIRPatient): SavedPatient {
   const name = fhirPatient.name?.[0];
   const fullName = name?.text || [name?.given?.join(' '), name?.family].filter(Boolean).join(' ') || 'Unknown';
 
