@@ -79,6 +79,7 @@ export function ClinicalCatalogManager({
   const [loading, setLoading] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<ClinicalCatalogItem | null>(null);
+  const [editingFallback, setEditingFallback] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [savingDefaults, setSavingDefaults] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<Record<string, boolean>>({});
@@ -149,7 +150,7 @@ export function ClinicalCatalogManager({
   });
   const usingFallback = activeType !== "procedure" && savedItems.length === 0;
 
-  async function saveItem(item: Omit<ClinicalCatalogItem, "id">, id?: string) {
+  async function persistItem(item: Omit<ClinicalCatalogItem, "id">, id?: string) {
     const method = id ? "PATCH" : "POST";
     const response = await fetch("/api/catalogs", {
       method,
@@ -160,6 +161,10 @@ export function ClinicalCatalogManager({
     if (!response.ok || data?.success === false) {
       throw new Error(data?.error || "Failed to save catalog item.");
     }
+  }
+
+  async function saveItem(item: Omit<ClinicalCatalogItem, "id">, id?: string) {
+    await persistItem(item, id);
     await loadType(item.type);
   }
 
@@ -179,7 +184,7 @@ export function ClinicalCatalogManager({
     setSavingDefaults(true);
     try {
       for (const item of defaults) {
-        await saveItem({
+        await persistItem({
           type: item.type,
           name: item.name,
           code: item.code,
@@ -192,11 +197,43 @@ export function ClinicalCatalogManager({
           notes: item.notes,
         });
       }
+      await loadType(type);
       toast({ title: "Catalog defaults created", description: `${TYPE_LABELS[type]} are now editable for this clinic.` });
     } catch (error) {
       toast({
         title: "Defaults not created",
         description: error instanceof Error ? error.message : "Failed to create default catalog items.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingDefaults(false);
+    }
+  }
+
+  async function deleteFallbackItem(type: ClinicalCatalogType, id: string) {
+    const defaults = defaultCatalogItems(type).filter((item) => item.id !== id);
+    setSavingDefaults(true);
+    try {
+      for (const item of defaults) {
+        await persistItem({
+          type: item.type,
+          name: item.name,
+          code: item.code,
+          system: item.system,
+          display: item.display,
+          category: item.category,
+          modality: item.modality,
+          defaultPrice: item.defaultPrice,
+          active: item.active,
+          notes: item.notes,
+        });
+      }
+      await loadType(type);
+      toast({ title: "Catalog item deleted" });
+    } catch (error) {
+      toast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete catalog item.",
         variant: "destructive",
       });
     } finally {
@@ -278,11 +315,17 @@ export function ClinicalCatalogManager({
             <CatalogTable
               rows={filteredRows}
               loading={loading}
-              usingFallback={usingFallback}
               deletingIds={deletingIds}
-              onEdit={setEditing}
+              onEdit={(item) => {
+                setEditingFallback(usingFallback);
+                setEditing(item);
+              }}
               onDelete={async (id) => {
                 if (!window.confirm("Delete this catalog item?")) return;
+                if (usingFallback) {
+                  await deleteFallbackItem(type, id);
+                  return;
+                }
                 setDeletingIds((prev) => ({ ...prev, [id]: true }));
                 try {
                   await deleteItem(id);
@@ -334,7 +377,12 @@ export function ClinicalCatalogManager({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
+      <Dialog open={Boolean(editing)} onOpenChange={(open) => {
+        if (!open) {
+          setEditing(null);
+          setEditingFallback(false);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Catalog Item</DialogTitle>
@@ -345,8 +393,9 @@ export function ClinicalCatalogManager({
               onCancel={() => setEditing(null)}
               onSubmit={async (item) => {
                 try {
-                  await saveItem(item, editing.id);
+                  await saveItem(item, editingFallback ? undefined : editing.id);
                   setEditing(null);
+                  setEditingFallback(false);
                   toast({ title: "Catalog item updated" });
                 } catch (error) {
                   toast({
@@ -368,14 +417,12 @@ export function ClinicalCatalogManager({
 function CatalogTable({
   rows,
   loading,
-  usingFallback,
   deletingIds,
   onEdit,
   onDelete,
 }: {
   rows: ClinicalCatalogItem[];
   loading: boolean;
-  usingFallback: boolean;
   deletingIds: Record<string, boolean>;
   onEdit: (item: ClinicalCatalogItem) => void;
   onDelete: (id: string) => void;
@@ -421,10 +468,10 @@ function CatalogTable({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-1">
-                  <Button type="button" variant="ghost" size="icon" disabled={usingFallback} onClick={() => onEdit(item)}>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(item)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button type="button" variant="ghost" size="icon" disabled={usingFallback || deletingIds[item.id]} onClick={() => onDelete(item.id)}>
+                  <Button type="button" variant="ghost" size="icon" disabled={deletingIds[item.id]} onClick={() => onDelete(item.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
