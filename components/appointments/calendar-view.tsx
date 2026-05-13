@@ -380,11 +380,13 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
               {weekDays.map((day, i) => {
                 const key = toDateKey(day);
                 const isToday = key === todayKey;
-                const dayAppts = (appointmentsByDate.get(key) ?? []).slice().sort(
+                const allDayAppts = (appointmentsByDate.get(key) ?? []).slice().sort(
                   (a, b) =>
                     new Date(a.scheduledAt as string).getTime() -
                     new Date(b.scheduledAt as string).getTime()
                 );
+                const visible = allDayAppts.slice(0, 3);
+                const overflow = allDayAppts.length - visible.length;
                 return (
                   <div key={i} className="flex min-w-0 flex-col overflow-hidden">
                     {/* Day header */}
@@ -412,8 +414,8 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                       </p>
                     </div>
                     {/* Appointment list */}
-                    <div className="flex flex-1 flex-col items-start gap-2 p-2 min-h-[600px]">
-                      {dayAppts.map((appt) => (
+                    <div className="flex flex-1 flex-col items-start gap-2 p-2" style={{ minHeight: "calc(100dvh - 370px)" }}>
+                      {visible.map((appt) => (
                         <div
                           key={appt.id}
                           title={`${appt.patientName} · ${formatTime(appt.scheduledAt)}`}
@@ -426,6 +428,9 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                           <span className="truncate">{formatTime(appt.scheduledAt)} {appt.patientName}</span>
                         </div>
                       ))}
+                      {overflow > 0 && (
+                        <div className="px-1 text-[11px] text-muted-foreground">+{overflow} more</div>
+                      )}
                     </div>
                   </div>
                 );
