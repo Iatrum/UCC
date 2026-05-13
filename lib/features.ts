@@ -28,9 +28,16 @@ export const TRANSCRIBE_ENABLED = parseBooleanFlag(
   false
 );
 
+export const MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED = parseBooleanFlag(
+  process.env.NEXT_PUBLIC_FEATURE_MEDPLUM_PATIENT_REGISTRATION_V1 ??
+    process.env.NEXT_PUBLIC_FEATURE_MEDPLUM_PATIENT_REGISTRATION_V2,
+  false
+);
+
 export function getFeatureFlags() {
   return {
     soapRewrite: SOAP_REWRITE_ENABLED,
     transcribe: TRANSCRIBE_ENABLED,
+    medplumPatientRegistrationV1: MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED,
   } as const;
 }
