@@ -132,14 +132,27 @@ export async function getPatientAppointmentsFromMedplum(medplum: MedplumClient, 
       _sort: '-date',
     });
 
-    const mapped = await Promise.all(
-      appointments.map(async (appt) => {
-        const saved = await getAppointmentFromMedplum(medplum, appt.id!);
-        return saved;
-      })
-    );
-
-    return mapped.filter((a): a is SavedAppointment => a !== null);
+    return appointments.map((fhirAppt) => {
+      const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
+      const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
+      const ext = fhirAppt.extension ?? [];
+      return {
+        id: fhirAppt.id!,
+        patientId: patientIdFromActorReference(patientParticipant?.actor?.reference) || '',
+        patientName: patientParticipant?.actor?.display || '',
+        clinician: clinicianParticipant?.actor?.display || '',
+        reason: fhirAppt.reasonCode?.[0]?.text || '',
+        type: fhirAppt.appointmentType?.text,
+        notes: fhirAppt.comment,
+        status: fhirAppt.status as any,
+        scheduledAt: fhirAppt.start ? new Date(fhirAppt.start) : new Date(),
+        durationMinutes: fhirAppt.minutesDuration,
+        createdAt: fhirAppt.meta?.lastUpdated ? new Date(fhirAppt.meta.lastUpdated) : new Date(),
+        checkinAt:   ext.find(e => e.url === EXT_CHECKIN)?.valueDateTime,
+        completedAt: ext.find(e => e.url === EXT_COMPLETED)?.valueDateTime,
+        cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
+      } as SavedAppointment;
+    });
   } catch (error) {
     console.error('Failed to get patient appointments from Medplum:', error);
     return [];
@@ -158,11 +171,27 @@ export async function getUpcomingAppointments(medplum: MedplumClient, limit = 50
       _count: String(limit),
     });
 
-    const mapped = await Promise.all(
-      appointments.map(appt => getAppointmentFromMedplum(medplum, appt.id!))
-    );
-
-    return mapped.filter((a): a is SavedAppointment => a !== null);
+    return appointments.map((fhirAppt) => {
+      const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
+      const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
+      const ext = fhirAppt.extension ?? [];
+      return {
+        id: fhirAppt.id!,
+        patientId: patientIdFromActorReference(patientParticipant?.actor?.reference) || '',
+        patientName: patientParticipant?.actor?.display || '',
+        clinician: clinicianParticipant?.actor?.display || '',
+        reason: fhirAppt.reasonCode?.[0]?.text || '',
+        type: fhirAppt.appointmentType?.text,
+        notes: fhirAppt.comment,
+        status: fhirAppt.status as any,
+        scheduledAt: fhirAppt.start ? new Date(fhirAppt.start) : new Date(),
+        durationMinutes: fhirAppt.minutesDuration,
+        createdAt: fhirAppt.meta?.lastUpdated ? new Date(fhirAppt.meta.lastUpdated) : new Date(),
+        checkinAt:   ext.find(e => e.url === EXT_CHECKIN)?.valueDateTime,
+        completedAt: ext.find(e => e.url === EXT_COMPLETED)?.valueDateTime,
+        cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
+      } as SavedAppointment;
+    });
   } catch (error) {
     console.error('Failed to list upcoming appointments:', error);
     return [];
