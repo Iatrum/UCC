@@ -107,6 +107,11 @@ export async function rescheduleAppointment(
   appointmentId: string,
   scheduledAt: Date | string
 ): Promise<void> {
+  const scheduledDate = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  if (scheduledDate.getTime() <= Date.now()) {
+    throw new Error('Reschedule date must be in the future.');
+  }
+
   const response = await fetch('/api/appointments', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
