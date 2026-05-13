@@ -309,12 +309,12 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
         <div className="overflow-hidden rounded-lg border border-border">
           <div className="grid grid-cols-7 border-b border-border bg-muted/40">
             {WEEKDAYS_SHORT.map((day) => (
-              <div key={day} className="py-2 text-center text-xs font-medium text-muted-foreground">
+              <div key={day} className="py-1.5 text-center text-xs font-medium text-muted-foreground">
                 {day}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          <div className="grid grid-cols-7" style={{ gridAutoRows: "calc((100dvh - 320px) / 6)" }}>
             {monthGrid.map(({ date, isCurrentMonth }, idx) => {
               const key = toDateKey(date);
               const dayAppts = appointmentsByDate.get(key) ?? [];
@@ -327,7 +327,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                 <div
                   key={idx}
                   className={[
-                    "min-h-[96px] p-1.5",
+                    "min-h-[70px] overflow-hidden p-1",
                     !isLastCol && "border-r border-border",
                     !isLastRow && "border-b border-border",
                     isCurrentMonth ? "bg-background" : "bg-muted/20",
@@ -412,7 +412,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                       </p>
                     </div>
                     {/* Appointment list */}
-                    <div className="flex flex-1 flex-col items-start gap-2 p-2 min-h-[600px]">
+                    <div className="flex flex-1 flex-col items-start gap-2 p-2" style={{ minHeight: "calc(100dvh - 370px)" }}>
                       {dayAppts.map((appt) => (
                         <div
                           key={appt.id}
@@ -466,13 +466,14 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
               <div
                 key={slot}
                 className={["flex", !isLastSlot && "border-b border-border"].filter(Boolean).join(" ")}
+                style={{ minHeight: "calc((100dvh - 460px) / 13)" }}
               >
                 <div className="flex w-14 shrink-0 items-start justify-end border-r border-border px-2 pt-2">
                   <span className="text-[11px] text-muted-foreground">{formatHour(slot)}</span>
                 </div>
                 <div
                   className={[
-                    "min-h-[56px] flex-1 space-y-1.5 px-3 py-1.5",
+                    "flex-1 space-y-1.5 px-3 py-1.5",
                     isCurrentDayToday && "bg-primary/5",
                   ].filter(Boolean).join(" ")}
                 >
