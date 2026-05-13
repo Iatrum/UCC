@@ -80,7 +80,7 @@ export default function AppointmentStatusForm({
           ))}
         </SelectContent>
       </Select>
-      <Button type="button" onClick={handleSubmit} disabled={isPending}>
+      <Button type="button" onClick={handleSubmit} disabled={isPending || selectedStatus === currentStatus}>
         {isPending ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
