@@ -31,6 +31,14 @@ export interface Patient extends PatientInput {
   updatedAt: Date;
 }
 
+export interface RegistrationPilotResult {
+  patientId: string;
+  questionnaireResponseId?: string;
+  questionnaireVersion?: string;
+  mismatchCount?: number;
+  mismatchFields?: string[];
+}
+
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   try {
     return (await response.json()) as Record<string, unknown>;
@@ -69,6 +77,42 @@ export async function savePatient(patient: PatientInput, clinicId?: string): Pro
   }
 
   return data.patientId as string;
+}
+
+/**
+ * Save patient through the Questionnaire/QuestionnaireResponse pilot path.
+ * This still creates the patient using the current patient creation service.
+ */
+export async function savePatientThroughIntakePilot(
+  patient: PatientInput,
+  clinicId?: string
+): Promise<RegistrationPilotResult> {
+  const response = await fetch("/api/patients/intake-pilot", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(clinicId ? { "X-Clinic-Id": clinicId } : {}),
+    },
+    body: JSON.stringify(patient),
+  });
+
+  const data = await readJson(response);
+
+  if (!response.ok || !data.success) {
+    throw new Error(typeof data.error === "string" ? data.error : "Failed to save patient through intake pilot");
+  }
+
+  return {
+    patientId: String(data.patientId),
+    questionnaireResponseId:
+      typeof data.questionnaireResponseId === "string" ? data.questionnaireResponseId : undefined,
+    questionnaireVersion: typeof data.questionnaireVersion === "string" ? data.questionnaireVersion : undefined,
+    mismatchCount: typeof data.mismatchCount === "number" ? data.mismatchCount : undefined,
+    mismatchFields: Array.isArray(data.mismatchFields)
+      ? data.mismatchFields.filter((field): field is string => typeof field === "string")
+      : undefined,
+  };
 }
 
 /**
