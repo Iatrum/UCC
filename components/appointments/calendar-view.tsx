@@ -139,8 +139,8 @@ interface Props {
 }
 
 export default function AppointmentsCalendarView({ appointments, viewMode, onViewModeChange }: Props) {
-  const today = useMemo(() => new Date(), []);
-  const todayKey = useMemo(() => toDateKey(today), [today]);
+  const today = new Date();
+  const todayKey = toDateKey(today);
 
   const [currentDate, setCurrentDate] = useState<Date>(
     () => new Date(today.getFullYear(), today.getMonth(), 1)
@@ -154,9 +154,9 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
     if (viewMode === "Month") {
       setCurrentDate((cd) => new Date(cd.getFullYear(), cd.getMonth(), 1));
     } else if (prev === "Month") {
-      setCurrentDate(new Date(today));
+      setCurrentDate(new Date());
     }
-  }, [viewMode, today]);
+  }, [viewMode]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
