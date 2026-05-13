@@ -152,12 +152,35 @@ export async function ensureRegistrationQuestionnaire(
 
 function toResponseItem(
   linkId: string,
-  answers: QuestionnaireResponseAnswerType
+  answers?: QuestionnaireResponseAnswerType
 ): QuestionnaireResponseItemType {
   return {
     linkId,
-    answer: answers,
+    ...(answers && answers.length ? { answer: answers } : {}),
   };
+}
+
+function stringAnswers(...values: unknown[]): QuestionnaireResponseAnswerType {
+  return values
+    .map((value) => trimString(value))
+    .filter(Boolean)
+    .map((value) => ({ valueString: value }));
+}
+
+function dateAnswers(...values: unknown[]): QuestionnaireResponseAnswerType {
+  return values
+    .map((value) => trimString(value))
+    .filter(Boolean)
+    .map((value) => ({ valueDate: value }));
+}
+
+function codingAnswers(
+  ...values: unknown[]
+): QuestionnaireResponseAnswerType {
+  return values
+    .map((value) => trimString(value))
+    .filter(Boolean)
+    .map((value) => ({ valueCoding: { code: value, display: value } }));
 }
 
 export function buildRegistrationQuestionnaireResponse(
@@ -167,34 +190,30 @@ export function buildRegistrationQuestionnaireResponse(
   const allergies = normalizeAllergies(patientData.medicalHistory?.allergies);
 
   const personalItems: QuestionnaireResponseItemType[] = [
-    toResponseItem(LINK_ID.fullName, [{ valueString: trimString(patientData.fullName) }]),
-    toResponseItem(LINK_ID.nric, [{ valueString: trimString(patientData.nric) }]),
-    toResponseItem(LINK_ID.dateOfBirth, [{ valueDate: trimString(patientData.dateOfBirth) }]),
-    toResponseItem(LINK_ID.gender, [
-      { valueCoding: { code: trimString(patientData.gender), display: trimString(patientData.gender) } },
-    ]),
+    toResponseItem(LINK_ID.fullName, stringAnswers(patientData.fullName)),
+    toResponseItem(LINK_ID.nric, stringAnswers(patientData.nric)),
+    toResponseItem(LINK_ID.dateOfBirth, dateAnswers(patientData.dateOfBirth)),
+    toResponseItem(LINK_ID.gender, codingAnswers(patientData.gender)),
   ];
 
   const contactItems: QuestionnaireResponseItemType[] = [
-    toResponseItem(LINK_ID.email, [{ valueString: trimString(patientData.email) }]),
-    toResponseItem(LINK_ID.phone, [{ valueString: trimString(patientData.phone) }]),
-    toResponseItem(LINK_ID.address, [{ valueString: trimString(patientData.address) }]),
-    toResponseItem(LINK_ID.postalCode, [{ valueString: trimString(patientData.postalCode) }]),
+    toResponseItem(LINK_ID.email, stringAnswers(patientData.email)),
+    toResponseItem(LINK_ID.phone, stringAnswers(patientData.phone)),
+    toResponseItem(LINK_ID.address, stringAnswers(patientData.address)),
+    toResponseItem(LINK_ID.postalCode, stringAnswers(patientData.postalCode)),
   ];
 
   const emergencyItems: QuestionnaireResponseItemType[] = [
-    toResponseItem(LINK_ID.emergencyName, [{ valueString: trimString(patientData.emergencyContact?.name) }]),
-    toResponseItem(LINK_ID.emergencyRelationship, [
-      { valueString: trimString(patientData.emergencyContact?.relationship) },
-    ]),
-    toResponseItem(LINK_ID.emergencyPhone, [{ valueString: trimString(patientData.emergencyContact?.phone) }]),
+    toResponseItem(LINK_ID.emergencyName, stringAnswers(patientData.emergencyContact?.name)),
+    toResponseItem(
+      LINK_ID.emergencyRelationship,
+      stringAnswers(patientData.emergencyContact?.relationship)
+    ),
+    toResponseItem(LINK_ID.emergencyPhone, stringAnswers(patientData.emergencyContact?.phone)),
   ];
 
   const medicalItems: QuestionnaireResponseItemType[] = [
-    toResponseItem(
-      LINK_ID.allergies,
-      allergies.length ? allergies.map((allergy) => ({ valueString: allergy })) : [{ valueString: "" }]
-    ),
+    toResponseItem(LINK_ID.allergies, stringAnswers(...allergies)),
   ];
 
   return {

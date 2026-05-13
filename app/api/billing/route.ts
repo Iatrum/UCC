@@ -9,8 +9,20 @@ import {
   voidInvoice,
   deleteInvoice,
 } from "@/lib/fhir/billing-service";
+import { createBillingExceptionTask } from "@/lib/fhir/billing-task-service";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
+import { getCurrentProfile } from "@/lib/server/medplum-auth";
+
+function isClientFixableBillingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /required|Invalid|must|match|Full payment/i.test(error.message);
+}
+
+function getRequesterReferenceFromProfile(profile: Awaited<ReturnType<typeof getCurrentProfile>>): string | undefined {
+  if (!profile?.resourceType || !profile?.id) return undefined;
+  return `${profile.resourceType}/${profile.id}`;
+}
 
 function validateRequestBody(body: any): string | null {
   if (!body || typeof body !== "object") {
@@ -43,16 +55,19 @@ function validateRequestBody(body: any): string | null {
 }
 
 export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  const validationError = validateRequestBody(body);
+
+  if (validationError) {
+    return NextResponse.json({ success: false, error: validationError }, { status: 400 });
+  }
+
   try {
-    const body = await req.json().catch(() => null);
-    const validationError = validateRequestBody(body);
-
-    if (validationError) {
-      return NextResponse.json({ success: false, error: validationError }, { status: 400 });
-    }
-
     const { medplum, clinicId } = await requireClinicAuth(req);
-    const invoice = await completeCheckoutInvoice(medplum, {
+    const profile = await getCurrentProfile(req).catch(() => null);
+    const requesterReference = profile ? getRequesterReferenceFromProfile(profile) : undefined;
+
+    const result = await completeCheckoutInvoice(medplum, {
       consultationId: body.consultationId,
       patientId: body.patientId,
       clinicId,
@@ -62,6 +77,20 @@ export async function POST(req: NextRequest) {
       totalAmount: body.totalAmount,
       invoiceNumber: body.invoiceNumber,
     });
+    const invoice = result.invoice;
+
+    if (result.queueUpdateError) {
+      await createBillingExceptionTask(medplum, {
+        consultationId: body.consultationId,
+        patientId: body.patientId,
+        clinicId,
+        paymentMethod: body.paymentMethod,
+        invoiceId: invoice.id,
+        errorClass: "queue-update-failed",
+        errorSummary: `Invoice saved, but queue status update failed: ${result.queueUpdateError}`,
+        requesterReference,
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -69,8 +98,29 @@ export async function POST(req: NextRequest) {
       invoiceNumber: getInvoiceNumber(invoice),
     });
   } catch (error) {
-    if (error instanceof Error && /required|Invalid|must|match|Full payment/.test(error.message)) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    if (isClientFixableBillingError(error)) {
+      return NextResponse.json(
+        { success: false, error: error instanceof Error ? error.message : "Invalid billing request" },
+        { status: 400 }
+      );
+    }
+
+    // Validation already passed above; failures here are operational and should be queued.
+    try {
+      const { medplum, clinicId } = await requireClinicAuth(req);
+      const profile = await getCurrentProfile(req).catch(() => null);
+      const requesterReference = profile ? getRequesterReferenceFromProfile(profile) : undefined;
+      await createBillingExceptionTask(medplum, {
+        consultationId: body.consultationId,
+        patientId: body.patientId,
+        clinicId,
+        paymentMethod: body.paymentMethod,
+        errorClass: "billing-checkout-failed",
+        errorSummary: error instanceof Error ? error.message : "Billing checkout failed unexpectedly",
+        requesterReference,
+      });
+    } catch (taskError) {
+      console.error("[POST /api/billing] Failed to create billing exception task", taskError);
     }
 
     return handleRouteError(error, "POST /api/billing");

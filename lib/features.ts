@@ -34,10 +34,16 @@ export const MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED = parseBooleanFlag(
   false
 );
 
+export const MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED = parseBooleanFlag(
+  process.env.NEXT_PUBLIC_FEATURE_MEDPLUM_BILLING_EXCEPTION_TASKS,
+  false
+);
+
 export function getFeatureFlags() {
   return {
     soapRewrite: SOAP_REWRITE_ENABLED,
     transcribe: TRANSCRIBE_ENABLED,
     medplumPatientRegistrationV1: MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED,
+    medplumBillingExceptionTasks: MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED,
   } as const;
 }
