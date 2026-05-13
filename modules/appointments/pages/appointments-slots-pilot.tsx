@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +33,8 @@ export default function AppointmentsSlotsPilotPage() {
   const { toast } = useToast();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [practitioners, setPractitioners] = useState<PractitionerOption[]>([]);
+  const [loadingLookups, setLoadingLookups] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [patientId, setPatientId] = useState("");
   const [practitionerId, setPractitionerId] = useState("");
   const [reason, setReason] = useState("");
@@ -41,6 +43,7 @@ export default function AppointmentsSlotsPilotPage() {
   const [durationMinutes, setDurationMinutes] = useState("30");
   const [slots, setSlots] = useState<SchedulingSlot[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [patientSearchQuery, setPatientSearchQuery] = useState("");
 
   const practitionerMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -48,14 +51,46 @@ export default function AppointmentsSlotsPilotPage() {
     return map;
   }, [practitioners]);
 
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.id === patientId),
+    [patients, patientId]
+  );
+
+  const filteredPatients = useMemo(() => {
+    if (!patientSearchQuery.trim()) {
+      return patients;
+    }
+    const q = patientSearchQuery.toLowerCase();
+    return patients.filter((patient) => {
+      return (
+        patient.fullName.toLowerCase().includes(q) ||
+        (patient.nric && patient.nric.includes(patientSearchQuery)) ||
+        (patient.phone && patient.phone.includes(patientSearchQuery))
+      );
+    });
+  }, [patients, patientSearchQuery]);
+
   async function loadLookupData() {
-    const [nextPatients, nextPractitioners] = await Promise.all([
-      getAllPatients(200),
-      getAllPractitioners(),
-    ]);
-    setPatients(nextPatients);
-    setPractitioners(nextPractitioners);
+    setLoadingLookups(true);
+    setLoadError(null);
+    try {
+      const [nextPatients, nextPractitioners] = await Promise.all([
+        getAllPatients(200),
+        getAllPractitioners(),
+      ]);
+      setPatients(nextPatients);
+      setPractitioners(nextPractitioners);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load patient and clinician lists";
+      setLoadError(message);
+    } finally {
+      setLoadingLookups(false);
+    }
   }
+
+  useEffect(() => {
+    void loadLookupData();
+  }, []);
 
   async function handlePrepareSlots() {
     if (!practitionerId) {
@@ -121,14 +156,8 @@ export default function AppointmentsSlotsPilotPage() {
   }
 
   return (
-    <div className="container max-w-5xl py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Slots Pilot (Internal)</h1>
-          <p className="text-muted-foreground">
-            Parallel Schedule/Slot booking pilot. This route does not replace current appointments workflow.
-          </p>
-        </div>
+    <div className="container max-w-3xl py-6">
+      <div className="mb-6">
         <Link href="/appointments" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to appointments
@@ -137,20 +166,24 @@ export default function AppointmentsSlotsPilotPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Pilot Inputs</CardTitle>
-          <CardDescription>Select clinician, date window, patient, and reason to book from generated slots.</CardDescription>
+          <CardTitle>Schedule New Appointment (Pilot)</CardTitle>
+          <CardDescription>
+            Book from FHIR Schedule/Slot availability. This pilot runs in parallel and does not replace the current appointments workflow.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Button type="button" variant="outline" onClick={loadLookupData} disabled={isLoading}>
-            Load patients and clinicians
-          </Button>
+        <CardContent className="space-y-6">
+          {loadError ? (
+            <div className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
+              {loadError}
+            </div>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Clinician</Label>
               <Select value={practitionerId} onValueChange={setPractitionerId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select clinician" />
+                  <SelectValue placeholder={loadingLookups ? "Loading clinicians..." : "Select clinician"} />
                 </SelectTrigger>
                 <SelectContent>
                   {practitioners.map((p) => (
@@ -163,18 +196,44 @@ export default function AppointmentsSlotsPilotPage() {
             </div>
             <div className="space-y-2">
               <Label>Patient</Label>
-              <Select value={patientId} onValueChange={setPatientId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select patient" />
-                </SelectTrigger>
-                <SelectContent>
-                  {patients.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.fullName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={loadingLookups ? "Loading patients..." : "Search patients..."}
+                  className="pl-9 pr-4"
+                  value={patientSearchQuery}
+                  onChange={(e) => setPatientSearchQuery(e.target.value)}
+                  disabled={loadingLookups}
+                />
+              </div>
+              <div className="max-h-44 overflow-y-auto rounded-md border">
+                {filteredPatients.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">No patients found.</p>
+                ) : (
+                  filteredPatients.map((patient) => {
+                    const selected = patient.id === patientId;
+                    return (
+                      <button
+                        key={patient.id}
+                        type="button"
+                        onClick={() => setPatientId(patient.id)}
+                        className={[
+                          "w-full border-b px-3 py-2 text-left last:border-b-0",
+                          selected ? "bg-muted" : "hover:bg-muted/50",
+                        ].join(" ")}
+                      >
+                        <p className="text-sm font-medium">{patient.fullName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[patient.nric, patient.phone].filter(Boolean).join(" • ")}
+                        </p>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              {selectedPatient ? (
+                <p className="text-xs text-muted-foreground">Selected: {selectedPatient.fullName}</p>
+              ) : null}
             </div>
           </div>
 
@@ -206,15 +265,14 @@ export default function AppointmentsSlotsPilotPage() {
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Generate and load free slots
           </Button>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Available Slots</CardTitle>
-          <CardDescription>Book from free slots only. Booked slots are removed from this list.</CardDescription>
-        </CardHeader>
-        <CardContent>
+          <div className="space-y-2 border-t pt-6">
+            <h3 className="text-base font-medium">Available Slots</h3>
+            <p className="text-sm text-muted-foreground">
+              Book from free slots only. Booked slots are removed from this list.
+            </p>
+          </div>
+
           {slots.length === 0 ? (
             <p className="text-sm text-muted-foreground">No slots loaded yet.</p>
           ) : (
