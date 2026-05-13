@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   BarChart,
   Calendar,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   Image,
@@ -24,6 +25,7 @@ import type { LucideIcon } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { getEnabledModules } from "@/lib/modules";
+import { MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED } from "@/lib/features";
 
 type SidebarModule = {
   id: string;
@@ -95,8 +97,12 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
   }, []);
 
   const navigation = useMemo(() => {
-    // Combine base navigation with enabled modules
-    return [...baseNavigation, ...enabledModules];
+    // Combine base navigation with enabled modules.
+    const items = [...baseNavigation, ...enabledModules];
+    if (MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED) {
+      items.push({ name: "Tasks", href: "/tasks", icon: ClipboardCheck });
+    }
+    return items;
   }, [enabledModules]);
 
   // Hide sidebar entirely on public routes like login/logout

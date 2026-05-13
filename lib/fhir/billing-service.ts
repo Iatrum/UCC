@@ -25,6 +25,11 @@ export type CompleteCheckoutInput = {
   invoiceNumber?: string;
 };
 
+export type CompleteCheckoutResult = {
+  invoice: Invoice;
+  queueUpdateError?: string;
+};
+
 const CURRENCY = "MYR";
 const INVOICE_IDENTIFIER_SYSTEM = "https://ucc.emr/invoice/consultation";
 const INVOICE_NUMBER_IDENTIFIER_SYSTEM = "https://ucc.emr/invoice/number";
@@ -258,7 +263,7 @@ async function findExistingInvoice(
 export async function completeCheckoutInvoice(
   medplum: MedplumClient,
   input: CompleteCheckoutInput
-): Promise<Invoice> {
+): Promise<CompleteCheckoutResult> {
   const { normalizedItems, normalizedPaidAmount, normalizedTotalAmount } = validateCheckoutInput(input);
   const balance = roundMoney(Math.max(normalizedTotalAmount - normalizedPaidAmount, 0));
   const nowDate = new Date();
@@ -328,9 +333,11 @@ export async function completeCheckoutInvoice(
     await updateQueueStatusForPatient(input.patientId, "completed", medplum, input.clinicId);
   } catch (err) {
     console.error("[billing-service] Invoice saved but queue status update failed for patient", input.patientId, err);
+    const message = err instanceof Error ? err.message : "Queue status update failed";
+    return { invoice: saved, queueUpdateError: message };
   }
 
-  return saved;
+  return { invoice: saved };
 }
 
 export async function getInvoice(medplum: MedplumClient, invoiceId: string): Promise<Invoice | null> {
