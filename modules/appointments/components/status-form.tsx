@@ -59,7 +59,7 @@ export default function AppointmentStatusForm({
         console.error("Failed to update appointment", error);
         toast({
           title: "Unable to update",
-          description: "Something went wrong while updating the appointment.",
+          description: error instanceof Error ? error.message : "Something went wrong while updating the appointment.",
           variant: "destructive",
         });
       }
