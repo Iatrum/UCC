@@ -80,6 +80,7 @@ export default function AppointmentsRootPage() {
     }
   }
 
+  // Freeze the comparison anchor for this render so upcoming filtering is deterministic.
   const now = useMemo(() => new Date(), []);
 
   const upcomingAppointments = useMemo(() => {
