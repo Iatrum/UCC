@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Patient } from "@/lib/models";
 import {
   Table,
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, MoreHorizontal, UserPlus, X, Receipt } from "lucide-react";
+import { Clock, Loader2, MoreHorizontal, UserPlus, X, Receipt } from "lucide-react";
 import Link from "next/link";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/use-toast";
@@ -56,8 +57,10 @@ function formatLabel(value: string) {
 
 export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps) {
   const router = useRouter();
+  const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
 
   const handleAddToQueue = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'POST',
@@ -82,10 +85,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to add to queue. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
   const handleStartConsultation = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'PATCH',
@@ -113,10 +119,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to start consultation. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
   const handleCompleteConsultation = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'PATCH',
@@ -141,10 +150,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to complete consultation. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
   const handleRemoveFromQueue = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'DELETE',
@@ -169,6 +181,8 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to remove from queue. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
@@ -272,8 +286,10 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
-                      <MoreHorizontal className="h-4 w-4" />
+                    <Button variant="ghost" className="h-8 w-8 p-0" disabled={loadingItemId === patient.id}>
+                      {loadingItemId === patient.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <MoreHorizontal className="h-4 w-4" />}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -290,12 +306,18 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
                       </DropdownMenuItem>
                     )}
                     {patient.queueStatus === 'waiting' && (
-                      <DropdownMenuItem onClick={() => handleStartConsultation(patient)}>
+                      <DropdownMenuItem
+                        disabled={loadingItemId === patient.id}
+                        onClick={() => handleStartConsultation(patient)}
+                      >
                         Start Consultation
                       </DropdownMenuItem>
                     )}
                     {(patient.queueStatus === 'waiting' || patient.queueStatus === 'in_consultation' || patient.queueStatus === 'meds_and_bills') && (
-                      <DropdownMenuItem onClick={() => handleCompleteConsultation(patient)}>
+                      <DropdownMenuItem
+                        disabled={loadingItemId === patient.id}
+                        onClick={() => handleCompleteConsultation(patient)}
+                      >
                         Mark as Complete
                       </DropdownMenuItem>
                     )}
