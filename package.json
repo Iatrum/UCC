@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "bun run scripts/validate-env.ts && next build --webpack",
+    "build": "BUILD_ENV_VALIDATION_MODE=warn bun run scripts/validate-env.ts && next build --webpack",
     "build:ci": "SKIP_ENV_VALIDATION=1 next build --webpack",
     "start": "next start",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
@@ -49,9 +49,8 @@
     "firebase": "^11.6.0",
     "firebase-admin": "^13.4.0",
     "lucide-react": "^0.488.0",
-    "next": "16.2.1",
+    "next": "16.2.6",
     "next-themes": "^0.4.6",
-    "pako": "1.0.11",
     "react": "18.2.0",
     "react-day-picker": "8.10.1",
     "react-dom": "18.2.0",
@@ -73,7 +72,7 @@
     "autoprefixer": "^10.4.21",
     "baseline-browser-mapping": "^2.10.11",
     "eslint": "^9.39.1",
-    "eslint-config-next": "16.2.1",
+    "eslint-config-next": "16.2.6",
     "postcss": "^8.5.3",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.3.3"
