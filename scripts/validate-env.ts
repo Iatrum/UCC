@@ -23,6 +23,8 @@ interface EnvVar {
   validateHint?: string;
 }
 
+type ValidationMode = "strict" | "warn";
+
 const VARS: EnvVar[] = [
   // ── Medplum (FHIR backend) ─────────────────────────────────────────────
   {
@@ -93,6 +95,8 @@ const YELLOW = "\x1b[33m";
 const GREEN = "\x1b[32m";
 const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
+const validationMode: ValidationMode =
+  process.env.BUILD_ENV_VALIDATION_MODE === "warn" ? "warn" : "strict";
 
 if (process.env.SKIP_ENV_VALIDATION === "1") {
   console.log(`${YELLOW}${BOLD}Skipping environment validation (SKIP_ENV_VALIDATION=1).${RESET}\n`);
@@ -109,11 +113,17 @@ for (const { key, required, description, validate, validateHint } of VARS) {
 
   if (!value) {
     if (required) {
-      console.error(
-        `${RED}${BOLD}✗ MISSING (required)${RESET}  ${BOLD}${key}${RESET}\n` +
+      const label =
+        validationMode === "strict"
+          ? `${RED}${BOLD}✗ MISSING (required)${RESET}`
+          : `${YELLOW}⚠ MISSING (required for deploy)${RESET}`;
+      const log = validationMode === "strict" ? console.error : console.warn;
+      log(
+        `${label}  ${BOLD}${key}${RESET}\n` +
         `   ${description}\n`
       );
-      hasErrors = true;
+      if (validationMode === "strict") hasErrors = true;
+      else hasWarnings = true;
     } else {
       console.warn(
         `${YELLOW}⚠ MISSING (optional)${RESET}  ${key}\n` +
@@ -125,12 +135,17 @@ for (const { key, required, description, validate, validateHint } of VARS) {
   }
 
   if (validate && !validate(value)) {
-    const severity = required ? `${RED}${BOLD}✗ INVALID (required)` : `${YELLOW}⚠ INVALID (optional)`;
-    console.error(
+    const severity = required
+      ? validationMode === "strict"
+        ? `${RED}${BOLD}✗ INVALID (required)`
+        : `${YELLOW}⚠ INVALID (required for deploy)`
+      : `${YELLOW}⚠ INVALID (optional)`;
+    const log = required && validationMode === "strict" ? console.error : console.warn;
+    log(
       `${severity}${RESET}  ${BOLD}${key}${RESET}\n` +
       `   ${validateHint}\n`
     );
-    if (required) hasErrors = true;
+    if (required && validationMode === "strict") hasErrors = true;
     else hasWarnings = true;
     continue;
   }
@@ -149,7 +164,11 @@ if (hasErrors) {
 } else if (hasWarnings) {
   console.warn(
     `${YELLOW}Environment validation passed with warnings.${RESET}\n` +
-    `Optional variables are unset — some features may be unavailable.\n`
+    `${
+      validationMode === "strict"
+        ? "Optional variables are unset — some features may be unavailable.\n"
+        : "Local build is allowed to continue, but deployment still requires the missing values.\n"
+    }`
   );
 } else {
   console.log(
