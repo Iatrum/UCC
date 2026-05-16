@@ -265,57 +265,80 @@ export async function getPatientLabOrders(patientId: string, medplum: MedplumCli
   return orders;
 }
 
+function observationToLabResult(obs: Observation): LabResult {
+  return {
+    testCode: obs.code?.coding?.[0]?.code || '',
+    testName: obs.code?.text || obs.code?.coding?.[0]?.display || 'Unknown',
+    value: (obs as any).valueQuantity?.value ?? (obs as any).valueString ?? 'N/A',
+    unit: (obs as any).valueQuantity?.unit,
+    referenceRange: obs.referenceRange?.[0]?.text,
+    interpretation: obs.interpretation?.[0]?.coding?.[0]?.display as any,
+    status: obs.status as any,
+    performedAt: obs.effectiveDateTime ? new Date(obs.effectiveDateTime) : undefined,
+  };
+}
+
+function buildLabReportSummary(
+  report: DiagnosticReport,
+  results: LabResult[],
+  patientIdOverride?: string,
+  encounterIdOverride?: string,
+): LabReportSummary {
+  return {
+    id: report.id!,
+    patientId: patientIdOverride ?? report.subject?.reference?.split('/')[1] ?? '',
+    patientName: report.subject?.display,
+    encounterId: encounterIdOverride ?? report.encounter?.reference?.split('/')[1],
+    status: report.status as any,
+    orderedAt: report.effectiveDateTime ? new Date(report.effectiveDateTime) : new Date(),
+    issuedAt: report.issued ? new Date(report.issued) : undefined,
+    results,
+    conclusion: report.conclusion,
+  };
+}
+
+function mapReportsToSummaries(
+  reports: DiagnosticReport[],
+  obsMap: Map<string, Observation>,
+  patientIdOverride?: string,
+  encounterIdOverride?: string,
+): LabReportSummary[] {
+  return reports.map((report) => {
+    const results = (report.result ?? []).flatMap((ref) => {
+      const obsId = ref.reference?.split('/')[1];
+      if (!obsId) return [];
+      const obs = obsMap.get(obsId);
+      if (!obs) return [];
+      return [observationToLabResult(obs)];
+    });
+    return buildLabReportSummary(report, results, patientIdOverride, encounterIdOverride);
+  });
+}
+
 /**
  * Get all lab results for a patient
  */
 export async function getPatientLabResults(patientId: string, medplum: MedplumClient): Promise<LabReportSummary[]> {
   const client = medplum;
-  
+
   const reports = await client.searchResources('DiagnosticReport', {
     subject: `Patient/${patientId}`,
     _sort: '-issued',
   });
 
-  const summaries: LabReportSummary[] = [];
+  const allObsIds = reports.flatMap((report) =>
+    (report.result ?? [])
+      .map((ref) => ref.reference?.split('/')[1])
+      .filter((id): id is string => Boolean(id))
+  );
 
-  for (const report of reports) {
-    const results: LabResult[] = [];
-    
-    // Get all observations in the report
-    if (report.result) {
-      for (const resultRef of report.result) {
-        const obsId = resultRef.reference?.split('/')[1];
-        if (obsId) {
-          const obs = await client.readResource('Observation', obsId);
-          
-          results.push({
-            testCode: obs.code?.coding?.[0]?.code || '',
-            testName: obs.code?.text || obs.code?.coding?.[0]?.display || 'Unknown',
-            value: (obs as any).valueQuantity?.value || (obs as any).valueString || 'N/A',
-            unit: (obs as any).valueQuantity?.unit,
-            referenceRange: obs.referenceRange?.[0]?.text,
-            interpretation: obs.interpretation?.[0]?.coding?.[0]?.display as any,
-            status: obs.status as any,
-            performedAt: obs.effectiveDateTime ? new Date(obs.effectiveDateTime) : undefined,
-          });
-        }
-      }
-    }
+  const allObservations = allObsIds.length > 0
+    ? await client.searchResources('Observation', { _id: allObsIds.join(',') })
+    : [];
 
-    summaries.push({
-      id: report.id!,
-      patientId,
-      patientName: report.subject?.display,
-      encounterId: report.encounter?.reference?.split('/')[1],
-      status: report.status as any,
-      orderedAt: report.effectiveDateTime ? new Date(report.effectiveDateTime) : new Date(),
-      issuedAt: report.issued ? new Date(report.issued) : undefined,
-      results,
-      conclusion: report.conclusion,
-    });
-  }
+  const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
 
-  return summaries;
+  return mapReportsToSummaries(reports, obsMap, patientId);
 }
 
 /**
@@ -349,42 +372,20 @@ export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumC
 export async function getLabReport(reportId: string, medplum: MedplumClient): Promise<LabReportSummary | null> {
   try {
     const client = medplum;
-    
-    const report = await client.readResource('DiagnosticReport', reportId);
-    const results: LabResult[] = [];
-    
-    // Get all observations
-    if (report.result) {
-      for (const resultRef of report.result) {
-        const obsId = resultRef.reference?.split('/')[1];
-        if (obsId) {
-          const obs = await client.readResource('Observation', obsId);
-          
-          results.push({
-            testCode: obs.code?.coding?.[0]?.code || '',
-            testName: obs.code?.text || obs.code?.coding?.[0]?.display || 'Unknown',
-            value: (obs as any).valueQuantity?.value || (obs as any).valueString || 'N/A',
-            unit: (obs as any).valueQuantity?.unit,
-            referenceRange: obs.referenceRange?.[0]?.text,
-            interpretation: obs.interpretation?.[0]?.coding?.[0]?.display as any,
-            status: obs.status as any,
-            performedAt: obs.effectiveDateTime ? new Date(obs.effectiveDateTime) : undefined,
-          });
-        }
-      }
-    }
 
-    return {
-      id: report.id!,
-      patientId: report.subject?.reference?.split('/')[1] || '',
-      patientName: report.subject?.display,
-      encounterId: report.encounter?.reference?.split('/')[1],
-      status: report.status as any,
-      orderedAt: report.effectiveDateTime ? new Date(report.effectiveDateTime) : new Date(),
-      issuedAt: report.issued ? new Date(report.issued) : undefined,
-      results,
-      conclusion: report.conclusion,
-    };
+    const report = await client.readResource('DiagnosticReport', reportId);
+
+    const obsIds = (report.result ?? [])
+      .map((ref) => ref.reference?.split('/')[1])
+      .filter((id): id is string => Boolean(id));
+
+    const observations = obsIds.length > 0
+      ? await client.searchResources('Observation', { _id: obsIds.join(',') })
+      : [];
+
+    const obsMap = new Map(observations.map((obs) => [obs.id!, obs]));
+
+    return mapReportsToSummaries([report], obsMap)[0] ?? null;
   } catch (error) {
     console.error('Failed to get lab report:', error);
     return null;
@@ -396,51 +397,25 @@ export async function getLabReport(reportId: string, medplum: MedplumClient): Pr
  */
 export async function getEncounterLabResults(encounterId: string, medplum: MedplumClient): Promise<LabReportSummary[]> {
   const client = medplum;
-  
+
   const reports = await client.searchResources('DiagnosticReport', {
     encounter: `Encounter/${encounterId}`,
     _sort: '-issued',
   });
 
-  const summaries: LabReportSummary[] = [];
+  const allObsIds = reports.flatMap((report) =>
+    (report.result ?? [])
+      .map((ref) => ref.reference?.split('/')[1])
+      .filter((id): id is string => Boolean(id))
+  );
 
-  for (const report of reports) {
-    const results: LabResult[] = [];
-    
-    if (report.result) {
-      for (const resultRef of report.result) {
-        const obsId = resultRef.reference?.split('/')[1];
-        if (obsId) {
-          const obs = await client.readResource('Observation', obsId);
-          
-          results.push({
-            testCode: obs.code?.coding?.[0]?.code || '',
-            testName: obs.code?.text || obs.code?.coding?.[0]?.display || 'Unknown',
-            value: (obs as any).valueQuantity?.value || (obs as any).valueString || 'N/A',
-            unit: (obs as any).valueQuantity?.unit,
-            referenceRange: obs.referenceRange?.[0]?.text,
-            interpretation: obs.interpretation?.[0]?.coding?.[0]?.display as any,
-            status: obs.status as any,
-            performedAt: obs.effectiveDateTime ? new Date(obs.effectiveDateTime) : undefined,
-          });
-        }
-      }
-    }
+  const allObservations = allObsIds.length > 0
+    ? await client.searchResources('Observation', { _id: allObsIds.join(',') })
+    : [];
 
-    summaries.push({
-      id: report.id!,
-      patientId: report.subject?.reference?.split('/')[1] || '',
-      patientName: report.subject?.display,
-      encounterId,
-      status: report.status as any,
-      orderedAt: report.effectiveDateTime ? new Date(report.effectiveDateTime) : new Date(),
-      issuedAt: report.issued ? new Date(report.issued) : undefined,
-      results,
-      conclusion: report.conclusion,
-    });
-  }
+  const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
 
-  return summaries;
+  return mapReportsToSummaries(reports, obsMap, undefined, encounterId);
 }
 
 

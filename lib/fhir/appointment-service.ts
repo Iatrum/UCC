@@ -2,7 +2,7 @@
  * Appointment Service - Medplum FHIR as Source of Truth
  */
 
-import { MedplumClient } from '@medplum/core';
+import { MedplumClient, OperationOutcomeError, getStatus } from '@medplum/core';
 import type { Appointment as FHIRAppointment } from '@medplum/fhirtypes';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
@@ -117,8 +117,10 @@ export async function getAppointmentFromMedplum(medplum: MedplumClient, appointm
       cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
     };
   } catch (error) {
-    console.error('Failed to get appointment from Medplum:', error);
-    return null;
+    if (error instanceof OperationOutcomeError && getStatus(error.outcome) === 404) {
+      return null;
+    }
+    throw error;
   }
 }
 
