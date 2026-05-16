@@ -50,7 +50,20 @@ const appointmentSchema = z.object({
   visitType: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(appointmentStatuses).default("scheduled"),
-});
+}).refine(
+  (data) => {
+    try {
+      const scheduledAt = combineDateTime(data.scheduledDate, data.scheduledTime);
+      return scheduledAt.getTime() > Date.now();
+    } catch {
+      return true;
+    }
+  },
+  {
+    message: "Appointment date and time must be in the future",
+    path: ["scheduledTime"],
+  }
+);
 
 type AppointmentFormValues = z.input<typeof appointmentSchema>;
 
@@ -240,6 +253,14 @@ export default function NewAppointmentForm() {
       }
 
       const scheduledAt = combineDateTime(values.scheduledDate, values.scheduledTime);
+      if (scheduledAt.getTime() <= Date.now()) {
+        toast({
+          title: "Invalid appointment time",
+          description: "Appointment date and time must be in the future.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Map appointment status to FHIR status
       const fhirStatus = values.status === "scheduled" ? "booked" : 
@@ -344,7 +365,7 @@ export default function NewAppointmentForm() {
                           <Calendar className="h-4 w-4 text-muted-foreground" /> Date
                         </FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Input type="date" min={format(new Date(), "yyyy-MM-dd")} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
