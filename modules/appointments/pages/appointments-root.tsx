@@ -80,6 +80,8 @@ export default function AppointmentsRootPage() {
     }
   }
 
+  const now = useMemo(() => new Date(), []);
+
   const upcomingAppointments = useMemo(() => {
     return appointments
       .filter((appointment) => {
@@ -92,7 +94,7 @@ export default function AppointmentsRootPage() {
         const bTime = new Date(b.scheduledAt as any).getTime();
         return aTime - bTime;
       });
-  }, [appointments]);
+  }, [appointments, now]);
 
   const todaysAppointments = useMemo(() => {
     return upcomingAppointments.filter((appointment) => {
