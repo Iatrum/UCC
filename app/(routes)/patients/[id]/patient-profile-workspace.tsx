@@ -31,6 +31,7 @@ import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
 import type { QueueStatus } from "@/lib/types";
 import ReferralMCSection from "./referral-mc-section";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 type ProfileTab = "history" | "labs-imaging" | "documents";
 type DrawerMode = "consult" | "treatment";
@@ -665,13 +666,13 @@ export default function PatientProfileWorkspace({
                             {selectedConsultation.notes && (
                               <div>
                                 <p className="mb-1 text-sm font-medium">Notes</p>
-                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: selectedConsultation.notes }} />
+                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedConsultation.notes) }} />
                               </div>
                             )}
                             {selectedConsultation.progressNote && (
                               <div>
                                 <p className="mb-1 text-sm font-medium">Progress Note</p>
-                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: selectedConsultation.progressNote }} />
+                                <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedConsultation.progressNote) }} />
                               </div>
                             )}
                             {selectedConsultation.prescriptions && selectedConsultation.prescriptions.length > 0 && (
@@ -770,7 +771,7 @@ export default function PatientProfileWorkspace({
                                     <div className="space-y-4">
                                       <div>
                                         <p className="mb-1 text-sm font-medium">Clinical Notes</p>
-                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.chiefComplaint }} />
+                                        <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeHtml(consultation.chiefComplaint) }} />
                                       </div>
                                       <div>
                                         <p className="mb-1 text-sm font-medium">Diagnosis</p>
@@ -779,13 +780,13 @@ export default function PatientProfileWorkspace({
                                       {consultation.notes && (
                                         <div>
                                           <p className="mb-1 text-sm font-medium">Notes</p>
-                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
+                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeHtml(consultation.notes) }} />
                                         </div>
                                       )}
                                       {consultation.progressNote && (
                                         <div>
                                           <p className="mb-1 text-sm font-medium">Progress Note</p>
-                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: consultation.progressNote }} />
+                                          <div className="rich-text-display text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeHtml(consultation.progressNote) }} />
                                         </div>
                                       )}
                                       {consultation.prescriptions && consultation.prescriptions.length > 0 && (

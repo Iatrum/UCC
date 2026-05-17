@@ -18,6 +18,7 @@ import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import { formatPrescriptionLine } from '@/lib/prescriptions';
+import { sanitizeHtml } from '@/lib/sanitize';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -82,14 +83,14 @@ export default async function ConsultationDetails({ params }: Props) {
               {/* Chief Complaint / SOAP Note */}
               <div>
                 <h3 className="font-medium mb-2">Chief Complaint / Clinical Notes</h3>
-                <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: decodeHtml(consultation.chiefComplaint || '—') }} />
+                <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: sanitizeHtml(decodeHtml(consultation.chiefComplaint || '—')) }} />
               </div>
 
               {/* Progress Note (AI-generated SOAP) */}
               {consultation.progressNote && (
                 <div>
                   <h3 className="font-medium mb-2">Progress Note (SOAP)</h3>
-                  <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: decodeHtml(consultation.progressNote) }} />
+                  <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: sanitizeHtml(decodeHtml(consultation.progressNote)) }} />
                 </div>
               )}
 
@@ -103,7 +104,7 @@ export default async function ConsultationDetails({ params }: Props) {
               {consultation.notes && (
                 <div>
                   <h3 className="font-medium mb-2">Additional Notes</h3>
-                  <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: consultation.notes }} />
+                  <div className="rich-text-display text-sm" dangerouslySetInnerHTML={{ __html: sanitizeHtml(decodeHtml(consultation.notes)) }} />
                 </div>
               )}
 

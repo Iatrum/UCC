@@ -839,9 +839,8 @@ export async function updateConsultationInMedplum(
     }
   }
 
-  // 6. Replace Procedures (delete old, create new)
+  // 6. Replace Procedures (create new first, then delete old)
   if (updates.procedures !== undefined) {
-    await Promise.all(procedures.map((p) => client.deleteResource('Procedure', p.id!)));
     for (const proc of updates.procedures as any[]) {
       const codeable = proc.codingCode || proc.codingDisplay || proc.codingSystem
         ? {
@@ -869,11 +868,11 @@ export async function updateConsultationInMedplum(
         performedDateTime: now,
       }, clinicId));
     }
+    await Promise.all(procedures.map((p) => client.deleteResource('Procedure', p.id!)));
   }
 
-  // 7. Replace MedicationRequests (delete old, create new)
+  // 7. Replace MedicationRequests (create new first, then delete old)
   if (updates.prescriptions !== undefined) {
-    await Promise.all(medications.map((m) => client.deleteResource('MedicationRequest', m.id!)));
     for (const rx of updates.prescriptions as any[]) {
       const medicationCode = findMedicationByName(rx.medication.name);
       const medicationCodeableConcept: any = {
@@ -900,6 +899,7 @@ export async function updateConsultationInMedplum(
         authoredOn: now,
       }, clinicId));
     }
+    await Promise.all(medications.map((m) => client.deleteResource('MedicationRequest', m.id!)));
   }
 }
 

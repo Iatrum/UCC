@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "PowerShell(Get-Command node, npm, pnpm, yarn -ErrorAction SilentlyContinue)",
+      "PowerShell(& \"C:\\\\Users\\\\SyahinAbdul\\\\.bun\\\\bin\\\\bun.exe\" add dompurify)",
+      "PowerShell(& \"C:\\\\Users\\\\SyahinAbdul\\\\.bun\\\\bin\\\\bun.exe\" add -d @types/dompurify)"
+    ]
+  }
+}
