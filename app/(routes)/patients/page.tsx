@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Clock, CheckCircle2, UserRound } from "lucide-react";
+import { AlertCircle, Plus, Search, Clock, CheckCircle2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
 import { getAllPatients, type Patient } from "@/lib/fhir/patient-client";
@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/card";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED } from "@/lib/features";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -36,6 +38,7 @@ export default function PatientsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const { loading: authLoading } = useMedplumAuth();
 
   useEffect(() => {
@@ -85,7 +88,7 @@ export default function PatientsPage() {
     }
 
     loadPatients();
-  }, [authLoading]);
+  }, [authLoading, retryCount]);
 
   const filteredPatients = useMemo(() => {
     if (!searchQuery) {
@@ -184,8 +187,25 @@ export default function PatientsPage() {
             />
           </div>
           
-          {loading && <p>Loading...</p>}
-          {error && <p className="text-red-500">{error}</p>}
+          {loading && (
+            <div className="mt-2 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          )}
+          {error && (
+            <Alert variant="destructive" className="mt-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Failed to load patients</AlertTitle>
+              <AlertDescription className="flex items-center justify-between gap-4">
+                <span>{error}</span>
+                <Button variant="outline" size="sm" onClick={() => setRetryCount((c) => c + 1)}>
+                  Try again
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           {!loading && !error && (
             <div className="mt-6 relative border rounded-lg overflow-hidden">
               <Table>

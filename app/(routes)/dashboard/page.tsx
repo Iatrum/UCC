@@ -93,8 +93,12 @@ export default function Dashboard() {
     loadQueue();
     loadAppointments();
     loadConsultations();
-    const interval = setInterval(loadQueue, 30000);
-    return () => clearInterval(interval);
+    const queueInterval = setInterval(loadQueue, 30000);
+    const apptInterval = setInterval(loadAppointments, 30000);
+    return () => {
+      clearInterval(queueInterval);
+      clearInterval(apptInterval);
+    };
   }, []);
 
   const upcomingAppointments = useMemo(() => {
