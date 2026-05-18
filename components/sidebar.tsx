@@ -100,7 +100,13 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
   const navigation = useMemo(() => {
     // Combine base navigation with enabled modules.
     const items = [...baseNavigation, ...enabledModules];
-    items.push({ name: "Follow Up", href: "/follow-up", icon: MessageCircle });
+    const analyticsIndex = items.findIndex((item) => item.name === "Analytics");
+    const followUpItem = { name: "Follow Up", href: "/follow-up", icon: MessageCircle };
+    if (analyticsIndex !== -1) {
+      items.splice(analyticsIndex, 0, followUpItem);
+    } else {
+      items.push(followUpItem);
+    }
     if (MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED) {
       items.push({ name: "Tasks", href: "/tasks", icon: ClipboardCheck });
     }

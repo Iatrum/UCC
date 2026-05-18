@@ -11,9 +11,9 @@ import {
   Clock,
   Loader2,
   MessageCircle,
+  Phone,
   Plus,
   Search,
-  SendHorizontal,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -59,6 +59,20 @@ const STATUS_BY_TAB = {
 } as const;
 
 const MAX_MESSAGE_LENGTH = 500;
+
+const WA_TEMPLATES: Record<string, (name: string, date?: string, time?: string) => string> = {
+  "review-request": (name) =>
+    `Hi ${name} 👋, thank you for choosing Iatrum Clinic for your healthcare needs. We truly appreciate your visit! Could you take a moment to leave us a review? It helps other patients find the right care. Thank you so much 🙏`,
+  "appointment-reminder": (name, date, time) =>
+    `Hi ${name} 👋, this is a friendly reminder that you have an upcoming appointment at Iatrum Clinic on ${date ?? "your scheduled date"} at ${time ?? "your scheduled time"}. Please arrive on time. Do not hesitate to contact us if you need to reschedule. Thank you 🙏`,
+};
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("60")) return digits;
+  if (digits.startsWith("0")) return "60" + digits.slice(1);
+  return "60" + digits;
+}
 
 function formatDate(value?: string): string {
   if (!value) return "—";
@@ -155,23 +169,31 @@ function StatCard({
   );
 }
 
+type AppointmentOption = { id: string; date: string; isoDate: string; time: string; clinician: string };
+
 interface NewFollowUpForm {
   patientId: string;
   patientName: string;
+  patientPhone: string;
   type: FollowUpType;
-  message: string;
   dueDate: string;
+  appointmentId: string;
+  appointmentDate: string;
+  appointmentTime: string;
 }
 
 const EMPTY_FORM: NewFollowUpForm = {
   patientId: "",
   patientName: "",
+  patientPhone: "",
   type: "review-request",
-  message: "",
   dueDate: "",
+  appointmentId: "",
+  appointmentDate: "",
+  appointmentTime: "",
 };
 
-type PatientResult = { id: string; name: string };
+type PatientResult = { id: string; name: string; phone: string };
 
 interface Props {
   initialFollowUps: FollowUp[];
@@ -187,16 +209,24 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
   const [actionId, setActionId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // WhatsApp dialog state
+  const [waDialogOpen, setWaDialogOpen] = useState(false);
+  const [waFollowUp, setWaFollowUp] = useState<FollowUp | null>(null);
+  const [waMessage, setWaMessage] = useState("");
+
   // Patient search state
   const [patientResults, setPatientResults] = useState<PatientResult[]>([]);
   const [patientSearching, setPatientSearching] = useState(false);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const patientInputRef = useRef<HTMLInputElement>(null);
 
-  // Debounced patient search — fires when user types in the patient field
+  // Appointment state (for appointment-reminder type)
+  const [appointments, setAppointments] = useState<AppointmentOption[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+
+  // Debounced patient search
   useEffect(() => {
     const q = form.patientName.trim();
-    // If a patient is already confirmed or query too short, skip the search
     if (form.patientId || q.length < 2) {
       setPatientResults([]);
       setShowPatientDropdown(false);
@@ -209,19 +239,54 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
         const payload = await res.json().catch(() => ({}));
         if (res.ok && payload.success) {
           const results: PatientResult[] = (payload.patients ?? []).map(
-            (p: { id: string; fullName: string }) => ({ id: p.id, name: p.fullName })
+            (p: { id: string; fullName: string; phone: string }) => ({ id: p.id, name: p.fullName, phone: p.phone ?? "" })
           );
           setPatientResults(results);
           setShowPatientDropdown(results.length > 0);
         }
       } catch {
-        // silent — leave previous results
+        // silent
       } finally {
         setPatientSearching(false);
       }
     }, 300);
     return () => clearTimeout(timer);
   }, [form.patientName, form.patientId]);
+
+  // Load patient appointments when type is appointment-reminder and patient is selected
+  useEffect(() => {
+    if (form.type !== "appointment-reminder" || !form.patientId) {
+      setAppointments([]);
+      return;
+    }
+    let cancelled = false;
+    setAppointmentsLoading(true);
+    fetch(`/api/appointments?patientId=${encodeURIComponent(form.patientId)}`)
+      .then((r) => r.json())
+      .catch(() => ({}))
+      .then((payload) => {
+        if (cancelled) return;
+        if (payload.success) {
+          const startOfToday = new Date();
+          startOfToday.setHours(0, 0, 0, 0);
+          const opts: AppointmentOption[] = (payload.appointments ?? [])
+            .filter((a: { scheduledAt: string }) => new Date(a.scheduledAt) >= startOfToday)
+            .map((a: { id: string; scheduledAt: string; clinician: string }) => {
+              const dt = new Date(a.scheduledAt);
+              return {
+                id: a.id,
+                date: dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }),
+                isoDate: dt.toISOString().split("T")[0],
+                time: dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+                clinician: a.clinician,
+              };
+            });
+          setAppointments(opts);
+        }
+      })
+      .finally(() => { if (!cancelled) setAppointmentsLoading(false); });
+    return () => { cancelled = true; };
+  }, [form.patientId, form.type]);
 
   const filtered = useMemo(() => {
     const targetStatus = STATUS_BY_TAB[activeTab];
@@ -240,14 +305,16 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
         setFollowUps(payload.followUps ?? []);
       }
     } catch {
-      // silent — stale data is acceptable on reload failure
+      // silent
     }
   }
 
   async function handleCreate() {
     setFormError(null);
     if (!form.patientName.trim()) { setFormError("Patient name is required."); return; }
-    if (!form.message.trim()) { setFormError("Message is required."); return; }
+    if (form.type === "appointment-reminder" && form.patientId && appointments.length > 0 && !form.appointmentId) {
+      setFormError("Please select an appointment."); return;
+    }
 
     startTransition(async () => {
       try {
@@ -257,9 +324,12 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
           body: JSON.stringify({
             patientName: form.patientName.trim(),
             patientId: form.patientId || undefined,
+            patientPhone: form.patientPhone || undefined,
             type: form.type,
-            message: form.message.trim(),
             dueDate: form.dueDate || undefined,
+            appointmentId: form.appointmentId || undefined,
+            appointmentDate: form.appointmentDate || undefined,
+            appointmentTime: form.appointmentTime || undefined,
           }),
         });
         const payload = await res.json().catch(() => ({}));
@@ -272,29 +342,6 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
         setFormError(err instanceof Error ? err.message : "Failed to create follow up.");
       }
     });
-  }
-
-  async function handleSend(id: string, patientName: string) {
-    setActionId(id);
-    try {
-      const res = await fetch(`/api/follow-up/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "completed" }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload.success) throw new Error(payload.error || "Failed to send");
-      toast({ title: "Sent", description: `Follow up for ${patientName} marked as sent.` });
-      await reload();
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to send follow up.",
-        variant: "destructive",
-      });
-    } finally {
-      setActionId(null);
-    }
   }
 
   async function handleDismiss(id: string, patientName: string) {
@@ -337,9 +384,6 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
       sent: countFor("completed"),
     };
   }, [followUps, search]);
-
-  const charCountColor =
-    form.message.length > MAX_MESSAGE_LENGTH * 0.9 ? "text-amber-600" : "text-muted-foreground";
 
   return (
     <div className="space-y-6 pb-10">
@@ -394,6 +438,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
               setFormError(null);
               setPatientResults([]);
               setShowPatientDropdown(false);
+              setAppointments([]);
             }
           }}
         >
@@ -432,7 +477,15 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                     value={form.patientName}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setForm((f) => ({ ...f, patientName: value, patientId: "" }));
+                      setForm((f) => ({
+                        ...f,
+                        patientName: value,
+                        patientId: "",
+                        patientPhone: "",
+                        appointmentId: "",
+                        appointmentDate: "",
+                        appointmentTime: "",
+                      }));
                       if (!value.trim()) {
                         setPatientResults([]);
                         setShowPatientDropdown(false);
@@ -442,7 +495,6 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                       if (patientResults.length > 0) setShowPatientDropdown(true);
                     }}
                     onBlur={() => {
-                      // delay so a click on a result item can fire first
                       setTimeout(() => setShowPatientDropdown(false), 150);
                     }}
                   />
@@ -455,7 +507,15 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => {
-                            setForm((f) => ({ ...f, patientName: patient.name, patientId: patient.id }));
+                            setForm((f) => ({
+                              ...f,
+                              patientName: patient.name,
+                              patientId: patient.id,
+                              patientPhone: patient.phone,
+                              appointmentId: "",
+                              appointmentDate: "",
+                              appointmentTime: "",
+                            }));
                             setShowPatientDropdown(false);
                             setPatientResults([]);
                           }}
@@ -485,7 +545,16 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                 </div>
                 <Select
                   value={form.type}
-                  onValueChange={(v) => setForm((f) => ({ ...f, type: v as FollowUpType }))}
+                  onValueChange={(v) => {
+                    const newType = v as FollowUpType;
+                    setForm((f) => ({
+                      ...f,
+                      type: newType,
+                      ...(newType !== "appointment-reminder"
+                        ? { appointmentId: "", appointmentDate: "", appointmentTime: "" }
+                        : {}),
+                    }));
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -497,30 +566,56 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                 </Select>
               </div>
 
-              {/* Message + char counter */}
-              <div className="space-y-1.5">
-                <div className="flex items-end justify-between">
+              {/* Appointment selector — only for appointment-reminder */}
+              {form.type === "appointment-reminder" && (
+                <div className="space-y-1.5">
                   <div>
-                    <label className="text-sm font-medium">Message</label>
+                    <label className="text-sm font-medium">Appointment</label>
                     <p className="text-xs text-muted-foreground">
-                      The content that will be sent to the patient
+                      Select the appointment to remind the patient about
                     </p>
                   </div>
-                  <span className={`text-xs tabular-nums ${charCountColor}`}>
-                    {form.message.length}/{MAX_MESSAGE_LENGTH}
-                  </span>
+                  {!form.patientId ? (
+                    <p className="text-xs text-slate-400">Select a patient first to see their appointments.</p>
+                  ) : appointmentsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading appointments…
+                    </div>
+                  ) : appointments.length === 0 ? (
+                    <p className="text-xs text-slate-400">No appointments found for this patient.</p>
+                  ) : (
+                    <Select
+                      value={form.appointmentId}
+                      onValueChange={(v) => {
+                        const appt = appointments.find((a) => a.id === v);
+                        setForm((f) => ({
+                          ...f,
+                          appointmentId: v,
+                          appointmentDate: appt?.date ?? "",
+                          appointmentTime: appt?.time ?? "",
+                          dueDate: appt?.isoDate ?? f.dueDate,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select appointment…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {appointments.map((appt) => (
+                          <SelectItem key={appt.id} value={appt.id}>
+                            {appt.date} at {appt.time}
+                            {appt.clinician ? ` — ${appt.clinician}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
-                <Textarea
-                  placeholder="Enter the follow up message..."
-                  rows={3}
-                  maxLength={MAX_MESSAGE_LENGTH}
-                  value={form.message}
-                  onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
-                />
-              </div>
+              )}
 
-              {/* Schedule for (due date) */}
-              <div className="space-y-1.5">
+              {/* Schedule for (due date) — hidden for appointment-reminder once an appointment is selected */}
+              {(form.type !== "appointment-reminder" || !form.appointmentId) && <div className="space-y-1.5">
                 <div>
                   <label className="text-sm font-medium">
                     Schedule for{" "}
@@ -535,7 +630,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                   value={form.dueDate}
                   onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
                 />
-              </div>
+              </div>}
 
               {formError ? (
                 <p className="text-sm text-destructive">{formError}</p>
@@ -608,7 +703,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                         <TableHead className="w-28 px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
                           Status
                         </TableHead>
-                        <TableHead className="w-32 px-4 py-4 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <TableHead className="w-52 px-4 py-4 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
                           Actions
                         </TableHead>
                       </TableRow>
@@ -634,23 +729,28 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                             <TableCell className="w-28 px-4 py-4">
                               <StatusBadge status={followUp.status} />
                             </TableCell>
-                            <TableCell className="w-32 px-4 py-4 text-right">
+                            <TableCell className="w-52 px-4 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                {followUp.status !== "completed" && (
+                                {followUp.patientPhone && (
                                   <Button
                                     size="sm"
-                                    variant="outline"
-                                    className="h-8 text-xs"
+                                    className="h-8 bg-green-500 text-xs text-white hover:bg-green-600"
                                     disabled={actionId === followUp.id}
-                                    title="Mark this follow up as sent"
-                                    onClick={() => handleSend(followUp.id, followUp.patientName)}
+                                    title="Send via WhatsApp"
+                                    onClick={() => {
+                                      setWaFollowUp(followUp);
+                                      setWaMessage(
+                                        WA_TEMPLATES[followUp.type]?.(
+                                          followUp.patientName,
+                                          followUp.appointmentDate,
+                                          followUp.appointmentTime
+                                        ) ?? ""
+                                      );
+                                      setWaDialogOpen(true);
+                                    }}
                                   >
-                                    {actionId === followUp.id ? (
-                                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
-                                    )}
-                                    Send now
+                                    <Phone className="mr-1.5 h-3.5 w-3.5" />
+                                    WhatsApp
                                   </Button>
                                 )}
                                 <Button
@@ -677,6 +777,90 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* WhatsApp Dialog */}
+      <Dialog
+        open={waDialogOpen}
+        onOpenChange={(open) => {
+          setWaDialogOpen(open);
+          if (!open) setWaFollowUp(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send via WhatsApp</DialogTitle>
+            <DialogDescription>
+              Send a WhatsApp message to {waFollowUp?.patientName ?? "patient"}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
+              <p className="font-medium text-slate-900">{waFollowUp?.patientName}</p>
+              {waFollowUp?.patientPhone && (
+                <p className="text-slate-500">{waFollowUp.patientPhone}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-end justify-between">
+                <label className="text-sm font-medium">Message</label>
+                <span
+                  className={`text-xs tabular-nums ${
+                    waMessage.length > MAX_MESSAGE_LENGTH * 0.9
+                      ? "text-amber-600"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {waMessage.length}/{MAX_MESSAGE_LENGTH}
+                </span>
+              </div>
+              <Textarea
+                rows={5}
+                value={waMessage}
+                onChange={(e) => setWaMessage(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWaDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-green-500 text-white hover:bg-green-600"
+              disabled={!waFollowUp?.patientPhone || !waMessage.trim()}
+              onClick={async () => {
+                if (!waFollowUp?.patientPhone) return;
+                const followUpId = waFollowUp.id;
+                const followUpName = waFollowUp.patientName;
+                const phone = normalizePhone(waFollowUp.patientPhone);
+                const url = `https://wa.me/${phone}?text=${encodeURIComponent(waMessage)}`;
+                window.open(url, "_blank");
+                setWaDialogOpen(false);
+                setWaFollowUp(null);
+                try {
+                  const res = await fetch(`/api/follow-up/${followUpId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "completed" }),
+                  });
+                  const payload = await res.json().catch(() => ({}));
+                  if (res.ok && payload.success) {
+                    toast({ title: "Sent", description: `Follow up for ${followUpName} marked as sent.` });
+                    await reload();
+                  }
+                } catch {
+                  // silent — WhatsApp link was already opened
+                }
+              }}
+            >
+              <Phone className="mr-2 h-4 w-4" />
+              Open WhatsApp
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
     const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json().catch(() => null);
 
-    if (!body?.patientName || !body?.type || !body?.message) {
+    if (!body?.patientName || !body?.type) {
       return NextResponse.json(
-        { success: false, error: "patientName, type, and message are required" },
+        { success: false, error: "patientName and type are required" },
         { status: 400 }
       );
     }
@@ -31,10 +31,13 @@ export async function POST(req: NextRequest) {
     const followUp = await createFollowUp(medplum, {
       patientName: String(body.patientName),
       patientId: body.patientId ? String(body.patientId) : undefined,
+      patientPhone: body.patientPhone ? String(body.patientPhone) : undefined,
       clinicId,
       type: body.type as FollowUpType,
-      message: String(body.message),
       dueDate: body.dueDate ? String(body.dueDate) : undefined,
+      appointmentId: body.appointmentId ? String(body.appointmentId) : undefined,
+      appointmentDate: body.appointmentDate ? String(body.appointmentDate) : undefined,
+      appointmentTime: body.appointmentTime ? String(body.appointmentTime) : undefined,
     });
 
     return NextResponse.json({ success: true, followUp }, { status: 201 });
