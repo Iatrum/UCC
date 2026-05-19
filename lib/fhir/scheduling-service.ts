@@ -2,6 +2,7 @@ import type { MedplumClient } from "@medplum/core";
 import type { Appointment, Patient, Practitioner, Schedule, Slot } from "@medplum/fhirtypes";
 
 const CLINIC_SCHEDULE_IDENTIFIER_SYSTEM = "urn:iatrum:schedule:clinic-practitioner";
+const SLOT_SEARCH_COUNT = "2000";
 
 export interface ScheduleSummary {
   id: string;
@@ -47,6 +48,17 @@ export interface BookSlotInput {
   reason: string;
   clinicianDisplayOverride?: string;
   durationMinutes?: number;
+}
+
+export interface ManualBookAppointmentInput {
+  patientId: string;
+  practitionerId: string;
+  practitionerName?: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  reason: string;
+  type?: string;
+  notes?: string;
 }
 
 function getIdFromReference(reference?: string): string {
@@ -155,7 +167,7 @@ export async function generateSlotsForSchedule(
 
   const existingSlots = await medplum.searchResources("Slot", {
     schedule: `Schedule/${input.scheduleId}`,
-    _count: "500",
+    _count: SLOT_SEARCH_COUNT,
   });
 
   const existingStarts = new Set(
@@ -230,8 +242,7 @@ export async function findSlots(
       selectedSchedules.map((schedule) =>
         medplum.searchResources("Slot", {
           schedule: `Schedule/${schedule.id}`,
-          status: input.status,
-          _count: String(input.count ?? 200),
+          _count: String(input.count ?? Number(SLOT_SEARCH_COUNT)),
         })
       )
     )
@@ -247,6 +258,7 @@ export async function findSlots(
       const start = slot.start ? new Date(slot.start).getTime() : NaN;
       const end = slot.end ? new Date(slot.end).getTime() : NaN;
       if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+      if (input.status && slot.status !== input.status) return false;
       return start >= startAt && end <= endAt;
     })
     .sort((a, b) => (a.start || "").localeCompare(b.start || ""))
@@ -267,6 +279,94 @@ function getPatientDisplayName(patient: Patient): string {
   if (name.text) return name.text;
   const parts = [...(name.given || []), name.family].filter(Boolean);
   return parts.join(" ") || patient.id || "Patient";
+}
+
+function intervalsOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  const aStart = new Date(startA).getTime();
+  const aEnd = new Date(endA).getTime();
+  const bStart = new Date(startB).getTime();
+  const bEnd = new Date(endB).getTime();
+  if (![aStart, aEnd, bStart, bEnd].every(Number.isFinite)) return false;
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function hasPractitionerParticipant(
+  appointment: Appointment,
+  practitionerId: string,
+  practitionerName?: string
+): boolean {
+  return Boolean(
+    appointment.participant?.some((participant) => {
+      const reference = participant.actor?.reference;
+      const display = participant.actor?.display;
+      return (
+        reference === `Practitioner/${practitionerId}` ||
+        Boolean(practitionerName && display === practitionerName)
+      );
+    })
+  );
+}
+
+function isActiveAppointmentStatus(status: Appointment["status"]): boolean {
+  return ["proposed", "pending", "booked", "arrived"].includes(status || "");
+}
+
+async function assertNoSchedulingConflict(
+  medplum: MedplumClient,
+  scheduleId: string,
+  practitionerId: string,
+  practitionerName: string | undefined,
+  startIso: string,
+  endIso: string
+): Promise<void> {
+  const slots = await medplum.searchResources("Slot", {
+    schedule: `Schedule/${scheduleId}`,
+    _count: SLOT_SEARCH_COUNT,
+  });
+
+  const conflictingSlot = slots.find((slot) => {
+    if (!slot.start || !slot.end || slot.status === "free" || slot.status === "entered-in-error") {
+      return false;
+    }
+    return intervalsOverlap(slot.start, slot.end, startIso, endIso);
+  });
+
+  if (conflictingSlot) {
+    throw new Error("Selected time overlaps an unavailable slot for this clinician");
+  }
+
+  const appointments = await medplum.searchResources("Appointment", {
+    date: `ge${startIso}`,
+    _count: "200",
+  });
+
+  const conflictingAppointment = appointments.find((appointment) => {
+    if (!appointment.start || !appointment.end || !isActiveAppointmentStatus(appointment.status)) {
+      return false;
+    }
+    if (!hasPractitionerParticipant(appointment, practitionerId, practitionerName)) {
+      return false;
+    }
+    return intervalsOverlap(appointment.start, appointment.end, startIso, endIso);
+  });
+
+  if (conflictingAppointment) {
+    throw new Error("Selected time overlaps an active appointment for this clinician");
+  }
+}
+
+async function findExactFreeSlot(
+  medplum: MedplumClient,
+  scheduleId: string,
+  startIso: string,
+  endIso: string
+): Promise<Slot | undefined> {
+  const slots = await medplum.searchResources("Slot", {
+    schedule: `Schedule/${scheduleId}`,
+    _count: SLOT_SEARCH_COUNT,
+  });
+
+  return slots.find((slot) => slot.status === "free" && slot.start === startIso && slot.end === endIso);
 }
 
 export async function bookSlotToAppointment(
@@ -344,3 +444,104 @@ export async function bookSlotToAppointment(
   return { appointmentId: appointment.id || "", slotId: slot.id || "" };
 }
 
+export async function manualBookAppointmentWithSlot(
+  medplum: MedplumClient,
+  clinicId: string,
+  input: ManualBookAppointmentInput
+): Promise<{ appointmentId: string; slotId: string }> {
+  const start = new Date(input.scheduledAt);
+  if (!Number.isFinite(start.getTime())) {
+    throw new Error("Invalid appointment date and time");
+  }
+  if (start.getTime() <= Date.now()) {
+    throw new Error("Appointment date and time must be in the future");
+  }
+  if (!Number.isFinite(input.durationMinutes) || input.durationMinutes <= 0) {
+    throw new Error("durationMinutes must be a positive number");
+  }
+
+  const end = new Date(start);
+  end.setMinutes(end.getMinutes() + input.durationMinutes);
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+
+  const schedule = await ensureClinicianSchedule(medplum, {
+    clinicId,
+    practitionerId: input.practitionerId,
+    practitionerName: input.practitionerName,
+  });
+
+  await assertNoSchedulingConflict(
+    medplum,
+    schedule.id,
+    input.practitionerId,
+    input.practitionerName || schedule.practitionerName,
+    startIso,
+    endIso
+  );
+
+  const patient = await medplum.readResource("Patient", input.patientId);
+  const patientName = getPatientDisplayName(patient);
+  const clinicianName = input.practitionerName || schedule.practitionerName || input.practitionerId;
+
+  const existingFreeSlot = await findExactFreeSlot(medplum, schedule.id, startIso, endIso);
+  const slot = existingFreeSlot
+    ? await medplum.updateResource<Slot>({
+        ...existingFreeSlot,
+        status: "busy",
+        comment: "Reserved by manual appointment booking",
+      })
+    : await medplum.createResource<Slot>({
+        resourceType: "Slot",
+        schedule: { reference: `Schedule/${schedule.id}` },
+        status: "busy",
+        start: startIso,
+        end: endIso,
+        comment: "Reserved by manual appointment booking",
+      });
+
+  try {
+    const appointment = await medplum.createResource<Appointment>({
+      resourceType: "Appointment",
+      status: "booked",
+      start: startIso,
+      end: endIso,
+      minutesDuration: input.durationMinutes,
+      slot: [{ reference: `Slot/${slot.id}` }],
+      participant: [
+        {
+          actor: {
+            reference: `Patient/${input.patientId}`,
+            display: patientName,
+          },
+          status: "accepted",
+        },
+        {
+          actor: {
+            reference: `Practitioner/${input.practitionerId}`,
+            display: clinicianName,
+          },
+          status: "accepted",
+        },
+      ],
+      reasonCode: input.reason ? [{ text: input.reason }] : undefined,
+      appointmentType: input.type ? { text: input.type } : undefined,
+      comment: input.notes,
+    });
+
+    return { appointmentId: appointment.id || "", slotId: slot.id || "" };
+  } catch (error) {
+    try {
+      if (slot.id) {
+        await medplum.updateResource<Slot>({
+          ...slot,
+          status: "free",
+          comment: "Released after failed manual appointment booking",
+        });
+      }
+    } catch {
+      // Preserve the original appointment creation error.
+    }
+    throw error;
+  }
+}
