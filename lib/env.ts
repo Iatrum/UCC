@@ -30,11 +30,22 @@ const envSchema = z.object({
     .string()
     .url('NEXT_PUBLIC_MEDPLUM_BASE_URL must be a valid URL')
     .optional(),
+  NEXT_PUBLIC_DISABLE_AUTH: z.string().optional(),
+  LOCAL_AUTH_CLINIC_ID: z.string().optional(),
+  NEXT_PUBLIC_LOCAL_AUTH_CLINIC_ID: z.string().optional(),
 
   // ── Optional features ────────────────────────────────────────────────
   OPENAI_API_KEY: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
   MEDPLUM_BULK_EXPORT_SECRET: z.string().optional(),
+  GOOGLE_REVIEW_URL: z.string().url("GOOGLE_REVIEW_URL must be a valid URL").optional(),
+  FOLLOW_UP_DELIVERY_MODE: z.enum(["manual", "twilio"]).optional(),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_WHATSAPP_FROM: z.string().optional(),
+  TWILIO_STATUS_CALLBACK_URL: z.string().url("TWILIO_STATUS_CALLBACK_URL must be a valid URL").optional(),
+  TWILIO_REVIEW_TEMPLATE_CONTENT_SID: z.string().optional(),
+  TWILIO_APPOINTMENT_TEMPLATE_CONTENT_SID: z.string().optional(),
 
   // ── Runtime ──────────────────────────────────────────────────────────
   NODE_ENV: z
