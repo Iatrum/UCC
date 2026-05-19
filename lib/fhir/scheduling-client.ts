@@ -103,3 +103,34 @@ export async function bookSlot(payload: {
   };
 }
 
+export async function manualBookAppointment(payload: {
+  patientId: string;
+  practitionerId: string;
+  practitionerName?: string;
+  scheduledAt: Date | string;
+  durationMinutes: number;
+  reason: string;
+  type?: string;
+  notes?: string;
+}): Promise<{ appointmentId: string; slotId: string }> {
+  const response = await fetch("/api/scheduling/manual-book", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...payload,
+      scheduledAt:
+        payload.scheduledAt instanceof Date
+          ? payload.scheduledAt.toISOString()
+          : payload.scheduledAt,
+    }),
+  });
+  const data = await readJson(response);
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || "Failed to book appointment");
+  }
+  return {
+    appointmentId: String(data.appointmentId || ""),
+    slotId: String(data.slotId || ""),
+  };
+}

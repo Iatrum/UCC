@@ -21,9 +21,22 @@ type TestPatient = {
   reason: string;
 };
 
+type TestPractitioner = {
+  id: string;
+  name: string;
+};
+
 function futureSlot(minutesFromNow = 90): Date {
   const date = new Date(Date.now() + minutesFromNow * 60 * 1000);
   date.setSeconds(0, 0);
+  return date;
+}
+
+function uniqueFutureSlot(daysFromNow = 30): Date {
+  const seed = Date.now() + patientCounter * 7919;
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow + 365 + (seed % 365));
+  date.setHours(8 + (seed % 9), (Math.floor(seed / 9) % 12) * 5, 0, 0);
   return date;
 }
 
@@ -95,6 +108,24 @@ async function createTestAppointment(
   return data.appointmentId;
 }
 
+async function getPreferredPractitioner(page: Page): Promise<TestPractitioner> {
+  const response = await page.request.get("/api/practitioners");
+  const data = await response.json().catch(() => ({}));
+  expect(response.ok(), JSON.stringify(data)).toBe(true);
+
+  const practitioners = data.practitioners || [];
+  expect(practitioners.length).toBeGreaterThan(0);
+
+  const preferred =
+    practitioners.find((p: any) => p.name === DEFAULT_CLINICIAN) ||
+    practitioners[0];
+
+  expect(typeof preferred.id).toBe("string");
+  expect(typeof preferred.name).toBe("string");
+
+  return { id: preferred.id, name: preferred.name };
+}
+
 async function selectByVisibleOption(page: Page, triggerIndex: number, optionName: RegExp | string): Promise<void> {
   await page.locator('button[role="combobox"]').nth(triggerIndex).click();
   await page.getByRole("option", { name: optionName }).click();
@@ -125,12 +156,13 @@ async function appointmentRowFor(page: Page, patientName: string) {
   const patientTitle = page.getByText(patientName, { exact: true }).first();
   await expect(patientTitle).toBeVisible({ timeout: 20_000 });
   return patientTitle.locator(
-    'xpath=ancestor::*[.//a[contains(normalize-space(.), "Check-in")] and .//a[contains(normalize-space(.), "View")]][1]'
+    'xpath=ancestor::*[.//*[self::a or self::button][contains(normalize-space(.), "Check-in")] and .//a[contains(normalize-space(.), "View")]][1]'
   );
 }
 
 test.describe("Appointment workflow", () => {
   test("appointments page is accessible and links to new appointment form", async ({ page }) => {
+    test.setTimeout(60_000);
     const response = await page.goto("/appointments", { waitUntil: "domcontentloaded" });
 
     expect(response?.status() ?? 0).toBeLessThan(400);
@@ -141,12 +173,13 @@ test.describe("Appointment workflow", () => {
     await page.getByRole("link", { name: /new appointment/i }).click();
     await expect(page).toHaveURL(/\/appointments\/new/);
     await expect(page.getByText(/schedule new appointment/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/available slots/i)).toBeVisible();
   });
 
-  test("schedules a new appointment from the form", async ({ page }) => {
+  test("schedules a new appointment from the replacement form", async ({ page }) => {
     test.setTimeout(60_000);
     const patient = await createTestPatient(page);
-    const slot = futureSlot();
+    const slot = uniqueFutureSlot();
 
     await page.goto("/appointments/new", { waitUntil: "domcontentloaded" });
     await expect(page.getByText(/schedule new appointment/i)).toBeVisible({ timeout: 15_000 });
@@ -159,14 +192,14 @@ test.describe("Appointment workflow", () => {
 
     await page.locator('input[type="date"]').fill(formatDateInput(slot));
     await page.locator('input[type="time"]').fill(formatTimeInput(slot));
-    await selectPreferredOrFirstOption(page, 1, DEFAULT_CLINICIAN);
-    await selectByVisibleOption(page, 2, /follow-up/i);
+    const clinicianName = await selectPreferredOrFirstOption(page, 2, DEFAULT_CLINICIAN);
+    await selectByVisibleOption(page, 3, /follow-up/i);
     await page.getByPlaceholder(/follow-up consultation/i).fill(patient.reason);
     await page.getByPlaceholder(/preparation instructions|notes/i).fill("Bring prior lab results.");
 
     const createAppointment = page.waitForResponse(
       (response) =>
-        response.url().includes("/api/appointments") &&
+        response.url().includes("/api/scheduling/manual-book") &&
         response.request().method() === "POST",
       { timeout: 30_000 }
     );
@@ -175,9 +208,120 @@ test.describe("Appointment workflow", () => {
     const data = await appointmentResponse.json().catch(() => ({}));
 
     expect(appointmentResponse.ok(), JSON.stringify(data)).toBe(true);
-    await expect(page).toHaveURL(/\/appointments$/, { timeout: 20_000 });
-    await expect(page.getByText(patient.name).first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(patient.reason).first()).toBeVisible();
+    expect(typeof data?.appointmentId).toBe("string");
+    expect(typeof data?.slotId).toBe("string");
+    await expect(page).toHaveURL(new RegExp(`/appointments/${data.appointmentId}`), { timeout: 20_000 });
+    await expect(page.locator("main").getByText(patient.name).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(clinicianName).first()).toBeVisible();
+  });
+
+  test("new-v1 schedules through slot-backed manual booking", async ({ page }) => {
+    test.setTimeout(60_000);
+    const patient = await createTestPatient(page);
+    const slot = uniqueFutureSlot();
+
+    await page.goto("/appointments/new-v1", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText(/schedule new appointment/i)).toBeVisible({ timeout: 15_000 });
+
+    const patientCombobox = page.locator('button[role="combobox"]').first();
+    await expect(patientCombobox).toBeEnabled({ timeout: 20_000 });
+    await patientCombobox.click();
+    await page.getByPlaceholder(/search patient/i).fill(patient.name);
+    await page.getByText(patient.name, { exact: true }).click();
+
+    await page.locator('input[type="date"]').fill(formatDateInput(slot));
+    await page.locator('input[type="time"]').fill(formatTimeInput(slot));
+    const clinicianName = await selectPreferredOrFirstOption(page, 2, DEFAULT_CLINICIAN);
+    await selectByVisibleOption(page, 3, /follow-up/i);
+    await page.getByPlaceholder(/follow-up consultation/i).fill(patient.reason);
+    await page.getByPlaceholder(/preparation instructions|notes/i).fill("Bring prior lab results.");
+
+    const createAppointment = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/scheduling/manual-book") &&
+        response.request().method() === "POST",
+      { timeout: 30_000 }
+    );
+    await page.getByRole("button", { name: /create appointment/i }).click();
+    const appointmentResponse = await createAppointment;
+    const data = await appointmentResponse.json().catch(() => ({}));
+
+    expect(appointmentResponse.ok(), JSON.stringify(data)).toBe(true);
+    expect(typeof data?.appointmentId).toBe("string");
+    expect(typeof data?.slotId).toBe("string");
+    await expect(page).toHaveURL(new RegExp(`/appointments/${data.appointmentId}`), { timeout: 20_000 });
+    await expect(page.locator("main").getByText(patient.name).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(clinicianName).first()).toBeVisible();
+  });
+
+  test("new-v1 shows simple slots and selecting one fills the appointment time", async ({ page }) => {
+    test.setTimeout(60_000);
+    const slot = uniqueFutureSlot(75);
+
+    await page.goto("/appointments/new-v1", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText(/schedule new appointment/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Select clinician")).toBeVisible({ timeout: 20_000 });
+
+    await selectPreferredOrFirstOption(page, 2, DEFAULT_CLINICIAN);
+    await page.locator('input[type="date"]').fill(formatDateInput(slot));
+
+    const generateSlots = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/scheduling/slots/generate") &&
+        response.request().method() === "POST",
+      { timeout: 30_000 }
+    );
+    await page.getByRole("button", { name: /check slots/i }).click();
+    const generateResponse = await generateSlots;
+    const data = await generateResponse.json().catch(() => ({}));
+    expect(generateResponse.ok(), JSON.stringify(data)).toBe(true);
+
+    const slotButton = page.locator("button").filter({ hasText: /^\d{2}:\d{2}$/ }).first();
+    await expect(slotButton).toBeVisible({ timeout: 20_000 });
+    const slotTime = ((await slotButton.textContent()) || "").trim();
+    expect(slotTime).toMatch(/^\d{2}:\d{2}$/);
+    await slotButton.click();
+    await expect(page.locator('input[type="time"]')).toHaveValue(slotTime);
+  });
+
+  test("new-v1 rejects overlapping active manual bookings for the same clinician", async ({ page }) => {
+    test.setTimeout(60_000);
+    const practitioner = await getPreferredPractitioner(page);
+    const firstPatient = await createTestPatient(page);
+    const secondPatient = await createTestPatient(page);
+    const slot = uniqueFutureSlot(45);
+
+    const firstBooking = await page.request.post("/api/scheduling/manual-book", {
+      data: {
+        patientId: firstPatient.id,
+        practitionerId: practitioner.id,
+        practitionerName: practitioner.name,
+        scheduledAt: slot.toISOString(),
+        durationMinutes: 30,
+        reason: firstPatient.reason,
+        type: "Follow-up",
+        notes: "Created by appointment E2E for overlap guard.",
+      },
+    });
+    const firstData = await firstBooking.json().catch(() => ({}));
+    expect(firstBooking.ok(), JSON.stringify(firstData)).toBe(true);
+    expect(typeof firstData?.appointmentId).toBe("string");
+
+    const secondBooking = await page.request.post("/api/scheduling/manual-book", {
+      data: {
+        patientId: secondPatient.id,
+        practitionerId: practitioner.id,
+        practitionerName: practitioner.name,
+        scheduledAt: new Date(slot.getTime() + 15 * 60 * 1000).toISOString(),
+        durationMinutes: 30,
+        reason: secondPatient.reason,
+        type: "Follow-up",
+        notes: "This should be rejected by the overlap guard.",
+      },
+    });
+    const secondData = await secondBooking.json().catch(() => ({}));
+    expect(secondBooking.status(), JSON.stringify(secondData)).toBeGreaterThanOrEqual(400);
+    expect(String(secondData?.error || "")).toMatch(/overlap|unavailable/i);
   });
 
   test("check-in link from the list opens patient check-in; detail page can reschedule", async ({ page }) => {
@@ -188,7 +332,7 @@ test.describe("Appointment workflow", () => {
     await page.goto("/appointments", { waitUntil: "domcontentloaded" });
     const appointmentRow = await appointmentRowFor(page, patient.name);
 
-    await appointmentRow.getByRole("link", { name: /check-in/i }).click();
+    await appointmentRow.getByRole("button", { name: /check-in/i }).click();
     await expect(page).toHaveURL(new RegExp(`/patients/${patient.id}/check-in`), { timeout: 20_000 });
 
     const beforeReschedule = await page.request

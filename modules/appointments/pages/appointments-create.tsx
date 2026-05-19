@@ -1,5 +1,5 @@
-import NewAppointmentForm from "../components/new-appointment-form";
+import AppointmentsSlotsPilotPage from "./appointments-slots-pilot";
 
 export default function AppointmentsCreatePage() {
-  return <NewAppointmentForm />;
+  return <AppointmentsSlotsPilotPage />;
 }
