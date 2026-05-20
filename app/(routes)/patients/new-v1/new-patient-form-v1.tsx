@@ -201,7 +201,7 @@ export default function NewPatientFormV1({
   return (
     <div className="container max-w-3xl py-6">
       <div className="mb-6">
-        <Link href="/patients" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
+        <Link href="/patients" className="inline-flex min-h-11 items-center text-sm text-muted-foreground hover:text-primary">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Patients
         </Link>

@@ -258,7 +258,7 @@ export function ClinicalCatalogManager({
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={`Search ${TYPE_LABELS[type].toLowerCase()}`}
-                  className="h-8 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                  className="h-11 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 md:h-8"
                 />
               </div>
               <Button type="button" onClick={() => setCreating(true)}>
