@@ -3,7 +3,7 @@ import {
   getOrganizationFromMedplum,
   getParentOrganizationsFromMedplum,
 } from "@/lib/fhir/admin-service";
-import { listActiveModules } from "@/lib/module-registry";
+import { listAvailableBranchModules } from "@/lib/module-registry";
 import ClinicEditForm from "./clinic-edit-form";
 
 type Props = {
@@ -15,7 +15,7 @@ export default async function EditClinicPage({ params }: Props) {
   const [clinic, organisations, modules] = await Promise.all([
     getOrganizationFromMedplum(id),
     getParentOrganizationsFromMedplum(),
-    listActiveModules().catch(() => []),
+    listAvailableBranchModules().catch(() => []),
   ]);
   if (!clinic) {
     notFound();

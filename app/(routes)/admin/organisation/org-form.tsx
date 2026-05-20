@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2 } from "lucide-react";
+import { Building2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,15 +26,19 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
-import type { ParentOrganizationSummary } from "@/lib/fhir/admin-service";
+import type {
+  ClinicSummary,
+  ParentOrganizationSummary,
+} from "@/lib/fhir/admin-service";
 import { useAdminPath } from "@/hooks/use-admin-path";
 
 interface Props {
   organisation: ParentOrganizationSummary | null;
   mode: "create" | "edit";
+  branches?: ClinicSummary[];
 }
 
-export default function OrgForm({ organisation, mode }: Props) {
+export default function OrgForm({ organisation, mode, branches = [] }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const adminPath = useAdminPath();
@@ -188,6 +192,44 @@ export default function OrgForm({ organisation, mode }: Props) {
           </form>
         </CardContent>
       </Card>
+
+      {!isNew && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Branches</CardTitle>
+            <CardDescription>
+              Branches under this organisation. Open a branch to manage its
+              modules.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {branches.length === 0 ? (
+              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                No branches under this organisation.
+              </div>
+            ) : (
+              branches.map((branch) => (
+                <Link
+                  key={branch.id}
+                  href={adminPath(`/clinics/${branch.id}`)}
+                  className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm hover:bg-muted/50"
+                >
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{branch.name}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {branch.enabledModuleIds.length} modules
+                  </span>
+                </Link>
+              ))
+            )}
+            <Button type="button" variant="outline" asChild>
+              <Link href={adminPath("/clinics/new")}>Add Branch</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {!isNew && (
         <Card className="border-destructive/40">

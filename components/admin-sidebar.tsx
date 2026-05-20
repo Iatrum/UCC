@@ -9,15 +9,11 @@ import { useMedplumAuth } from "@/lib/auth-medplum";
 import { useAdminPath } from "@/hooks/use-admin-path";
 import {
   Building2,
-  GitBranch,
-  LayoutDashboard,
   LogOut,
   Settings,
-  Users,
   Activity,
   ChevronLeft,
   ChevronRight,
-  Puzzle,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -29,11 +25,7 @@ export default function AdminSidebar() {
   const adminPath = useAdminPath();
 
   const navigation = [
-    { name: "Overview", href: adminPath("/"), icon: LayoutDashboard, exact: true },
     { name: "Organisations", href: adminPath("/organisation"), icon: Building2 },
-    { name: "Branches", href: adminPath("/clinics"), icon: GitBranch },
-    { name: "Users", href: adminPath("/users"), icon: Users },
-    { name: "Modules", href: adminPath("/modules"), icon: Puzzle },
     { name: "Settings", href: adminPath("/settings"), icon: Settings },
   ];
 
@@ -76,9 +68,7 @@ export default function AdminSidebar() {
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-1">
           {navigation.map((item) => {
-            const isActive = item.exact
-              ? pathname === item.href
-              : pathname?.startsWith(item.href);
+            const isActive = pathname?.startsWith(item.href);
             return (
               <Link
                 key={item.name}

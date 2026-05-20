@@ -25,7 +25,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 import { useMedplumAuth } from "@/lib/auth-medplum";
-import { getEnabledModules } from "@/lib/modules";
 
 type SidebarModule = {
   id: string;
@@ -66,41 +65,15 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
   const router = useRouter();
   const { profile, signOut } = useMedplumAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [enabledModules, setEnabledModules] = useState<Array<{ name: string; href: string; icon: LucideIcon }>>([]);
 
-  // Load enabled modules dynamically
   useEffect(() => {
     const media = window.matchMedia("(max-width: 768px)");
     const applyResponsiveCollapse = () => setIsCollapsed(media.matches);
     applyResponsiveCollapse();
     media.addEventListener("change", applyResponsiveCollapse);
 
-    const loadModules = () => {
-      const enabled = getEnabledModules();
-      const moduleNav = enabled
-        .filter((module) => module.route && !["triage", "poct", "pacs"].includes(module.id))
-        .map(module => ({
-          name: module.name,
-          href: module.route!,
-          icon: moduleIconMap[module.icon as keyof typeof moduleIconMap] ?? Puzzle,
-        }));
-      setEnabledModules(moduleNav);
-    };
-
-    loadModules();
-
-    // Listen for module toggle events
-    const handleModuleChange = () => {
-      loadModules();
-    };
-
-    window.addEventListener('moduleToggle', handleModuleChange);
-    window.addEventListener('modulesReset', handleModuleChange);
-
     return () => {
       media.removeEventListener("change", applyResponsiveCollapse);
-      window.removeEventListener('moduleToggle', handleModuleChange);
-      window.removeEventListener('modulesReset', handleModuleChange);
     };
   }, []);
 
@@ -110,13 +83,10 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
       href: module.routePath,
       icon: moduleIconMap[module.icon || ""] ?? Puzzle,
     }));
-    const dedupedLegacyItems = enabledModules.filter(
-      (item) => !moduleItems.some((moduleItem) => moduleItem.href === item.href)
-    );
-    const items = [...baseNavigation, ...moduleItems, ...dedupedLegacyItems];
+    const items = [...baseNavigation, ...moduleItems];
     items.push({ name: "Tasks", href: "/tasks", icon: ClipboardCheck });
     return items;
-  }, [enabledModules, modules]);
+  }, [modules]);
 
   // Hide sidebar entirely on public routes like login/logout
   if (
