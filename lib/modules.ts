@@ -1,9 +1,11 @@
+import { DEFAULT_BRANCH_ENABLED_MODULE_IDS } from "@/lib/module-settings";
+
 /**
  * Module Management System
  * Allows features like POCT, PACS, Triage to be enabled/disabled
  */
 
-export type ModuleId = 'triage' | 'poct' | 'pacs' | 'inventory' | 'appointments' | 'analytics';
+export type ModuleId = 'triage' | 'poct' | 'pacs' | 'inventory' | 'appointments' | 'analytics' | 'follow-up';
 
 export interface Module {
   id: ModuleId;
@@ -65,6 +67,14 @@ export const MODULES: Record<ModuleId, Omit<Module, 'enabled'>> = {
     route: '/analytics',
     category: 'administrative',
   },
+  'follow-up': {
+    id: 'follow-up',
+    name: 'Follow Up',
+    description: 'Patient review requests, appointment reminders, and WhatsApp follow-up work.',
+    icon: 'MessageCircle',
+    route: '/follow-up',
+    category: 'administrative',
+  },
 };
 
 // Get module configuration from environment or localStorage
@@ -76,7 +86,7 @@ export function getModuleConfig(): Record<ModuleId, Module> {
     const envValue = process.env[envKey];
     
     // Default enabled state
-    let enabled = true;
+    let enabled = DEFAULT_BRANCH_ENABLED_MODULE_IDS.includes(id as any);
     
     // Check environment variable
     if (envValue !== undefined) {
@@ -138,14 +148,16 @@ export function toggleModule(moduleId: ModuleId, enabled: boolean): void {
 export function getAllModuleStates(): Record<ModuleId, boolean> {
   if (typeof window === 'undefined') {
     return Object.keys(MODULES).reduce((acc, id) => {
-      acc[id as ModuleId] = true;
+      acc[id as ModuleId] = DEFAULT_BRANCH_ENABLED_MODULE_IDS.includes(id as any);
       return acc;
     }, {} as Record<ModuleId, boolean>);
   }
   
   return Object.keys(MODULES).reduce((acc, id) => {
     const stored = localStorage.getItem(`module_${id}`);
-    acc[id as ModuleId] = stored === null ? true : stored === 'true';
+    acc[id as ModuleId] = stored === null
+      ? DEFAULT_BRANCH_ENABLED_MODULE_IDS.includes(id as any)
+      : stored === 'true';
     return acc;
   }, {} as Record<ModuleId, boolean>);
 }
@@ -160,7 +172,6 @@ export function resetModulesToDefault(): void {
   
   window.dispatchEvent(new CustomEvent('modulesReset'));
 }
-
 
 
 

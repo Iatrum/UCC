@@ -28,9 +28,17 @@ export const TRANSCRIBE_ENABLED = parseBooleanFlag(
   false
 );
 
+// The v1 patient registration flow is now always available.
+export const MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED = true;
+
+// The billing exception tasks queue is now always available.
+export const MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED = true;
+
 export function getFeatureFlags() {
   return {
     soapRewrite: SOAP_REWRITE_ENABLED,
     transcribe: TRANSCRIBE_ENABLED,
+    medplumPatientRegistrationV1: MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED,
+    medplumBillingExceptionTasks: MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED,
   } as const;
 }

@@ -3,6 +3,11 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { ComponentType } from "react";
+import { notFound } from "next/navigation";
+import { MODULES } from "@/lib/modules";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
+import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
+import { getEnabledModuleIdsFromOrganization, DEFAULT_BRANCH_ENABLED_MODULE_IDS } from "@/lib/module-settings";
 
 export type ModulePageLoader = () => Promise<ModulePageModule>;
 
@@ -104,6 +109,130 @@ export async function listActiveModules(): Promise<ModuleDefinition[]> {
   const moduleIds = await getInstalledModuleIds();
   const definitions = await Promise.all(moduleIds.map((moduleId) => loadModuleDefinition(moduleId)));
   return definitions.filter((definition): definition is ModuleDefinition => Boolean(definition));
+}
+
+export async function getEnabledModuleIdsForClinic(clinicId?: string | null): Promise<string[]> {
+  if (!clinicId) {
+    return [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
+  }
+
+  try {
+    const medplum = await getAdminMedplum();
+    const orgs = await medplum.searchResources("Organization", {
+      identifier: `clinic|${clinicId}`,
+      _count: "1",
+    });
+    const org = orgs?.[0];
+    return org ? getEnabledModuleIdsFromOrganization(org) : [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
+  } catch {
+    return [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
+  }
+}
+
+export async function isModuleEnabledForClinic(
+  moduleId: string,
+  clinicId?: string | null
+): Promise<boolean> {
+  const enabledModuleIds = await getEnabledModuleIdsForClinic(clinicId);
+  return enabledModuleIds.includes(moduleId);
+}
+
+export async function listActiveModulesForClinic(
+  clinicId?: string | null
+): Promise<ModuleDefinition[]> {
+  const [modules, enabledModuleIds] = await Promise.all([
+    listActiveModules(),
+    getEnabledModuleIdsForClinic(clinicId),
+  ]);
+  return modules.filter((module) => enabledModuleIds.includes(module.id));
+}
+
+export async function listNavigationModulesForClinic(
+  clinicId?: string | null
+): Promise<ModuleDefinition[]> {
+  const [registeredModules, enabledModuleIds] = await Promise.all([
+    listActiveModules(),
+    getEnabledModuleIdsForClinic(clinicId),
+  ]);
+  const registeredById = new Map(registeredModules.map((module) => [module.id, module]));
+
+  return enabledModuleIds
+    .map((moduleId) => {
+      const registeredModule = registeredById.get(moduleId);
+      if (registeredModule) {
+        return registeredModule;
+      }
+
+      const legacyModule = MODULES[moduleId as keyof typeof MODULES];
+      if (!legacyModule?.route) {
+        return null;
+      }
+
+      return {
+        id: legacyModule.id,
+        label: legacyModule.name,
+        description: legacyModule.description,
+        routePath: legacyModule.route,
+        icon: legacyModule.icon,
+        pages: {},
+      } satisfies ModuleDefinition;
+    })
+    .filter((module): module is ModuleDefinition => Boolean(module));
+}
+
+export async function listAvailableBranchModules(): Promise<ModuleDefinition[]> {
+  const registeredModules = await listActiveModules();
+  const registeredById = new Map(registeredModules.map((module) => [module.id, module]));
+  const moduleIds = Array.from(
+    new Set([...Object.keys(MODULES), ...registeredModules.map((module) => module.id)])
+  );
+
+  return moduleIds
+    .map((moduleId) => {
+      const registeredModule = registeredById.get(moduleId);
+      if (registeredModule) {
+        return registeredModule;
+      }
+
+      const legacyModule = MODULES[moduleId as keyof typeof MODULES];
+      if (!legacyModule) {
+        return null;
+      }
+
+      return {
+        id: legacyModule.id,
+        label: legacyModule.name,
+        description: legacyModule.description,
+        routePath: legacyModule.route ?? "",
+        icon: legacyModule.icon,
+        pages: {},
+      } satisfies ModuleDefinition;
+    })
+    .filter((module): module is ModuleDefinition => Boolean(module));
+}
+
+export async function loadEnabledModulePage(
+  moduleId: string,
+  pageKey = "default",
+  clinicId?: string | null
+): Promise<ComponentType<any> | null> {
+  const targetClinicId = clinicId === undefined
+    ? await resolveClinicIdFromServerScope()
+    : clinicId;
+  const enabled = await isModuleEnabledForClinic(moduleId, targetClinicId);
+  if (!enabled) {
+    return null;
+  }
+
+  return loadModulePage(moduleId, pageKey);
+}
+
+export async function assertModuleEnabledForCurrentClinic(moduleId: string): Promise<void> {
+  const clinicId = await resolveClinicIdFromServerScope();
+  const enabled = await isModuleEnabledForClinic(moduleId, clinicId);
+  if (!enabled) {
+    notFound();
+  }
 }
 
 function isNotFoundError(error: unknown) {

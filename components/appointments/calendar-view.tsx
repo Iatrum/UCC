@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -139,8 +140,8 @@ interface Props {
 }
 
 export default function AppointmentsCalendarView({ appointments, viewMode, onViewModeChange }: Props) {
-  const today = useMemo(() => new Date(), []);
-  const todayKey = useMemo(() => toDateKey(today), [today]);
+  const today = new Date();
+  const todayKey = toDateKey(today);
 
   const [currentDate, setCurrentDate] = useState<Date>(
     () => new Date(today.getFullYear(), today.getMonth(), 1)
@@ -154,9 +155,9 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
     if (viewMode === "Month") {
       setCurrentDate((cd) => new Date(cd.getFullYear(), cd.getMonth(), 1));
     } else if (prev === "Month") {
-      setCurrentDate(new Date(today));
+      setCurrentDate(new Date());
     }
-  }, [viewMode, today]);
+  }, [viewMode]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -309,12 +310,12 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
         <div className="overflow-hidden rounded-lg border border-border">
           <div className="grid grid-cols-7 border-b border-border bg-muted/40">
             {WEEKDAYS_SHORT.map((day) => (
-              <div key={day} className="py-2 text-center text-xs font-medium text-muted-foreground">
+              <div key={day} className="py-1.5 text-center text-xs font-medium text-muted-foreground">
                 {day}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          <div className="grid grid-cols-7" style={{ gridAutoRows: "calc((100dvh - 320px) / 6)" }}>
             {monthGrid.map(({ date, isCurrentMonth }, idx) => {
               const key = toDateKey(date);
               const dayAppts = appointmentsByDate.get(key) ?? [];
@@ -327,7 +328,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                 <div
                   key={idx}
                   className={[
-                    "min-h-[96px] p-1.5",
+                    "min-h-[70px] overflow-hidden p-1",
                     !isLastCol && "border-r border-border",
                     !isLastRow && "border-b border-border",
                     isCurrentMonth ? "bg-background" : "bg-muted/20",
@@ -349,17 +350,18 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                   </div>
                   <div className="space-y-0.5">
                     {visible.map((appt) => (
-                      <div
+                      <Link
                         key={appt.id}
+                        href={`/appointments/${appt.id}`}
                         title={`${appt.patientName} · ${formatTime(appt.scheduledAt)}`}
                         className={[
-                          "flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
+                          "flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium leading-tight cursor-pointer hover:opacity-80",
                           PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
                         ].join(" ")}
                       >
                         <span className={["h-1.5 w-1.5 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
                         <span className="truncate">{formatTime(appt.scheduledAt)} {appt.patientName}</span>
-                      </div>
+                      </Link>
                     ))}
                     {overflow > 0 && (
                       <div className="px-1 text-[11px] text-muted-foreground">+{overflow} more</div>
@@ -412,19 +414,20 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                       </p>
                     </div>
                     {/* Appointment list */}
-                    <div className="flex flex-1 flex-col items-start gap-2 p-2 min-h-[600px]">
+                    <div className="flex flex-1 flex-col items-start gap-2 p-2" style={{ minHeight: "calc(100dvh - 370px)" }}>
                       {dayAppts.map((appt) => (
-                        <div
+                        <Link
                           key={appt.id}
+                          href={`/appointments/${appt.id}`}
                           title={`${appt.patientName} · ${formatTime(appt.scheduledAt)}`}
                           className={[
-                            "flex w-full max-w-full items-center gap-1 overflow-hidden rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
+                            "flex w-full max-w-full items-center gap-1 overflow-hidden rounded px-1 py-0.5 text-[11px] font-medium leading-tight cursor-pointer hover:opacity-80",
                             PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
                           ].join(" ")}
                         >
                           <span className={["h-1.5 w-1.5 shrink-0 rounded-full", DOT_CLASSES[appt.status] ?? "bg-muted-foreground"].join(" ")} />
                           <span className="truncate">{formatTime(appt.scheduledAt)} {appt.patientName}</span>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   </div>
@@ -466,21 +469,23 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
               <div
                 key={slot}
                 className={["flex", !isLastSlot && "border-b border-border"].filter(Boolean).join(" ")}
+                style={{ minHeight: "calc((100dvh - 460px) / 13)" }}
               >
                 <div className="flex w-14 shrink-0 items-start justify-end border-r border-border px-2 pt-2">
                   <span className="text-[11px] text-muted-foreground">{formatHour(slot)}</span>
                 </div>
                 <div
                   className={[
-                    "min-h-[56px] flex-1 space-y-1.5 px-3 py-1.5",
+                    "flex-1 space-y-1.5 px-3 py-1.5",
                     isCurrentDayToday && "bg-primary/5",
                   ].filter(Boolean).join(" ")}
                 >
                   {slotAppts.map((appt) => (
-                    <div
+                    <Link
                       key={appt.id}
+                      href={`/appointments/${appt.id}`}
                       className={[
-                        "rounded-md px-2.5 py-2",
+                        "block rounded-md px-2.5 py-2 cursor-pointer hover:opacity-80",
                         PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
                       ].join(" ")}
                     >
@@ -497,7 +502,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                         <p>{formatTime(appt.scheduledAt)}{appt.reason ? ` · ${appt.reason}` : ""}</p>
                         {appt.clinician && <p className="opacity-75">{appt.clinician}</p>}
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -512,10 +517,11 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
               </div>
               <div className="flex-1 space-y-1.5 px-3 py-1.5">
                 {currentDayOutsideAppts.map((appt) => (
-                  <div
+                  <Link
                     key={appt.id}
+                    href={`/appointments/${appt.id}`}
                     className={[
-                      "rounded-md px-2.5 py-2",
+                      "block rounded-md px-2.5 py-2 cursor-pointer hover:opacity-80",
                       PILL_CLASSES[appt.status] ?? "bg-muted text-muted-foreground",
                     ].join(" ")}
                   >
@@ -532,7 +538,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                       <p>{formatTime(appt.scheduledAt)}{appt.reason ? ` · ${appt.reason}` : ""}</p>
                       {appt.clinician && <p className="opacity-75">{appt.clinician}</p>}
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -551,7 +557,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
           ) : (
             <div className="divide-y divide-border">
               {panelAppointments.map((appt) => (
-                <div key={appt.id} className="flex items-center justify-between gap-4 py-2.5">
+                <Link key={appt.id} href={`/appointments/${appt.id}`} className="flex items-center justify-between gap-4 py-2.5 cursor-pointer hover:opacity-80">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="w-20 shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
                       {formatPanelTime(appt.scheduledAt, viewMode)}
@@ -566,7 +572,7 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
                   <Badge className={TODAY_BADGE_CLASSES[appt.status]}>
                     {STATUS_LABELS[appt.status] ?? appt.status}
                   </Badge>
-                </div>
+                </Link>
               ))}
             </div>
           )}

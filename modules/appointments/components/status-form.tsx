@@ -59,7 +59,7 @@ export default function AppointmentStatusForm({
         console.error("Failed to update appointment", error);
         toast({
           title: "Unable to update",
-          description: "Something went wrong while updating the appointment.",
+          description: error instanceof Error ? error.message : "Something went wrong while updating the appointment.",
           variant: "destructive",
         });
       }
@@ -80,7 +80,7 @@ export default function AppointmentStatusForm({
           ))}
         </SelectContent>
       </Select>
-      <Button type="button" onClick={handleSubmit} disabled={isPending}>
+      <Button type="button" onClick={handleSubmit} disabled={isPending || selectedStatus === currentStatus}>
         {isPending ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

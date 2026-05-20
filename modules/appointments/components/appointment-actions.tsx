@@ -40,11 +40,17 @@ export default function AppointmentActions({ appointmentId, patientName, schedul
   const [isPending, startTransition] = useTransition();
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleValue, setRescheduleValue] = useState(() => toDateTimeLocalValue(scheduledAt));
+  const [dateError, setDateError] = useState<string | null>(null);
 
   const handleReschedule = () => {
+    const nextSlot = new Date(rescheduleValue);
+    if (nextSlot.getTime() <= Date.now()) {
+      setDateError("Reschedule date must be in the future.");
+      return;
+    }
+    setDateError(null);
     startTransition(async () => {
       try {
-        const nextSlot = new Date(rescheduleValue);
         await rescheduleAppointment(appointmentId, nextSlot);
         toast({
           title: "Appointment rescheduled",
@@ -82,8 +88,15 @@ export default function AppointmentActions({ appointmentId, patientName, schedul
               id="appointment-time"
               type="datetime-local"
               value={rescheduleValue}
-              onChange={(event) => setRescheduleValue(event.target.value)}
+              min={toDateTimeLocalValue(new Date())}
+              onChange={(event) => {
+                setRescheduleValue(event.target.value);
+                setDateError(null);
+              }}
             />
+            {dateError ? (
+              <p className="text-sm text-destructive">{dateError}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setRescheduleOpen(false)}>

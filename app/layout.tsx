@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import Toaster from "@/components/ui/toaster";
 import Sidebar from "@/components/sidebar";
 import { MedplumAuthProvider } from "@/lib/auth-medplum";
-import { listActiveModules } from "@/lib/module-registry";
+import { listNavigationModulesForClinic } from "@/lib/module-registry";
 import { cookies, headers } from "next/headers";
 import { CLINIC_COOKIE, SESSION_COOKIE } from "@/lib/server/cookie-constants";
 import {
@@ -24,8 +24,6 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const modules = await listActiveModules();
-
   const cookieStore = await cookies();
   const headerStore = await headers();
   const host = getHostFromHeaders(headerStore);
@@ -85,6 +83,10 @@ export default async function RootLayout({
   if (!sessionToken && !isPublicPath) {
     redirect("/login");
   }
+
+  const modules = !isAdminContext && !isMarketingPage
+    ? await listNavigationModulesForClinic(clinicId).catch(() => [])
+    : [];
 
   return (
     <html lang="en" suppressHydrationWarning>

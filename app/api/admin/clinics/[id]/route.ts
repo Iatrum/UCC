@@ -6,6 +6,7 @@ import {
   getOrganizationFromMedplum,
   updateOrganizationDetailsInMedplum,
 } from "@/lib/fhir/admin-service";
+import { normalizeEnabledModuleIds } from "@/lib/module-settings";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,6 +43,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       address: body.address ? String(body.address).trim() : undefined,
       logoUrl: body.logoUrl ? String(body.logoUrl).trim() : undefined,
       parentId: body.parentId ? String(body.parentId).trim() : undefined,
+      enabledModuleIds: Array.isArray(body.enabledModuleIds)
+        ? normalizeEnabledModuleIds(body.enabledModuleIds)
+        : undefined,
     });
 
     return NextResponse.json({ success: true, clinic: updated });

@@ -2,7 +2,7 @@
  * Appointment Service - Medplum FHIR as Source of Truth
  */
 
-import { MedplumClient } from '@medplum/core';
+import { MedplumClient, OperationOutcomeError, getStatus } from '@medplum/core';
 import type { Appointment as FHIRAppointment } from '@medplum/fhirtypes';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
@@ -117,8 +117,10 @@ export async function getAppointmentFromMedplum(medplum: MedplumClient, appointm
       cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
     };
   } catch (error) {
-    console.error('Failed to get appointment from Medplum:', error);
-    return null;
+    if (error instanceof OperationOutcomeError && getStatus(error.outcome) === 404) {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -132,14 +134,27 @@ export async function getPatientAppointmentsFromMedplum(medplum: MedplumClient, 
       _sort: '-date',
     });
 
-    const mapped = await Promise.all(
-      appointments.map(async (appt) => {
-        const saved = await getAppointmentFromMedplum(medplum, appt.id!);
-        return saved;
-      })
-    );
-
-    return mapped.filter((a): a is SavedAppointment => a !== null);
+    return appointments.map((fhirAppt) => {
+      const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
+      const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
+      const ext = fhirAppt.extension ?? [];
+      return {
+        id: fhirAppt.id!,
+        patientId: patientIdFromActorReference(patientParticipant?.actor?.reference) || '',
+        patientName: patientParticipant?.actor?.display || '',
+        clinician: clinicianParticipant?.actor?.display || '',
+        reason: fhirAppt.reasonCode?.[0]?.text || '',
+        type: fhirAppt.appointmentType?.text,
+        notes: fhirAppt.comment,
+        status: fhirAppt.status as any,
+        scheduledAt: fhirAppt.start ? new Date(fhirAppt.start) : new Date(),
+        durationMinutes: fhirAppt.minutesDuration,
+        createdAt: fhirAppt.meta?.lastUpdated ? new Date(fhirAppt.meta.lastUpdated) : new Date(),
+        checkinAt:   ext.find(e => e.url === EXT_CHECKIN)?.valueDateTime,
+        completedAt: ext.find(e => e.url === EXT_COMPLETED)?.valueDateTime,
+        cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
+      } as SavedAppointment;
+    });
   } catch (error) {
     console.error('Failed to get patient appointments from Medplum:', error);
     return [];
@@ -151,22 +166,78 @@ export async function getPatientAppointmentsFromMedplum(medplum: MedplumClient, 
  */
 export async function getUpcomingAppointments(medplum: MedplumClient, limit = 50): Promise<SavedAppointment[]> {
   try {
-    const now = new Date().toISOString();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
     const appointments = await medplum.searchResources('Appointment', {
-      date: `ge${now}`,
+      date: `ge${startOfToday.toISOString()}`,
       _sort: 'date',
       _count: String(limit),
     });
 
-    const mapped = await Promise.all(
-      appointments.map(appt => getAppointmentFromMedplum(medplum, appt.id!))
-    );
-
-    return mapped.filter((a): a is SavedAppointment => a !== null);
+    return appointments.map((fhirAppt) => {
+      const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
+      const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
+      const ext = fhirAppt.extension ?? [];
+      return {
+        id: fhirAppt.id!,
+        patientId: patientIdFromActorReference(patientParticipant?.actor?.reference) || '',
+        patientName: patientParticipant?.actor?.display || '',
+        clinician: clinicianParticipant?.actor?.display || '',
+        reason: fhirAppt.reasonCode?.[0]?.text || '',
+        type: fhirAppt.appointmentType?.text,
+        notes: fhirAppt.comment,
+        status: fhirAppt.status as any,
+        scheduledAt: fhirAppt.start ? new Date(fhirAppt.start) : new Date(),
+        durationMinutes: fhirAppt.minutesDuration,
+        createdAt: fhirAppt.meta?.lastUpdated ? new Date(fhirAppt.meta.lastUpdated) : new Date(),
+        checkinAt:   ext.find(e => e.url === EXT_CHECKIN)?.valueDateTime,
+        completedAt: ext.find(e => e.url === EXT_COMPLETED)?.valueDateTime,
+        cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
+      } as SavedAppointment;
+    });
   } catch (error) {
     console.error('Failed to list upcoming appointments:', error);
     return [];
   }
+}
+
+/**
+ * List upcoming appointments scoped to a single clinic.
+ *
+ * Before: 1 call to fetch appointments + 1 call per appointment to verify patient ownership (N+1).
+ * After:  1 call to fetch appointments + 1 batch Patient search to verify ownership = 2 calls total.
+ */
+export async function getUpcomingAppointmentsForClinic(
+  medplum: MedplumClient,
+  clinicId: string,
+  limit = 50
+): Promise<SavedAppointment[]> {
+  const all = await getUpcomingAppointments(medplum, limit);
+  if (all.length === 0) return [];
+
+  const uniquePatientIds = [...new Set(all.map((a) => a.patientId).filter(Boolean))];
+  if (uniquePatientIds.length === 0) return [];
+
+  // Single batch Patient search — no per-row lookup.
+  const patients = await medplum.searchResources('Patient', {
+    _id: uniquePatientIds.join(','),
+    _count: String(uniquePatientIds.length),
+  });
+
+  // Replicate the same two-path ownership check used by patient-service.ts matchesClinic().
+  const validIds = new Set(
+    patients
+      .filter((p) => {
+        const byIdentifier = p.identifier?.some(
+          (id) => id.system === 'clinic' && id.value === clinicId
+        );
+        const byOrg = p.managingOrganization?.reference === `Organization/${clinicId}`;
+        return byIdentifier || byOrg;
+      })
+      .map((p) => p.id!)
+  );
+
+  return all.filter((a) => validIds.has(a.patientId));
 }
 
 /**

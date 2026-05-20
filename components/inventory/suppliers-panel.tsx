@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -67,8 +68,8 @@ export function SuppliersPanel({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="overflow-hidden rounded-xl border border-slate-200/80">
-          <Table>
+        <div className="overflow-x-auto rounded-xl border border-slate-200/80">
+          <Table className="min-w-[820px]">
             <TableHeader>
               <TableRow className="bg-slate-50/80">
                 <TableHead>Supplier</TableHead>
@@ -126,6 +127,9 @@ export function SuppliersPanel({
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add supplier</DialogTitle>
+            <DialogDescription>
+              Save supplier details to reuse in purchase orders and invoices.
+            </DialogDescription>
           </DialogHeader>
           <SupplierForm
             onCancel={() => setCreating(false)}
@@ -141,6 +145,9 @@ export function SuppliersPanel({
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit supplier</DialogTitle>
+            <DialogDescription>
+              Update supplier details used across inventory purchase documents.
+            </DialogDescription>
           </DialogHeader>
           {editing ? (
             <SupplierForm

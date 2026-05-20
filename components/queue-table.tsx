@@ -1,6 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { Patient } from "@/lib/models";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -11,7 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, MoreHorizontal, UserPlus, X, Receipt } from "lucide-react";
+import { Clock, Loader2, MoreHorizontal, UserPlus, X, Receipt } from "lucide-react";
 import Link from "next/link";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/use-toast";
@@ -27,8 +38,24 @@ function formatAddedAt(value?: string | Date | null) {
   if (!value) return 'N/A';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'N/A';
-  const iso = date.toISOString();
-  return iso.slice(11, 19); // HH:MM:SS (UTC) to avoid hydration mismatch
+
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const time = date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  if (isToday) return time;
+
+  return `${date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  })}, ${time}`;
 }
 
 function formatLabel(value: string) {
@@ -40,8 +67,11 @@ function formatLabel(value: string) {
 
 export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps) {
   const router = useRouter();
+  const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
+  const [pendingRemovePatient, setPendingRemovePatient] = useState<Patient | null>(null);
 
   const handleAddToQueue = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'POST',
@@ -66,10 +96,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to add to queue. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
   const handleStartConsultation = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'PATCH',
@@ -97,10 +130,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to start consultation. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
   const handleCompleteConsultation = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'PATCH',
@@ -125,10 +161,13 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to complete consultation. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
   const handleRemoveFromQueue = async (patient: Patient) => {
+    setLoadingItemId(patient.id);
     try {
       const res = await fetch('/api/queue', {
         method: 'DELETE',
@@ -153,6 +192,8 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         description: error instanceof Error ? error.message : "Failed to remove from queue. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setLoadingItemId(null);
     }
   };
 
@@ -199,6 +240,34 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
   };
 
   return (
+    <>
+    <AlertDialog
+      open={pendingRemovePatient !== null}
+      onOpenChange={(open) => { if (!open) setPendingRemovePatient(null); }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove from Queue</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to remove {pendingRemovePatient?.fullName} from the queue? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => {
+              if (pendingRemovePatient) {
+                void handleRemoveFromQueue(pendingRemovePatient);
+              }
+              setPendingRemovePatient(null);
+            }}
+          >
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <div className="rounded-md border">
       <Table>
         <TableHeader>
@@ -256,8 +325,10 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
-                      <MoreHorizontal className="h-4 w-4" />
+                    <Button variant="ghost" className="h-8 w-8 p-0" disabled={loadingItemId === patient.id}>
+                      {loadingItemId === patient.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <MoreHorizontal className="h-4 w-4" />}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -274,15 +345,28 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
                       </DropdownMenuItem>
                     )}
                     {patient.queueStatus === 'waiting' && (
-                      <DropdownMenuItem onClick={() => handleStartConsultation(patient)}>
+                      <DropdownMenuItem
+                        disabled={loadingItemId === patient.id}
+                        onClick={() => handleStartConsultation(patient)}
+                      >
                         Start Consultation
                       </DropdownMenuItem>
                     )}
                     {(patient.queueStatus === 'waiting' || patient.queueStatus === 'in_consultation' || patient.queueStatus === 'meds_and_bills') && (
-                      <DropdownMenuItem onClick={() => handleCompleteConsultation(patient)}>
+                      <DropdownMenuItem
+                        disabled={loadingItemId === patient.id}
+                        onClick={() => handleCompleteConsultation(patient)}
+                      >
                         Mark as Complete
                       </DropdownMenuItem>
                     )}
+                    <DropdownMenuItem
+                      disabled={loadingItemId === patient.id}
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setPendingRemovePatient(patient)}
+                    >
+                      Remove from Queue
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -298,5 +382,6 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         </TableBody>
       </Table>
     </div>
+    </>
   );
-} 
+}

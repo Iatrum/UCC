@@ -31,6 +31,35 @@ export interface Patient extends PatientInput {
   updatedAt: Date;
 }
 
+export interface RegistrationPilotResult {
+  patientId: string;
+  questionnaireResponseId?: string;
+  questionnaireVersion?: string;
+  mismatchCount?: number;
+  mismatchFields?: string[];
+}
+
+export class PatientApiError extends Error {
+  code?: string;
+  existingPatientId?: string;
+  existingPatientName?: string;
+  existingPatientNric?: string;
+
+  constructor(message: string, options?: {
+    code?: string;
+    existingPatientId?: string;
+    existingPatientName?: string;
+    existingPatientNric?: string;
+  }) {
+    super(message);
+    this.name = "PatientApiError";
+    this.code = options?.code;
+    this.existingPatientId = options?.existingPatientId;
+    this.existingPatientName = options?.existingPatientName;
+    this.existingPatientNric = options?.existingPatientNric;
+  }
+}
+
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   try {
     return (await response.json()) as Record<string, unknown>;
@@ -46,6 +75,18 @@ function mapPatientRows(patients: unknown[]): Patient[] {
     createdAt: new Date(p.createdAt),
     updatedAt: new Date(p.updatedAt),
   }));
+}
+
+function toPatientApiError(data: Record<string, unknown>, fallback: string): PatientApiError {
+  return new PatientApiError(typeof data.error === "string" ? data.error : fallback, {
+    code: typeof data.code === "string" ? data.code : undefined,
+    existingPatientId:
+      typeof data.existingPatientId === "string" ? data.existingPatientId : undefined,
+    existingPatientName:
+      typeof data.existingPatientName === "string" ? data.existingPatientName : undefined,
+    existingPatientNric:
+      typeof data.existingPatientNric === "string" ? data.existingPatientNric : undefined,
+  });
 }
 
 /**
@@ -65,10 +106,46 @@ export async function savePatient(patient: PatientInput, clinicId?: string): Pro
   const data = await readJson(response);
 
   if (!response.ok || !data.success) {
-    throw new Error(typeof data.error === 'string' ? data.error : 'Failed to save patient');
+    throw toPatientApiError(data, 'Failed to save patient');
   }
 
   return data.patientId as string;
+}
+
+/**
+ * Save patient through the Questionnaire/QuestionnaireResponse pilot path.
+ * This still creates the patient using the current patient creation service.
+ */
+export async function savePatientThroughIntakePilot(
+  patient: PatientInput,
+  clinicId?: string
+): Promise<RegistrationPilotResult> {
+  const response = await fetch("/api/patients/intake-pilot", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(clinicId ? { "X-Clinic-Id": clinicId } : {}),
+    },
+    body: JSON.stringify(patient),
+  });
+
+  const data = await readJson(response);
+
+  if (!response.ok || !data.success) {
+    throw toPatientApiError(data, "Failed to save patient through intake pilot");
+  }
+
+  return {
+    patientId: String(data.patientId),
+    questionnaireResponseId:
+      typeof data.questionnaireResponseId === "string" ? data.questionnaireResponseId : undefined,
+    questionnaireVersion: typeof data.questionnaireVersion === "string" ? data.questionnaireVersion : undefined,
+    mismatchCount: typeof data.mismatchCount === "number" ? data.mismatchCount : undefined,
+    mismatchFields: Array.isArray(data.mismatchFields)
+      ? data.mismatchFields.filter((field): field is string => typeof field === "string")
+      : undefined,
+  };
 }
 
 /**
@@ -160,6 +237,6 @@ export async function updatePatient(
   const data = await readJson(response);
 
   if (!response.ok || !data.success) {
-    throw new Error(typeof data.error === 'string' ? data.error : 'Failed to update patient');
+    throw toPatientApiError(data, 'Failed to update patient');
   }
 }

@@ -12,7 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -208,8 +208,8 @@ export function PurchaseOrdersPanel({
               </Button>
             </div>
           </div>
-          <div className="overflow-hidden rounded-xl border border-slate-200/80">
-            <Table>
+          <div className="overflow-x-auto rounded-xl border border-slate-200/80">
+            <Table className="min-w-[920px]">
               <TableHeader>
                 <TableRow className="bg-slate-50/80">
                   <TableHead>Document</TableHead>
@@ -345,6 +345,9 @@ export function PurchaseOrdersPanel({
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Create new document</DialogTitle>
+            <DialogDescription>
+              Choose the purchase document type to start the workflow.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             {(Object.keys(typeLabels) as PurchaseDocumentType[]).map((documentType) => (
@@ -379,6 +382,9 @@ export function PurchaseOrdersPanel({
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Create {typeLabels[selectedDocumentType]}</DialogTitle>
+            <DialogDescription>
+              Fill in supplier and line items to create this purchase document.
+            </DialogDescription>
           </DialogHeader>
           <PurchaseOrderForm
             documentType={selectedDocumentType}
@@ -457,6 +463,11 @@ function PurchaseOrderForm({
   ]);
 
   const supplier = suppliers.find((entry) => entry.id === supplierId);
+  const hasValidLineItem = items.some((item) => item.medicationId && Number(item.requestedQuantity) > 0);
+  const canSubmit = Boolean(supplier && hasValidLineItem);
+  const validationHints: string[] = [];
+  if (!supplier) validationHints.push("select a supplier");
+  if (!hasValidLineItem) validationHints.push("add at least one line item with quantity above 0");
   const subtotal = items.reduce(
     (sum, item) => sum + (Number(item.requestedQuantity) || 0) * (Number(item.unitCost) || 0),
     0
@@ -688,12 +699,17 @@ function PurchaseOrderForm({
             Subtotal RM {subtotal.toFixed(2)} · Total RM {total.toFixed(2)}
           </p>
           <p className="text-2xl font-semibold tracking-tight text-slate-950">Amount due RM {amountDue.toFixed(2)}</p>
+          {!canSubmit ? (
+            <p className="mt-2 text-sm text-amber-700" role="status" aria-live="polite">
+              To continue, {validationHints.join(" and ")}.
+            </p>
+          ) : null}
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!supplier || items.every((item) => !item.medicationId)}>
+          <Button type="submit" disabled={!canSubmit}>
             Save document
           </Button>
         </div>

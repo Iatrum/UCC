@@ -14,6 +14,7 @@ export interface AppointmentInput {
   status: 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow';
   scheduledAt: Date | string;
   durationMinutes?: number;
+  reminderDaysBefore?: number;
 }
 
 export type FhirAppointmentStatus = 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow';
@@ -107,6 +108,11 @@ export async function rescheduleAppointment(
   appointmentId: string,
   scheduledAt: Date | string
 ): Promise<void> {
+  const scheduledDate = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  if (scheduledDate.getTime() <= Date.now()) {
+    throw new Error('Reschedule date must be in the future.');
+  }
+
   const response = await fetch('/api/appointments', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -121,9 +127,6 @@ export async function rescheduleAppointment(
     throw new Error(data.error || 'Failed to reschedule appointment');
   }
 }
-
-
-
 
 
 

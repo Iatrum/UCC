@@ -3,11 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, ExternalLink, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  ExternalLink,
+  Puzzle,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -43,9 +50,11 @@ import { useAdminPath } from "@/hooks/use-admin-path";
 export default function ClinicEditForm({
   clinic,
   organisations,
+  modules,
 }: {
   clinic: ClinicSummary;
   organisations: ParentOrganizationSummary[];
+  modules: { id: string; label: string; description?: string }[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -58,6 +67,7 @@ export default function ClinicEditForm({
     phone: clinic.phone ?? "",
     address: clinic.address ?? "",
     logoUrl: clinic.logoUrl ?? "",
+    enabledModuleIds: clinic.enabledModuleIds,
   });
 
   const handleChange =
@@ -65,8 +75,7 @@ export default function ClinicEditForm({
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
     };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveClinic = async () => {
     if (!form.name.trim() || !form.parentId) {
       toast({ title: "Clinic name and organisation are required", variant: "destructive" });
       return;
@@ -98,6 +107,11 @@ export default function ClinicEditForm({
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveClinic();
+  };
+
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -112,7 +126,7 @@ export default function ClinicEditForm({
         title: "Clinic deleted",
         description: `${clinic.name} has been removed.`,
       });
-      router.replace(adminPath("/clinics"));
+      router.replace(adminPath("/organisation"));
     } catch (err: any) {
       toast({
         title: "Cannot delete",
@@ -127,12 +141,24 @@ export default function ClinicEditForm({
   const baseDomain =
     process.env.NEXT_PUBLIC_BASE_DOMAIN || "yourdomain.com";
   const clinicUrl = `https://${clinic.subdomain}.${baseDomain}`;
+  const enabledModuleSet = new Set(form.enabledModuleIds);
 
+  const toggleModule = (moduleId: string, enabled: boolean) => {
+    setForm((prev) => {
+      const next = new Set(prev.enabledModuleIds);
+      if (enabled) {
+        next.add(moduleId);
+      } else {
+        next.delete(moduleId);
+      }
+      return { ...prev, enabledModuleIds: Array.from(next) };
+    });
+  };
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
-          <Link href={adminPath("/clinics")}>
+          <Link href={adminPath("/organisation")}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -229,10 +255,69 @@ export default function ClinicEditForm({
                 {saving ? "Saving..." : "Save Changes"}
               </Button>
               <Button type="button" variant="outline" asChild>
-                <Link href={adminPath("/clinics")}>Cancel</Link>
+                <Link href={adminPath("/organisation")}>Cancel</Link>
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Branch Modules</CardTitle>
+          <CardDescription>
+            Choose which modules are available for this branch. Disabled
+            modules are hidden from the branch sidebar and blocked on direct
+            access.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {modules.length === 0 ? (
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              No active modules are installed for this deployment.
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {modules.map((module) => {
+                const enabled = enabledModuleSet.has(module.id);
+                return (
+                <div
+                  key={module.id}
+                  className="flex items-start gap-3 rounded-md border bg-background p-3"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                    <Puzzle className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{module.label}</p>
+                      <Badge variant="outline" className="text-xs">
+                        {enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </div>
+                    {module.description && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {module.description}
+                      </p>
+                    )}
+                  </div>
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={(value) => toggleModule(module.id, value)}
+                    aria-label={`Toggle ${module.label}`}
+                  />
+                </div>
+                );
+              })}
+            </div>
+          )}
+          {modules.length > 0 && (
+            <div className="mt-4 flex justify-end">
+              <Button type="button" onClick={saveClinic} disabled={saving || organisations.length === 0}>
+                {saving ? "Saving..." : "Save Module Settings"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

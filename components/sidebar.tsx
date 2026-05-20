@@ -11,10 +11,12 @@ import {
   AlertTriangle,
   BarChart,
   Calendar,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   Image,
   LogOut,
+  MessageCircle,
   Package,
   Puzzle,
   Settings,
@@ -23,7 +25,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 import { useMedplumAuth } from "@/lib/auth-medplum";
-import { getEnabledModules } from "@/lib/modules";
 
 type SidebarModule = {
   id: string;
@@ -49,6 +50,14 @@ const moduleIconMap: Record<string, LucideIcon> = {
   Package,
   Calendar,
   BarChart,
+  MessageCircle,
+  "alert-triangle": AlertTriangle,
+  "test-tube": TestTube,
+  image: Image,
+  package: Package,
+  calendar: Calendar,
+  "bar-chart": BarChart,
+  "message-circle": MessageCircle,
 };
 
 export default function Sidebar({ modules = [] }: SidebarProps) {
@@ -56,42 +65,28 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
   const router = useRouter();
   const { profile, signOut } = useMedplumAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [enabledModules, setEnabledModules] = useState<Array<{ name: string; href: string; icon: LucideIcon }>>([]);
 
-  // Load enabled modules dynamically
   useEffect(() => {
-    const loadModules = () => {
-      const enabled = getEnabledModules();
-      const moduleNav = enabled
-        .filter((module) => module.route && !["triage", "poct", "pacs"].includes(module.id))
-        .map(module => ({
-          name: module.name,
-          href: module.route!,
-          icon: moduleIconMap[module.icon as keyof typeof moduleIconMap] ?? Puzzle,
-        }));
-      setEnabledModules(moduleNav);
-    };
-
-    loadModules();
-
-    // Listen for module toggle events
-    const handleModuleChange = () => {
-      loadModules();
-    };
-
-    window.addEventListener('moduleToggle', handleModuleChange);
-    window.addEventListener('modulesReset', handleModuleChange);
+    const media = window.matchMedia("(max-width: 768px)");
+    const applyResponsiveCollapse = () => setIsCollapsed(media.matches);
+    applyResponsiveCollapse();
+    media.addEventListener("change", applyResponsiveCollapse);
 
     return () => {
-      window.removeEventListener('moduleToggle', handleModuleChange);
-      window.removeEventListener('modulesReset', handleModuleChange);
+      media.removeEventListener("change", applyResponsiveCollapse);
     };
   }, []);
 
   const navigation = useMemo(() => {
-    // Combine base navigation with enabled modules
-    return [...baseNavigation, ...enabledModules];
-  }, [enabledModules]);
+    const moduleItems = modules.map((module) => ({
+      name: module.label,
+      href: module.routePath,
+      icon: moduleIconMap[module.icon || ""] ?? Puzzle,
+    }));
+    const items = [...baseNavigation, ...moduleItems];
+    items.push({ name: "Tasks", href: "/tasks", icon: ClipboardCheck });
+    return items;
+  }, [modules]);
 
   // Hide sidebar entirely on public routes like login/logout
   if (
@@ -119,7 +114,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
           <Button 
             variant="ghost" 
             size="sm" 
-            className="absolute -right-4 top-16 h-8 w-8 rounded-full border bg-background z-50"
+            className="absolute right-2 top-16 z-50 h-11 w-11 rounded-full border bg-background md:-right-4 md:h-8 md:w-8"
             onClick={() => setIsCollapsed(!isCollapsed)}
           >
             {isCollapsed ? (
@@ -140,7 +135,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                   className={cn(
                     "flex items-center rounded-lg text-sm font-medium hover:bg-accent hover:text-accent-foreground",
                     isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                    isCollapsed ? "justify-center w-8 h-8 p-2 mx-auto" : "px-3 py-2"
+                    isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "px-3 py-2"
                   )}
                   title={isCollapsed ? item.name : undefined}
                 >
@@ -169,7 +164,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                 href={item.href}
                 className={cn(
                   "flex items-center rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                  isCollapsed ? "justify-center w-8 h-8 p-2 mx-auto" : "px-3 py-2"
+                  isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "px-3 py-2"
                 )}
                 title={isCollapsed ? item.name : undefined}
               >
@@ -182,7 +177,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                 variant="ghost"
                 className={cn(
                   "w-full text-muted-foreground hover:text-accent-foreground",
-                  isCollapsed ? "justify-center w-8 h-8 p-2 mx-auto" : "justify-start px-3 py-2"
+                  isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "justify-start px-3 py-2"
                 )}
                 onClick={async () => {
                   await signOut();
@@ -198,7 +193,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                 variant="ghost"
                 className={cn(
                   "w-full text-muted-foreground hover:text-accent-foreground",
-                  isCollapsed ? "justify-center w-8 h-8 p-2 mx-auto" : "justify-start px-3 py-2"
+                  isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "justify-start px-3 py-2"
                 )}
                 asChild
               >

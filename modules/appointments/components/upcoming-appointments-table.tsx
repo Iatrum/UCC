@@ -82,7 +82,7 @@ const statusVariants: Record<AppointmentStatus, "default" | "secondary" | "destr
   no_show: "destructive",
 };
 
-const noCheckInStatuses: AppointmentStatus[] = ["completed", "cancelled", "no_show"];
+const noCheckInStatuses: AppointmentStatus[] = ["completed", "cancelled", "no_show", "checked_in"];
 
 interface Props {
   appointments: UpcomingAppointment[];
@@ -181,14 +181,16 @@ export default function UpcomingAppointmentsTable({ appointments, loading, onRef
                 </TableCell>
                 <TableCell className="w-px whitespace-nowrap">
                   <div className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canCheckIn || checkingIn === appointment.id}
-                      onClick={() => handleCheckIn(appointment)}
-                    >
-                      {checkingIn === appointment.id ? "Checking in…" : "Check-in"}
-                    </Button>
+                    {canCheckIn && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={checkingIn === appointment.id}
+                        onClick={() => handleCheckIn(appointment)}
+                      >
+                        {checkingIn === appointment.id ? "Checking in…" : "Check-in"}
+                      </Button>
+                    )}
                     <Button size="sm" variant="secondary" asChild>
                       <Link href={`/appointments/${appointment.id}`}>View</Link>
                     </Button>

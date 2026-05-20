@@ -555,6 +555,66 @@ export async function getConsultationFromMedplum(
   }
 }
 
+function groupByEncounter<T extends { encounter?: { reference?: string } }>(items: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const encId = item.encounter?.reference?.split('/')[1];
+    if (encId) {
+      if (!map.has(encId)) map.set(encId, []);
+      map.get(encId)!.push(item);
+    }
+  }
+  return map;
+}
+
+function buildSavedConsultation(
+  encounter: Encounter,
+  conditions: Condition[],
+  observations: Observation[],
+  procedures: Procedure[],
+  medications: MedicationRequest[],
+): SavedConsultation {
+  const firebasePatientId = encounter.identifier?.find(
+    (id) => id.system === 'firebase-patient'
+  )?.value || '';
+
+  const chiefComplaint = observations.find((obs) => (obs as any).code?.text === 'Chief Complaint');
+  const clinicalNotes = observations.find((obs) => (obs as any).code?.text === 'Clinical Notes');
+  const progressNote = observations.find((obs) => (obs as any).code?.text === 'Progress Note');
+
+  return {
+    id: encounter.id!,
+    patientId: firebasePatientId,
+    patientName: encounter.subject?.display,
+    chiefComplaint: (chiefComplaint as any)?.valueString || '',
+    diagnosis: conditions[0] ? ((conditions[0] as any).code?.text || '') : '',
+    notes: (clinicalNotes as any)?.valueString,
+    progressNote: (progressNote as any)?.valueString,
+    procedures: procedures.map((proc: Procedure) => ({
+      name: (proc as any).code?.text || 'Procedure',
+      notes: proc.note?.[0]?.text,
+      quantity: decimalExtensionValue(proc, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
+      orderIndex: integerExtensionValue(proc, ORDER_INDEX_EXTENSION_URL),
+      category: orderCategoryExtensionValue(proc),
+      price: decimalExtensionValue(proc, ORDER_PRICE_EXTENSION_URL) ?? 0,
+    })),
+    prescriptions: medications.map((med: MedicationRequest) => ({
+      medication: {
+        id: med.id || '',
+        name: (med as any).medicationCodeableConcept?.text || 'Medication',
+      },
+      frequency: (med as any).dosageInstruction?.[0]?.text || '',
+      duration: '',
+      quantity: decimalExtensionValue(med, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
+      orderIndex: integerExtensionValue(med, ORDER_INDEX_EXTENSION_URL),
+      category: orderCategoryExtensionValue(med),
+      price: decimalExtensionValue(med, ORDER_PRICE_EXTENSION_URL) ?? 0,
+    })),
+    date: encounter.period?.start ? new Date(encounter.period.start) : new Date(),
+    createdAt: encounter.meta?.lastUpdated ? new Date(encounter.meta.lastUpdated) : new Date(),
+  };
+}
+
 /**
  * Get all consultations for a patient (by Firebase patient ID)
  */
@@ -580,18 +640,38 @@ export async function getPatientConsultationsFromMedplum(
 
     const encounters = await client.searchResources('Encounter', searchParams);
 
-    // Convert each encounter to SavedConsultation
-    const consultations = await Promise.all(
-      encounters
-        .filter(
-          (enc: Encounter) =>
-            matchesClinic(enc as any, clinicId) &&
-            (enc as any).identifier?.some((id: any) => id.system === 'firebase-patient' && id.value === firebasePatientId)
-        )
-        .map((encounter: Encounter) => getConsultationFromMedplum(encounter.id!, clinicId, client))
+    const filtered = encounters.filter(
+      (enc) =>
+        matchesClinic(enc as any, clinicId) &&
+        (enc as any).identifier?.some((id: any) => id.system === 'firebase-patient' && id.value === firebasePatientId)
     );
 
-    return consultations.filter((c): c is SavedConsultation => c !== null);
+    if (filtered.length === 0) return [];
+
+    const encounterRefs = filtered.map((e) => `Encounter/${e.id}`).join(',');
+
+    const [conditions, observations, procedures, medications] = await Promise.all([
+      client.searchResources('Condition', { encounter: encounterRefs }),
+      client.searchResources('Observation', { encounter: encounterRefs }),
+      client.searchResources('Procedure', { encounter: encounterRefs }),
+      client.searchResources('MedicationRequest', { encounter: encounterRefs }),
+    ]);
+
+    const conditionsByEncounter = groupByEncounter(conditions);
+    const observationsByEncounter = groupByEncounter(observations);
+    const proceduresByEncounter = groupByEncounter(procedures);
+    const medicationsByEncounter = groupByEncounter(medications);
+
+    return filtered.map((encounter) => {
+      const encId = encounter.id!;
+      return buildSavedConsultation(
+        encounter,
+        conditionsByEncounter.get(encId) ?? [],
+        observationsByEncounter.get(encId) ?? [],
+        proceduresByEncounter.get(encId) ?? [],
+        medicationsByEncounter.get(encId) ?? [],
+      );
+    });
   } catch (error) {
     console.error('Failed to get patient consultations from Medplum:', error);
     return [];
@@ -840,13 +920,34 @@ export async function getRecentConsultationsFromMedplum(
       ...(clinicId ? { 'service-provider': `Organization/${clinicId}`, identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
     });
 
-    const consultations = await Promise.all(
-      encounters
-        .filter((enc) => matchesClinic(enc as any, clinicId))
-        .map((encounter) => getConsultationFromMedplum(encounter.id!, clinicId, client))
-    );
+    const filtered = encounters.filter((enc) => matchesClinic(enc as any, clinicId));
 
-    return consultations.filter((c): c is SavedConsultation => c !== null);
+    if (filtered.length === 0) return [];
+
+    const encounterRefs = filtered.map((e) => `Encounter/${e.id}`).join(',');
+
+    const [conditions, observations, procedures, medications] = await Promise.all([
+      client.searchResources('Condition', { encounter: encounterRefs }),
+      client.searchResources('Observation', { encounter: encounterRefs }),
+      client.searchResources('Procedure', { encounter: encounterRefs }),
+      client.searchResources('MedicationRequest', { encounter: encounterRefs }),
+    ]);
+
+    const conditionsByEncounter = groupByEncounter(conditions);
+    const observationsByEncounter = groupByEncounter(observations);
+    const proceduresByEncounter = groupByEncounter(procedures);
+    const medicationsByEncounter = groupByEncounter(medications);
+
+    return filtered.map((encounter) => {
+      const encId = encounter.id!;
+      return buildSavedConsultation(
+        encounter,
+        conditionsByEncounter.get(encId) ?? [],
+        observationsByEncounter.get(encId) ?? [],
+        proceduresByEncounter.get(encId) ?? [],
+        medicationsByEncounter.get(encId) ?? [],
+      );
+    });
   } catch (error) {
     console.error('Failed to get recent consultations from Medplum:', error);
     return [];

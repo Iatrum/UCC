@@ -80,21 +80,19 @@ export default function AppointmentsRootPage() {
     }
   }
 
-  const now = useMemo(() => new Date(), []);
-
   const upcomingAppointments = useMemo(() => {
     return appointments
       .filter((appointment) => {
         if (!appointment.scheduledAt) return false;
-        const scheduled = appointment.scheduledAt instanceof Date ? appointment.scheduledAt : new Date(appointment.scheduledAt);
-        return scheduled.getTime() >= now.getTime() && activeStatuses.includes(appointment.status);
+        return activeStatuses.includes(appointment.status) &&
+          new Date(appointment.scheduledAt as any).getTime() >= new Date().getTime();
       })
       .sort((a, b) => {
         const aTime = new Date(a.scheduledAt as any).getTime();
         const bTime = new Date(b.scheduledAt as any).getTime();
         return aTime - bTime;
       });
-  }, [appointments, now]);
+  }, [appointments]);
 
   const todaysAppointments = useMemo(() => {
     return upcomingAppointments.filter((appointment) => {

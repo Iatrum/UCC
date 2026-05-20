@@ -109,12 +109,14 @@ export default function PatientsPage() {
             Manage and view patient information
           </p>
         </div>
-        <Button asChild>
-          <Link href="/patients/new">
-            <Plus className="mr-2 h-4 w-4" />
-            New Patient
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild>
+            <Link href="/patients/new">
+              <Plus className="mr-2 h-4 w-4" />
+              New Patient
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">

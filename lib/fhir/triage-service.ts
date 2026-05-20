@@ -1,7 +1,7 @@
 import { TriageData, VitalSigns, QueueStatus } from '../types';
 import { MedplumClient } from '@medplum/core';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
-import { getPatientFromMedplum, SavedPatient } from './patient-service';
+import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
@@ -26,6 +26,16 @@ function assertEncounterBelongsToClinic(encounter: any, clinicId?: string): void
   if (!identifierMatch && !serviceProviderMatch) {
     throw new Error(`Access denied: encounter does not belong to clinic '${clinicId}'`);
   }
+}
+
+function patientBelongsToClinic(patient: any, clinicId?: string): boolean {
+  if (!clinicId) return true;
+  const identifierMatch = patient.identifier?.some(
+    (id: any) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
+  );
+  const managingOrganizationMatch =
+    patient.managingOrganization?.reference === `Organization/${clinicId}`;
+  return Boolean(identifierMatch || managingOrganizationMatch);
 }
 
 const TRIAGE_ENCOUNTER_EXTENSION_URL = 'https://ucc.emr/triage-encounter';
@@ -744,9 +754,17 @@ export async function getTriageQueueForToday(
     `status=arrived,triaged,in-progress,finished` +
     `&date=ge${startIso}&date=lt${endIso}` +
     `&_count=${limit}&_sort=date` +
-    `&service-provider=Organization/${clinicId}`;
+    `&service-provider=Organization/${clinicId}` +
+    `&_include=Encounter:subject`;
 
-  const encounters = (await client.searchResources('Encounter', query)) as any[];
+  const bundle = (await client.search('Encounter', query)) as any;
+  const bundleResources = bundle.entry?.map((entry: any) => entry.resource).filter(Boolean) ?? [];
+  const encounters = bundleResources.filter((resource: any) => resource.resourceType === 'Encounter') as any[];
+  const includedPatients = new Map(
+    bundleResources
+      .filter((resource: any) => resource.resourceType === 'Patient' && resource.id && patientBelongsToClinic(resource, clinicId))
+      .map((patient: any) => [patient.id, fhirPatientToPatientData(patient)])
+  );
 
   const validEncounters = encounters.filter((encounter) => {
     try {
@@ -763,7 +781,9 @@ export async function getTriageQueueForToday(
       const patientId = subjectRef.replace('Patient/', '');
       if (!patientId) return null;
 
-      const patient = await getPatientFromMedplum(patientId, clinicId, client, { includeMedicalHistory: false });
+      const patient =
+        includedPatients.get(patientId) ??
+        (await getPatientFromMedplum(patientId, clinicId, client, { includeMedicalHistory: false }));
       if (!patient) return null;
 
       const parsed = parseTriageExtension(encounter.extension);

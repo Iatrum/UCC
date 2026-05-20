@@ -12,13 +12,14 @@ import {
   saveAppointmentToMedplum,
   getAppointmentFromMedplum,
   getPatientAppointmentsFromMedplum,
-  getUpcomingAppointments,
+  getUpcomingAppointmentsForClinic,
   updateAppointmentStatus,
   rescheduleAppointment,
   deleteAppointment,
   type SavedAppointment,
 } from '@/lib/fhir/appointment-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { createAppointmentReminderFollowUp } from '@/lib/fhir/communication-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import type { MedplumClient } from '@medplum/core';
@@ -53,6 +54,15 @@ export async function POST(request: NextRequest) {
     }
 
     const appointmentId = await saveAppointmentToMedplum(medplum, appointmentData);
+    try {
+      await createAppointmentReminderFollowUp(medplum, {
+        clinicId,
+        appointmentId,
+        daysBefore: appointmentData.reminderDaysBefore,
+      });
+    } catch (followUpError) {
+      console.error('[appointments] Appointment saved but reminder follow-up creation failed', appointmentId, followUpError);
+    }
     return NextResponse.json({
       success: true,
       appointmentId,
@@ -91,16 +101,7 @@ export async function GET(request: NextRequest) {
     }
 
     // No filter — return upcoming appointments scoped to this clinic
-    const all = await getUpcomingAppointments(medplum);
-    const filtered = (
-      await Promise.all(
-        all.map(async (appt) => {
-          const patient = await getPatientFromMedplum(appt.patientId, clinicId, medplum, { includeMedicalHistory: false });
-          return patient ? appt : null;
-        })
-      )
-    ).filter((a): a is SavedAppointment => a !== null);
-
+    const filtered = await getUpcomingAppointmentsForClinic(medplum, clinicId);
     return NextResponse.json({ success: true, count: filtered.length, appointments: filtered });
   } catch (error) {
     return handleRouteError(error, 'GET /api/appointments');
