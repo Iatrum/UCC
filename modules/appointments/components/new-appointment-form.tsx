@@ -46,7 +46,6 @@ const appointmentSchema = z.object({
   scheduledDate: z.string({ required_error: "Date is required" }).min(1, "Date is required"),
   scheduledTime: z.string({ required_error: "Time is required" }).min(1, "Time is required"),
   clinician: z.string({ required_error: "Clinician is required" }).min(1, "Clinician is required"),
-  reason: z.string({ required_error: "Reason is required" }).min(3, "Please describe the visit reason"),
   visitType: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(appointmentStatuses).default("scheduled"),
@@ -70,10 +69,8 @@ type AppointmentFormValues = z.input<typeof appointmentSchema>;
 
 const visitTypes = [
   "Consultation",
-  "Follow-up",
+  "Follow up",
   "Procedure",
-  "Routine Check",
-  "Telehealth",
 ];
 
 function combineDateTime(date: string, time: string): Date {
@@ -174,7 +171,6 @@ export default function NewAppointmentForm() {
       scheduledDate: format(defaultScheduledAt, "yyyy-MM-dd"),
       scheduledTime: format(defaultScheduledAt, "HH:mm"),
       clinician: "",
-      reason: "",
       visitType: "",
       notes: "",
       status: "scheduled",
@@ -275,7 +271,7 @@ export default function NewAppointmentForm() {
         patientName: patient.name,
         patientContact: patient.contact || undefined,
         clinician: values.clinician,
-        reason: values.reason,
+        reason: values.visitType || "Clinic visit",
         type: values.visitType,
         notes: values.notes,
         scheduledAt,
@@ -445,20 +441,6 @@ export default function NewAppointmentForm() {
 
                 <FormField
                   control={form.control}
-                  name="reason"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Reason for visit</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. follow-up consultation" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
                   name="status"
                   render={({ field }) => (
                     <FormItem>
@@ -487,9 +469,9 @@ export default function NewAppointmentForm() {
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notes for clinical team</FormLabel>
+                      <FormLabel>Remarks</FormLabel>
                       <FormControl>
-                        <Textarea rows={4} placeholder="Add any preparation instructions or notes" {...field} />
+                        <Textarea rows={4} placeholder="Add any remarks" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
