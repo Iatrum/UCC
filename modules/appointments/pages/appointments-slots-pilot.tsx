@@ -38,18 +38,11 @@ import { cn } from "@/lib/utils";
 
 const visitTypes = [
   "Consultation",
-  "Follow-up",
+  "Follow up",
   "Procedure",
-  "Routine Check",
-  "Telehealth",
 ];
 
-const durationOptions = [
-  { label: "15 minutes", value: "15" },
-  { label: "30 minutes", value: "30" },
-  { label: "45 minutes", value: "45" },
-  { label: "60 minutes", value: "60" },
-];
+const DEFAULT_SLOT_DURATION_MINUTES = 30;
 
 const appointmentSchema = z.object({
   patientId: z.string({ required_error: "Patient is required" }).min(1, "Patient is required"),
@@ -57,7 +50,7 @@ const appointmentSchema = z.object({
   scheduledTime: z.string({ required_error: "Time is required" }).min(1, "Time is required"),
   durationMinutes: z.string().min(1, "Duration is required"),
   practitionerId: z.string({ required_error: "Clinician is required" }).min(1, "Clinician is required"),
-  reason: z.string({ required_error: "Reason is required" }).min(3, "Please describe the visit reason"),
+  selectedSlotId: z.string().optional(),
   visitType: z.string().optional(),
   notes: z.string().optional(),
 }).refine(
@@ -205,9 +198,9 @@ export default function AppointmentsSlotsPilotPage() {
       patientId: "",
       scheduledDate: format(defaultScheduledAt, "yyyy-MM-dd"),
       scheduledTime: format(defaultScheduledAt, "HH:mm"),
-      durationMinutes: "30",
+      durationMinutes: String(DEFAULT_SLOT_DURATION_MINUTES),
       practitionerId: "",
-      reason: "",
+      selectedSlotId: "",
       visitType: "",
       notes: "",
     },
@@ -269,7 +262,7 @@ export default function AppointmentsSlotsPilotPage() {
   const patientId = useWatch({ control: form.control, name: "patientId" });
   const practitionerId = useWatch({ control: form.control, name: "practitionerId" });
   const scheduledDate = useWatch({ control: form.control, name: "scheduledDate" });
-  const durationMinutes = useWatch({ control: form.control, name: "durationMinutes" });
+  const selectedSlotId = useWatch({ control: form.control, name: "selectedSlotId" });
   const selectedPatient = useMemo(
     () => patientOptions.find((patient) => patient.id === patientId),
     [patientId, patientOptions]
@@ -289,7 +282,8 @@ export default function AppointmentsSlotsPilotPage() {
   useEffect(() => {
     setSlots([]);
     setSlotMessage(null);
-  }, [practitionerId, scheduledDate, durationMinutes]);
+    form.setValue("selectedSlotId", "");
+  }, [form, practitionerId, scheduledDate]);
 
   async function handleLoadSlots() {
     const practitionerName = practitionerMap.get(practitionerId);
@@ -311,7 +305,7 @@ export default function AppointmentsSlotsPilotPage() {
         practitionerName,
         start: window.start,
         end: window.end,
-        durationMinutes: Number(durationMinutes || 30),
+        durationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
       });
       let nextSlots = await getFreeSlots(practitionerId, window.start, window.end);
       for (let attempt = 0; attempt < 4 && nextSlots.length === 0 && (generated.created > 0 || generated.existing > 0); attempt += 1) {
@@ -332,6 +326,7 @@ export default function AppointmentsSlotsPilotPage() {
     form.setValue("scheduledDate", format(start, "yyyy-MM-dd"), { shouldValidate: true });
     form.setValue("scheduledTime", format(start, "HH:mm"), { shouldValidate: true });
     form.setValue("durationMinutes", String(slotDurationMinutes(slot)), { shouldValidate: true });
+    form.setValue("selectedSlotId", slot.id, { shouldValidate: true });
   }
 
   async function onSubmit(values: AppointmentFormValues) {
@@ -347,6 +342,14 @@ export default function AppointmentsSlotsPilotPage() {
         });
         return;
       }
+      if (!values.selectedSlotId) {
+        toast({
+          title: "Select a slot",
+          description: "Choose an available slot before creating the appointment.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const scheduledAt = combineDateTime(values.scheduledDate, values.scheduledTime);
       const result = await manualBookAppointment({
@@ -355,7 +358,7 @@ export default function AppointmentsSlotsPilotPage() {
         practitionerName,
         scheduledAt,
         durationMinutes: Number(values.durationMinutes),
-        reason: values.reason,
+        reason: values.visitType || "Clinic visit",
         type: values.visitType || undefined,
         notes: values.notes || undefined,
       });
@@ -432,7 +435,7 @@ export default function AppointmentsSlotsPilotPage() {
                   </div>
                 ) : null}
 
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="scheduledDate"
@@ -448,48 +451,6 @@ export default function AppointmentsSlotsPilotPage() {
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="scheduledTime"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" /> Time
-                        </FormLabel>
-                        <FormControl>
-                          <Input type="time" step={300} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="durationMinutes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Duration</FormLabel>
-                        <FormControl>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {durationOptions.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="practitionerId"
@@ -570,18 +531,21 @@ export default function AppointmentsSlotsPilotPage() {
                     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {visibleSlots.map((slot) => {
                         const start = new Date(slot.start);
-                        const selected =
-                          form.getValues("scheduledDate") === format(start, "yyyy-MM-dd") &&
-                          form.getValues("scheduledTime") === format(start, "HH:mm");
+                        const slotTime = format(start, "HH:mm");
+                        const selected = selectedSlotId === slot.id;
                         return (
                           <Button
                             key={slot.id}
                             type="button"
-                            variant={selected ? "default" : "secondary"}
-                            className="h-10"
+                            variant={selected ? "default" : "outline"}
+                            aria-pressed={selected}
+                            className={cn(
+                              "h-10 border transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary",
+                              selected && "hover:bg-primary hover:text-primary-foreground"
+                            )}
                             onClick={() => handleSelectSlot(slot)}
                           >
-                            {format(start, "HH:mm")}
+                            {slotTime}
                           </Button>
                         );
                       })}
@@ -591,31 +555,18 @@ export default function AppointmentsSlotsPilotPage() {
 
                 <FormField
                   control={form.control}
-                  name="reason"
+                  name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Reason for visit</FormLabel>
+                      <FormLabel>Remarks</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. follow-up consultation" {...field} />
+                        <Textarea rows={4} placeholder="Add any remarks" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Notes for clinical team</FormLabel>
-                      <FormControl>
-                        <Textarea rows={4} placeholder="Add any preparation instructions or notes" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
 
               <div className="flex items-center justify-end gap-3">
