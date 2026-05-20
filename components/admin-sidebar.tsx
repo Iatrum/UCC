@@ -62,7 +62,7 @@ export default function AdminSidebar() {
           <Button
             variant="ghost"
             size="sm"
-            className="absolute -right-4 top-16 h-8 w-8 rounded-full border bg-background z-50"
+            className="absolute right-2 top-16 z-50 h-11 w-11 rounded-full border bg-background md:-right-4 md:h-8 md:w-8"
             onClick={() => setIsCollapsed(!isCollapsed)}
           >
             {isCollapsed ? (
@@ -89,7 +89,7 @@ export default function AdminSidebar() {
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground",
                   isCollapsed
-                    ? "justify-center w-8 h-8 p-2 mx-auto"
+                    ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8"
                     : "justify-center p-2 md:justify-start md:px-3 md:py-2"
                 )}
                 title={isCollapsed ? item.name : undefined}
@@ -122,7 +122,7 @@ export default function AdminSidebar() {
                 className={cn(
                   "w-full text-muted-foreground hover:text-accent-foreground",
                   isCollapsed
-                    ? "justify-center w-8 h-8 p-2 mx-auto"
+                    ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8"
                     : "justify-center p-2 md:justify-start md:px-3 md:py-2"
                 )}
                 onClick={async () => {
