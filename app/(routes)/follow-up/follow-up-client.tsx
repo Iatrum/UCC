@@ -1,16 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useState, useTransition, useMemo, useEffect, useRef } from "react";
 import {
   Bell,
   Calendar,
-  CalendarClock,
   Check,
-  CheckCircle2,
-  Clock,
   ExternalLink,
-  AlertTriangle,
   Loader2,
   MessageCircle,
   Plus,
@@ -53,7 +48,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/use-toast";
 import type { FollowUp, FollowUpType } from "@/lib/fhir/communication-service";
 
-type Tab = "pending" | "due" | "sent" | "failed";
+type Tab = "pending" | "due" | "sent";
 
 const MAX_MESSAGE_LENGTH = 500;
 
@@ -67,14 +62,14 @@ function formatDate(value?: string): string {
 function TypeBadge({ type }: { type: FollowUpType }) {
   if (type === "review-request") {
     return (
-      <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200">
+      <Badge variant="secondary" className="border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100">
         <Calendar className="mr-1 h-3 w-3" />
         Review Request
       </Badge>
     );
   }
   return (
-    <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200">
+    <Badge variant="secondary" className="border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100">
       <Bell className="mr-1 h-3 w-3" />
       Appointment Reminder
     </Badge>
@@ -87,6 +82,12 @@ function isDue(followUp: FollowUp): boolean {
   return Number.isFinite(due) && due <= Date.now();
 }
 
+function getFollowUpTab(followUp: FollowUp): Tab {
+  if (followUp.status === "completed") return "sent";
+  if (isDue(followUp)) return "due";
+  return "pending";
+}
+
 function StatusBadge({ followUp }: { followUp: FollowUp }) {
   if (!followUp.patientPhone) {
     return <Badge variant="secondary" className="bg-rose-100 text-rose-700 hover:bg-rose-100 border-rose-200">Missing phone</Badge>;
@@ -97,8 +98,8 @@ function StatusBadge({ followUp }: { followUp: FollowUp }) {
     case "opened":
       return <Badge variant="secondary" className="bg-sky-100 text-sky-700 hover:bg-sky-100 border-sky-200">Opened</Badge>;
     case "queued":
-    case "sent":
       return <Badge variant="secondary" className="bg-sky-100 text-sky-700 hover:bg-sky-100 border-sky-200">{followUp.deliveryStatus}</Badge>;
+    case "sent":
     case "delivered":
     case "completed":
       return <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-emerald-200">Sent</Badge>;
@@ -116,16 +117,12 @@ function EmptyState({ tab }: { tab: Tab }) {
       description: "Create a new follow up using the button above.",
     },
     due: {
-      title: "No due follow ups",
-      description: "Follow ups due today or overdue will appear here.",
+      title: "No follow ups due today",
+      description: "Due reminders will appear here.",
     },
     sent: {
       title: "No follow ups sent yet",
       description: "Follow ups marked as sent will appear here.",
-    },
-    failed: {
-      title: "No failed follow ups",
-      description: "Twilio failures and missing phone rows will appear here.",
     },
   };
   const { title, description } = content[tab];
@@ -143,29 +140,6 @@ function EmptyState({ tab }: { tab: Tab }) {
         </div>
       </TableCell>
     </TableRow>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  count,
-  hint,
-}: {
-  icon: ReactNode;
-  label: string;
-  count: number;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center gap-2 text-sm text-slate-600">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{count}</p>
-      <p className="mt-1 text-xs text-slate-500">{hint}</p>
-    </div>
   );
 }
 
@@ -240,13 +214,10 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
   }, [form.patientName, form.patientId]);
 
   const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
     return followUps.filter((f) => {
-      if (activeTab === "pending" && (f.status === "completed" || f.deliveryStatus === "failed" || isDue(f))) return false;
-      if (activeTab === "due" && !isDue(f)) return false;
-      if (activeTab === "sent" && f.status !== "completed") return false;
-      if (activeTab === "failed" && f.deliveryStatus !== "failed" && Boolean(f.patientPhone)) return false;
-      if (!search.trim()) return true;
-      return f.patientName.toLowerCase().includes(search.toLowerCase());
+      if (getFollowUpTab(f) !== activeTab) return false;
+      return !q || f.patientName.toLowerCase().includes(q);
     });
   }, [followUps, activeTab, search]);
 
@@ -382,36 +353,14 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
     }
   }
 
-  const totals = useMemo(
-    () => ({
-      pending: followUps.filter((f) => f.status !== "completed" && f.deliveryStatus !== "failed" && !isDue(f)).length,
-      due: followUps.filter(isDue).length,
-      sent: followUps.filter((f) => f.status === "completed").length,
-      failed: followUps.filter((f) => f.deliveryStatus === "failed" || !f.patientPhone).length,
-    }),
-    [followUps]
-  );
-
   const tabCounts = useMemo(() => {
     const q = search.toLowerCase().trim();
     const matches = (f: FollowUp) => !q || f.patientName.toLowerCase().includes(q);
-    const countFor = (tab: Tab) =>
-      followUps.filter(
-        (f) =>
-          matches(f) &&
-          (tab === "pending"
-            ? f.status !== "completed" && f.deliveryStatus !== "failed" && !isDue(f)
-            : tab === "due"
-              ? isDue(f)
-              : tab === "sent"
-                ? f.status === "completed"
-                : f.deliveryStatus === "failed" || !f.patientPhone)
-      ).length;
+    const countFor = (tab: Tab) => followUps.filter((f) => matches(f) && getFollowUpTab(f) === tab).length;
     return {
       pending: countFor("pending"),
       due: countFor("due"),
       sent: countFor("sent"),
-      failed: countFor("failed"),
     };
   }, [followUps, search]);
 
@@ -426,34 +375,6 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
         <p className="text-sm text-muted-foreground">
           Manage patient follow ups and reminders
         </p>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <StatCard
-          icon={<Clock className="h-4 w-4 text-amber-600" />}
-          label="Pending"
-          count={totals.pending}
-          hint="Awaiting action"
-        />
-        <StatCard
-          icon={<CalendarClock className="h-4 w-4 text-sky-600" />}
-          label="Due"
-          count={totals.due}
-          hint="Today or overdue"
-        />
-        <StatCard
-          icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-          label="Sent"
-          count={totals.sent}
-          hint="Successfully delivered"
-        />
-        <StatCard
-          icon={<AlertTriangle className="h-4 w-4 text-rose-600" />}
-          label="Attention"
-          count={totals.failed}
-          hint="Failed or missing phone"
-        />
       </div>
 
       {/* Search + New Follow Up */}
@@ -489,18 +410,13 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>New Follow Up</DialogTitle>
-              <DialogDescription>Create a follow up reminder for a patient.</DialogDescription>
+              <DialogDescription>Create a patient reminder.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-5 py-2">
               {/* Patient name — live search */}
               <div className="space-y-1.5">
-                <div>
-                  <label className="text-sm font-medium">Patient name</label>
-                  <p className="text-xs text-muted-foreground">
-                    Full name of the patient requiring follow up
-                  </p>
-                </div>
+                <label className="text-sm font-medium">Patient name</label>
                 <div className="relative">
                   {patientSearching ? (
                     <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
@@ -569,12 +485,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
 
               {/* Type */}
               <div className="space-y-1.5">
-                <div>
-                  <label className="text-sm font-medium">Type</label>
-                  <p className="text-xs text-muted-foreground">
-                    Choose the kind of follow up to send
-                  </p>
-                </div>
+                <label className="text-sm font-medium">Type</label>
                 <Select
                   value={form.type}
                   onValueChange={(v) => setForm((f) => ({ ...f, type: v as FollowUpType }))}
@@ -592,12 +503,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
               {/* Message + char counter */}
               <div className="space-y-1.5">
                 <div className="flex items-end justify-between">
-                  <div>
-                    <label className="text-sm font-medium">Message</label>
-                    <p className="text-xs text-muted-foreground">
-                      The content that will be sent to the patient
-                    </p>
-                  </div>
+                  <label className="text-sm font-medium">Message</label>
                   <span className={`text-xs tabular-nums ${charCountColor}`}>
                     {form.message.length}/{MAX_MESSAGE_LENGTH}
                   </span>
@@ -613,15 +519,10 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
 
               {/* Reminder date */}
               <div className="space-y-1.5">
-                <div>
-                  <label className="text-sm font-medium">
-                    Reminder date{" "}
-                    <span className="font-normal text-muted-foreground">(optional)</span>
-                  </label>
-                  <p className="text-xs text-muted-foreground">
-                    When this follow up should appear as due
-                  </p>
-                </div>
+                <label className="text-sm font-medium">
+                  Reminder date{" "}
+                  <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
                 <Input
                   type="date"
                   value={form.dueDate}
@@ -663,7 +564,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
             )}
           </TabsTrigger>
           <TabsTrigger value="due" className="rounded-xl">
-            Due
+            Due Today
             {tabCounts.due > 0 && (
               <span className="ml-1.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700">
                 {tabCounts.due}
@@ -678,17 +579,9 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="failed" className="rounded-xl">
-            Attention
-            {tabCounts.failed > 0 && (
-              <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-medium text-rose-700">
-                {tabCounts.failed}
-              </span>
-            )}
-          </TabsTrigger>
         </TabsList>
 
-        {(["pending", "due", "sent", "failed"] as Tab[]).map((tab) => (
+        {(["pending", "due", "sent"] as Tab[]).map((tab) => (
           <TabsContent key={tab} value={tab}>
             <Card className="border-slate-200/80 shadow-sm">
               <CardContent className="p-0">
@@ -732,10 +625,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                               {formatDate(followUp.dueDate)}
                             </TableCell>
                             <TableCell className="w-28 px-4 py-4">
-                              <div className="space-y-1">
-                                <StatusBadge followUp={followUp} />
-                                <div className="text-xs text-slate-400">{followUp.deliveryMode}</div>
-                              </div>
+                              <StatusBadge followUp={followUp} />
                             </TableCell>
                             <TableCell className="w-32 px-4 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
@@ -746,6 +636,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                     className="h-8 text-xs"
                                     disabled={actionId === followUp.id}
                                     title="Open WhatsApp with this message"
+                                    aria-label={`Open WhatsApp for ${followUp.patientName}`}
                                     onClick={() => handleOpenWhatsApp(followUp)}
                                   >
                                     {actionId === followUp.id ? (
@@ -753,7 +644,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                     ) : (
                                       <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                                     )}
-                                    Open WhatsApp
+                                    Open
                                   </Button>
                                 )}
                                 {followUp.status !== "completed" && followUp.deliveryMode === "manual" && followUp.deliveryStatus === "opened" && (
@@ -763,6 +654,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                     className="h-8 text-xs"
                                     disabled={actionId === followUp.id}
                                     title="Confirm this WhatsApp was sent"
+                                    aria-label={`Mark follow up for ${followUp.patientName} as sent`}
                                     onClick={() => handleMarkSent(followUp.id, followUp.patientName)}
                                   >
                                     <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
@@ -776,6 +668,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                     className="h-8 text-xs"
                                     disabled={actionId === followUp.id}
                                     title="Send this follow up through Twilio"
+                                    aria-label={`${followUp.deliveryStatus === "failed" ? "Retry" : "Send"} follow up for ${followUp.patientName}`}
                                     onClick={() => handleTwilioSend(followUp)}
                                   >
                                     {actionId === followUp.id ? (
@@ -794,10 +687,10 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                   className="h-8 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                                   disabled={actionId === followUp.id}
                                   title="Remove this follow up"
+                                  aria-label={`Dismiss follow up for ${followUp.patientName}`}
                                   onClick={() => handleDismiss(followUp.id, followUp.patientName)}
                                 >
-                                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                                  Dismiss
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </div>
                             </TableCell>
