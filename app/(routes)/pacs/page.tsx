@@ -3,47 +3,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Image as ImageIcon, Clock, CheckCircle, AlertCircle, FileText, Settings } from "lucide-react";
+import { Plus, Image as ImageIcon, Clock, CheckCircle, AlertCircle, FileText } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import { isModuleEnabled } from "@/lib/modules";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function PACSPage() {
-  const [moduleEnabled] = useState(() => isModuleEnabled('pacs'));
-
-  if (!moduleEnabled) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <ImageIcon aria-hidden className="h-8 w-8" />
-            PACS - Medical Imaging
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Picture Archiving and Communication System
-          </p>
-        </div>
-
-        <Alert>
-          <Settings className="h-4 w-4" />
-          <AlertTitle>Module Not Enabled</AlertTitle>
-          <AlertDescription>
-            The PACS module is currently disabled. To use this feature, please enable it in Settings.
-            <div className="mt-4">
-              <Button asChild>
-                <Link href="/settings">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Go to Settings
-                </Link>
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">

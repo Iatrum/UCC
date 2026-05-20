@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { loadModulePage } from "@/lib/module-registry";
+import { loadEnabledModulePage } from "@/lib/module-registry";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -8,7 +8,7 @@ type Props = {
 };
 
 export default async function AppointmentDetailsPage(props: Props) {
-  const ModulePage = await loadModulePage("appointments", "detail");
+  const ModulePage = await loadEnabledModulePage("appointments", "detail");
 
   if (!ModulePage) {
     notFound();

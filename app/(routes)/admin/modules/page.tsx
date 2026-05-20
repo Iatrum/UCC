@@ -1,16 +1,9 @@
-import { ModuleManager } from "@/components/settings/module-manager";
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { adminPathForHost } from "@/lib/admin-routes";
+import { getHostFromHeaders } from "@/lib/server/subdomain-host";
 
-export default function AdminModulesPage() {
-  return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Module Catalogue</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Review available platform capabilities. Branch-specific module
-          controls belong on each branch page.
-        </p>
-      </div>
-      <ModuleManager />
-    </div>
-  );
+export default async function AdminModulesPage() {
+  const host = getHostFromHeaders(await headers());
+  redirect(adminPathForHost("/organisation", host));
 }

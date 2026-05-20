@@ -5,6 +5,11 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
+import {
+  getEnabledModuleIdsFromOrganization,
+  normalizeEnabledModuleIds,
+  withEnabledModuleIdsExtension,
+} from "@/lib/module-settings";
 
 function getIdFromReference(reference?: string): string | undefined {
   if (!reference) return undefined;
@@ -22,6 +27,7 @@ export interface ClinicSummary {
   logoUrl?: string;
   parentId?: string;
   parentName?: string;
+  enabledModuleIds: string[];
 }
 
 export interface ParentOrganizationSummary {
@@ -61,6 +67,7 @@ function mapOrganizationToSummary(org: Organization, parentName?: string): Clini
     logoUrl,
     parentId,
     parentName,
+    enabledModuleIds: getEnabledModuleIdsFromOrganization(org),
   };
 }
 
@@ -77,31 +84,13 @@ export async function getOrganizationsFromMedplum(): Promise<ClinicSummary[]> {
   const medplum = await getAdminMedplum();
   const all = await medplum.searchResources("Organization", { _count: "200" });
 
-  const hasExplicitParent = (all ?? []).some(
-    (org) => !org.partOf && !isClinicOrganization(org)
-  );
-
-  // When there is no explicit parent org, the single standalone clinic (no partOf)
-  // auto-acts as the parent and must be excluded from the branches list.
-  const autoParentId = !hasExplicitParent
-    ? (all ?? []).find(
-        (org) =>
-          !org.partOf &&
-          isClinicOrganization(org)
-      )?.id
-    : undefined;
-
   const nameById = new Map<string, string>();
   for (const org of all ?? []) {
     if (org.id) nameById.set(org.id, org.name ?? "Unnamed organisation");
   }
 
   return (all ?? [])
-    .filter(
-      (org) =>
-        isClinicOrganization(org) &&
-        org.id !== autoParentId
-    )
+    .filter(isClinicOrganization)
     .map((org) => {
       const parentId = getIdFromReference(org.partOf?.reference);
       const parentName = parentId ? nameById.get(parentId) : undefined;
@@ -198,8 +187,9 @@ export async function updateOrganizationDetailsInMedplum(
 ): Promise<ClinicSummary> {
   const medplum = await getAdminMedplum();
   const existing = await medplum.readResource("Organization", id);
-  const parent = input.parentId
-    ? await medplum.readResource("Organization", input.parentId)
+  const parentId = input.parentId && input.parentId !== id ? input.parentId : undefined;
+  const parent = parentId
+    ? await medplum.readResource("Organization", parentId)
     : null;
 
   const identifiers =
@@ -208,27 +198,35 @@ export async function updateOrganizationDetailsInMedplum(
     ) ?? [];
   const otherExtensions =
     existing.extension?.filter((e) => e.url !== ORG_LOGO_EXTENSION_URL) ?? [];
+  const brandingExtensions = input.logoUrl
+    ? [
+        ...otherExtensions,
+        { url: ORG_LOGO_EXTENSION_URL, valueUrl: input.logoUrl },
+      ]
+    : otherExtensions.length > 0
+      ? otherExtensions
+      : undefined;
 
   const updated: Organization = {
     ...existing,
     resourceType: "Organization",
     name: input.name,
     identifier: identifiers.length > 0 ? identifiers : existing.identifier,
-    partOf: input.parentId
-      ? { reference: `Organization/${input.parentId}` }
-      : existing.partOf,
+    partOf: parentId
+      ? { reference: `Organization/${parentId}` }
+      : input.parentId === id
+        ? undefined
+        : existing.partOf,
     telecom: input.phone
       ? [{ system: "phone" as const, value: input.phone }]
       : undefined,
     address: input.address ? [{ text: input.address }] : undefined,
-    extension: input.logoUrl
-      ? [
-          ...otherExtensions,
-          { url: ORG_LOGO_EXTENSION_URL, valueUrl: input.logoUrl },
-        ]
-      : otherExtensions.length > 0
-        ? otherExtensions
-        : undefined,
+    extension: input.enabledModuleIds
+      ? withEnabledModuleIdsExtension(
+          brandingExtensions,
+          normalizeEnabledModuleIds(input.enabledModuleIds)
+        )
+      : brandingExtensions,
   };
 
   const saved = await medplum.updateResource(updated);
@@ -298,6 +296,7 @@ export interface OrganizationInput {
   address?: string;
   logoUrl?: string;
   parentId?: string;
+  enabledModuleIds?: string[];
 }
 
 function scrubDeletedPractitionerTelecom(
