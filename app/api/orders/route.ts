@@ -4,6 +4,14 @@ import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
+function procedureKey(p: { procedureId?: string; name: string; price?: number; category?: string }): string {
+  return `${p.procedureId ?? p.name}|${p.price ?? ''}|${p.category ?? ''}`;
+}
+
+function prescriptionKey(rx: { medication?: { id?: string; name?: string }; frequency?: string; duration?: string }): string {
+  return `${rx.medication?.id ?? rx.medication?.name}|${rx.frequency ?? ''}|${rx.duration ?? ''}`;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(req);
@@ -49,11 +57,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
     }
 
+    const existingProcKeys = new Set((consultation.procedures || []).map(procedureKey));
     const updatedProcedures = procedures !== undefined
-      ? [...(consultation.procedures || []), ...procedures]
+      ? [...(consultation.procedures || []), ...(procedures as any[]).filter(p => !existingProcKeys.has(procedureKey(p)))]
       : undefined;
+
+    const existingRxKeys = new Set((consultation.prescriptions || []).map(prescriptionKey));
     const updatedPrescriptions = prescriptions !== undefined
-      ? [...(consultation.prescriptions || []), ...prescriptions]
+      ? [...(consultation.prescriptions || []), ...(prescriptions as any[]).filter(rx => !existingRxKeys.has(prescriptionKey(rx)))]
       : undefined;
 
     await updateConsultationInMedplum(
