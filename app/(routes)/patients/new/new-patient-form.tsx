@@ -10,16 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Camera, CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { PatientApiError, savePatient } from "@/lib/fhir/patient-client";
@@ -66,7 +56,6 @@ export default function NewPatientForm({
 }: NewPatientFormProps) {
   const { toast } = useToast();
   const router = useRouter();
-  const [showDiscardDialog, setShowDiscardDialog] = React.useState(false);
   const [duplicateConflict, setDuplicateConflict] = React.useState<{
     patientId: string;
     patientName?: string;
@@ -403,18 +392,8 @@ export default function NewPatientForm({
               </div>
 
               <div className="flex justify-end space-x-4">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => {
-                    if (form.formState.isDirty) {
-                      setShowDiscardDialog(true);
-                    } else {
-                      router.push('/patients');
-                    }
-                  }}
-                >
-                  Cancel
+                <Button variant="outline" type="button" asChild>
+                  <Link href="/patients">Cancel</Link>
                 </Button>
                 <Button type="submit">Register Patient</Button>
               </div>
@@ -448,25 +427,5 @@ export default function NewPatientForm({
         </CardContent>
       </Card>
     </div>
-
-    <AlertDialog open={showDiscardDialog} onOpenChange={setShowDiscardDialog}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Discard changes?</AlertDialogTitle>
-          <AlertDialogDescription>
-            You have unsaved changes. Are you sure you want to leave? All changes will be lost.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep editing</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={() => router.push('/patients')}
-          >
-            Discard changes
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
