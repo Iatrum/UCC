@@ -49,6 +49,7 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
   const vars = type === "mc" ? MC_VARS : REFERRAL_VARS;
   const [showVars, setShowVars] = React.useState(false);
   const [previewHtml, setPreviewHtml] = React.useState<string | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = React.useState(false);
 
   const handlePreview = () => {
     setPreviewHtml(fillPreviewData(html));
@@ -87,15 +88,32 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
         )}
       </div>
 
-      <Textarea
-        value={html}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setPreviewHtml(null);
-        }}
-        className="min-h-[400px] font-mono text-xs"
-        spellCheck={false}
-      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setIsEditorOpen((v) => !v)}
+      >
+        {isEditorOpen ? "Hide editor" : "Edit HTML"}
+        {isEditorOpen ? (
+          <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
+        ) : (
+          <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+        )}
+      </Button>
+
+      {isEditorOpen && (
+        <Textarea
+          value={html}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setPreviewHtml(null);
+          }}
+          className="font-mono text-xs"
+          style={{ height: 320, overflowY: "auto", resize: "vertical" }}
+          spellCheck={false}
+        />
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <Button type="button" variant="outline" size="sm" onClick={onReset}>
