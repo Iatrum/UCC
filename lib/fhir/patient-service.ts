@@ -547,7 +547,7 @@ export async function getPatientFromMedplum(
       patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
       patientData.medicalHistory!.conditions = conditions.filter((c: Condition) => !(c as any).encounter).map((c: Condition) => (c as any).code?.text || 'Unknown condition');
       patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
-      const visitDate = (recentEncounters[0] as any)?.period?.start;
+      const visitDate = recentEncounters.length > 0 ? (recentEncounters[0] as any)?.period?.start : null;
       if (visitDate) patientData.lastVisit = new Date(visitDate);
     }
 
