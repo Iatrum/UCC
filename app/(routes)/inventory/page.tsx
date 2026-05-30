@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { AddMedicationForm } from "@/components/inventory/add-medication-form";
+import { BatchImportDialog } from "@/components/inventory/batch-import-dialog";
 import { InventoryTable } from "@/components/inventory/inventory-table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -342,7 +343,9 @@ export default function InventoryPage() {
                   Continue managing stock directly from this table.
                 </p>
               </div>
-              <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+              <div className="flex items-center gap-2">
+                <BatchImportDialog onImportComplete={reloadMedications} />
+                <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
                 <DialogTrigger asChild>
                   <Button>Add medication</Button>
                 </DialogTrigger>
@@ -356,6 +359,7 @@ export default function InventoryPage() {
                   <AddMedicationForm onSubmit={handleAddMedication} onCancel={() => setShowAddDialog(false)} />
                 </DialogContent>
               </Dialog>
+              </div>
             </CardHeader>
             <CardContent>
               <InventoryTable
