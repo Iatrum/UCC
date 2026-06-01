@@ -56,21 +56,34 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
 
   return (
     <div className="space-y-3">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground"
-          onClick={() => setShowVars((v) => !v)}
-        >
-          Available placeholders
-          {showVars ? (
-            <ChevronUp className="ml-1 h-3 w-3" />
-          ) : (
-            <ChevronDown className="ml-1 h-3 w-3" />
-          )}
-        </Button>
+      <div className="sticky top-0 z-10 -mx-1 rounded-md border bg-card/95 p-2 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-11 px-3 text-xs text-muted-foreground md:h-8 md:px-2"
+            onClick={() => setShowVars((v) => !v)}
+          >
+            Available placeholders
+            {showVars ? (
+              <ChevronUp className="ml-1 h-3 w-3" />
+            ) : (
+              <ChevronDown className="ml-1 h-3 w-3" />
+            )}
+          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={onReset}>
+              Reset to default
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={handlePreview}>
+              Preview
+            </Button>
+            <Button type="button" size="sm" onClick={onSave} disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save template"}
+            </Button>
+          </div>
+        </div>
         {showVars && (
           <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-md border bg-muted/40 px-3 py-2">
             {vars.map((v) => (
@@ -93,21 +106,9 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
           onChange(e.target.value);
           setPreviewHtml(null);
         }}
-        className="min-h-[400px] font-mono text-xs"
+        className="h-[360px] resize-y overflow-auto font-mono text-xs leading-relaxed"
         spellCheck={false}
       />
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button type="button" variant="outline" size="sm" onClick={onReset}>
-          Reset to default
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={handlePreview}>
-          Preview
-        </Button>
-        <Button type="button" size="sm" onClick={onSave} disabled={isSaving}>
-          {isSaving ? "Saving…" : "Save template"}
-        </Button>
-      </div>
 
       {previewHtml && (
         <iframe
