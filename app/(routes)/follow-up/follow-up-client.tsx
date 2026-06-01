@@ -380,8 +380,8 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
       </div>
 
       {/* Search + New Follow Up */}
-      <div className="flex items-center gap-3">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by patient name..."
@@ -404,7 +404,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
           }}
         >
           <DialogTrigger asChild>
-            <Button>
+            <Button className="w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               New Follow Up
             </Button>
@@ -554,7 +554,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as Tab)}
-        className="space-y-4"
+        className="gap-3"
       >
         <TabsList className="h-auto flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2">
           <TabsTrigger value="pending" className="rounded-xl">
@@ -585,25 +585,25 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
 
         {(["pending", "due", "sent"] as Tab[]).map((tab) => (
           <TabsContent key={tab} value={tab}>
-            <Card className="border-slate-200/80 shadow-sm">
+            <Card className="gap-0 overflow-hidden border-slate-200/80 py-0 shadow-sm">
               <CardContent className="p-0">
-                <div className="overflow-hidden rounded-[inherit] px-6">
-                  <Table>
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[920px]">
                     <TableHeader>
                       <TableRow className="bg-slate-50 hover:bg-slate-50">
-                        <TableHead className="w-48 px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <TableHead className="w-[260px] px-6 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
                           Patient
                         </TableHead>
-                        <TableHead className="w-48 px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <TableHead className="w-[220px] px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
                           Type
                         </TableHead>
-                        <TableHead className="w-36 px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <TableHead className="w-[150px] px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
                           Schedule
                         </TableHead>
-                        <TableHead className="w-28 px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <TableHead className="w-[150px] px-4 py-4 text-xs font-medium uppercase tracking-wide text-slate-500">
                           Status
                         </TableHead>
-                        <TableHead className="w-32 px-4 py-4 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <TableHead className="w-[240px] px-6 py-4 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
                           Actions
                         </TableHead>
                       </TableRow>
@@ -617,25 +617,25 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                             key={followUp.id}
                             className="border-slate-100 hover:bg-slate-50/60"
                           >
-                            <TableCell className="w-48 px-4 py-4 font-medium text-slate-900">
+                            <TableCell className="w-[260px] whitespace-normal px-6 py-4 font-medium text-slate-900">
                               {followUp.patientName}
                             </TableCell>
-                            <TableCell className="w-48 px-4 py-4">
+                            <TableCell className="w-[220px] px-4 py-4">
                               <TypeBadge type={followUp.type} />
                             </TableCell>
-                            <TableCell className="w-36 px-4 py-4 text-sm text-slate-500">
+                            <TableCell className="w-[150px] px-4 py-4 text-sm text-slate-500">
                               {formatDate(followUp.dueDate)}
                             </TableCell>
-                            <TableCell className="w-28 px-4 py-4">
+                            <TableCell className="w-[150px] px-4 py-4">
                               <StatusBadge followUp={followUp} />
                             </TableCell>
-                            <TableCell className="w-32 px-4 py-4 text-right">
+                            <TableCell className="w-[240px] px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 {followUp.status !== "completed" && followUp.deliveryMode === "manual" && followUp.whatsappUrl && (
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-8 text-xs"
+                                    className="h-8 shrink-0 text-xs"
                                     disabled={actionId === followUp.id}
                                     title="Open WhatsApp with this message"
                                     aria-label={`Open WhatsApp for ${followUp.patientName}`}
@@ -653,7 +653,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-8 text-xs"
+                                    className="h-8 shrink-0 text-xs"
                                     disabled={actionId === followUp.id}
                                     title="Confirm this WhatsApp was sent"
                                     aria-label={`Mark follow up for ${followUp.patientName} as sent`}
@@ -667,7 +667,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-8 text-xs"
+                                    className="h-8 shrink-0 text-xs"
                                     disabled={actionId === followUp.id}
                                     title="Send this follow up through Twilio"
                                     aria-label={`${followUp.deliveryStatus === "failed" ? "Retry" : "Send"} follow up for ${followUp.patientName}`}
@@ -686,7 +686,7 @@ export default function FollowUpClient({ initialFollowUps }: Props) {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-8 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                  className="h-8 shrink-0 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                                   disabled={actionId === followUp.id}
                                   title="Remove this follow up"
                                   aria-label={`Dismiss follow up for ${followUp.patientName}`}
