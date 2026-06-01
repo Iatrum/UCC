@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { BookOpen, ClipboardList, CreditCard, FileText, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
+import { BookOpen, ClipboardList, CreditCard, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -109,7 +109,7 @@ export default function SettingsPage() {
         <div className="text-sm text-muted-foreground">Signed in as: {profileEmail}</div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-flow-dense gap-4 min-[900px]:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
             <WorkflowIcon><IdCard className="h-4 w-4" /></WorkflowIcon>
@@ -206,18 +206,18 @@ export default function SettingsPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-            <WorkflowIcon><Stethoscope className="h-4 w-4" /></WorkflowIcon>
+            <WorkflowIcon><BookOpen className="h-4 w-4" /></WorkflowIcon>
             <div>
-              <CardTitle>Service Catalogs</CardTitle>
-              <CardDescription>Orderable catalogs used by the treatment composer, labs, imaging, and generated letters.</CardDescription>
+              <CardTitle>Document Templates</CardTitle>
+              <CardDescription>Customise the HTML layout for Medical Certificates and Referral Letters.</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-            <ClinicalCatalogManager />
+            <DocumentTemplateEditor />
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
             <WorkflowIcon><MessageCircle className="h-4 w-4" /></WorkflowIcon>
             <div>
@@ -230,34 +230,16 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-            <WorkflowIcon><FileText className="h-4 w-4" /></WorkflowIcon>
+            <WorkflowIcon><Stethoscope className="h-4 w-4" /></WorkflowIcon>
             <div>
-              <CardTitle>Consultation</CardTitle>
-              <CardDescription>Text shortcuts used while writing clinical notes.</CardDescription>
+              <CardTitle>Service Catalogs</CardTitle>
+              <CardDescription>Orderable catalogs used by the treatment composer, labs, imaging, and generated letters.</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border border-dashed p-6">
-              <p className="text-sm font-medium">Smart Text is disabled for now.</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Built-in note shortcuts can be re-enabled after the storage path is finalized.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-3">
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-            <WorkflowIcon><BookOpen className="h-4 w-4" /></WorkflowIcon>
-            <div>
-              <CardTitle>Document Templates</CardTitle>
-              <CardDescription>Customise the HTML layout for Medical Certificates and Referral Letters.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <DocumentTemplateEditor />
+            <ClinicalCatalogManager />
           </CardContent>
         </Card>
 
