@@ -29,6 +29,7 @@ function createMemoryStorage(): IClientStorage {
   const values = new Map<string, unknown>();
   return {
     clear: () => values.clear(),
+    makeKey: (key) => key,
     getString: (key) => {
       const value = values.get(key);
       return typeof value === 'string' ? value : undefined;

@@ -43,16 +43,16 @@ const appointmentStatuses = [
 
 const appointmentSchema = z.object({
   patientId: z
-    .string({ required_error: "Patient is required", invalid_type_error: "Patient is required" })
+    .string("Patient is required")
     .min(1, "Patient is required"),
   scheduledDate: z
-    .string({ required_error: "Date is required", invalid_type_error: "Date is required" })
+    .string("Date is required")
     .min(1, "Date is required"),
   scheduledTime: z
-    .string({ required_error: "Time is required", invalid_type_error: "Time is required" })
+    .string("Time is required")
     .min(1, "Time is required"),
   clinician: z
-    .string({ required_error: "Clinician is required", invalid_type_error: "Clinician is required" })
+    .string("Clinician is required")
     .min(1, "Clinician is required"),
   visitType: z.string().optional(),
   notes: z.string().optional(),
