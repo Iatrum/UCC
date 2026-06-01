@@ -8,8 +8,13 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
-  title: "UCC EMR",
-  description: "Modern Electronic Medical Records System",
+  title: "Iatrum",
+  description: "Modern clinic operating system",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
 };
 
 export default async function RootLayout({
