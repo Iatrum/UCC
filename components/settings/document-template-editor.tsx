@@ -62,7 +62,7 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 px-2 text-xs text-muted-foreground"
+            className="h-11 px-3 text-xs text-muted-foreground md:h-8 md:px-2"
             onClick={() => setShowVars((v) => !v)}
           >
             Available placeholders
