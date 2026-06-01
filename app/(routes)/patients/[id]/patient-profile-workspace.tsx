@@ -915,6 +915,7 @@ export default function PatientProfileWorkspace({
                         draftId={`profile-treatment-${patientId}-${latestConsultation?.id || "pending"}`}
                         patientId={patientId}
                         consultationId={latestConsultation?.id}
+                        consultation={latestConsultation}
                         initialEntries={emptyTreatmentEntries}
                         persistDrafts
                         items={treatmentItemsCatalog}
