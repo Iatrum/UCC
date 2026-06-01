@@ -10,25 +10,16 @@ const THEME_OPTIONS = [
   { key: "warm" as const, icon: Home, label: "Warm" },
 ];
 
-function subscribeMounted(onStoreChange: () => void) {
-  onStoreChange();
-  return () => {};
-}
-
-function getMountedSnapshot() {
-  return true;
-}
-
-function getServerMountedSnapshot() {
-  return false;
-}
+const subscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
   const mounted = React.useSyncExternalStore(
-    subscribeMounted,
-    getMountedSnapshot,
-    getServerMountedSnapshot,
+    subscribe,
+    getClientSnapshot,
+    getServerSnapshot,
   );
 
   if (!mounted) {

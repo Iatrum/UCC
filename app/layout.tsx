@@ -11,9 +11,9 @@ export const metadata: Metadata = {
   title: "Iatrum",
   description: "Modern clinic operating system",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: "/brand/iatrum-mark.png",
+    shortcut: "/brand/iatrum-mark.png",
+    apple: "/brand/iatrum-mark.png",
   },
 };
 
