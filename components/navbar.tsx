@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { 
   Activity, 
@@ -18,8 +19,7 @@ export default function Navbar() {
     <div className="border-b">
       <div className="flex h-16 items-center px-4">
         <Link href="/" className="flex items-center space-x-2">
-          <Activity className="h-6 w-6" />
-          <span className="text-xl font-bold">MediFlow</span>
+          <BrandLogo className="h-8 w-32" />
         </Link>
         <nav className="flex items-center space-x-6 mx-6">
           {navigation.map((item) => (
