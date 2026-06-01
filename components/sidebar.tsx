@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Activity,
   AlertTriangle,
   BarChart,
   Calendar,
@@ -105,12 +105,15 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
       <div className="flex flex-col flex-1">
         <div className="flex h-14 items-center border-b px-4 justify-between">
           {!isCollapsed && (
-            <Link href="/dashboard" className="flex items-center space-x-2">
-              <Activity className="h-6 w-6" />
-              <span className="text-xl font-bold">Iatrum</span>
+            <Link href="/dashboard" className="flex items-center">
+              <BrandLogo className="h-8 w-32" />
             </Link>
           )}
-          {isCollapsed && <Activity className="h-6 w-6 mx-auto" />}
+          {isCollapsed && (
+            <Link href="/dashboard" className="mx-auto flex items-center" title="Dashboard">
+              <BrandLogo showWordmark={false} className="h-8 w-8" />
+            </Link>
+          )}
           <Button 
             variant="ghost" 
             size="sm" 
