@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,7 +14,7 @@ import {
   Printer,
   ReceiptText,
 } from "lucide-react";
-import { PDFViewer, pdf } from "@react-pdf/renderer";
+import { PDFViewer, pdf, type DocumentProps } from "@react-pdf/renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -395,7 +395,7 @@ function renderCheckoutDocument({
   patient: Patient;
   date: string;
   organization: OrganizationDetails | null;
-}): ReactElement | null {
+}): ReactElement<DocumentProps> | null {
   const details = item.documentDetails;
   if (!details) return null;
 
@@ -445,6 +445,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [billPreviewOpen, setBillPreviewOpen] = useState(false);
   const [documentPreviewItem, setDocumentPreviewItem] = useState<CheckoutItem | null>(null);
   const [printingDocument, setPrintingDocument] = useState(false);
@@ -538,6 +539,8 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const balance = subtotal - paid;
   const handleCompleteVisitation = async () => {
     if (!details || completing || balance > 0) return;
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     setCompleting(true);
     setCompletionError(null);
@@ -569,6 +572,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     } catch (err) {
       setCompletionError(err instanceof Error ? err.message : "Failed to complete checkout.");
     } finally {
+      isSubmittingRef.current = false;
       setCompleting(false);
     }
   };

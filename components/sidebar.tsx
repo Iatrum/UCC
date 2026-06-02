@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Activity,
   AlertTriangle,
   BarChart,
   Calendar,
@@ -58,6 +58,8 @@ const moduleIconMap: Record<string, LucideIcon> = {
   calendar: Calendar,
   "bar-chart": BarChart,
   "message-circle": MessageCircle,
+  ClipboardCheck,
+  "clipboard-check": ClipboardCheck,
 };
 
 export default function Sidebar({ modules = [] }: SidebarProps) {
@@ -83,9 +85,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
       href: module.routePath,
       icon: moduleIconMap[module.icon || ""] ?? Puzzle,
     }));
-    const items = [...baseNavigation, ...moduleItems];
-    items.push({ name: "Tasks", href: "/tasks", icon: ClipboardCheck });
-    return items;
+    return [...baseNavigation, ...moduleItems];
   }, [modules]);
 
   // Hide sidebar entirely on public routes like login/logout
@@ -105,12 +105,15 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
       <div className="flex flex-col flex-1">
         <div className="flex h-14 items-center border-b px-4 justify-between">
           {!isCollapsed && (
-            <Link href="/dashboard" className="flex items-center space-x-2">
-              <Activity className="h-6 w-6" />
-              <span className="text-xl font-bold">Iatrum</span>
+            <Link href="/dashboard" className="flex items-center">
+              <BrandLogo className="h-8 w-32" />
             </Link>
           )}
-          {isCollapsed && <Activity className="h-6 w-6 mx-auto" />}
+          {isCollapsed && (
+            <Link href="/dashboard" className="mx-auto flex items-center" title="Dashboard">
+              <BrandLogo showWordmark={false} className="h-8 w-8" />
+            </Link>
+          )}
           <Button 
             variant="ghost" 
             size="sm" 
@@ -158,20 +161,24 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
           
           {/* Bottom Navigation */}
           <div className="p-2 space-y-1">
-            {bottomNavigation.map((item) => (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  "flex items-center rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                  isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "px-3 py-2"
-                )}
-                title={isCollapsed ? item.name : undefined}
-              >
-                <item.icon className="h-4 w-4 flex-shrink-0" />
-                {!isCollapsed && <span className="ml-2">{item.name}</span>}
-              </Link>
-            ))}
+            {bottomNavigation.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center rounded-lg text-sm font-medium hover:bg-accent hover:text-accent-foreground",
+                    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                    isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "px-3 py-2"
+                  )}
+                  title={isCollapsed ? item.name : undefined}
+                >
+                  <item.icon className="h-4 w-4 flex-shrink-0" />
+                  {!isCollapsed && <span className="ml-2">{item.name}</span>}
+                </Link>
+              );
+            })}
             {profile ? (
               <Button
                 variant="ghost"

@@ -45,11 +45,6 @@ export function InsurerManager() {
   const [deleteTarget, setDeleteTarget] = useState<Insurer | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const load = async () => {
     try {
       setInsurers(await fetchInsurers());
@@ -59,6 +54,13 @@ export function InsurerManager() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void load();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAdd = () => {
     setEditing(null);
@@ -128,11 +130,11 @@ export function InsurerManager() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Manage panel insurers available for selection during patient check-in.
         </p>
-        <Button onClick={handleAdd} size="sm">
+        <Button className="w-fit" onClick={handleAdd} size="sm">
           <Plus className="mr-2 h-4 w-4" />
           Add Insurer
         </Button>

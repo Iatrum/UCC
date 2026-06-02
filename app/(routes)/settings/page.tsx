@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ClipboardList, CreditCard, FileText, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { BookOpen, ClipboardList, CreditCard, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { storage } from '@/lib/firebase';
 import { useMedplumAuth } from '@/lib/auth-medplum';
 import { fetchOrganizationDetails, saveOrganizationDetails } from '@/lib/org';
 import { InsurerManager } from '@/components/settings/insurer-manager';
 import { ClinicalCatalogManager } from '@/components/catalogs/clinical-catalog-manager';
 import { FollowUpSettings } from '@/components/settings/follow-up-settings';
+import { DocumentTemplateEditor } from '@/components/settings/document-template-editor';
 
 interface UserSettings {
   fullName: string;
@@ -66,9 +65,19 @@ export default function SettingsPage() {
     if (!file) return;
     try {
       setIsUploading(true);
-      const objectRef = ref(storage, `branding/logo-${Date.now()}-${file.name}`);
-      await uploadBytes(objectRef, file, { contentType: file.type });
-      const url = await getDownloadURL(objectRef);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/storage/logo', {
+        method: 'POST',
+        body: formData,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.success || !payload?.url) {
+        throw new Error(payload?.error || 'Could not upload logo');
+      }
+
+      const url = String(payload.url);
       setLogoUrl(url);
       await saveOrganizationDetails({
         name: orgName,
@@ -108,7 +117,7 @@ export default function SettingsPage() {
         <div className="text-sm text-muted-foreground">Signed in as: {profileEmail}</div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-flow-dense gap-4 min-[900px]:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
             <WorkflowIcon><IdCard className="h-4 w-4" /></WorkflowIcon>
@@ -205,18 +214,18 @@ export default function SettingsPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-            <WorkflowIcon><Stethoscope className="h-4 w-4" /></WorkflowIcon>
+            <WorkflowIcon><BookOpen className="h-4 w-4" /></WorkflowIcon>
             <div>
-              <CardTitle>Service Catalogs</CardTitle>
-              <CardDescription>Orderable catalogs used by the treatment composer, labs, imaging, and generated letters.</CardDescription>
+              <CardTitle>Document Templates</CardTitle>
+              <CardDescription>Customise the HTML layout for Medical Certificates and Referral Letters.</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-            <ClinicalCatalogManager />
+            <DocumentTemplateEditor />
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
             <WorkflowIcon><MessageCircle className="h-4 w-4" /></WorkflowIcon>
             <div>
@@ -229,21 +238,16 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-            <WorkflowIcon><FileText className="h-4 w-4" /></WorkflowIcon>
+            <WorkflowIcon><Stethoscope className="h-4 w-4" /></WorkflowIcon>
             <div>
-              <CardTitle>Consultation</CardTitle>
-              <CardDescription>Text shortcuts used while writing clinical notes.</CardDescription>
+              <CardTitle>Service Catalogs</CardTitle>
+              <CardDescription>Orderable catalogs used by the treatment composer, labs, imaging, and generated letters.</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border border-dashed p-6">
-              <p className="text-sm font-medium">Smart Text is disabled for now.</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Built-in note shortcuts can be re-enabled after the storage path is finalized.
-              </p>
-            </div>
+            <ClinicalCatalogManager />
           </CardContent>
         </Card>
 

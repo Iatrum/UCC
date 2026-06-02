@@ -65,6 +65,8 @@ export interface SavedPatient extends PatientData {
 
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 const DUPLICATE_NRIC_CODE = 'DUPLICATE_NRIC';
+// Must match TRIAGE_ENCOUNTER_EXTENSION_URL in triage-service.ts (cannot import — circular dep)
+const TRIAGE_ENCOUNTER_EXTENSION_URL = 'https://ucc.emr/triage-encounter';
 
 type DuplicatePatientMatch = {
   id: string;
@@ -545,7 +547,7 @@ export async function getPatientFromMedplum(
       patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
       patientData.medicalHistory!.conditions = conditions.filter((c: Condition) => !(c as any).encounter).map((c: Condition) => (c as any).code?.text || 'Unknown condition');
       patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
-      const visitDate = (recentEncounters[0] as any)?.period?.start;
+      const visitDate = recentEncounters.length > 0 ? (recentEncounters[0] as any)?.period?.start : null;
       if (visitDate) patientData.lastVisit = new Date(visitDate);
     }
 
@@ -652,28 +654,45 @@ export async function searchPatientsInMedplum(
   medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {
-    const trimmed = query.trim().toLowerCase();
+    const trimmed = query.trim();
     if (!trimmed) {
       return [];
     }
 
-    // Medplum free-text `_query` matching has been unreliable for freshly-created
-    // patients in this app's clinic-scoped flows. Pull the clinic-scoped patient set
-    // and apply local matching so NRIC / name / phone searches behave deterministically.
-    const patients = await getAllPatientsFromMedplum(300, clinicId, medplum);
+    // Run server-side searches in parallel: name contains, NRIC (nric|), NRIC (ic|).
+    // Clinic scoping is applied to the name search via identifier param, and enforced
+    // on all results via matchesClinic() post-filter.
+    const [nameResults, nricResults, icResults] = await Promise.all([
+      medplum.searchResources('Patient', {
+        'name:contains': trimmed,
+        active: 'true',
+        _count: '50',
+        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+      }),
+      medplum.searchResources('Patient', {
+        identifier: `nric|${trimmed}`,
+        _count: '50',
+      }),
+      medplum.searchResources('Patient', {
+        identifier: `ic|${trimmed}`,
+        _count: '50',
+      }),
+    ]);
 
-    return patients
+    // Merge and deduplicate by patient ID
+    const seen = new Set<string>();
+    const merged: FHIRPatient[] = [];
+    for (const patient of [...nameResults, ...nricResults, ...icResults]) {
+      if (patient.id && !seen.has(patient.id)) {
+        seen.add(patient.id);
+        merged.push(patient);
+      }
+    }
+
+    return merged
+      .filter((patient) => matchesClinic(patient as any, clinicId))
       .filter((patient) => patient.active !== false)
-      .filter((patient) => {
-        const fullName = patient.fullName?.toLowerCase() ?? '';
-        const nric = patient.nric?.toLowerCase() ?? '';
-        const phone = patient.phone?.toLowerCase() ?? '';
-        return (
-          fullName.includes(trimmed) ||
-          nric.includes(trimmed) ||
-          phone.includes(trimmed)
-        );
-      })
+      .map((patient) => fhirPatientToPatientData(patient))
       .slice(0, 50);
   } catch (error) {
     console.error('Failed to search patients in Medplum:', error);
@@ -702,7 +721,10 @@ export async function getAllPatientsFromMedplum(
         ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
       }),
       client.searchResources('Encounter', {
-        status: 'finished',
+        // Include all active statuses so newly checked-in patients show correct
+        // queueStatus and lastVisit (arrived/triaged/in-progress would be missed
+        // if we only fetched 'finished').
+        status: 'arrived,triaged,in-progress,finished',
         _sort: '-date',
         _count: '500',
         ...(clinicId ? {
@@ -712,15 +734,32 @@ export async function getAllPatientsFromMedplum(
       }),
     ]);
 
-    // Build patientId → most recent visit date (encounters already sorted by -date)
+    // Encounters are sorted newest-first; first entry per patient wins.
     const lastVisitByPatientId = new Map<string, Date>();
+    const queueInfoByPatientId = new Map<string, { queueStatus: QueueStatus | null; queueAddedAt: string | null }>();
+
     for (const encounter of encounters) {
       const ref = (encounter as any).subject?.reference as string | undefined;
       const visitDate = (encounter as any).period?.start as string | undefined;
-      if (!ref || !visitDate) continue;
+      if (!ref) continue;
       const pid = ref.startsWith('Patient/') ? ref.slice(8) : ref;
-      if (!lastVisitByPatientId.has(pid)) {
+
+      if (visitDate && !lastVisitByPatientId.has(pid)) {
         lastVisitByPatientId.set(pid, new Date(visitDate));
+      }
+
+      // Read queueStatus from the triage encounter extension (not the Patient extension,
+      // which is never updated during check-in via triage-service.ts).
+      if (!queueInfoByPatientId.has(pid)) {
+        const triageExt = (encounter as any).extension?.find(
+          (ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL
+        );
+        if (triageExt?.extension) {
+          const getSub = (key: string) => triageExt.extension.find((e: any) => e.url === key);
+          const queueStatus = (getSub('queueStatus')?.valueString as QueueStatus) ?? null;
+          const queueAddedAt = getSub('queueAddedAt')?.valueDateTime ?? visitDate ?? null;
+          queueInfoByPatientId.set(pid, { queueStatus, queueAddedAt });
+        }
       }
     }
 
@@ -730,6 +769,11 @@ export async function getAllPatientsFromMedplum(
         const data = fhirPatientToPatientData(patient);
         const lv = lastVisitByPatientId.get(data.id);
         if (lv) data.lastVisit = lv;
+        const queueInfo = queueInfoByPatientId.get(data.id);
+        if (queueInfo) {
+          data.queueStatus = queueInfo.queueStatus;
+          data.queueAddedAt = queueInfo.queueAddedAt;
+        }
         return data;
       })
       .filter((patient) => patient.active !== false);

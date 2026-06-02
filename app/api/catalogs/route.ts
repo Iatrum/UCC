@@ -10,7 +10,7 @@ import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
 function parseType(value: string | null): ClinicalCatalogType | undefined {
-  if (value === 'lab' || value === 'imaging' || value === 'document') return value;
+  if (value === 'lab' || value === 'imaging' || value === 'document' || value === 'diagnosis') return value;
   return undefined;
 }
 

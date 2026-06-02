@@ -1,7 +1,6 @@
 import { Patient as AppPatient, Consultation, Prescription, ProcedureRecord } from "@/lib/models";
 import { saveFhirResource } from "./firestore";
 import { createFhirResource, isMedplumConfigured } from "./medplum-direct";
-import { findDiagnosisByText } from "./terminologies/diagnoses";
 import { findMedicationByName } from "./terminologies/medications";
 import { formatMedicationNameWithStrength } from "@/lib/prescriptions";
 import { validateFhirResource, logValidation } from "./validation";
@@ -145,40 +144,25 @@ export async function toFhirEncounter(
 export async function toFhirCondition(patientRef: string, encounterRef: string, diagnosis: string): Promise<{ reference: string; id: string }> {
   // MEDPLUM ONLY - No Firebase fallback
 
-  // Try to find coded diagnosis (ICD-10/SNOMED)
-  const diagnosisCode = findDiagnosisByText(diagnosis);
-
-  // Build code with both coding systems if available
   const code: any = {
     text: diagnosis
   };
-
-  if (diagnosisCode) {
-    code.coding = [];
-
-    // Add ICD-10 code if available
-    if (diagnosisCode.icd10) {
-      code.coding.push({
-        system: 'http://hl7.org/fhir/sid/icd-10',
-        code: diagnosisCode.icd10.code,
-        display: diagnosisCode.icd10.display
-      });
-    }
-
-    // Add SNOMED CT code if available
-    if (diagnosisCode.snomed) {
-      code.coding.push({
-        system: 'http://snomed.info/sct',
-        code: diagnosisCode.snomed.code,
-        display: diagnosisCode.snomed.display
-      });
-    }
-  }
 
   const resource: any = {
     resourceType: "Condition",
     subject: { reference: patientRef },
     encounter: { reference: encounterRef },
+    category: [
+      {
+        coding: [
+          {
+            system: 'http://terminology.hl7.org/CodeSystem/condition-category',
+            code: 'encounter-diagnosis',
+            display: 'Encounter Diagnosis'
+          }
+        ]
+      }
+    ],
     code,
     clinicalStatus: {
       coding: [{
@@ -298,4 +282,3 @@ export async function toFhirServiceRequest(patientRef: string, encounterRef: str
   const created = await createFhirResource(resource);
   return { reference: `ServiceRequest/${created.id}`, id: created.id };
 }
-

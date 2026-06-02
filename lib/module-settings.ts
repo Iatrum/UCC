@@ -14,9 +14,9 @@ export const KNOWN_BRANCH_MODULE_IDS = [
   "inventory",
   "analytics",
   "follow-up",
+  "tasks",
   "poct",
   "pacs",
-  "triage",
 ] as const;
 
 const knownModuleIds = new Set<string>(KNOWN_BRANCH_MODULE_IDS);

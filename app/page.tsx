@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 
 export const dynamic = "force-dynamic";
 
@@ -75,9 +76,7 @@ export default function Home() {
       <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight" style={{ color: "#1c1e4b" }}>
-              Iatrum<span className="font-light">OS</span>
-            </span>
+            <BrandLogo className="h-9 w-36" />
           </Link>
           <nav className="hidden items-center gap-8 md:flex">
             {NAV_LINKS.map((link) => (
@@ -260,9 +259,7 @@ export default function Home() {
       {/* Footer */}
         <footer className="border-t border-gray-100 bg-white px-6 py-10">
           <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-sm text-gray-400 md:flex-row">
-            <span className="font-semibold" style={{ color: "#1c1e4b" }}>
-              IatrumOS
-            </span>
+            <BrandLogo className="h-7 w-28" />
             <span>© {new Date().getFullYear()} Iatrum. All rights reserved.</span>
             <div className="flex gap-6">
               <a href="mailto:hello@iatrum.com" className="hover:text-gray-600">

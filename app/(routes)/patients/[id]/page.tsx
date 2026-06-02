@@ -15,6 +15,10 @@ import { notFound } from 'next/navigation';
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import PatientProfileWorkspace from "./patient-profile-workspace";
 
+function getCurrentTimestamp(): number {
+  return Date.now();
+}
+
 interface PatientProfilePageProps {
   params: Promise<{ id: string }>;
 }
@@ -41,13 +45,14 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
     medications: [],
   };
   const vitals = triageData.triage?.vitalSigns;
+  const nowMs = getCurrentTimestamp();
 
   const upcomingAppointment = appointmentsData
     .filter((appointment) => {
       const scheduledAt = appointment.scheduledAt instanceof Date ? appointment.scheduledAt : new Date(appointment.scheduledAt);
       return (
         !Number.isNaN(scheduledAt.getTime()) &&
-        scheduledAt.getTime() >= Date.now() &&
+        scheduledAt.getTime() >= nowMs &&
         ["booked", "arrived", "pending", "proposed"].includes(appointment.status)
       );
     })
@@ -165,7 +170,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
           {/* Stat row */}
           <div className="mt-4 border-t border-border pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <p className="text-xs text-muted-foreground">Last visit</p>
+              <p className="text-xs text-muted-foreground">Last completed visit</p>
               <p className="mt-0.5 font-medium">
                 {patient.lastVisit ? formatDisplayDate(patient.lastVisit) : "No visits yet"}
               </p>

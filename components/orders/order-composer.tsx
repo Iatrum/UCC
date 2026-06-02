@@ -24,6 +24,7 @@ import {
   type TreatmentPlanTab,
 } from "@/lib/treatment-plan";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
+import { DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import { formatDisplayDate } from "@/lib/utils";
 
 type CatalogItem = {
@@ -37,6 +38,13 @@ interface OrderComposerProps {
   draftId: string;
   patientId: string;
   consultationId?: string;
+  consultation?: {
+    date?: string | null;
+    chiefComplaint?: string | null;
+    diagnosis?: string | null;
+    notes?: string | null;
+    progressNote?: string | null;
+  } | null;
   initialEntries?: TreatmentPlanEntry[];
   persistDrafts?: boolean;
   items: CatalogItem[];
@@ -224,6 +232,88 @@ function documentDisplayName(item: CatalogItem): string {
   return item.name;
 }
 
+function htmlToPlainText(value?: string | null): string {
+  return (value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function multilineTextToHtml(value: string): string {
+  const paragraphs = value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) {
+    return "";
+  }
+
+  return paragraphs
+    .map((paragraph) => {
+      const lines = paragraph
+        .split(/\r?\n/)
+        .map((line) => escapeHtml(line.trim()))
+        .filter(Boolean);
+
+      return `<p style="margin: 0 0 12px; line-height: 1.65;">${lines.join("<br />")}</p>`;
+    })
+    .join("");
+}
+
+function buildReferralDefaultContent({
+  patientName,
+  consultation,
+}: {
+  patientName?: string | null;
+  consultation?: OrderComposerProps["consultation"];
+}): string {
+  const clinicalSummary = htmlToPlainText(consultation?.chiefComplaint);
+  const additionalNotes = htmlToPlainText(consultation?.notes);
+  const progressNote = htmlToPlainText(consultation?.progressNote);
+  const diagnosis = (consultation?.diagnosis || "").trim();
+  const dateLabel = consultation?.date ? formatDisplayDate(consultation.date) : "";
+  const visitLabel = dateLabel ? ` during the consultation on ${dateLabel}` : "";
+  const patientLabel = patientName || "this patient";
+  const details = [
+    clinicalSummary ? `Clinical summary:\n${clinicalSummary}` : null,
+    diagnosis ? `Diagnosis:\n${diagnosis}` : null,
+    additionalNotes ? `Additional notes:\n${additionalNotes}` : null,
+    progressNote ? `Progress note:\n${progressNote}` : null,
+  ].filter(Boolean);
+
+  if (details.length === 0) {
+    return "Please include any medical information you deem relevant for the referral";
+  }
+
+  return [
+    `Dear Doctor,`,
+    `Thank you for seeing ${patientLabel} for further assessment and management. The following details were recorded${visitLabel}:`,
+    ...details,
+    `Kindly evaluate and advise on further management.`,
+    `Thank you.`,
+  ].join("\n\n");
+}
+
 export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | undefined {
   const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
   if (!kind) return entry.instruction;
@@ -259,6 +349,7 @@ export function OrderComposer({
   draftId,
   patientId,
   consultationId,
+  consultation = null,
   initialEntries = [],
   persistDrafts = false,
   items,
@@ -291,6 +382,8 @@ export function OrderComposer({
   );
   const [organization, setOrganization] = React.useState<OrganizationDetails | null>(null);
   const [orgLoaded, setOrgLoaded] = React.useState(false);
+  const [mcTemplateHtml, setMcTemplateHtml] = React.useState<string | null>(null);
+  const [referralTemplateHtml, setReferralTemplateHtml] = React.useState<string | null>(null);
 
 
   const catalogByTab = React.useMemo<Record<TreatmentPlanTab, CatalogItem[]>>(
@@ -340,23 +433,43 @@ export function OrderComposer({
       ? "referral"
       : null;
 
+  const defaultReferralDiagnosis = React.useMemo(
+    () => (consultation?.diagnosis || "").trim(),
+    [consultation?.diagnosis]
+  );
+
+  const defaultReferralContent = React.useMemo(
+    () => buildReferralDefaultContent({ patientName: patient?.fullName, consultation }),
+    [consultation, patient?.fullName]
+  );
+
   React.useEffect(() => {
     if (detailEntryId && !entries.some((e) => e.id === detailEntryId)) {
-      setDetailEntryId(null);
+      queueMicrotask(() => {
+        setDetailEntryId(null);
+      });
     }
   }, [entries, detailEntryId]);
 
   React.useEffect(() => {
     if (editingDocumentEntryId && !entries.some((e) => e.id === editingDocumentEntryId)) {
-      setEditingDocumentEntryId(null);
+      queueMicrotask(() => {
+        setEditingDocumentEntryId(null);
+      });
     }
   }, [entries, editingDocumentEntryId]);
 
   React.useEffect(() => {
     if (!editingDocumentEntry || orgLoaded) return;
-    fetchOrganizationDetails()
-      .then((info) => setOrganization(info))
-      .finally(() => setOrgLoaded(true));
+    Promise.all([
+      fetchOrganizationDetails(),
+      fetch("/api/document-templates?type=mc").then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/document-templates?type=referral").then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([info, mcData, refData]) => {
+      setOrganization(info);
+      setMcTemplateHtml(mcData?.html ?? DEFAULT_MC_TEMPLATE);
+      setReferralTemplateHtml(refData?.html ?? DEFAULT_REFERRAL_TEMPLATE);
+    }).finally(() => setOrgLoaded(true));
   }, [editingDocumentEntry, orgLoaded]);
 
   const publishPlan = React.useCallback(
@@ -368,6 +481,51 @@ export function OrderComposer({
     },
     [onPlanChange]
   );
+
+  const mcPreviewHtml = React.useMemo(() => {
+    if (!mcTemplateHtml) return null;
+    const endDate = calcMcEndDate(mcStartDate, mcDays);
+    const data: Record<string, string> = {
+      clinicName: organization?.name ?? "",
+      clinicAddress: organization?.address ?? "",
+      clinicPhone: organization?.phone ?? "",
+      patientName: patient?.fullName ?? "",
+      patientNric: patient?.nric ?? "",
+      patientDob: "",
+      mcDays: String(mcDays),
+      mcStartDate: formatDisplayDate(new Date(mcStartDate)),
+      mcEndDate: endDate,
+      diagnosis: mcDiagnosis,
+      doctorName: mcDoctorName,
+      date: formatDisplayDate(new Date()),
+    };
+    return Object.entries(data).reduce(
+      (acc, [k, v]) => acc.replaceAll(`{{${k}}}`, v),
+      mcTemplateHtml
+    );
+  }, [mcTemplateHtml, mcDays, mcStartDate, mcDiagnosis, mcDoctorName, organization, patient]);
+
+  const referralPreviewHtml = React.useMemo(() => {
+    if (!referralTemplateHtml) return null;
+    const data: Record<string, string> = {
+      clinicName: organization?.name ?? "",
+      clinicAddress: organization?.address ?? "",
+      clinicPhone: organization?.phone ?? "",
+      patientName: patient?.fullName ?? "",
+      patientNric: patient?.nric ?? "",
+      patientAge: "",
+      referralTo: referralTo,
+      referralFrom: organization?.name ?? "",
+      referralBody: multilineTextToHtml(referralContent),
+      diagnosis: referralDiagnosis,
+      doctorName: organization?.name ?? "",
+      date: formatDisplayDate(new Date()),
+    };
+    return Object.entries(data).reduce(
+      (acc, [k, v]) => acc.replaceAll(`{{${k}}}`, v),
+      referralTemplateHtml
+    );
+  }, [referralTemplateHtml, referralTo, referralContent, referralDiagnosis, organization, patient]);
 
   const loadDraft = React.useCallback(async () => {
     const response = await fetch(
@@ -388,8 +546,10 @@ export function OrderComposer({
 
   React.useEffect(() => {
     if (!persistDrafts) {
-      publishPlan(initialEntries);
-      setHydrated(true);
+      queueMicrotask(() => {
+        publishPlan(initialEntries);
+        setHydrated(true);
+      });
       return;
     }
 
@@ -659,11 +819,8 @@ export function OrderComposer({
                     setMcStartDate(entry.meta?.mcStartDate || new Date().toISOString().split("T")[0]);
                     setMcDoctorName(entry.meta?.mcDoctorName || "");
                     setReferralTo(entry.meta?.referralTo || "(Insert Hosp name)");
-                    setReferralDiagnosis(entry.meta?.referralDiagnosis || "");
-                    setReferralContent(
-                      entry.meta?.referralContent ||
-                        "Please include any medical information you deem relevant for the referral"
-                    );
+                    setReferralDiagnosis(entry.meta?.referralDiagnosis || defaultReferralDiagnosis);
+                    setReferralContent(entry.meta?.referralContent || defaultReferralContent);
                     setEditingDocumentEntryId(entry.id);
                   } else {
                     setDetailEntryId(entry.id);
@@ -776,16 +933,22 @@ export function OrderComposer({
                   />
                 </div>
               </div>
-              <div className="rounded-lg border overflow-auto h-[420px]">
-                <McDocumentPreview
-                  patient={patient}
-                  issuedDate={formatDisplayDate(new Date())}
-                  startDate={formatDisplayDate(new Date(mcStartDate))}
-                  endDate={calcMcEndDate(mcStartDate, mcDays)}
-                  numDays={mcDays}
-                  doctorName={mcDoctorName}
-                  organization={organization}
-                />
+              <div className="rounded-lg border overflow-hidden h-[420px]">
+                {mcPreviewHtml ? (
+                  <iframe srcDoc={mcPreviewHtml} className="w-full h-full" title="MC preview" />
+                ) : (
+                  <div className="overflow-auto h-full">
+                    <McDocumentPreview
+                      patient={patient}
+                      issuedDate={formatDisplayDate(new Date())}
+                      startDate={formatDisplayDate(new Date(mcStartDate))}
+                      endDate={calcMcEndDate(mcStartDate, mcDays)}
+                      numDays={mcDays}
+                      doctorName={mcDoctorName}
+                      organization={organization}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           ) : null}
@@ -807,7 +970,7 @@ export function OrderComposer({
                 <div>
                   <Label className="text-xs">Compose content</Label>
                   <Textarea
-                    className="min-h-40"
+                    className="min-h-[260px] leading-6"
                     value={referralContent}
                     onChange={(event) => setReferralContent(event.target.value)}
                   />
@@ -817,16 +980,22 @@ export function OrderComposer({
                   <p>Patient name · Doctor name · Visit date · Identification · Age · Time in · Diagnosis</p>
                 </div>
               </div>
-              <div className="rounded-lg border overflow-auto h-[420px]">
-                <ReferralDocumentPreview
-                  letterText={referralContent}
-                  organization={organization}
-                  metadata={{
-                    patientName: patient?.fullName ?? null,
-                    patientId: patient?.nric ?? null,
-                    toLine: referralTo,
-                  }}
-                />
+              <div className="rounded-lg border overflow-hidden h-[420px]">
+                {referralPreviewHtml ? (
+                  <iframe srcDoc={referralPreviewHtml} className="w-full h-full" title="Referral preview" />
+                ) : (
+                  <div className="overflow-auto h-full">
+                    <ReferralDocumentPreview
+                      letterText={referralContent}
+                      organization={organization}
+                      metadata={{
+                        patientName: patient?.fullName ?? null,
+                        patientId: patient?.nric ?? null,
+                        toLine: referralTo,
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           ) : null}

@@ -15,7 +15,7 @@ import type {
   Procedure,
   MedicationRequest,
 } from '@medplum/fhirtypes';
-import { findDiagnosisByText } from './terminologies/diagnoses';
+import { getClinicalCatalogItems, type ClinicalCatalogItem } from './catalog-service';
 import { findMedicationByName } from './terminologies/medications';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
@@ -57,6 +57,52 @@ const ORDER_PRICE_EXTENSION_URL = 'https://ucc.emr/order/unit-price';
 const ORDER_QUANTITY_EXTENSION_URL = 'https://ucc.emr/order/quantity';
 const ORDER_CATEGORY_EXTENSION_URL = 'https://ucc.emr/order/category';
 const ORDER_INDEX_EXTENSION_URL = 'https://ucc.emr/order/index';
+
+function conditionCategory() {
+  return [
+    {
+      coding: [
+        {
+          system: 'http://terminology.hl7.org/CodeSystem/condition-category',
+          code: 'encounter-diagnosis',
+          display: 'Encounter Diagnosis',
+        },
+      ],
+    },
+  ];
+}
+
+async function findDiagnosisCatalogItem(
+  medplum: MedplumClient,
+  clinicId: string | undefined,
+  diagnosis: string
+): Promise<ClinicalCatalogItem | null> {
+  if (!clinicId) return null;
+  const searchText = diagnosis.trim().toLowerCase();
+  if (!searchText) return null;
+
+  const items = await getClinicalCatalogItems(medplum, clinicId, 'diagnosis');
+  return (
+    items.find((item) => item.active && item.name.toLowerCase() === searchText) ||
+    items.find((item) => item.active && (item.display || '').toLowerCase() === searchText) ||
+    items.find((item) => item.active && item.code?.toLowerCase() === searchText) ||
+    null
+  );
+}
+
+function diagnosisCodeableConcept(diagnosis: string, catalogItem: ClinicalCatalogItem | null) {
+  const code: any = { text: diagnosis };
+  if (catalogItem?.code) {
+    code.coding = [
+      {
+        system: catalogItem.system || 'http://hl7.org/fhir/sid/icd-10',
+        code: catalogItem.code,
+        display: catalogItem.display || catalogItem.name,
+      },
+    ];
+  }
+  return code;
+}
 
 function addClinicIdentifier(identifiers: { system?: string; value?: string }[] | undefined, clinicId?: string) {
   if (!clinicId) return identifiers;
@@ -149,7 +195,6 @@ function orderCategoryExtensionValue(resource: { extension?: { url?: string; val
     : undefined;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function validateAndCreate(medplum: MedplumClient, resource: any) {
   const validation = validateFhirResource(resource);
   logValidation(resource.resourceType, validation);
@@ -315,30 +360,14 @@ export async function saveConsultationToMedplum(
 
   // 4. Create Diagnosis (Condition) with ICD-10/SNOMED if available
   if (consultation.diagnosis) {
-    const diagnosisCode = findDiagnosisByText(consultation.diagnosis);
-    const code: any = { text: consultation.diagnosis };
-    if (diagnosisCode) {
-      code.coding = [];
-      if (diagnosisCode.icd10) {
-        code.coding.push({
-          system: 'http://hl7.org/fhir/sid/icd-10',
-          code: diagnosisCode.icd10.code,
-          display: diagnosisCode.icd10.display,
-        });
-      }
-      if (diagnosisCode.snomed) {
-        code.coding.push({
-          system: 'http://snomed.info/sct',
-          code: diagnosisCode.snomed.code,
-          display: diagnosisCode.snomed.display,
-        });
-      }
-    }
+    const diagnosisCatalogItem = await findDiagnosisCatalogItem(client, clinicId, consultation.diagnosis);
+    const code = diagnosisCodeableConcept(consultation.diagnosis, diagnosisCatalogItem);
 
     await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Condition',
       subject: { reference: patientReference },
       encounter: { reference: `Encounter/${encounter.id}` },
+      category: conditionCategory(),
       code,
       recordedDate: encounterDate,
       clinicalStatus: {
@@ -791,34 +820,18 @@ export async function updateConsultationInMedplum(
 
   // 5. Update Diagnosis Condition
   if (updates.diagnosis !== undefined) {
-    const diagnosisCode = findDiagnosisByText(updates.diagnosis);
-    const code: any = { text: updates.diagnosis };
-    if (diagnosisCode) {
-      code.coding = [];
-      if (diagnosisCode.icd10) {
-        code.coding.push({
-          system: 'http://hl7.org/fhir/sid/icd-10',
-          code: diagnosisCode.icd10.code,
-          display: diagnosisCode.icd10.display,
-        });
-      }
-      if (diagnosisCode.snomed) {
-        code.coding.push({
-          system: 'http://snomed.info/sct',
-          code: diagnosisCode.snomed.code,
-          display: diagnosisCode.snomed.display,
-        });
-      }
-    }
+    const diagnosisCatalogItem = await findDiagnosisCatalogItem(client, clinicId, updates.diagnosis);
+    const code = diagnosisCodeableConcept(updates.diagnosis, diagnosisCatalogItem);
 
     const existingCondition = conditions[0];
     if (existingCondition) {
-      await client.updateResource({ ...(existingCondition as any), code, recordedDate: now });
+      await client.updateResource({ ...(existingCondition as any), category: conditionCategory(), code, recordedDate: now });
     } else {
       await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Condition',
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
+        category: conditionCategory(),
         code,
         recordedDate: now,
         clinicalStatus: {
