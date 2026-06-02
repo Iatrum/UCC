@@ -437,16 +437,16 @@ function CatalogTable({
   onDelete: (item: ClinicalCatalogItem) => void;
 }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
+    <div className="max-h-[360px] overflow-auto rounded-md border">
       <Table className="min-w-[640px]">
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Code</TableHead>
-            <TableHead>Category</TableHead>
-            {showPrice ? <TableHead>Price</TableHead> : null}
-            <TableHead>Status</TableHead>
-            <TableHead className="w-[110px] text-right">Actions</TableHead>
+            <TableHead className="sticky top-0 z-10 bg-card">Name</TableHead>
+            <TableHead className="sticky top-0 z-10 bg-card">Code</TableHead>
+            <TableHead className="sticky top-0 z-10 bg-card">Category</TableHead>
+            {showPrice ? <TableHead className="sticky top-0 z-10 bg-card">Price</TableHead> : null}
+            <TableHead className="sticky top-0 z-10 bg-card">Status</TableHead>
+            <TableHead className="sticky top-0 z-10 bg-card w-[110px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
