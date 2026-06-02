@@ -19,7 +19,7 @@ test.describe("Production credential and site checks", () => {
 
     const response = await page.goto(EMR_URL, { waitUntil: "domcontentloaded" });
     expect(response?.status()).toBeLessThan(400);
-    await expect(page).toHaveTitle(/UCC EMR/i);
+    await expect(page).toHaveTitle(/Iatrum/i);
   });
 
   test("EMR staff login page is accessible", async ({ page }) => {
