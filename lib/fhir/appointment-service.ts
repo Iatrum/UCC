@@ -4,6 +4,7 @@
 
 import { MedplumClient, OperationOutcomeError, getStatus } from '@medplum/core';
 import type { Appointment as FHIRAppointment } from '@medplum/fhirtypes';
+import { assignResourceToClinicTenant, resolveClinicTenant, resourceMatchesClinicTenant } from './clinic-tenancy';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
 function patientIdFromActorReference(ref: string | undefined): string {
@@ -51,6 +52,7 @@ export async function saveAppointmentToMedplum(
   appointmentData: AppointmentData,
   clinicId: string
 ): Promise<string> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const scheduledTime = typeof appointmentData.scheduledAt === 'string'
     ? appointmentData.scheduledAt
     : appointmentData.scheduledAt.toISOString();
@@ -64,7 +66,6 @@ export async function saveAppointmentToMedplum(
 
   const fhirAppointment: FHIRAppointment = {
     resourceType: 'Appointment',
-    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
     status: appointmentData.status,
     start: scheduledTime,
     end: endTime.toISOString(),
@@ -90,6 +91,7 @@ export async function saveAppointmentToMedplum(
   };
 
   const saved = await medplum.createResource(fhirAppointment);
+  await assignResourceToClinicTenant(medplum, 'Appointment', saved, clinicTenant);
   console.log(`✅ Created FHIR Appointment: ${saved.id}`);
 
   return saved.id!;
@@ -218,32 +220,41 @@ export async function getUpcomingAppointmentsForClinic(
   clinicId: string,
   limit = 50
 ): Promise<SavedAppointment[]> {
-  const all = await getUpcomingAppointments(medplum, limit);
-  if (all.length === 0) return [];
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
+  if (!clinicTenant) return [];
 
-  const uniquePatientIds = [...new Set(all.map((a) => a.patientId).filter(Boolean))];
-  if (uniquePatientIds.length === 0) return [];
-
-  // Single batch Patient search — no per-row lookup.
-  const patients = await medplum.searchResources('Patient', {
-    _id: uniquePatientIds.join(','),
-    _count: String(uniquePatientIds.length),
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const appointments = await medplum.searchResources('Appointment', {
+    date: `ge${startOfToday.toISOString()}`,
+    _sort: 'date',
+    _count: String(limit),
+    _compartment: clinicTenant.organizationReference,
   });
 
-  // Replicate the same two-path ownership check used by patient-service.ts matchesClinic().
-  const validIds = new Set(
-    patients
-      .filter((p) => {
-        const byIdentifier = p.identifier?.some(
-          (id) => id.system === 'clinic' && id.value === clinicId
-        );
-        const byOrg = p.managingOrganization?.reference === `Organization/${clinicId}`;
-        return byIdentifier || byOrg;
-      })
-      .map((p) => p.id!)
-  );
-
-  return all.filter((a) => validIds.has(a.patientId));
+  return appointments
+    .filter((appointment) => resourceMatchesClinicTenant(appointment as any, clinicTenant.organizationId))
+    .map((fhirAppt) => {
+      const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
+      const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
+      const ext = fhirAppt.extension ?? [];
+      return {
+        id: fhirAppt.id!,
+        patientId: patientIdFromActorReference(patientParticipant?.actor?.reference) || '',
+        patientName: patientParticipant?.actor?.display || '',
+        clinician: clinicianParticipant?.actor?.display || '',
+        reason: fhirAppt.reasonCode?.[0]?.text || '',
+        type: fhirAppt.appointmentType?.text,
+        notes: fhirAppt.comment,
+        status: fhirAppt.status as any,
+        scheduledAt: fhirAppt.start ? new Date(fhirAppt.start) : new Date(),
+        durationMinutes: fhirAppt.minutesDuration,
+        createdAt: fhirAppt.meta?.lastUpdated ? new Date(fhirAppt.meta.lastUpdated) : new Date(),
+        checkinAt:   ext.find(e => e.url === EXT_CHECKIN)?.valueDateTime,
+        completedAt: ext.find(e => e.url === EXT_COMPLETED)?.valueDateTime,
+        cancelledAt: ext.find(e => e.url === EXT_CANCELLED)?.valueDateTime,
+      } as SavedAppointment;
+    });
 }
 
 /**

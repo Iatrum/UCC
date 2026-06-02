@@ -21,6 +21,12 @@ import {
   type ImagingStudyData,
   type DICOMSeries,
 } from './imaging-constants';
+import {
+  assignResourceToAccountReferences,
+  assignResourceToClinicTenant,
+  getResourceAccountReferences,
+  resolveClinicTenant,
+} from './clinic-tenancy';
 
 export {
   IMAGING_PROCEDURES,
@@ -91,6 +97,7 @@ export async function createImagingOrder(
   clinicId: string
 ): Promise<string> {
   const client = medplum;
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   
   console.log(`🏥 Creating imaging order for patient ${order.patientId}`);
 
@@ -141,6 +148,7 @@ export async function createImagingOrder(
         ...(order.clinicalQuestion ? [{ text: `Clinical Question: ${order.clinicalQuestion}` }] : []),
       ],
     });
+    await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
     
     serviceRequests.push(serviceRequest);
     console.log(`✅ Created imaging ServiceRequest: ${serviceRequest.id} for ${procedure.display}`);
@@ -180,7 +188,7 @@ export async function receiveImagingStudy(
 
   // Get the original service request
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
-  const clinicIdentifier = serviceRequest.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
+  const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
     throw new Error('ServiceRequest has no patient reference');
@@ -190,7 +198,6 @@ export async function receiveImagingStudy(
   const imagingStudy = await validateAndCreate<ImagingStudy>(client, {
     resourceType: 'ImagingStudy',
     identifier: [
-      ...(clinicIdentifier ? [clinicIdentifier] : []),
       ...(studyData.accessionNumber ? [{
         system: 'accession',
         value: studyData.accessionNumber,
@@ -234,6 +241,7 @@ export async function receiveImagingStudy(
       }] : undefined,
     })),
   });
+  await assignResourceToAccountReferences(client, 'ImagingStudy', imagingStudy, accountRefs);
 
   console.log(`✅ Created ImagingStudy: ${imagingStudy.id}`);
 
@@ -280,12 +288,11 @@ export async function createImagingReport(
 
   // Get the imaging study
   const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId);
-  const clinicIdentifier = imagingStudy.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
+  const accountRefs = getResourceAccountReferences(imagingStudy);
 
   // Create DiagnosticReport
   const report = await validateAndCreate<DiagnosticReport>(client, {
     resourceType: 'DiagnosticReport',
-    identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
     status,
     category: [{
       coding: [{
@@ -315,6 +322,7 @@ export async function createImagingReport(
       display: radiologist,
     }] : undefined,
   });
+  await assignResourceToAccountReferences(client, 'DiagnosticReport', report, accountRefs);
 
   console.log(`✅ Created imaging DiagnosticReport: ${report.id}`);
 

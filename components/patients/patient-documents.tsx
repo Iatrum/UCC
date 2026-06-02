@@ -4,6 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -34,6 +45,7 @@ export default function PatientDocuments({ patientId }: Props) {
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchDocs = useCallback(async () => {
@@ -120,8 +132,7 @@ export default function PatientDocuments({ patientId }: Props) {
   };
 
   const onDelete = async (docItem: PatientDocument) => {
-    const ok = confirm(`Delete ${docItem.title}? This cannot be undone.`);
-    if (!ok) return;
+    setDeletingId(docItem.id);
     try {
       const res = await fetch('/api/documents', {
         method: 'DELETE',
@@ -137,6 +148,8 @@ export default function PatientDocuments({ patientId }: Props) {
     } catch (err: any) {
       console.error(err);
       toast({ title: "Delete failed", description: err?.message || "Please try again", variant: "destructive" });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -223,9 +236,34 @@ export default function PatientDocuments({ patientId }: Props) {
                         <Button asChild variant="outline" size="sm">
                           <a href={d.url} target="_blank" rel="noreferrer">View</a>
                         </Button>
-                        <Button variant="destructive" size="sm" onClick={() => onDelete(d)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm" disabled={deletingId === d.id}>
+                              {deletingId === d.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete {d.title}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently remove the document and its stored file. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => onDelete(d)}
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>

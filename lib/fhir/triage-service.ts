@@ -3,39 +3,32 @@ import { MedplumClient } from '@medplum/core';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
+import {
+  assignResourceToClinicTenant,
+  resolveClinicTenant,
+  resourceMatchesClinicTenant,
+  type ClinicTenant,
+} from './clinic-tenancy';
 
-const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
-
-/** Build the identifiers + serviceProvider fields that tag a triage Encounter to a clinic. */
-function clinicEncounterScope(clinicId?: string): Record<string, any> {
-  if (!clinicId) return {};
+/** Build the serviceProvider field that ties a triage Encounter to a branch Organization. */
+function clinicEncounterScope(tenant: ClinicTenant | null): Record<string, any> {
+  if (!tenant) return {};
   return {
-    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
-    serviceProvider: { reference: `Organization/${clinicId}` },
+    serviceProvider: { reference: tenant.organizationReference },
   };
 }
 
 /** Verify an Encounter belongs to the given clinic. Throws if it does not. */
-function assertEncounterBelongsToClinic(encounter: any, clinicId?: string): void {
-  if (!clinicId) return; // no scope → no assertion (backward-compat with admin callers)
-  const identifierMatch = encounter.identifier?.some(
-    (id: any) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
-  );
-  const serviceProviderMatch =
-    encounter.serviceProvider?.reference === `Organization/${clinicId}`;
-  if (!identifierMatch && !serviceProviderMatch) {
-    throw new Error(`Access denied: encounter does not belong to clinic '${clinicId}'`);
+function assertEncounterBelongsToClinic(encounter: any, tenant: ClinicTenant | null): void {
+  if (!tenant) return; // no scope -> no assertion (admin callers only)
+  if (!resourceMatchesClinicTenant(encounter, tenant.organizationId)) {
+    throw new Error(`Access denied: encounter does not belong to clinic '${tenant.clinicId}'`);
   }
 }
 
-function patientBelongsToClinic(patient: any, clinicId?: string): boolean {
-  if (!clinicId) return true;
-  const identifierMatch = patient.identifier?.some(
-    (id: any) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
-  );
-  const managingOrganizationMatch =
-    patient.managingOrganization?.reference === `Organization/${clinicId}`;
-  return Boolean(identifierMatch || managingOrganizationMatch);
+function patientBelongsToClinic(patient: any, tenant: ClinicTenant | null): boolean {
+  if (!tenant) return true;
+  return resourceMatchesClinicTenant(patient, tenant.organizationId);
 }
 
 const TRIAGE_ENCOUNTER_EXTENSION_URL = 'https://ucc.emr/triage-encounter';
@@ -394,6 +387,7 @@ export async function saveTriageEncounter(
   clinicId?: string
 ): Promise<string> {
   const client = medplum;
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   // Only reuse an encounter that belongs to today's visit. Historical encounters
@@ -431,7 +425,7 @@ export async function saveTriageEncounter(
 
   if (reusableEncounter?.id) {
     const encounter = await client.readResource('Encounter', reusableEncounter.id) as any;
-    assertEncounterBelongsToClinic(encounter, clinicId);
+    assertEncounterBelongsToClinic(encounter, clinicTenant);
     const otherExtensions =
       (encounter.extension || []).filter((ext: any) => ext.url !== TRIAGE_ENCOUNTER_EXTENSION_URL);
 
@@ -475,8 +469,9 @@ export async function saveTriageEncounter(
         ],
       },
       extension: [buildTriageExtension(triagePayload, triageAtIso, queueStatus)],
-      ...clinicEncounterScope(clinicId),
+      ...clinicEncounterScope(clinicTenant),
     });
+    await assignResourceToClinicTenant(client, 'Encounter', encounter, clinicTenant);
     encounterId = encounter.id!;
   }
 
@@ -505,6 +500,7 @@ export async function checkInPatientInTriage(
   clinicId?: string
 ): Promise<string> {
   const client = medplum ?? (await getAdminMedplum());
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   // Reuse only genuinely active visits. Historical finished encounters should not
@@ -547,8 +543,9 @@ export async function checkInPatientInTriage(
     subject: { reference: `Patient/${patientId}` },
     period: { start: queueAddedAtIso },
     extension: [buildQueueOnlyExtension('arrived', queueAddedAtIso), ...checkInMetadataExt],
-    ...clinicEncounterScope(clinicId),
+    ...clinicEncounterScope(clinicTenant),
   });
+  await assignResourceToClinicTenant(client, 'Encounter', encounter, clinicTenant);
 
   if (chiefComplaint) {
     await createChiefComplaintObservation(client, encounter.id!, `Patient/${patientId}`, chiefComplaint);
@@ -564,6 +561,7 @@ export async function updateTriageEncounter(
   clinicId?: string
 ): Promise<void> {
   const client = medplum;
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
@@ -571,7 +569,7 @@ export async function updateTriageEncounter(
   }
 
   const encounter = await client.readResource('Encounter', existing.id);
-  assertEncounterBelongsToClinic(encounter, clinicId);
+  assertEncounterBelongsToClinic(encounter, clinicTenant);
   const triageExt = buildTriageExtension(
     {
       triageLevel: triageData.triageLevel ?? existing.triage?.triageLevel ?? 3,
@@ -611,6 +609,7 @@ export async function updateQueueStatusForPatient(
   clinicId?: string
 ): Promise<void> {
   const client = medplum ?? (await getAdminMedplum());
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
@@ -622,7 +621,7 @@ export async function updateQueueStatusForPatient(
   }
 
   const encounter = await client.readResource('Encounter', existing.id) as any;
-  assertEncounterBelongsToClinic(encounter, clinicId);
+  assertEncounterBelongsToClinic(encounter, clinicTenant);
   const newStatus = encounterStatusFromQueue(status);
   if (!newStatus) {
     // If clearing status, mark encounter finished and drop queue extension fields
@@ -687,6 +686,7 @@ export async function getActiveTriageEncounter(
   clinicId?: string | null
 ): Promise<TriageSummary & { id: string } | null> {
   const client = medplum;
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   // Fetch a small batch so we can skip consultation Encounters (status=finished,
   // no triage extension) that sort ahead of the real triage Encounter after a
   // consultation is saved.
@@ -695,12 +695,13 @@ export async function getActiveTriageEncounter(
     status: 'arrived,triaged,in-progress,finished',
     _count: '10',
     _sort: '-_lastUpdated',
-    ...(clinicId ? { 'service-provider': `Organization/${clinicId}` } : {}),
+    ...(clinicTenant ? { 'service-provider': clinicTenant.organizationReference } : {}),
   });
 
   if (!encounters?.length) return null;
   const encounter: any = (encounters as any[]).find((enc: any) =>
-    enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL)
+    enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL) &&
+    resourceMatchesClinicTenant(enc, clinicTenant?.organizationId)
   );
   if (!encounter) return null;
   const parsed = parseTriageExtension(encounter.extension);
@@ -749,12 +750,14 @@ export async function getTriageQueueForToday(
     console.warn('[getTriageQueueForToday] called without clinicId — returning empty to prevent cross-clinic leak');
     return [];
   }
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
+  if (!clinicTenant) return [];
 
   const query =
     `status=arrived,triaged,in-progress,finished` +
     `&date=ge${startIso}&date=lt${endIso}` +
     `&_count=${limit}&_sort=date` +
-    `&service-provider=Organization/${clinicId}` +
+    `&service-provider=${clinicTenant.organizationReference}` +
     `&_include=Encounter:subject`;
 
   const bundle = (await client.search('Encounter', query)) as any;
@@ -762,13 +765,13 @@ export async function getTriageQueueForToday(
   const encounters = bundleResources.filter((resource: any) => resource.resourceType === 'Encounter') as any[];
   const includedPatients = new Map(
     bundleResources
-      .filter((resource: any) => resource.resourceType === 'Patient' && resource.id && patientBelongsToClinic(resource, clinicId))
+      .filter((resource: any) => resource.resourceType === 'Patient' && resource.id && patientBelongsToClinic(resource, clinicTenant))
       .map((patient: any) => [patient.id, fhirPatientToPatientData(patient)])
   );
 
   const validEncounters = encounters.filter((encounter) => {
     try {
-      assertEncounterBelongsToClinic(encounter, clinicId);
+      assertEncounterBelongsToClinic(encounter, clinicTenant);
       return true;
     } catch {
       return false;

@@ -1,6 +1,11 @@
 import type { MedplumClient } from '@medplum/core';
 import type { Extension, Medication as FHIRMedication } from '@medplum/fhirtypes';
 import { INVENTORY_EXTENSION_URL } from './structure-definitions';
+import {
+  assignResourceToClinicTenant,
+  resolveClinicTenant,
+  resourceMatchesClinicTenant,
+} from './clinic-tenancy';
 
 export interface InventoryMedicationData {
   name: string;
@@ -22,7 +27,6 @@ export interface SavedInventoryMedication extends InventoryMedicationData {
 
 const INVENTORY_IDENTIFIER_SYSTEM = 'https://ucc.emr/inventory/medication';
 const INVENTORY_IDENTIFIER_VALUE = 'catalog-item';
-const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
 type InventoryField = 'category' | 'stock' | 'minimumStock' | 'unit' | 'unitPrice' | 'strength';
 
@@ -62,12 +66,11 @@ function toInventoryExtension(data: InventoryMedicationData): Extension {
   };
 }
 
-function toFhirMedication(data: InventoryMedicationData, clinicId: string): FHIRMedication {
+function toFhirMedication(data: InventoryMedicationData): FHIRMedication {
   return {
     resourceType: 'Medication',
     identifier: [
       { system: INVENTORY_IDENTIFIER_SYSTEM, value: INVENTORY_IDENTIFIER_VALUE },
-      { system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId },
     ],
     code: {
       text: data.name,
@@ -109,7 +112,7 @@ function mapFhirMedication(resource: FHIRMedication): SavedInventoryMedication {
   };
 }
 
-function isInventoryMedication(resource: FHIRMedication, clinicId: string): boolean {
+function isInventoryMedication(resource: FHIRMedication, clinicScopeId: string): boolean {
   const hasInventoryMarker = resource.identifier?.some(
     (identifier) =>
       identifier.system === INVENTORY_IDENTIFIER_SYSTEM &&
@@ -119,24 +122,22 @@ function isInventoryMedication(resource: FHIRMedication, clinicId: string): bool
     return false;
   }
 
-  return Boolean(
-    resource.identifier?.some(
-      (identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
-    )
-  );
+  return resourceMatchesClinicTenant(resource as any, clinicScopeId);
 }
 
 export async function getInventoryMedicationsFromMedplum(
   medplum: MedplumClient,
   clinicId: string
 ): Promise<SavedInventoryMedication[]> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const medications = await medplum.searchResources('Medication', {
     _count: '500',
     _sort: '-_lastUpdated',
+    _compartment: clinicTenant?.organizationReference,
   });
 
   return medications
-    .filter((resource) => isInventoryMedication(resource as FHIRMedication, clinicId))
+    .filter((resource) => isInventoryMedication(resource as FHIRMedication, clinicTenant?.organizationId ?? clinicId))
     .map((resource) => mapFhirMedication(resource as FHIRMedication));
 }
 
@@ -145,8 +146,9 @@ export async function getInventoryMedicationByIdFromMedplum(
   id: string,
   clinicId: string
 ): Promise<SavedInventoryMedication | null> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const resource = await medplum.readResource('Medication', id);
-  if (!isInventoryMedication(resource as FHIRMedication, clinicId)) {
+  if (!isInventoryMedication(resource as FHIRMedication, clinicTenant?.organizationId ?? clinicId)) {
     return null;
   }
   return mapFhirMedication(resource as FHIRMedication);
@@ -157,7 +159,9 @@ export async function createInventoryMedicationInMedplum(
   data: InventoryMedicationData,
   clinicId: string
 ): Promise<string> {
-  const created = await medplum.createResource(toFhirMedication(data, clinicId));
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
+  const created = await medplum.createResource(toFhirMedication(data));
+  await assignResourceToClinicTenant(medplum, 'Medication', created, clinicTenant);
   if (!created.id) {
     throw new Error('Failed to create inventory medication');
   }
@@ -170,8 +174,9 @@ export async function updateInventoryMedicationInMedplum(
   data: Partial<InventoryMedicationData>,
   clinicId: string
 ): Promise<void> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await medplum.readResource('Medication', id);
-  if (!isInventoryMedication(existing as FHIRMedication, clinicId)) {
+  if (!isInventoryMedication(existing as FHIRMedication, clinicTenant?.organizationId ?? clinicId)) {
     throw new Error('Medication not found for this clinic');
   }
 
@@ -190,7 +195,7 @@ export async function updateInventoryMedicationInMedplum(
 
   await medplum.updateResource({
     ...existing,
-    ...toFhirMedication(merged, clinicId),
+    ...toFhirMedication(merged),
     id,
   } as FHIRMedication);
 }
@@ -200,8 +205,9 @@ export async function deleteInventoryMedicationInMedplum(
   id: string,
   clinicId: string
 ): Promise<void> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const resource = await medplum.readResource('Medication', id);
-  if (!isInventoryMedication(resource as FHIRMedication, clinicId)) {
+  if (!isInventoryMedication(resource as FHIRMedication, clinicTenant?.organizationId ?? clinicId)) {
     throw new Error('Medication not found for this clinic');
   }
   await medplum.deleteResource('Medication', id);

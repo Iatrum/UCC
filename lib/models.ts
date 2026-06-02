@@ -12,6 +12,7 @@ import {
   checkInPatientInTriage,
 } from "./fhir/triage-service";
 import { getPatientConsultationsFromMedplum, getConsultationFromMedplum, saveConsultationToMedplum } from "./fhir/consultation-service";
+import { resolveClinicTenant, resourceMatchesClinicTenant } from "./fhir/clinic-tenancy";
 
 export interface Patient {
   id: string;
@@ -244,7 +245,8 @@ export async function updateQueueStatus(patientId: string, status: QueueStatus):
 
 export async function getConsultationsWithDetails(
   statuses: QueueStatus[],
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  clinicId?: string
 ): Promise<BillableConsultation[]> {
   try {
     const validStatuses = statuses.filter((status): status is Exclude<QueueStatus, null> => Boolean(status));
@@ -260,7 +262,11 @@ export async function getConsultationsWithDetails(
         ...params,
       } as any);
 
-    const encounters = await searchEncounterPage({});
+    const clinicTenant = clinicId ? await resolveClinicTenant(medplum, clinicId) : null;
+    const encounters = clinicTenant
+      ? (await searchEncounterPage({ 'service-provider': clinicTenant.organizationReference }) ?? [])
+          .filter((encounter) => encounter.id && resourceMatchesClinicTenant(encounter as any, clinicTenant.organizationId))
+      : await searchEncounterPage({});
 
     const parseQueueStatus = (enc: any): { queueStatus: QueueStatus; queueAddedAt?: string | null } => {
       const ext = (enc.extension || []).find((e: any) => e.url === 'https://ucc.emr/triage-encounter');
@@ -289,16 +295,16 @@ export async function getConsultationsWithDetails(
             return null;
           }
 
-          const queueEncounterConsultation = await getConsultationFromMedplum(enc.id, undefined, medplum);
+          const queueEncounterConsultation = await getConsultationFromMedplum(enc.id, clinicId, medplum);
           const patientId =
             queueEncounterConsultation?.patientId ||
             enc.subject?.reference?.replace('Patient/', '');
           if (!patientId) return null;
 
-          const patient = await getPatientFromMedplum(patientId, undefined, medplum, { includeMedicalHistory: false });
+          const patient = await getPatientFromMedplum(patientId, clinicId, medplum, { includeMedicalHistory: false });
           if (!patient) return null;
 
-          const patientConsultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
+          const patientConsultations = await getPatientConsultationsFromMedplum(patientId, clinicId, medplum);
           const clinicalConsultation =
             patientConsultations
               .filter((consultation) =>
