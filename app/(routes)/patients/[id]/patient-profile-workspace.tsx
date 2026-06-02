@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
@@ -21,6 +20,7 @@ import { OrderComposer, buildSignedDocumentNote } from "@/components/orders/orde
 import PatientDocuments from "@/components/patients/patient-documents";
 import { LabResultsView } from "@/components/labs/lab-results-view";
 import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
+import { DiagnosisSearch } from "@/components/diagnosis-search";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
 import { formatPrescriptionLine } from "@/lib/prescriptions";
@@ -52,6 +52,8 @@ type ProfileConsultation = {
   procedures?: ProcedureRecord[];
   prescriptions?: Prescription[];
 };
+
+type SignedConsultationForTreatment = ProfileConsultation & { id: string };
 
 interface PatientProfileWorkspaceProps {
   patientId: string;
@@ -154,6 +156,9 @@ export default function PatientProfileWorkspace({
   const [selectedConsultation, setSelectedConsultation] = useState<ProfileConsultation | null>(null);
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
+  const [signedConsultationForTreatment, setSignedConsultationForTreatment] =
+    useState<SignedConsultationForTreatment | null>(null);
+  const [treatmentPanelAnimationVersion, setTreatmentPanelAnimationVersion] = useState(0);
   const [consultSubmitting, setConsultSubmitting] = useState(false);
   const [treatmentSubmitting, setTreatmentSubmitting] = useState(false);
   const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
@@ -238,12 +243,6 @@ export default function PatientProfileWorkspace({
   }, [queueStatus, toast, updateQueueStatus]);
 
   const visibleConsultations = useMemo(() => mergeByVisit(consultations), [consultations]);
-
-  const latestConsultation = useMemo(() => {
-    return [...visibleConsultations]
-      .filter((consultation) => consultation.chiefComplaint && consultation.diagnosis)
-      .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
-  }, [visibleConsultations]);
 
   const treatmentItemsCatalog = useMemo(
     () =>
@@ -335,6 +334,27 @@ export default function PatientProfileWorkspace({
     setPanelOpen(true);
   }
 
+  function openTreatmentPanel() {
+    if (!signedConsultationForTreatment) {
+      setDrawerMode("consult");
+      setPanelOpen(true);
+      toast({
+        title: "Consult Required",
+        description: "Please fill in and sign the consult before adding treatment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (drawerMode === "treatment" && panelOpen) {
+      setPanelOpen(false);
+      return;
+    }
+
+    setDrawerMode("treatment");
+    setPanelOpen(true);
+  }
+
   async function handleConsultSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (consultSubmitting) return;
@@ -348,6 +368,9 @@ export default function PatientProfileWorkspace({
       return;
     }
 
+    const signedChiefComplaint = clinicalNotes;
+    const signedDiagnosis = diagnosis.trim();
+
     try {
       setConsultSubmitting(true);
       const response = await fetch("/api/consultations", {
@@ -355,8 +378,8 @@ export default function PatientProfileWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patientId,
-          chiefComplaint: clinicalNotes,
-          diagnosis: diagnosis.trim(),
+          chiefComplaint: signedChiefComplaint,
+          diagnosis: signedDiagnosis,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -365,48 +388,33 @@ export default function PatientProfileWorkspace({
       }
 
       const signedConsultationId = typeof data.consultationId === "string" ? data.consultationId : "";
-      if (signedConsultationId && treatmentEntries.length > 0) {
-        try {
-          const targetDraftId = `profile-treatment-${patientId}-${signedConsultationId}`;
-          for (const entry of treatmentEntries) {
-            const draftResponse = await fetch("/api/consultations/plan", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                draftId: targetDraftId,
-                patientId,
-                consultationId: signedConsultationId,
-                entry,
-              }),
-            });
-            const draftData = await draftResponse.json().catch(() => ({}));
-            if (!draftResponse.ok || !draftData?.success) {
-              throw new Error(draftData?.error || "Failed to move treatment draft to signed consult.");
-            }
-          }
-        } catch (draftError) {
-          console.error("Failed to move treatment draft after consult sign:", draftError);
-          toast({
-            title: "Treatment Draft Not Moved",
-            description:
-              draftError instanceof Error
-                ? draftError.message
-                : "The consult was signed, but the existing treatment draft may need to be re-added.",
-            variant: "destructive",
-          });
-        }
+      if (!signedConsultationId) {
+        throw new Error("Consultation was saved but no consultation ID was returned.");
       }
+      setSignedConsultationForTreatment({
+        id: signedConsultationId,
+        patientId,
+        date: new Date().toISOString(),
+        chiefComplaint: signedChiefComplaint,
+        diagnosis: signedDiagnosis,
+        procedures: [],
+        prescriptions: [],
+      });
 
       toast({
         title: "Consult Signed",
-        description: "Clinical notes and diagnosis were saved.",
+        description: "Clinical notes and diagnosis were saved. Treatment is ready.",
       });
       if (queueStatus && queueStatus !== "completed") {
         setQueueStatus("meds_and_bills");
       }
       setClinicalNotes("");
       setDiagnosis("");
-      setPanelOpen(false);
+      setTreatmentEntries([]);
+      setTreatmentSummary(emptyTreatmentSummary);
+      setTreatmentPanelAnimationVersion((current) => current + 1);
+      setDrawerMode("treatment");
+      setPanelOpen(true);
       router.refresh();
     } catch (error) {
       toast({
@@ -423,21 +431,16 @@ export default function PatientProfileWorkspace({
     event.preventDefault();
     if (treatmentSubmitting) return;
 
-    if (!latestConsultation) {
+    const treatmentConsultation = signedConsultationForTreatment;
+
+    if (!treatmentConsultation) {
       toast({
         title: "Consult Required",
-        description: "Please sign a consult before signing treatment.",
+        description: "Please fill in and sign the consult before adding treatment.",
         variant: "destructive",
       });
-      return;
-    }
-
-    if (!latestConsultation.id) {
-      toast({
-        title: "Consult Missing ID",
-        description: "Refresh the patient profile and try signing treatment again.",
-        variant: "destructive",
-      });
+      setDrawerMode("consult");
+      setPanelOpen(true);
       return;
     }
 
@@ -502,7 +505,7 @@ export default function PatientProfileWorkspace({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          consultationId: latestConsultation.id,
+          consultationId: treatmentConsultation.id,
           procedures,
           prescriptions,
         }),
@@ -512,7 +515,7 @@ export default function PatientProfileWorkspace({
         throw new Error(data?.error || "Failed to save treatment");
       }
 
-      const consultationId = latestConsultation.id;
+      const consultationId = treatmentConsultation.id;
       const orderErrors: string[] = [];
       if (labSelections.length) {
         try {
@@ -524,7 +527,7 @@ export default function PatientProfileWorkspace({
               encounterId: consultationId,
               tests: labSelections,
               priority: "routine",
-              clinicalNotes: latestConsultation.chiefComplaint,
+              clinicalNotes: treatmentConsultation.chiefComplaint,
             }),
           });
           if (!labResponse.ok) {
@@ -547,8 +550,8 @@ export default function PatientProfileWorkspace({
               encounterId: consultationId,
               procedures: imagingSelections,
               priority: "routine",
-              clinicalIndication: latestConsultation.diagnosis || latestConsultation.chiefComplaint,
-              clinicalQuestion: latestConsultation.chiefComplaint,
+              clinicalIndication: treatmentConsultation.diagnosis || treatmentConsultation.chiefComplaint,
+              clinicalQuestion: treatmentConsultation.chiefComplaint,
               orderedBy: undefined,
             }),
           });
@@ -608,9 +611,9 @@ export default function PatientProfileWorkspace({
                     <TabsTrigger
                       value="treatment"
                       className="px-3 text-xs"
-                      onClick={() => {
-                        if (drawerMode === "treatment" && panelOpen) setPanelOpen(false);
-                        else { setDrawerMode("treatment"); setPanelOpen(true); }
+                      onClick={(event) => {
+                        event.preventDefault();
+                        openTreatmentPanel();
                       }}
                     >Treatment</TabsTrigger>
                   </TabsList>
@@ -887,7 +890,11 @@ export default function PatientProfileWorkspace({
                   </Button>
                 </div>
                 {drawerMode === "consult" && (
-                  <form onSubmit={handleConsultSign} className="flex flex-col">
+                  <form
+                    key="consult-panel"
+                    onSubmit={handleConsultSign}
+                    className="patient-panel-enter-left flex flex-col"
+                  >
                     <div className="space-y-4 px-5 py-4">
                       <RichTextEditor
                         placeholder="Clinical notes"
@@ -895,11 +902,7 @@ export default function PatientProfileWorkspace({
                         value={clinicalNotes}
                         onChange={setClinicalNotes}
                       />
-                      <Input
-                        placeholder="Condition (diagnosis)"
-                        value={diagnosis}
-                        onChange={(event) => setDiagnosis(event.target.value)}
-                      />
+                      <DiagnosisSearch value={diagnosis} onChange={setDiagnosis} />
                     </div>
                     <div className="border-t px-5 py-4">
                       <Button type="submit" disabled={consultSubmitting} className="w-full">
@@ -909,13 +912,17 @@ export default function PatientProfileWorkspace({
                   </form>
                 )}
                 {drawerMode === "treatment" && (
-                  <form onSubmit={handleTreatmentSign} className="flex flex-col">
+                  <form
+                    key={`treatment-panel-${treatmentPanelAnimationVersion}`}
+                    onSubmit={handleTreatmentSign}
+                    className="patient-panel-enter-treatment flex flex-col"
+                  >
                     <div className="space-y-3 px-5 py-4">
                       <OrderComposer
-                        draftId={`profile-treatment-${patientId}-${latestConsultation?.id || "pending"}`}
+                        draftId={`profile-treatment-${patientId}-${signedConsultationForTreatment?.id || "pending"}`}
                         patientId={patientId}
-                        consultationId={latestConsultation?.id}
-                        consultation={latestConsultation}
+                        consultationId={signedConsultationForTreatment?.id}
+                        consultation={signedConsultationForTreatment}
                         initialEntries={emptyTreatmentEntries}
                         persistDrafts
                         items={treatmentItemsCatalog}
