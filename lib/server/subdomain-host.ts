@@ -12,8 +12,6 @@ export type SubdomainContext =
 export function deriveSubdomainContext(host: string | null): SubdomainContext {
   if (!host) return { type: "none" };
   if (host.startsWith("localhost") || /^\d{1,3}(\.\d{1,3}){3}/.test(host)) {
-    const clinicId = process.env.CLINIC_ID;
-    if (clinicId) return { type: "clinic", clinicId };
     return { type: "none" };
   }
 
