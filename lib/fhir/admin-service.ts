@@ -3,7 +3,7 @@
  * Uses Medplum client credentials to access all organisations.
  */
 import type { MedplumClient } from "@medplum/core";
-import type { Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
+import type { AccessPolicy, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
   getEnabledModuleIdsFromOrganization,
@@ -16,6 +16,59 @@ function getIdFromReference(reference?: string): string | undefined {
   const [resourceType, id] = reference.split("/");
   if (!resourceType || !id) return undefined;
   return id;
+}
+
+const CLINIC_IDENTIFIER_SYSTEM = "clinic";
+const CLINIC_STAFF_POLICY_NAME = "UCC Clinic Staff Policy";
+
+async function getClinicPolicyParameterValue(
+  medplum: MedplumClient,
+  clinicOrganizationId: string
+): Promise<string> {
+  const organization = await medplum.readResource("Organization", clinicOrganizationId);
+  return (
+    organization.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM)?.value ||
+    clinicOrganizationId
+  );
+}
+
+async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<string> {
+  const configured = process.env.MEDPLUM_POLICY_CLINIC_STAFF;
+  if (configured) return `AccessPolicy/${configured}`;
+
+  const policy = await medplum.searchOne("AccessPolicy", {
+    name: CLINIC_STAFF_POLICY_NAME,
+  }) as AccessPolicy | undefined;
+
+  if (!policy?.id) {
+    throw new Error(
+      `Medplum clinic staff policy not found. Run scripts/setup-access-policies.ts or set MEDPLUM_POLICY_CLINIC_STAFF.`
+    );
+  }
+
+  return `AccessPolicy/${policy.id}`;
+}
+
+function withClinicMembershipAccess(
+  membership: ProjectMembership,
+  policyReference: string,
+  clinicPolicyValue: string
+): ProjectMembership {
+  const otherAccess = (membership.access || []).filter(
+    (entry) => entry.policy.reference !== policyReference
+  );
+
+  return {
+    ...membership,
+    accessPolicy: undefined,
+    access: [
+      ...otherAccess,
+      {
+        policy: { reference: policyReference },
+        parameter: [{ name: "clinicId", valueString: clinicPolicyValue }],
+      },
+    ],
+  };
 }
 
 export interface ClinicSummary {
@@ -38,7 +91,6 @@ export interface ParentOrganizationSummary {
   logoUrl?: string;
 }
 
-const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const ORG_LOGO_EXTENSION_URL = "https://ucc.emr/organization-logo-url";
 
 function isClinicOrganization(org: Organization): boolean {
@@ -734,6 +786,10 @@ export async function invitePractitionerToMedplum(
 
   const practitionerRef = `Practitioner/${practitionerId}`;
   const clinicRef = `Organization/${input.clinicId}`;
+  const [clinicPolicyReference, clinicPolicyValue] = await Promise.all([
+    getClinicStaffPolicyReference(medplum),
+    getClinicPolicyParameterValue(medplum, input.clinicId),
+  ]);
   const membershipUserRef =
     typeof (outcome as any)?.user?.reference === "string"
       ? String((outcome as any).user.reference)
@@ -744,12 +800,23 @@ export async function invitePractitionerToMedplum(
       ? String((outcome as any).id)
       : undefined;
 
-  if (!existingMembershipId && membershipUserRef) {
-    await medplum.createResource({
+  if (existingMembershipId) {
+    const membership = await medplum.readResource("ProjectMembership", existingMembershipId) as ProjectMembership;
+    await medplum.updateResource(
+      withClinicMembershipAccess(membership, clinicPolicyReference, clinicPolicyValue)
+    );
+  } else if (membershipUserRef) {
+    await medplum.createResource<ProjectMembership>({
       resourceType: "ProjectMembership",
       project: { reference: `Project/${projectId}` },
       user: { reference: membershipUserRef },
       profile: { reference: practitionerRef },
+      access: [
+        {
+          policy: { reference: clinicPolicyReference },
+          parameter: [{ name: "clinicId", valueString: clinicPolicyValue }],
+        },
+      ],
     });
   }
 
@@ -761,9 +828,22 @@ export async function invitePractitionerToMedplum(
   if (!existingRole) {
     await medplum.createResource({
       resourceType: "PractitionerRole",
+      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicPolicyValue }],
       active: true,
       practitioner: { reference: practitionerRef },
       organization: { reference: clinicRef },
+    });
+  } else if (
+    !existingRole.identifier?.some(
+      (identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicPolicyValue
+    )
+  ) {
+    await medplum.updateResource({
+      ...existingRole,
+      identifier: [
+        ...(existingRole.identifier || []),
+        { system: CLINIC_IDENTIFIER_SYSTEM, value: clinicPolicyValue },
+      ],
     });
   }
 }

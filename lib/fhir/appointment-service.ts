@@ -41,11 +41,16 @@ export interface SavedAppointment extends AppointmentData {
 const EXT_CHECKIN   = 'urn:iatrum:appointment/checkin-at';
 const EXT_COMPLETED = 'urn:iatrum:appointment/completed-at';
 const EXT_CANCELLED = 'urn:iatrum:appointment/cancelled-at';
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
 /**
  * Save appointment to Medplum
  */
-export async function saveAppointmentToMedplum(medplum: MedplumClient, appointmentData: AppointmentData): Promise<string> {
+export async function saveAppointmentToMedplum(
+  medplum: MedplumClient,
+  appointmentData: AppointmentData,
+  clinicId: string
+): Promise<string> {
   const scheduledTime = typeof appointmentData.scheduledAt === 'string'
     ? appointmentData.scheduledAt
     : appointmentData.scheduledAt.toISOString();
@@ -59,6 +64,7 @@ export async function saveAppointmentToMedplum(medplum: MedplumClient, appointme
 
   const fhirAppointment: FHIRAppointment = {
     resourceType: 'Appointment',
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
     status: appointmentData.status,
     start: scheduledTime,
     end: endTime.toISOString(),

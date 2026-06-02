@@ -7,8 +7,9 @@
 import { Buffer } from 'buffer';
 import type { MedplumClient } from '@medplum/core';
 import type { DiagnosticReport, ServiceRequest } from '@medplum/fhirtypes';
-import { getAdminMedplum } from '@/lib/server/medplum-auth';
 import type { ImagingReport, ImagingStudy } from './types';
+
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
 const STATUS_TO_SERVICEREQUEST: Record<ImagingStudy['status'], ServiceRequest['status']> = {
   ordered: 'active',
@@ -84,14 +85,16 @@ async function findReportForRequest(medplum: MedplumClient, serviceRequestId: st
 }
 
 export async function createImagingStudy(
-  studyData: Omit<ImagingStudy, "id" | "createdAt" | "updatedAt">
+  medplum: MedplumClient,
+  studyData: Omit<ImagingStudy, "id" | "createdAt" | "updatedAt">,
+  clinicId: string
 ): Promise<string> {
-  const medplum = await getAdminMedplum();
   const authoredOn = typeof studyData.orderedAt === 'string' ? studyData.orderedAt : studyData.orderedAt?.toISOString() || new Date().toISOString();
   const status = STATUS_TO_SERVICEREQUEST[studyData.status] || 'active';
 
   const serviceRequest = await medplum.createResource({
     resourceType: 'ServiceRequest',
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
     status,
     intent: 'order',
     category: [
@@ -129,8 +132,7 @@ export async function createImagingStudy(
   return sr.id as string;
 }
 
-export async function getImagingStudyById(id: string): Promise<ImagingStudy | null> {
-  const medplum = await getAdminMedplum();
+export async function getImagingStudyById(medplum: MedplumClient, id: string): Promise<ImagingStudy | null> {
   try {
     const sr = await medplum.readResource('ServiceRequest', id);
     const report = await findReportForRequest(medplum, id);
@@ -141,8 +143,7 @@ export async function getImagingStudyById(id: string): Promise<ImagingStudy | nu
   }
 }
 
-export async function getImagingStudiesByPatient(patientId: string): Promise<ImagingStudy[]> {
-  const medplum = await getAdminMedplum();
+export async function getImagingStudiesByPatient(medplum: MedplumClient, patientId: string): Promise<ImagingStudy[]> {
   try {
     const requests = await medplum.searchResources('ServiceRequest', {
       subject: `Patient/${patientId}`,
@@ -162,8 +163,7 @@ export async function getImagingStudiesByPatient(patientId: string): Promise<Ima
   }
 }
 
-export async function getImagingStudiesByStatus(status: ImagingStudy['status']): Promise<ImagingStudy[]> {
-  const medplum = await getAdminMedplum();
+export async function getImagingStudiesByStatus(medplum: MedplumClient, status: ImagingStudy['status']): Promise<ImagingStudy[]> {
   const srStatus = STATUS_TO_SERVICEREQUEST[status] || 'active';
   try {
     const requests = await medplum.searchResources('ServiceRequest', {
@@ -184,8 +184,7 @@ export async function getImagingStudiesByStatus(status: ImagingStudy['status']):
   }
 }
 
-export async function getTodaysImagingStudies(): Promise<ImagingStudy[]> {
-  const medplum = await getAdminMedplum();
+export async function getTodaysImagingStudies(medplum: MedplumClient): Promise<ImagingStudy[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const start = today.toISOString().split('T')[0];
@@ -210,10 +209,10 @@ export async function getTodaysImagingStudies(): Promise<ImagingStudy[]> {
 }
 
 export async function updateImagingStudy(
+  medplum: MedplumClient,
   id: string,
   updates: Partial<ImagingStudy>
 ): Promise<void> {
-  const medplum = await getAdminMedplum();
   const sr = await medplum.readResource('ServiceRequest', id);
 
   const status = updates.status ? STATUS_TO_SERVICEREQUEST[updates.status] : sr.status;
@@ -235,15 +234,17 @@ export async function updateImagingStudy(
 }
 
 export async function addImagingReport(
+  medplum: MedplumClient,
   id: string,
   report: ImagingStudy['report'],
   reportedBy: string
 ): Promise<void> {
-  const medplum = await getAdminMedplum();
   const sr = await medplum.readResource('ServiceRequest', id);
+  const clinicIdentifier = sr.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
 
   await medplum.createResource({
     resourceType: 'DiagnosticReport',
+    identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
     status: 'final',
     code: sr.code ?? { text: 'Imaging Report' },
     subject: sr.subject,

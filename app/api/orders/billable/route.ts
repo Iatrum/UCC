@@ -1,16 +1,19 @@
 export const dynamic = 'force-dynamic';
 
 import { getConsultationsWithDetails } from '@/lib/models';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
 import { QueueStatus } from '@/lib/types';
+import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { medplum } = await requireClinicAuth(req);
     const statuses: QueueStatus[] = ['meds_and_bills'];
-    const consultations = await getConsultationsWithDetails(statuses);
+    const consultations = await getConsultationsWithDetails(statuses, medplum);
     return NextResponse.json({ consultations });
   } catch (error) {
-    console.error('GET /api/orders/billable error:', error);
-    return NextResponse.json({ consultations: [] }, { status: 500 });
+    return handleRouteError(error, 'GET /api/orders/billable');
   }
 }

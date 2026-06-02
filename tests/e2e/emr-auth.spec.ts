@@ -33,6 +33,8 @@ test.describe("EMR authentication and access control", () => {
     { path: "/api/patients",      accept: [400, 401, 403, 405] },
     { path: "/api/queue",         accept: [400, 401, 403, 405] },
     { path: "/api/consultations", accept: [400, 401, 403, 405] },
+    { path: "/api/orders/billable", accept: [400, 401, 403, 405] },
+    { path: "/api/billing?patientId=test", accept: [400, 401, 403, 405] },
   ];
 
   for (const path of protectedPages) {
@@ -44,8 +46,8 @@ test.describe("EMR authentication and access control", () => {
   // Login form lives on clinic subdomains, not the root domain
   test("login page loads and has email + password fields", async ({ page }) => {
     await page.goto(`${CLINIC_URL}/login`, { waitUntil: "domcontentloaded" });
-    await expect(page.locator("#email")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("#password")).toBeVisible();
+    await expect(page.locator("#email:visible")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#password:visible")).toBeVisible();
   });
 
   for (const { path, accept } of protectedApis) {

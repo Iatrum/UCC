@@ -32,6 +32,7 @@ export type CompleteCheckoutResult = {
 };
 
 const CURRENCY = "MYR";
+const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const INVOICE_IDENTIFIER_SYSTEM = "https://ucc.emr/invoice/consultation";
 const INVOICE_NUMBER_IDENTIFIER_SYSTEM = "https://ucc.emr/invoice/number";
 const ENCOUNTER_EXTENSION_URL = "https://ucc.emr/invoice/encounter";
@@ -96,15 +97,32 @@ export async function generateInvoiceNumber(medplum: MedplumClient, date = new D
   throw new Error("Failed to generate a unique invoice number");
 }
 
-function buildInvoiceIdentifiers(existing: Invoice | undefined, consultationId: string, invoiceNumber: string) {
+function addClinicIdentifier(
+  identifiers: { system?: string; value?: string }[] | undefined,
+  clinicId: string
+) {
+  const next = [...(identifiers || [])];
+  if (!next.some((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId)) {
+    next.push({ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId });
+  }
+  return next;
+}
+
+function buildInvoiceIdentifiers(
+  existing: Invoice | undefined,
+  consultationId: string,
+  invoiceNumber: string,
+  clinicId: string
+) {
   const preservedIdentifiers =
     existing?.identifier?.filter(
       (identifier) =>
         identifier.system !== INVOICE_IDENTIFIER_SYSTEM &&
-        identifier.system !== INVOICE_NUMBER_IDENTIFIER_SYSTEM
+        identifier.system !== INVOICE_NUMBER_IDENTIFIER_SYSTEM &&
+        identifier.system !== CLINIC_IDENTIFIER_SYSTEM
     ) || [];
 
-  return [
+  return addClinicIdentifier([
     ...preservedIdentifiers,
     {
       system: INVOICE_IDENTIFIER_SYSTEM,
@@ -114,7 +132,7 @@ function buildInvoiceIdentifiers(existing: Invoice | undefined, consultationId: 
       system: INVOICE_NUMBER_IDENTIFIER_SYSTEM,
       value: invoiceNumber,
     },
-  ];
+  ], clinicId);
 }
 
 async function resolveInvoiceNumber(
@@ -146,6 +164,21 @@ function moneyExtension(url: string, value: number): Extension {
       currency: CURRENCY,
     },
   };
+}
+
+function invoiceBelongsToClinic(invoice: Pick<Invoice, "extension"> | null | undefined, clinicId?: string): boolean {
+  if (!clinicId) return true;
+  return Boolean(
+    invoice?.extension?.some(
+      (extension) => extension.url === CLINIC_EXTENSION_URL && extension.valueString === clinicId
+    )
+  );
+}
+
+function assertInvoiceBelongsToClinic(invoice: Pick<Invoice, "extension">, clinicId?: string): void {
+  if (!invoiceBelongsToClinic(invoice, clinicId)) {
+    throw new Error(`Access denied: invoice does not belong to clinic '${clinicId}'`);
+  }
 }
 
 function buildLineItem(item: CheckoutInvoiceItem, index: number): InvoiceLineItem {
@@ -252,13 +285,14 @@ function validateCheckoutInput(input: CompleteCheckoutInput): {
 
 async function findExistingInvoice(
   medplum: MedplumClient,
-  consultationId: string
+  consultationId: string,
+  clinicId?: string
 ): Promise<Invoice | undefined> {
   const matches = await medplum.searchResources("Invoice", {
     identifier: `${INVOICE_IDENTIFIER_SYSTEM}|${consultationId}`,
     _count: "1",
   });
-  return matches?.[0] as Invoice | undefined;
+  return matches?.find((invoice) => invoiceBelongsToClinic(invoice as Invoice, clinicId)) as Invoice | undefined;
 }
 
 export async function completeCheckoutInvoice(
@@ -269,14 +303,14 @@ export async function completeCheckoutInvoice(
   const balance = roundMoney(Math.max(normalizedTotalAmount - normalizedPaidAmount, 0));
   const nowDate = new Date();
   const now = nowDate.toISOString();
-  const existing = await findExistingInvoice(medplum, input.consultationId);
+  const existing = await findExistingInvoice(medplum, input.consultationId, input.clinicId);
   const invoiceNumber = await resolveInvoiceNumber(medplum, existing, input.invoiceNumber, nowDate);
 
   const invoice: Invoice = {
     ...(existing ?? {}),
     resourceType: "Invoice",
     status: "balanced",
-    identifier: buildInvoiceIdentifiers(existing, input.consultationId, invoiceNumber),
+    identifier: buildInvoiceIdentifiers(existing, input.consultationId, invoiceNumber, input.clinicId),
     type: {
       text: "Clinic checkout invoice",
       coding: [
@@ -351,35 +385,39 @@ export async function completeCheckoutInvoice(
   return { invoice: saved };
 }
 
-export async function getInvoice(medplum: MedplumClient, invoiceId: string): Promise<Invoice | null> {
+export async function getInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<Invoice | null> {
   try {
-    return await medplum.readResource("Invoice", invoiceId) as Invoice;
+    const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
+    return invoiceBelongsToClinic(invoice, clinicId) ? invoice : null;
   } catch {
     return null;
   }
 }
 
-export async function getPatientInvoices(medplum: MedplumClient, patientId: string): Promise<Invoice[]> {
+export async function getPatientInvoices(medplum: MedplumClient, patientId: string, clinicId?: string): Promise<Invoice[]> {
   const results = await medplum.searchResources("Invoice", {
     subject: `Patient/${patientId}`,
     _sort: "-date",
   });
-  return results as Invoice[];
+  return (results as Invoice[]).filter((invoice) => invoiceBelongsToClinic(invoice, clinicId));
 }
 
-export async function getConsultationInvoice(medplum: MedplumClient, consultationId: string): Promise<Invoice | null> {
+export async function getConsultationInvoice(medplum: MedplumClient, consultationId: string, clinicId?: string): Promise<Invoice | null> {
   const results = await medplum.searchResources("Invoice", {
     identifier: `${INVOICE_IDENTIFIER_SYSTEM}|${consultationId}`,
     _count: "1",
   });
-  return (results?.[0] as Invoice) ?? null;
+  return ((results as Invoice[]) ?? []).find((invoice) => invoiceBelongsToClinic(invoice, clinicId)) ?? null;
 }
 
-export async function voidInvoice(medplum: MedplumClient, invoiceId: string): Promise<Invoice> {
+export async function voidInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<Invoice> {
   const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
+  assertInvoiceBelongsToClinic(invoice, clinicId);
   return medplum.updateResource({ ...invoice, status: "cancelled" });
 }
 
-export async function deleteInvoice(medplum: MedplumClient, invoiceId: string): Promise<void> {
+export async function deleteInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<void> {
+  const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
+  assertInvoiceBelongsToClinic(invoice, clinicId);
   await medplum.deleteResource("Invoice", invoiceId);
 }

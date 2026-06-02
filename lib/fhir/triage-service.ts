@@ -684,7 +684,7 @@ export async function updateQueueStatusForPatient(
 export async function getActiveTriageEncounter(
   patientId: string,
   medplum: MedplumClient,
-  clinicId?: string
+  clinicId?: string | null
 ): Promise<TriageSummary & { id: string } | null> {
   const client = medplum;
   // Fetch a small batch so we can skip consultation Encounters (status=finished,
@@ -721,7 +721,7 @@ export async function getActiveTriageEncounter(
 export async function getTriageForPatient(
   patientId: string,
   medplum?: MedplumClient,
-  clinicId?: string
+  clinicId?: string | null
 ): Promise<TriageSummary> {
   const client = medplum ?? (await getAdminMedplum());
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);

@@ -163,14 +163,14 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json().catch(() => null);
     const { invoiceId, action } = body || {};
 
     if (!invoiceId) return NextResponse.json({ success: false, error: "invoiceId is required" }, { status: 400 });
     if (action !== "void") return NextResponse.json({ success: false, error: "action must be 'void'" }, { status: 400 });
 
-    const invoice = await voidInvoice(medplum, invoiceId);
+    const invoice = await voidInvoice(medplum, invoiceId, clinicId);
     return NextResponse.json({ success: true, invoiceId: invoice.id });
   } catch (error) {
     return handleRouteError(error, "PATCH /api/billing");
@@ -179,13 +179,13 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json().catch(() => null);
     const { invoiceId } = body || {};
 
     if (!invoiceId) return NextResponse.json({ success: false, error: "invoiceId is required" }, { status: 400 });
 
-    await deleteInvoice(medplum, invoiceId);
+    await deleteInvoice(medplum, invoiceId, clinicId);
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleRouteError(error, "DELETE /api/billing");
