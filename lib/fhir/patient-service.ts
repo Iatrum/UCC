@@ -88,10 +88,9 @@ function addClinicIdentifier(identifiers: { system?: string; value?: string }[] 
 
 function matchesClinic(
   resource: { identifier?: { system?: string; value?: string }[]; managingOrganization?: { reference?: string } },
-  clinicId?: string
+  clinicId?: string | null
 ): boolean {
-  // Explicitly no clinic scope: allow (used by admin-level callers only).
-  // All user-facing code paths must supply a clinicId.
+  if (clinicId === null) return true;
   if (!clinicId) return true;
   const identifierMatch = resource.identifier?.some(
     (id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
@@ -524,7 +523,7 @@ export async function savePatientToMedplum(
  */
 export async function getPatientFromMedplum(
   patientId: string,
-  clinicId?: string,
+  clinicId?: string | null,
   medplum?: MedplumClient,
   { includeMedicalHistory = true }: { includeMedicalHistory?: boolean } = {}
 ): Promise<SavedPatient | null> {
@@ -650,7 +649,7 @@ export async function updateQueueStatusInMedplum(patientId: string, status: Queu
  */
 export async function searchPatientsInMedplum(
   query: string,
-  clinicId: string | undefined,
+  clinicId: string | null | undefined,
   medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {
@@ -705,7 +704,7 @@ export async function searchPatientsInMedplum(
  */
 export async function getAllPatientsFromMedplum(
   limit = 100,
-  clinicId: string | undefined,
+  clinicId: string | null | undefined,
   medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {

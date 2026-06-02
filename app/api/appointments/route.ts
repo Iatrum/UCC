@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const appointmentId = await saveAppointmentToMedplum(medplum, appointmentData);
+    const appointmentId = await saveAppointmentToMedplum(medplum, appointmentData, clinicId);
     try {
       await createAppointmentReminderFollowUp(medplum, {
         clinicId,

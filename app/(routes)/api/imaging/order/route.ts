@@ -6,13 +6,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createImagingOrder, updateImagingOrder, deleteImagingOrder, type ImagingOrderRequest } from '@/lib/fhir/imaging-service';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body: ImagingOrderRequest = await request.json();
 
     // Validate required fields
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the imaging order
-    const serviceRequestId = await createImagingOrder(body, medplum);
+    const serviceRequestId = await createImagingOrder(body, medplum, clinicId);
 
     return NextResponse.json({
       success: true,
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum } = await requireClinicAuth(request);
     const body = await request.json();
     const { serviceRequestId, ...updates } = body;
 
@@ -78,7 +78,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum } = await requireClinicAuth(request);
     const body = await request.json();
     const { serviceRequestId } = body;
 
@@ -92,7 +92,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to delete imaging order', details: error.message }, { status: 500 });
   }
 }
-
 
 
 

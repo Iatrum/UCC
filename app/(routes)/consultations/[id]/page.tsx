@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
-import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import { formatPrescriptionLine } from '@/lib/prescriptions';
 
 type Props = {
@@ -35,9 +34,7 @@ export default async function ConsultationDetails({ params }: Props) {
     redirect('/login');
   }
 
-  const clinicId = await resolveClinicIdFromServerScope();
-
-  const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
+  const consultation = await getConsultationFromMedplum(id, undefined, medplum);
 
   if (!consultation) {
     return (

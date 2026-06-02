@@ -3,7 +3,9 @@ export const dynamic = 'force-dynamic';
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
-import { getPatients, getConsultationsByPatientId } from "@/lib/models";
+import { getAllPatientsFromMedplum } from "@/lib/fhir/patient-service";
+import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import AnalyticsCharts from "@/components/analytics/analytics-charts";
 
 function getCurrentTimestamp(): number {
@@ -11,10 +13,11 @@ function getCurrentTimestamp(): number {
 }
 
 export default async function AnalyticsPage() {
-  const patients = await getPatients();
+  const medplum = await getMedplumForRequest();
+  const patients = await getAllPatientsFromMedplum(300, undefined, medplum);
   // Fetch consultations for all patients (simple approach; can be optimized with an aggregate collection)
   const consultations = (
-    await Promise.all(patients.map((p) => getConsultationsByPatientId(p.id)))
+    await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, undefined, medplum)))
   ).flat();
 
   // Overview stats

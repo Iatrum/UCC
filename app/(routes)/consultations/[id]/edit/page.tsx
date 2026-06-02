@@ -5,7 +5,6 @@ import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getTriageForPatient } from '@/lib/fhir/triage-service';
-import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import EditConsultationForm from './edit-form';
 import { safeToISOString } from '@/lib/utils';
 import type { SerializedPatient } from '@/components/patients/patient-card';
@@ -24,16 +23,14 @@ export default async function EditConsultationPage({ params }: Props) {
     redirect('/login');
   }
 
-  const clinicId = await resolveClinicIdFromServerScope();
-
-  const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
+  const consultation = await getConsultationFromMedplum(id, undefined, medplum);
   if (!consultation) {
     notFound();
   }
 
   const [patient, triageData] = await Promise.all([
-    getPatientFromMedplum(consultation.patientId, clinicId, medplum),
-    getTriageForPatient(consultation.patientId, medplum, clinicId)
+    getPatientFromMedplum(consultation.patientId, undefined, medplum),
+    getTriageForPatient(consultation.patientId, medplum)
       .catch(() => ({ triage: null, queueAddedAt: null })),
   ]);
 

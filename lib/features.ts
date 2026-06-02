@@ -23,11 +23,6 @@ export const SOAP_REWRITE_ENABLED = parseBooleanFlag(
   true
 );
 
-export const TRANSCRIBE_ENABLED = parseBooleanFlag(
-  process.env.NEXT_PUBLIC_FEATURE_TRANSCRIBE,
-  false
-);
-
 // The v1 patient registration flow is now always available.
 export const MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED = true;
 
@@ -37,7 +32,6 @@ export const MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED = true;
 export function getFeatureFlags() {
   return {
     soapRewrite: SOAP_REWRITE_ENABLED,
-    transcribe: TRANSCRIBE_ENABLED,
     medplumPatientRegistrationV1: MEDPLUM_PATIENT_REGISTRATION_V1_ENABLED,
     medplumBillingExceptionTasks: MEDPLUM_BILLING_EXCEPTION_TASKS_ENABLED,
   } as const;

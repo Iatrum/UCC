@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { getConsultationsWithDetails } from "@/lib/models";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { QueueStatus } from '@/lib/types';
 import OrdersClient from "./orders-client";
 
@@ -21,7 +22,8 @@ export default async function OrdersPage({ searchParams }: Props) {
   const invoiceNumber = typeof resolvedParams.invoiceNumber === "string" ? resolvedParams.invoiceNumber : "";
 
   const statuses: QueueStatus[] = ['meds_and_bills'];
-  const consultations = await getConsultationsWithDetails(statuses);
+  const medplum = await getMedplumForRequest();
+  const consultations = await getConsultationsWithDetails(statuses, medplum);
 
   return (
     <OrdersClient

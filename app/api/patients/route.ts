@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { medplum } = await requireClinicAuth(request);
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get('id');
     const searchQuery = searchParams.get('search');
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     // Get specific patient
     if (patientId) {
-      const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+      const patient = await getPatientFromMedplum(patientId, undefined, medplum);
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     // Search patients
     if (searchQuery) {
-      const patients = await searchPatientsInMedplum(searchQuery, clinicId, medplum);
+      const patients = await searchPatientsInMedplum(searchQuery, undefined, medplum);
       return NextResponse.json({
         success: true,
         count: patients.length,
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     // Get all patients
     const limitNum = limit ? parseInt(limit) : 100;
-    const patients = await getAllPatientsFromMedplum(limitNum, clinicId, medplum);
+    const patients = await getAllPatientsFromMedplum(limitNum, undefined, medplum);
     return NextResponse.json({
       success: true,
       count: patients.length,
@@ -126,7 +126,6 @@ export async function DELETE(request: NextRequest) {
     return handleRouteError(error, 'DELETE /api/patients');
   }
 }
-
 
 
 

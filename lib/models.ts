@@ -1,5 +1,6 @@
 import { safeToISOString } from "./utils";
 import { QueueStatus, BillableConsultation, TriageData } from "./types";
+import type { MedplumClient } from "@medplum/core";
 import { getAllPatientsFromMedplum, getPatientFromMedplum } from "./fhir/patient-service";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
@@ -241,31 +242,25 @@ export async function updateQueueStatus(patientId: string, status: QueueStatus):
   await updateQueueStatusForPatient(patientId, status, medplum);
 }
 
-export async function getConsultationsWithDetails(statuses: QueueStatus[]): Promise<BillableConsultation[]> {
+export async function getConsultationsWithDetails(
+  statuses: QueueStatus[],
+  medplum: MedplumClient
+): Promise<BillableConsultation[]> {
   try {
     const validStatuses = statuses.filter((status): status is Exclude<QueueStatus, null> => Boolean(status));
     if (validStatuses.length === 0) {
       return [];
     }
 
-    const medplum = await getAdminMedplum();
-    let encounters: any[] = [];
-    let searchUrl: string | undefined;
-
-    do {
-      const page = await medplum.searchResources<any>('Encounter', {
+    const searchEncounterPage = (params: Record<string, string>) =>
+      medplum.searchResources<any>('Encounter', {
         status: 'triaged,in-progress,finished',
         _count: '100',
         _sort: '-date',
-        ...(searchUrl ? { _url: searchUrl } : {}),
+        ...params,
       } as any);
 
-      encounters = encounters.concat(page ?? []);
-
-      // Medplum search pages include next link in page.links
-      const nextLink = (page as any)?.[Symbol.iterator] ? undefined : (page as any)?.links?.find((l: any) => l.relation === 'next');
-      searchUrl = nextLink?.url;
-    } while (searchUrl);
+    const encounters = await searchEncounterPage({});
 
     const parseQueueStatus = (enc: any): { queueStatus: QueueStatus; queueAddedAt?: string | null } => {
       const ext = (enc.extension || []).find((e: any) => e.url === 'https://ucc.emr/triage-encounter');
@@ -301,6 +296,8 @@ export async function getConsultationsWithDetails(statuses: QueueStatus[]): Prom
           if (!patientId) return null;
 
           const patient = await getPatientFromMedplum(patientId, undefined, medplum, { includeMedicalHistory: false });
+          if (!patient) return null;
+
           const patientConsultations = await getPatientConsultationsFromMedplum(patientId, undefined, medplum);
           const clinicalConsultation =
             patientConsultations
