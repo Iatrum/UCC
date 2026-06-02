@@ -510,6 +510,13 @@ export async function savePatientToMedplum(
   return savedPatient.id!;
 }
 
+export async function savePatientToMedplumWithAdmin(
+  patientData: PatientData,
+  clinicId: string | undefined
+): Promise<string> {
+  return savePatientToMedplum(patientData, clinicId, await getAdminMedplum());
+}
+
 /**
  * Get a patient from Medplum by ID
  */

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { QuestionnaireResponse } from "@medplum/fhirtypes";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
-import { savePatientToMedplum, type PatientData } from "@/lib/fhir/patient-service";
+import { savePatientToMedplumWithAdmin, type PatientData } from "@/lib/fhir/patient-service";
 import {
   REGISTRATION_QUESTIONNAIRE_URL,
   REGISTRATION_QUESTIONNAIRE_VERSION,
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     let patientId: string | null = null;
     try {
-      patientId = await savePatientToMedplum(patientData, clinicId ?? undefined, medplum);
+      patientId = await savePatientToMedplumWithAdmin(patientData, clinicId ?? undefined);
     } catch (error) {
       logPilotEvent({
         questionnaireCanonicalUrl: REGISTRATION_QUESTIONNAIRE_URL,
