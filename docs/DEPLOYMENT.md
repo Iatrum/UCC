@@ -92,8 +92,12 @@ Required:
 Important optional variables:
 
 - `COOKIE_DOMAIN`
+- `FIREBASE_STORAGE_BUCKET` or `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `FIREBASE_SERVICE_ACCOUNT` or `FIREBASE_PROJECT_ID` + `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY`
 - `MEDPLUM_BULK_EXPORT_SECRET`
 - `OPENROUTER_API_KEY`
+
+Firebase Storage is required for uploaded patient documents and branding logos. These uploads are server-side, so the browser does not need direct Firebase Storage write access.
 
 ## Production References
 
@@ -164,10 +168,11 @@ Typical symptom:
 4. Confirm `NEXT_PUBLIC_BASE_DOMAIN` matches real DNS
 5. Confirm `COOKIE_DOMAIN` matches the deployment strategy
 6. Confirm Medplum CORS allows the frontend origin(s)
-7. Confirm one admin credential works
-8. Confirm one clinic credential works
-9. Confirm `/api/health` returns `200`
-10. Confirm `/api/health/deep` returns `200`
+7. Confirm Firebase Storage bucket name and Firebase Admin credentials are configured
+8. Confirm one admin credential works
+9. Confirm one clinic credential works
+10. Confirm `/api/health` returns `200`
+11. Confirm `/api/health/deep` returns `200`
 
 ## Post-Deployment Verification
 

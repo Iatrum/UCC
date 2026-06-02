@@ -16,6 +16,17 @@ function storageDownloadUrl(bucketName: string, path: string, token: string): st
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
 }
 
+function profileDisplayName(profile: any): string | undefined {
+  return profile?.name?.[0]?.text || profile?.telecom?.find((item: any) => item.system === 'email')?.value || profile?.id;
+}
+
+function provenancePractitionerId(profile: any): string | undefined {
+  if (profile?.resourceType !== 'Practitioner' || !profile.id || profile.id === 'local-auth-bypass') {
+    return undefined;
+  }
+  return profile.id;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(request);
@@ -39,8 +50,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { medplum, clinicId, profile } = await requireClinicAuth(request);
     const contentTypeHeader = request.headers.get('content-type') || '';
+    const uploadedBy = profileDisplayName(profile);
+    const practitionerId = provenancePractitionerId(profile);
 
     if (contentTypeHeader.includes('multipart/form-data')) {
       const form = await request.formData();
@@ -86,6 +99,8 @@ export async function POST(request: NextRequest) {
           url,
           contentType: file.type,
           size: file.size,
+          uploadedBy,
+          practitionerId,
           storagePath,
         });
         documents.push({ id, title: file.name, url, contentType: file.type, size: file.size, storagePath });
@@ -95,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { patientId, title, url, contentType, size, uploadedBy, storagePath } = body || {};
+    const { patientId, title, url, contentType, size, uploadedBy: bodyUploadedBy, storagePath } = body || {};
 
     if (!patientId || !title || !url || !contentType) {
       return NextResponse.json({ error: 'Missing required fields: patientId, title, url, contentType' }, { status: 400 });
@@ -106,7 +121,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
 
-    const id = await createPatientDocument(medplum, { patientId, title, url, contentType, size, uploadedBy, storagePath });
+    const id = await createPatientDocument(medplum, {
+      patientId,
+      title,
+      url,
+      contentType,
+      size,
+      uploadedBy: bodyUploadedBy || uploadedBy,
+      practitionerId,
+      storagePath,
+    });
     return NextResponse.json({ success: true, id });
   } catch (error) {
     return handleRouteError(error, 'POST /api/documents');

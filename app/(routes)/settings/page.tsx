@@ -2,13 +2,11 @@
 
 import React, { useState } from 'react';
 import { BookOpen, ClipboardList, CreditCard, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { storage } from '@/lib/firebase';
 import { useMedplumAuth } from '@/lib/auth-medplum';
 import { fetchOrganizationDetails, saveOrganizationDetails } from '@/lib/org';
 import { InsurerManager } from '@/components/settings/insurer-manager';
@@ -67,9 +65,19 @@ export default function SettingsPage() {
     if (!file) return;
     try {
       setIsUploading(true);
-      const objectRef = ref(storage, `branding/logo-${Date.now()}-${file.name}`);
-      await uploadBytes(objectRef, file, { contentType: file.type });
-      const url = await getDownloadURL(objectRef);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/storage/logo', {
+        method: 'POST',
+        body: formData,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.success || !payload?.url) {
+        throw new Error(payload?.error || 'Could not upload logo');
+      }
+
+      const url = String(payload.url);
       setLogoUrl(url);
       await saveOrganizationDetails({
         name: orgName,

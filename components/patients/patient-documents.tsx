@@ -1,13 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  deleteObject,
-  getDownloadURL,
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-} from "firebase/storage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -30,14 +23,6 @@ type PatientDocument = {
   uploadedAt?: Date | string | null;
   uploadedBy?: string | null;
   storagePath?: string; // used only client-side for bucket deletion
-};
-
-type UploadResult = {
-  title: string;
-  contentType: string;
-  size: number;
-  url: string;
-  storagePath: string;
 };
 
 interface Props {
@@ -88,57 +73,28 @@ export default function PatientDocuments({ patientId }: Props) {
     });
   }, [fetchDocs]);
 
-  async function registerUploadedDocument(upload: UploadResult) {
-    const res = await fetch("/api/documents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        patientId,
-        title: upload.title,
-        contentType: upload.contentType,
-        size: upload.size,
-        url: upload.url,
-        storagePath: upload.storagePath,
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || "Failed to register document");
-    }
-  }
-
-  async function uploadWithBrowserFirebase(files: File[]) {
-    const storage = getStorage();
-    for (const file of files) {
-      const path = `patients/${patientId}/documents/${Date.now()}-${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      const ref = storageRef(storage, path);
-      await uploadBytes(ref, file, { contentType: file.type });
-      const url = await getDownloadURL(ref);
-      await registerUploadedDocument({
-        title: file.name,
-        contentType: file.type,
-        size: file.size,
-        url,
-        storagePath: path,
-      });
-    }
-  }
-
   const onSelectFiles: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    const input = e.currentTarget;
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const selectedFiles = Array.from(files);
+    const pdfFiles = selectedFiles.filter((file) => file.type === "application/pdf");
+    const rejectedFiles = selectedFiles.filter((file) => file.type !== "application/pdf");
+
+    for (const file of rejectedFiles) {
+      toast({ title: "Invalid file", description: `${file.name} is not a PDF`, variant: "destructive" });
+    }
+
+    if (pdfFiles.length === 0) {
+      input.value = "";
+      return;
+    }
 
     setUploading(true);
 
     try {
       const formData = new FormData();
-      for (const file of selectedFiles) {
-        if (file.type !== "application/pdf") {
-          toast({ title: "Invalid file", description: `${file.name} is not a PDF`, variant: "destructive" });
-          continue;
-        }
+      for (const file of pdfFiles) {
         formData.append("files", file);
       }
       formData.append("patientId", patientId);
@@ -150,18 +106,6 @@ export default function PatientDocuments({ patientId }: Props) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        const message = String(err?.error || "");
-        if (
-          message.includes("invalid_grant") ||
-          message.includes("Invalid JWT Signature") ||
-          message.includes("bucket does not exist") ||
-          message.includes("specified bucket")
-        ) {
-          await uploadWithBrowserFirebase(selectedFiles.filter((file) => file.type === "application/pdf"));
-          toast({ title: "Upload complete" });
-          fetchDocs();
-          return;
-        }
         throw new Error(err?.error || "Failed to upload document");
       }
       toast({ title: "Upload complete" });
@@ -171,7 +115,7 @@ export default function PatientDocuments({ patientId }: Props) {
       toast({ title: "Upload failed", description: err?.message || "Please try again", variant: "destructive" });
     } finally {
       setUploading(false);
-      e.currentTarget.value = ""; // reset input
+      input.value = ""; // reset input
     }
   };
 
@@ -179,11 +123,6 @@ export default function PatientDocuments({ patientId }: Props) {
     const ok = confirm(`Delete ${docItem.title}? This cannot be undone.`);
     if (!ok) return;
     try {
-      if (docItem.storagePath) {
-        await deleteObject(storageRef(getStorage(), docItem.storagePath)).catch((error) => {
-          console.warn("Browser Firebase Storage delete failed; server will attempt cleanup.", error);
-        });
-      }
       const res = await fetch('/api/documents', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
