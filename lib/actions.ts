@@ -2,6 +2,8 @@ import { QueueStatus } from './types';
 import { z } from 'zod';
 import { getPatientFromMedplum } from './fhir/patient-service';
 import { checkInPatientInTriage, getTriageForPatient, updateQueueStatusForPatient } from './fhir/triage-service';
+import { resolveClinicIdFromServerScope } from './server/clinic';
+import { getMedplumForRequest } from './server/medplum-auth';
 
 const idSchema = z.string().min(1);
 const statusSchema = z
@@ -13,14 +15,26 @@ const statusSchema = z
   .or(z.literal('completed'))
   .or(z.literal('meds_and_bills')) as any;
 
+async function getClinicalActionContext() {
+  const [medplum, clinicId] = await Promise.all([
+    getMedplumForRequest(),
+    resolveClinicIdFromServerScope(),
+  ]);
+  if (!clinicId) {
+    throw new Error('Clinic scope is required.');
+  }
+  return { medplum, clinicId };
+}
+
 export async function checkInPatient(patientId: string, chiefComplaint?: string) {
   try {
     idSchema.parse(patientId);
-    const patient = await getPatientFromMedplum(patientId);
+    const { medplum, clinicId } = await getClinicalActionContext();
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
     if (!patient) {
       throw new Error('Patient not found');
     }
-    await checkInPatientInTriage(patientId, chiefComplaint);
+    await checkInPatientInTriage(patientId, chiefComplaint, undefined, medplum, clinicId);
   } catch (error) {
     console.error('Error checking patient in:', error);
     throw error;
@@ -30,8 +44,9 @@ export async function checkInPatient(patientId: string, chiefComplaint?: string)
 export async function addPatientToQueue(patientId: string) {
   try {
     idSchema.parse(patientId);
-    const patient = await getPatientFromMedplum(patientId);
-    const triage = await getTriageForPatient(patientId);
+    const { medplum, clinicId } = await getClinicalActionContext();
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    const triage = await getTriageForPatient(patientId, medplum, clinicId);
 
     if (!patient) {
       throw new Error('Patient not found');
@@ -41,7 +56,7 @@ export async function addPatientToQueue(patientId: string) {
       throw new Error('Patient is already in queue');
     }
 
-    await updateQueueStatusForPatient(patientId, 'waiting');
+    await updateQueueStatusForPatient(patientId, 'waiting', medplum, clinicId);
   } catch (error) {
     console.error('Error adding patient to queue:', error);
     throw error;
@@ -51,8 +66,9 @@ export async function addPatientToQueue(patientId: string) {
 export async function removePatientFromQueue(patientId: string) {
   try {
     idSchema.parse(patientId);
-    const patient = await getPatientFromMedplum(patientId);
-    const triage = await getTriageForPatient(patientId);
+    const { medplum, clinicId } = await getClinicalActionContext();
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    const triage = await getTriageForPatient(patientId, medplum, clinicId);
     if (!patient) {
       throw new Error('Patient not found');
     }
@@ -61,7 +77,7 @@ export async function removePatientFromQueue(patientId: string) {
       throw new Error('Patient has no triage encounter');
     }
 
-    await updateQueueStatusForPatient(patientId, null);
+    await updateQueueStatusForPatient(patientId, null, medplum, clinicId);
   } catch (error) {
     console.error('Error removing patient from queue:', error);
     throw error;
@@ -72,15 +88,16 @@ export async function updateQueueStatus(patientId: string, status: QueueStatus) 
   try {
     idSchema.parse(patientId);
     statusSchema.parse(status);
-    const patient = await getPatientFromMedplum(patientId);
-    const triage = await getTriageForPatient(patientId);
+    const { medplum, clinicId } = await getClinicalActionContext();
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    const triage = await getTriageForPatient(patientId, medplum, clinicId);
     if (!patient) {
       throw new Error('Patient not found');
     }
     if (!triage.triage) {
       throw new Error('Patient has no triage encounter');
     }
-    await updateQueueStatusForPatient(patientId, status);
+    await updateQueueStatusForPatient(patientId, status, medplum, clinicId);
   } catch (error) {
     console.error('Error updating queue status:', error);
     throw error;
@@ -89,7 +106,8 @@ export async function updateQueueStatus(patientId: string, status: QueueStatus) 
 
 export async function getQueueStatus(patientId: string): Promise<QueueStatus> {
   try {
-    const triage = await getTriageForPatient(patientId);
+    const { medplum, clinicId } = await getClinicalActionContext();
+    const triage = await getTriageForPatient(patientId, medplum, clinicId);
     if (!triage.triage && !triage.queueStatus) {
       throw new Error('Patient not in queue');
     }

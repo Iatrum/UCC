@@ -120,8 +120,9 @@ function matchesClinic(
     serviceProvider?: { reference?: string };
     managingOrganization?: { reference?: string };
   },
-  clinicId?: string
+  clinicId?: string | null
 ): boolean {
+  if (clinicId === null) return true;
   if (!clinicId) return true;
   const identifierMatch = resource.identifier?.some(
     (id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
@@ -510,7 +511,7 @@ export async function saveConsultationToMedplum(
  */
 export async function getConsultationFromMedplum(
   encounterId: string,
-  clinicId?: string,
+  clinicId?: string | null,
   medplum?: MedplumClient
 ): Promise<SavedConsultation | null> {
   try {
@@ -649,7 +650,7 @@ function buildSavedConsultation(
  */
 export async function getPatientConsultationsFromMedplum(
   firebasePatientId: string,
-  clinicId?: string,
+  clinicId?: string | null,
   medplum?: MedplumClient
 ): Promise<SavedConsultation[]> {
   try {
@@ -921,7 +922,7 @@ export async function updateConsultationInMedplum(
  */
 export async function getRecentConsultationsFromMedplum(
   limit = 10,
-  clinicId: string | undefined,
+  clinicId: string | null | undefined,
   medplum: MedplumClient
 ): Promise<SavedConsultation[]> {
   try {

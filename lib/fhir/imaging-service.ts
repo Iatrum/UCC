@@ -30,6 +30,8 @@ export {
   type DICOMSeries,
 };
 
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+
 export const IMAGING_MODALITIES = {
   CR: { code: 'CR', display: 'Computed Radiography', system: 'http://dicom.nema.org/resources/ontology/DCM' },
   CT: { code: 'CT', display: 'Computed Tomography', system: 'http://dicom.nema.org/resources/ontology/DCM' },
@@ -83,7 +85,11 @@ function resolveImagingProcedure(procedure: ImagingOrderProcedure): {
 /**
  * Create an imaging order (ServiceRequest)
  */
-export async function createImagingOrder(order: ImagingOrderRequest, medplum: MedplumClient): Promise<string> {
+export async function createImagingOrder(
+  order: ImagingOrderRequest,
+  medplum: MedplumClient,
+  clinicId: string
+): Promise<string> {
   const client = medplum;
   
   console.log(`🏥 Creating imaging order for patient ${order.patientId}`);
@@ -96,6 +102,7 @@ export async function createImagingOrder(order: ImagingOrderRequest, medplum: Me
     
     const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
       resourceType: 'ServiceRequest',
+      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
       status: 'active',
       intent: 'order',
       priority: order.priority || 'routine',
@@ -146,7 +153,7 @@ export async function createImagingOrder(order: ImagingOrderRequest, medplum: Me
           'ServiceRequest',
           serviceRequest.id,
           order.orderedBy?.startsWith('Practitioner/') ? order.orderedBy.split('/')[1] : undefined,
-          undefined,
+          clinicId,
           'CREATE'
         );
         console.log(`✅ Created Provenance for ServiceRequest/${serviceRequest.id}`);
@@ -173,6 +180,7 @@ export async function receiveImagingStudy(
 
   // Get the original service request
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
+  const clinicIdentifier = serviceRequest.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
   
   if (!serviceRequest.subject?.reference) {
     throw new Error('ServiceRequest has no patient reference');
@@ -181,6 +189,13 @@ export async function receiveImagingStudy(
   // Create ImagingStudy resource
   const imagingStudy = await validateAndCreate<ImagingStudy>(client, {
     resourceType: 'ImagingStudy',
+    identifier: [
+      ...(clinicIdentifier ? [clinicIdentifier] : []),
+      ...(studyData.accessionNumber ? [{
+        system: 'accession',
+        value: studyData.accessionNumber,
+      }] : []),
+    ],
     status: 'available',
     subject: {
       reference: serviceRequest.subject.reference,
@@ -218,10 +233,6 @@ export async function receiveImagingStudy(
         reference: s.endpoint,
       }] : undefined,
     })),
-    identifier: studyData.accessionNumber ? [{
-      system: 'accession',
-      value: studyData.accessionNumber,
-    }] : undefined,
   });
 
   console.log(`✅ Created ImagingStudy: ${imagingStudy.id}`);
@@ -269,10 +280,12 @@ export async function createImagingReport(
 
   // Get the imaging study
   const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId);
+  const clinicIdentifier = imagingStudy.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
 
   // Create DiagnosticReport
   const report = await validateAndCreate<DiagnosticReport>(client, {
     resourceType: 'DiagnosticReport',
+    identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
     status,
     category: [{
       coding: [{
@@ -552,4 +565,3 @@ export async function deleteImagingOrder(serviceRequestId: string, medplum: Medp
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ImagingOrder ServiceRequest ${serviceRequestId}`);
 }
-

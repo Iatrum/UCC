@@ -4,12 +4,13 @@ export const metadata = {
 };
 
 import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import TriageForm from "@/components/triage/triage-form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import { mergePatientWithTriageForCheckIn } from "@/lib/fhir/merge-check-in-patient";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 
 interface CheckInPageProps {
   params: Promise<{ id: string }>;
@@ -19,9 +20,15 @@ interface CheckInPageProps {
 export default async function CheckInPage({ params, searchParams }: CheckInPageProps) {
   const { id } = await params;
   const { visitType } = await searchParams;
+  let medplum;
+  try {
+    medplum = await getMedplumForRequest();
+  } catch {
+    redirect("/login");
+  }
   const [patient, triage] = await Promise.all([
-    getPatientFromMedplum(id),
-    getTriageForPatient(id),
+    getPatientFromMedplum(id, undefined, medplum),
+    getTriageForPatient(id, medplum),
   ]);
 
   if (!patient) {

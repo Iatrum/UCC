@@ -22,6 +22,8 @@ import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } fr
 
 export { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult };
 
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
+
 export type LabOrderTest = LabTestCode | {
   code: string;
   display: string;
@@ -53,7 +55,7 @@ function resolveLabTest(test: LabOrderTest): { code: string; display: string; sy
 /**
  * Create a lab order (ServiceRequest)
  */
-export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient): Promise<string> {
+export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient, clinicId: string): Promise<string> {
   const client = medplum;
   
   console.log(`📋 Creating lab order for patient ${order.patientId}`);
@@ -66,6 +68,7 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
     
     const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
       resourceType: 'ServiceRequest',
+      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
       status: 'active',
       intent: 'order',
       priority: order.priority || 'routine',
@@ -105,7 +108,7 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
           'ServiceRequest',
           serviceRequest.id,
           order.orderedBy?.startsWith('Practitioner/') ? order.orderedBy.split('/')[1] : undefined,
-          undefined,
+          clinicId,
           'CREATE'
         );
         console.log(`✅ Created Provenance for ServiceRequest/${serviceRequest.id}`);
@@ -134,6 +137,7 @@ export async function receiveLabResults(
 
   // Get the original service request
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
+  const clinicIdentifier = serviceRequest.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
   
   if (!serviceRequest.subject?.reference) {
     throw new Error('ServiceRequest has no patient reference');
@@ -145,6 +149,7 @@ export async function receiveLabResults(
   for (const result of results) {
     observationResources.push({
       resourceType: 'Observation',
+      identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
       status: result.status as any,
       code: {
         coding: [{
@@ -184,6 +189,7 @@ export async function receiveLabResults(
   // Note: We'll need to update result references after Observations are created
   const diagnosticReportResource: DiagnosticReport = {
     resourceType: 'DiagnosticReport',
+    identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
     status: results.every(r => r.status === 'final') ? 'final' : 'partial',
     code: serviceRequest.code || { text: 'Laboratory Report' },
     subject: {
@@ -417,6 +423,5 @@ export async function getEncounterLabResults(encounterId: string, medplum: Medpl
 
   return mapReportsToSummaries(reports, obsMap, undefined, encounterId);
 }
-
 
 

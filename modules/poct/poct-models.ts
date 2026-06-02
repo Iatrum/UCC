@@ -7,8 +7,9 @@
 import { Buffer } from 'buffer';
 import type { MedplumClient } from '@medplum/core';
 import type { DiagnosticReport, ServiceRequest } from '@medplum/fhirtypes';
-import { getAdminMedplum } from '@/lib/server/medplum-auth';
 import type { POCTTest, POCTTestResult } from './types';
+
+const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
 const STATUS_TO_SERVICEREQUEST: Record<POCTTest['status'], ServiceRequest['status']> = {
   pending: 'active',
@@ -77,14 +78,16 @@ async function findReportForRequest(medplum: MedplumClient, serviceRequestId: st
 }
 
 export async function createPOCTTest(
-  testData: Omit<POCTTest, "id" | "createdAt" | "updatedAt">
+  medplum: MedplumClient,
+  testData: Omit<POCTTest, "id" | "createdAt" | "updatedAt">,
+  clinicId: string
 ): Promise<string> {
-  const medplum = await getAdminMedplum();
   const authoredOn = typeof testData.orderedAt === 'string' ? testData.orderedAt : testData.orderedAt?.toISOString() || new Date().toISOString();
   const status = STATUS_TO_SERVICEREQUEST[testData.status] || 'active';
 
   const sr = await medplum.createResource({
     resourceType: 'ServiceRequest',
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
     status,
     intent: 'order',
     category: [
@@ -116,8 +119,7 @@ export async function createPOCTTest(
   return created.id as string;
 }
 
-export async function getPOCTTestById(id: string): Promise<POCTTest | null> {
-  const medplum = await getAdminMedplum();
+export async function getPOCTTestById(medplum: MedplumClient, id: string): Promise<POCTTest | null> {
   try {
     const sr = await medplum.readResource('ServiceRequest', id);
     const report = await findReportForRequest(medplum, id);
@@ -128,8 +130,7 @@ export async function getPOCTTestById(id: string): Promise<POCTTest | null> {
   }
 }
 
-export async function getPOCTTestsByPatient(patientId: string): Promise<POCTTest[]> {
-  const medplum = await getAdminMedplum();
+export async function getPOCTTestsByPatient(medplum: MedplumClient, patientId: string): Promise<POCTTest[]> {
   try {
     const requests = await medplum.searchResources('ServiceRequest', {
       subject: `Patient/${patientId}`,
@@ -149,8 +150,7 @@ export async function getPOCTTestsByPatient(patientId: string): Promise<POCTTest
   }
 }
 
-export async function getPOCTTestsByStatus(status: POCTTest['status']): Promise<POCTTest[]> {
-  const medplum = await getAdminMedplum();
+export async function getPOCTTestsByStatus(medplum: MedplumClient, status: POCTTest['status']): Promise<POCTTest[]> {
   const srStatus = STATUS_TO_SERVICEREQUEST[status] || 'active';
   try {
     const requests = await medplum.searchResources('ServiceRequest', {
@@ -171,8 +171,7 @@ export async function getPOCTTestsByStatus(status: POCTTest['status']): Promise<
   }
 }
 
-export async function getTodaysPOCTTests(): Promise<POCTTest[]> {
-  const medplum = await getAdminMedplum();
+export async function getTodaysPOCTTests(medplum: MedplumClient): Promise<POCTTest[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const start = today.toISOString().split('T')[0];
@@ -197,10 +196,10 @@ export async function getTodaysPOCTTests(): Promise<POCTTest[]> {
 }
 
 export async function updatePOCTTest(
+  medplum: MedplumClient,
   id: string,
   updates: Partial<POCTTest>
 ): Promise<void> {
-  const medplum = await getAdminMedplum();
   const sr = await medplum.readResource('ServiceRequest', id);
   const status = updates.status ? STATUS_TO_SERVICEREQUEST[updates.status] : sr.status;
 
@@ -213,15 +212,17 @@ export async function updatePOCTTest(
 }
 
 export async function completePOCTTest(
+  medplum: MedplumClient,
   id: string,
   result: POCTTest['result'],
   performedBy: string
 ): Promise<void> {
-  const medplum = await getAdminMedplum();
   const sr = await medplum.readResource('ServiceRequest', id);
+  const clinicIdentifier = sr.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
 
   await medplum.createResource({
     resourceType: 'DiagnosticReport',
+    identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
     status: 'final',
     code: sr.code ?? { text: 'POCT Report' },
     subject: sr.subject,

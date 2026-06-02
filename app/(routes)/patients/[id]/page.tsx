@@ -8,10 +8,10 @@ import Link from "next/link";
 import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
 import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
 import { getPatientAppointmentsFromMedplum } from "@/lib/fhir/appointment-service";
-import { getAdminMedplum } from "@/lib/server/medplum-admin";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { formatDisplayDate, calculateAge, safeToISOString } from "@/lib/utils";
 import type { SerializedPatient } from "@/components/patients/patient-card";
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import PatientProfileWorkspace from "./patient-profile-workspace";
 
@@ -25,13 +25,17 @@ interface PatientProfilePageProps {
 
 export default async function PatientProfilePage({ params }: PatientProfilePageProps) {
   const { id } = await params;
-  const medplum = await getAdminMedplum();
-
+  let medplum;
+  try {
+    medplum = await getMedplumForRequest();
+  } catch {
+    redirect('/login');
+  }
   // Fetch data in parallel from Medplum FHIR (source of truth)
   const [patientData, consultationsData, triageData, appointmentsData] = await Promise.all([
-    getPatientFromMedplum(id),
-    getPatientConsultationsFromMedplum(id),
-    getTriageForPatient(id),
+    getPatientFromMedplum(id, undefined, medplum),
+    getPatientConsultationsFromMedplum(id, undefined, medplum),
+    getTriageForPatient(id, medplum),
     getPatientAppointmentsFromMedplum(medplum, id),
   ]);
 
