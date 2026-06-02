@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
@@ -21,6 +20,7 @@ import { OrderComposer, buildSignedDocumentNote } from "@/components/orders/orde
 import PatientDocuments from "@/components/patients/patient-documents";
 import { LabResultsView } from "@/components/labs/lab-results-view";
 import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
+import { DiagnosisSearch } from "@/components/diagnosis-search";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
 import { formatPrescriptionLine } from "@/lib/prescriptions";
@@ -895,11 +895,7 @@ export default function PatientProfileWorkspace({
                         value={clinicalNotes}
                         onChange={setClinicalNotes}
                       />
-                      <Input
-                        placeholder="Condition (diagnosis)"
-                        value={diagnosis}
-                        onChange={(event) => setDiagnosis(event.target.value)}
-                      />
+                      <DiagnosisSearch value={diagnosis} onChange={setDiagnosis} />
                     </div>
                     <div className="border-t px-5 py-4">
                       <Button type="submit" disabled={consultSubmitting} className="w-full">
