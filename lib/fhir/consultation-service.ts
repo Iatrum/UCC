@@ -20,6 +20,11 @@ import { findMedicationByName } from './terminologies/medications';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
 import { formatMedicationNameWithStrength } from '@/lib/prescriptions';
+import {
+  assignPatientToClinicTenant,
+  resolveClinicTenant,
+  resourceMatchesClinicTenant,
+} from './clinic-tenancy';
 
 // Local types that match your app's interface
 type OrderCategory = 'items' | 'services' | 'packages' | 'documents';
@@ -52,7 +57,6 @@ export interface SavedConsultation extends ConsultationData {
   createdAt: Date;
 }
 
-const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 const ORDER_PRICE_EXTENSION_URL = 'https://ucc.emr/order/unit-price';
 const ORDER_QUANTITY_EXTENSION_URL = 'https://ucc.emr/order/quantity';
 const ORDER_CATEGORY_EXTENSION_URL = 'https://ucc.emr/order/category';
@@ -104,16 +108,6 @@ function diagnosisCodeableConcept(diagnosis: string, catalogItem: ClinicalCatalo
   return code;
 }
 
-function addClinicIdentifier(identifiers: { system?: string; value?: string }[] | undefined, clinicId?: string) {
-  if (!clinicId) return identifiers;
-  const nextIdentifiers = [...(identifiers || [])];
-  const hasClinicId = nextIdentifiers.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId);
-  if (!hasClinicId) {
-    nextIdentifiers.push({ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId });
-  }
-  return nextIdentifiers;
-}
-
 function matchesClinic(
   resource: {
     identifier?: { system?: string; value?: string }[];
@@ -122,14 +116,7 @@ function matchesClinic(
   },
   clinicId?: string | null
 ): boolean {
-  if (clinicId === null) return true;
-  if (!clinicId) return true;
-  const identifierMatch = resource.identifier?.some(
-    (id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
-  );
-  const serviceProviderMatch = resource.serviceProvider?.reference === `Organization/${clinicId}`;
-  const managingOrgMatch = resource.managingOrganization?.reference === `Organization/${clinicId}`;
-  return Boolean(identifierMatch || serviceProviderMatch || managingOrgMatch);
+  return resourceMatchesClinicTenant(resource, clinicId);
 }
 
 /**
@@ -147,18 +134,17 @@ function assertMatchesClinic(
 }
 
 function withClinicIdentifiers<T extends { [key: string]: any }>(resource: T, clinicId?: string): T {
-  if (!clinicId) return resource;
-  return {
-    ...resource,
-    identifier: addClinicIdentifier(resource.identifier, clinicId),
-  };
+  return resource;
 }
 
-function withServiceProvider<T extends { [key: string]: any }>(resource: T, clinicId?: string): T {
-  if (!clinicId) return resource;
+function withServiceProvider<T extends { [key: string]: any }>(
+  resource: T,
+  organizationReference?: string
+): T {
+  if (!organizationReference) return resource;
   return {
     ...resource,
-    serviceProvider: { reference: `Organization/${clinicId}` },
+    serviceProvider: { reference: organizationReference },
   };
 }
 
@@ -222,6 +208,7 @@ async function getOrCreatePatient(
   clinicId?: string
 ): Promise<FHIRPatient> {
   let patient: FHIRPatient | undefined;
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
 
   // The app now passes the real FHIR Patient id in most clinical flows.
   // Prefer that exact resource before falling back to legacy identifier lookups.
@@ -254,10 +241,10 @@ async function getOrCreatePatient(
   if (!patient) {
     patient = await medplum.createResource({
       resourceType: 'Patient',
-      identifier: addClinicIdentifier([
+      identifier: [
         { system: 'firebase', value: patientData.id },
         ...(patientData.ic ? [{ system: 'ic', value: patientData.ic }] : []),
-      ], clinicId),
+      ],
       name: [
         {
           text: (patientData as any).name || (patientData as any).fullName,
@@ -269,21 +256,22 @@ async function getOrCreatePatient(
       gender: (patientData.gender?.toLowerCase() as 'male' | 'female' | 'other') || 'unknown',
       telecom: patientData.phone ? [{ system: 'phone', value: patientData.phone }] : undefined,
       address: patientData.address ? [{ text: patientData.address }] : undefined,
-      managingOrganization: clinicId ? { reference: `Organization/${clinicId}` } : undefined,
+      managingOrganization: clinicTenant ? { reference: clinicTenant.organizationReference } : undefined,
     });
+    await assignPatientToClinicTenant(medplum, patient as FHIRPatient, clinicTenant);
     console.log(`✅ Created FHIR Patient: ${patient.id}`);
-  } else if (clinicId && !matchesClinic(patient as any, clinicId)) {
+  } else if (clinicTenant && !matchesClinic(patient as any, clinicTenant.organizationId)) {
     // Patient exists but not linked to this clinic -> deny
     throw new Error('Patient does not belong to this clinic');
-  } else if (clinicId) {
-    // Ensure existing patient carries clinic identifier/organization
-    const needsClinicTag = !matchesClinic(patient as any, clinicId);
-    if (needsClinicTag) {
+  } else if (clinicTenant) {
+    // Ensure existing patient carries the clinic Organization tenant.
+    const needsTenant = !matchesClinic(patient as any, clinicTenant.organizationId);
+    if (needsTenant) {
       patient = await medplum.updateResource({
         ...patient,
-        identifier: addClinicIdentifier((patient as any).identifier, clinicId),
-        managingOrganization: { reference: `Organization/${clinicId}` },
+        managingOrganization: clinicTenant ? { reference: clinicTenant.organizationReference } : undefined,
       } as any);
+      await assignPatientToClinicTenant(medplum, patient as FHIRPatient, clinicTenant);
     }
   }
 
@@ -313,6 +301,7 @@ export async function saveConsultationToMedplum(
   console.log(`💾 Saving consultation to Medplum (source of truth)...`);
 
   // 1. Verify patient exists in Medplum
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   const patient = await getOrCreatePatient(client, patientData, clinicId);
   const patientReference = `Patient/${patient.id}`;
 
@@ -340,7 +329,7 @@ export async function saveConsultationToMedplum(
           value: consultation.patientId,
         },
       ],
-    }, clinicId), clinicId));
+    }, clinicId), clinicTenant?.organizationReference));
   console.log(`✅ Created Encounter (Consultation): ${encounter.id}`);
 
   // 3. Create Chief Complaint (Observation)
@@ -516,10 +505,12 @@ export async function getConsultationFromMedplum(
 ): Promise<SavedConsultation | null> {
   try {
     const client = medplum ?? (await getAdminMedplum());
+    const clinicTenant = await resolveClinicTenant(client, clinicId);
+    const clinicScopeId = clinicTenant?.organizationId ?? clinicId;
     
     // Get the encounter
     const encounter = await client.readResource('Encounter', encounterId);
-    if (!matchesClinic(encounter as any, clinicId)) {
+    if (!matchesClinic(encounter as any, clinicScopeId)) {
       return null;
     }
     
@@ -655,12 +646,13 @@ export async function getPatientConsultationsFromMedplum(
 ): Promise<SavedConsultation[]> {
   try {
     const client = medplum ?? (await getAdminMedplum());
+    const clinicTenant = await resolveClinicTenant(client, clinicId);
+    const clinicScopeId = clinicTenant?.organizationId ?? clinicId;
 
-    // Find encounters scoped to clinic (if provided), then filter by patient identifier
+    // Find encounters scoped to the clinic Organization, then filter by patient identifier.
     const searchParams: Record<string, string> = clinicId
       ? {
-          identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-          'service-provider': `Organization/${clinicId}`,
+          'service-provider': clinicTenant!.organizationReference,
           _sort: '-date',
         }
       : {
@@ -672,7 +664,7 @@ export async function getPatientConsultationsFromMedplum(
 
     const filtered = encounters.filter(
       (enc) =>
-        matchesClinic(enc as any, clinicId) &&
+        matchesClinic(enc as any, clinicScopeId) &&
         (enc as any).identifier?.some((id: any) => id.system === 'firebase-patient' && id.value === firebasePatientId)
     );
 
@@ -927,14 +919,16 @@ export async function getRecentConsultationsFromMedplum(
 ): Promise<SavedConsultation[]> {
   try {
     const client = medplum;
+    const clinicTenant = await resolveClinicTenant(client, clinicId);
+    const clinicScopeId = clinicTenant?.organizationId ?? clinicId;
     
     const encounters = await client.searchResources('Encounter', {
       _count: String(limit),
       _sort: '-date',
-      ...(clinicId ? { 'service-provider': `Organization/${clinicId}`, identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+      ...(clinicTenant ? { 'service-provider': clinicTenant.organizationReference } : {}),
     });
 
-    const filtered = encounters.filter((enc) => matchesClinic(enc as any, clinicId));
+    const filtered = encounters.filter((enc) => matchesClinic(enc as any, clinicScopeId));
 
     if (filtered.length === 0) return [];
 

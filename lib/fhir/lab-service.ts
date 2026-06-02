@@ -19,6 +19,12 @@ import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
+import {
+  assignResourceToAccountReferences,
+  assignResourceToClinicTenant,
+  getResourceAccountReferences,
+  resolveClinicTenant,
+} from './clinic-tenancy';
 
 export { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult };
 
@@ -57,6 +63,7 @@ function resolveLabTest(test: LabOrderTest): { code: string; display: string; sy
  */
 export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient, clinicId: string): Promise<string> {
   const client = medplum;
+  const clinicTenant = await resolveClinicTenant(client, clinicId);
   
   console.log(`📋 Creating lab order for patient ${order.patientId}`);
 
@@ -96,6 +103,7 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
         text: order.clinicalNotes,
       }] : undefined,
     });
+    await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
     
     serviceRequests.push(serviceRequest);
     console.log(`✅ Created ServiceRequest: ${serviceRequest.id} for ${test.display}`);
@@ -137,7 +145,7 @@ export async function receiveLabResults(
 
   // Get the original service request
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
-  const clinicIdentifier = serviceRequest.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM);
+  const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
     throw new Error('ServiceRequest has no patient reference');
@@ -149,7 +157,6 @@ export async function receiveLabResults(
   for (const result of results) {
     observationResources.push({
       resourceType: 'Observation',
-      identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
       status: result.status as any,
       code: {
         coding: [{
@@ -189,7 +196,6 @@ export async function receiveLabResults(
   // Note: We'll need to update result references after Observations are created
   const diagnosticReportResource: DiagnosticReport = {
     resourceType: 'DiagnosticReport',
-    identifier: clinicIdentifier ? [clinicIdentifier] : undefined,
     status: results.every(r => r.status === 'final') ? 'final' : 'partial',
     code: serviceRequest.code || { text: 'Laboratory Report' },
     subject: {
@@ -207,6 +213,9 @@ export async function receiveLabResults(
 
   // Create all Observations in a Bundle transaction
   const observations = await createResourcesInBundle<Observation>(client, observationResources);
+  await Promise.all(
+    observations.map((obs) => assignResourceToAccountReferences(client, 'Observation', obs, accountRefs))
+  );
   console.log(`✅ Created ${observations.length} Observations in Bundle transaction`);
 
   // Create Provenance for Observations (non-blocking)
@@ -227,6 +236,7 @@ export async function receiveLabResults(
 
   // Create DiagnosticReport
   const diagnosticReport = await validateAndCreate<DiagnosticReport>(client, diagnosticReportResource);
+  await assignResourceToAccountReferences(client, 'DiagnosticReport', diagnosticReport, accountRefs);
 
   console.log(`✅ Created DiagnosticReport: ${diagnosticReport.id}`);
 
@@ -423,5 +433,3 @@ export async function getEncounterLabResults(encounterId: string, medplum: Medpl
 
   return mapReportsToSummaries(reports, obsMap, undefined, encounterId);
 }
-
-

@@ -9,9 +9,9 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const statuses: QueueStatus[] = ['meds_and_bills'];
-    const consultations = await getConsultationsWithDetails(statuses, medplum);
+    const consultations = await getConsultationsWithDetails(statuses, medplum, clinicId);
     return NextResponse.json({ consultations });
   } catch (error) {
     return handleRouteError(error, 'GET /api/orders/billable');

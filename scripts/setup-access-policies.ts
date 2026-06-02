@@ -4,8 +4,9 @@
  *
  * Security model:
  * - Clinic staff access is scoped by a ProjectMembership access parameter:
- *   { name: "clinicId", valueString: "<clinic-subdomain-or-org-id>" }.
- * - Clinic-owned resources must carry identifier=clinic|<clinicId>.
+ *   { name: "clinicOrganization", valueReference: Organization/<id> }.
+ * - Patients are assigned to the clinic Organization with $set-accounts.
+ * - Patient-related resources are scoped by Medplum tenant compartments.
  * - Platform admin access remains separate and must never be used by normal
  *   clinic routes.
  */
@@ -38,10 +39,10 @@ const READ_INTERACTIONS: AccessPolicyResource["interaction"] = [
   "vread",
 ];
 
-function clinicRule(resourceType: string, interactions = ALL_INTERACTIONS): AccessPolicyResource {
+function clinicCompartmentRule(resourceType: string, interactions = ALL_INTERACTIONS): AccessPolicyResource {
   return {
     resourceType,
-    criteria: `${resourceType}?identifier=clinic|%clinicId`,
+    criteria: `${resourceType}?_compartment=%clinicOrganization`,
     interaction: interactions,
   };
 }
@@ -93,38 +94,38 @@ async function setupAccessPolicies() {
     resourceType: "AccessPolicy",
     name: CLINIC_POLICY_NAME,
     resource: [
-      clinicRule("Patient"),
-      clinicRule("Encounter"),
-      clinicRule("Observation"),
-      clinicRule("Condition"),
-      clinicRule("Procedure"),
-      clinicRule("MedicationRequest"),
-      clinicRule("MedicationStatement"),
-      clinicRule("AllergyIntolerance"),
-      clinicRule("ServiceRequest"),
-      clinicRule("DiagnosticReport"),
-      clinicRule("ImagingStudy"),
-      clinicRule("DocumentReference"),
-      clinicRule("Appointment"),
-      clinicRule("Invoice"),
-      clinicRule("Task"),
-      clinicRule("Basic"),
-      clinicRule("ChargeItemDefinition"),
-      clinicRule("Medication"),
-      clinicRule("Communication"),
-      clinicRule("QuestionnaireResponse"),
+      clinicCompartmentRule("Patient"),
+      clinicCompartmentRule("Encounter"),
+      clinicCompartmentRule("Observation"),
+      clinicCompartmentRule("Condition"),
+      clinicCompartmentRule("Procedure"),
+      clinicCompartmentRule("MedicationRequest"),
+      clinicCompartmentRule("MedicationStatement"),
+      clinicCompartmentRule("AllergyIntolerance"),
+      clinicCompartmentRule("ServiceRequest"),
+      clinicCompartmentRule("DiagnosticReport"),
+      clinicCompartmentRule("ImagingStudy"),
+      clinicCompartmentRule("DocumentReference"),
+      clinicCompartmentRule("Appointment"),
+      clinicCompartmentRule("Invoice"),
+      clinicCompartmentRule("Task"),
+      clinicCompartmentRule("Basic"),
+      clinicCompartmentRule("ChargeItemDefinition"),
+      clinicCompartmentRule("Medication"),
+      clinicCompartmentRule("Communication"),
+      clinicCompartmentRule("QuestionnaireResponse"),
       {
         resourceType: "Practitioner",
         interaction: READ_INTERACTIONS,
       },
       {
         resourceType: "PractitionerRole",
-        criteria: "PractitionerRole?identifier=clinic|%clinicId",
+        criteria: "PractitionerRole?organization=%clinicOrganization",
         interaction: READ_INTERACTIONS,
       },
       {
         resourceType: "Organization",
-        criteria: "Organization?identifier=clinic|%clinicId",
+        criteria: "Organization?_id=%clinicOrganization",
         interaction: READ_INTERACTIONS,
       },
     ],

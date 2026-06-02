@@ -129,20 +129,20 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const { searchParams } = new URL(req.url);
     const invoiceId = searchParams.get("id");
     const patientId = searchParams.get("patientId");
     const consultationId = searchParams.get("consultationId");
 
     if (invoiceId) {
-      const invoice = await getInvoice(medplum, invoiceId);
+      const invoice = await getInvoice(medplum, invoiceId, clinicId);
       if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
       return NextResponse.json({ success: true, invoice, invoiceNumber: getInvoiceNumber(invoice) });
     }
 
     if (consultationId) {
-      const invoice = await getConsultationInvoice(medplum, consultationId);
+      const invoice = await getConsultationInvoice(medplum, consultationId, clinicId);
       if (!invoice && searchParams.get("previewNumber") === "true") {
         return NextResponse.json({ success: true, invoice: null, invoiceNumber: await generateInvoiceNumber(medplum) });
       }
@@ -151,7 +151,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (patientId) {
-      const invoices = await getPatientInvoices(medplum, patientId);
+      const invoices = await getPatientInvoices(medplum, patientId, clinicId);
       return NextResponse.json({ success: true, count: invoices.length, invoices });
     }
 

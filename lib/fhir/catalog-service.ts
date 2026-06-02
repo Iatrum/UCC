@@ -1,5 +1,10 @@
 import type { MedplumClient } from '@medplum/core';
 import type { ChargeItemDefinition, Money } from '@medplum/fhirtypes';
+import {
+  assignResourceToClinicTenant,
+  resolveClinicTenant,
+  resourceMatchesClinicTenant,
+} from './clinic-tenancy';
 
 export type ClinicalCatalogType = 'lab' | 'imaging' | 'document' | 'diagnosis';
 
@@ -17,7 +22,6 @@ export interface ClinicalCatalogItem {
   notes?: string;
 }
 
-const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 const CATALOG_TYPE_IDENTIFIER_SYSTEM = 'https://ucc.emr/catalog-type';
 const CATALOG_TYPE_EXTENSION_URL = 'https://ucc.emr/catalog-type';
 const CATALOG_CATEGORY_EXTENSION_URL = 'https://ucc.emr/catalog-category';
@@ -94,25 +98,19 @@ async function readDefinition(medplum: MedplumClient, id: string): Promise<Charg
   }
 }
 
-function belongsToClinic(definition: ChargeItemDefinition, clinicId: string): boolean {
-  return Boolean(
-    definition.identifier?.some(
-      (identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
-    )
-  );
-}
-
 export async function getClinicalCatalogItems(
   medplum: MedplumClient,
   clinicId: string,
   type?: ClinicalCatalogType
 ): Promise<ClinicalCatalogItem[]> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const definitions = await medplum.searchResources('ChargeItemDefinition', {
-    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _compartment: clinicTenant?.organizationReference,
     _count: '200',
   });
 
   return definitions
+    .filter((definition) => resourceMatchesClinicTenant(definition as any, clinicTenant?.organizationId))
     .map(mapDefinition)
     .filter((item): item is ClinicalCatalogItem => Boolean(item))
     .filter((item) => !type || item.type === type)
@@ -124,6 +122,7 @@ export async function createClinicalCatalogItem(
   clinicId: string,
   item: Omit<ClinicalCatalogItem, 'id'>
 ): Promise<string> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const name = item.name.trim();
   const definition: ChargeItemDefinition = {
     resourceType: 'ChargeItemDefinition',
@@ -138,7 +137,6 @@ export async function createClinicalCatalogItem(
         : undefined,
     },
     identifier: [
-      { system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId },
       { system: CATALOG_TYPE_IDENTIFIER_SYSTEM, value: item.type },
     ],
     extension: buildExtensions(item),
@@ -146,6 +144,7 @@ export async function createClinicalCatalogItem(
   };
 
   const created = await medplum.createResource(definition);
+  await assignResourceToClinicTenant(medplum, 'ChargeItemDefinition', created, clinicTenant);
   if (!created.id) throw new Error('Failed to create catalog item');
   return created.id;
 }
@@ -156,9 +155,10 @@ export async function updateClinicalCatalogItem(
   id: string,
   updates: Partial<ClinicalCatalogItem>
 ): Promise<void> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
-  if (!belongsToClinic(existing, clinicId)) throw new Error('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.organizationId)) throw new Error('Catalog item not found');
 
   const current = mapDefinition(existing);
   if (!current) throw new Error('Catalog item not found');
@@ -197,8 +197,9 @@ export async function deleteClinicalCatalogItemForClinic(
   clinicId: string,
   id: string
 ): Promise<void> {
+  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
-  if (!belongsToClinic(existing, clinicId)) throw new Error('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.organizationId)) throw new Error('Catalog item not found');
   await medplum.deleteResource('ChargeItemDefinition', id);
 }

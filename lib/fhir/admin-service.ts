@@ -21,15 +21,13 @@ function getIdFromReference(reference?: string): string | undefined {
 const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const CLINIC_STAFF_POLICY_NAME = "UCC Clinic Staff Policy";
 
-async function getClinicPolicyParameterValue(
-  medplum: MedplumClient,
+async function getClinicPolicyParameters(
+  _medplum: MedplumClient,
   clinicOrganizationId: string
-): Promise<string> {
-  const organization = await medplum.readResource("Organization", clinicOrganizationId);
-  return (
-    organization.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM)?.value ||
-    clinicOrganizationId
-  );
+): Promise<NonNullable<ProjectMembership["access"]>[number]["parameter"]> {
+  return [
+    { name: "clinicOrganization", valueReference: { reference: `Organization/${clinicOrganizationId}` } },
+  ];
 }
 
 async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<string> {
@@ -52,7 +50,7 @@ async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<st
 function withClinicMembershipAccess(
   membership: ProjectMembership,
   policyReference: string,
-  clinicPolicyValue: string
+  parameters: NonNullable<ProjectMembership["access"]>[number]["parameter"]
 ): ProjectMembership {
   const otherAccess = (membership.access || []).filter(
     (entry) => entry.policy.reference !== policyReference
@@ -65,7 +63,7 @@ function withClinicMembershipAccess(
       ...otherAccess,
       {
         policy: { reference: policyReference },
-        parameter: [{ name: "clinicId", valueString: clinicPolicyValue }],
+        parameter: parameters,
       },
     ],
   };
@@ -786,9 +784,9 @@ export async function invitePractitionerToMedplum(
 
   const practitionerRef = `Practitioner/${practitionerId}`;
   const clinicRef = `Organization/${input.clinicId}`;
-  const [clinicPolicyReference, clinicPolicyValue] = await Promise.all([
+  const [clinicPolicyReference, clinicPolicyParameters] = await Promise.all([
     getClinicStaffPolicyReference(medplum),
-    getClinicPolicyParameterValue(medplum, input.clinicId),
+    getClinicPolicyParameters(medplum, input.clinicId),
   ]);
   const membershipUserRef =
     typeof (outcome as any)?.user?.reference === "string"
@@ -803,7 +801,7 @@ export async function invitePractitionerToMedplum(
   if (existingMembershipId) {
     const membership = await medplum.readResource("ProjectMembership", existingMembershipId) as ProjectMembership;
     await medplum.updateResource(
-      withClinicMembershipAccess(membership, clinicPolicyReference, clinicPolicyValue)
+      withClinicMembershipAccess(membership, clinicPolicyReference, clinicPolicyParameters)
     );
   } else if (membershipUserRef) {
     await medplum.createResource<ProjectMembership>({
@@ -814,7 +812,7 @@ export async function invitePractitionerToMedplum(
       access: [
         {
           policy: { reference: clinicPolicyReference },
-          parameter: [{ name: "clinicId", valueString: clinicPolicyValue }],
+          parameter: clinicPolicyParameters,
         },
       ],
     });
@@ -828,22 +826,9 @@ export async function invitePractitionerToMedplum(
   if (!existingRole) {
     await medplum.createResource({
       resourceType: "PractitionerRole",
-      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicPolicyValue }],
       active: true,
       practitioner: { reference: practitionerRef },
       organization: { reference: clinicRef },
-    });
-  } else if (
-    !existingRole.identifier?.some(
-      (identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicPolicyValue
-    )
-  ) {
-    await medplum.updateResource({
-      ...existingRole,
-      identifier: [
-        ...(existingRole.identifier || []),
-        { system: CLINIC_IDENTIFIER_SYSTEM, value: clinicPolicyValue },
-      ],
     });
   }
 }
