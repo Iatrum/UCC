@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { MedplumClient, type ProfileResource } from '@medplum/core';
 import { CLINIC_COOKIE, REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import { adminPathForHost } from '@/lib/admin-routes';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import {
   deriveSubdomainContext,
   getHostFromHeaders,
@@ -261,10 +262,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const [admin, assignedClinics] = await Promise.all([
+    const [admin, adminMedplum] = await Promise.all([
       isPlatformAdmin(medplum),
-      getAssignedClinics(medplum, profile as ProfileResource),
+      getAdminMedplum(),
     ]);
+    const assignedClinics = await getAssignedClinics(adminMedplum, profile as ProfileResource);
 
     let activeClinicId: string | null = null;
     let redirectUrl = '/dashboard';

@@ -12,6 +12,7 @@ const protectedPrefixes = [
 
 const allowedPatterns = [
   /^app\/api\/admin\//,
+  /^app\/api\/auth\/login\//,
   /^app\/api\/export-to-medplum\//,
   /^app\/api\/follow-up\/twilio\//,
   /^app\/\(routes\)\/api\/labs\/receive\//,

@@ -1,5 +1,6 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Organization, Parameters, Patient, Reference } from "@medplum/fhirtypes";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 
 export const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 
@@ -20,28 +21,36 @@ export function getClinicIdentifierValue(resource: { identifier?: { system?: str
   return resource.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM)?.value;
 }
 
+async function findClinicOrganization(
+  medplum: MedplumClient,
+  clinicId: string
+): Promise<Organization | undefined> {
+  try {
+    const direct = await medplum.readResource("Organization", clinicId);
+    if (direct.id) {
+      return direct;
+    }
+  } catch {
+    // The clinic id is usually the subdomain slug, not an Organization id.
+  }
+
+  return await medplum.searchOne("Organization", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }) as Organization | undefined;
+}
+
 export async function resolveClinicTenant(
   medplum: MedplumClient,
   clinicId: string | undefined | null
 ): Promise<ClinicTenant | null> {
   if (!clinicId) return null;
 
-  let organization: Organization | undefined;
+  let organization = await findClinicOrganization(medplum, clinicId);
 
-  try {
-    const direct = await medplum.readResource("Organization", clinicId);
-    if (direct.id) {
-      organization = direct;
-    }
-  } catch {
-    organization = undefined;
-  }
-
-  if (!organization) {
-    organization = await medplum.searchOne("Organization", {
-      identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-      _count: "1",
-    }) as Organization | undefined;
+  if (!organization?.id) {
+    const directoryMedplum = await getAdminMedplum();
+    organization = await findClinicOrganization(directoryMedplum, clinicId);
   }
 
   if (!organization?.id) {
