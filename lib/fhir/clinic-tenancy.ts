@@ -152,5 +152,17 @@ export async function assignResourceToAccountReferences(
     ],
   };
 
-  await medplum.post(`fhir/R4/${resourceType}/${resource.id}/$set-accounts`, parameters);
+  try {
+    await medplum.post(`fhir/R4/${resourceType}/${resource.id}/$set-accounts`, parameters);
+  } catch (error) {
+    const outcomeId = (error as any)?.outcome?.id;
+    const message = error instanceof Error ? error.message : String(error);
+    if (outcomeId === "forbidden" || message.toLowerCase().includes("forbidden")) {
+      console.warn(
+        `[clinic-tenancy] Skipping ${resourceType}/${resource.id} account assignment: $set-accounts is forbidden.`
+      );
+      return;
+    }
+    throw error;
+  }
 }
