@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPatientDocument, deletePatientDocument, listPatientDocuments, updatePatientDocument } from '@/lib/fhir/document-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
-import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import { getAdminStorageBucket } from '@/lib/firebase-admin';
 import { STORAGE_PATH_EXTENSION_URL } from '@/lib/fhir/structure-definitions';
@@ -50,7 +50,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId, profile } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
+    const profile = await getCurrentProfile(request).catch(() => null);
     const contentTypeHeader = request.headers.get('content-type') || '';
     const uploadedBy = profileDisplayName(profile);
     const practitionerId = provenancePractitionerId(profile);
