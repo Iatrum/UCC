@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { BookOpen, ClipboardList, CreditCard, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, BookOpen, ClipboardList, CreditCard, IdCard, MessageCircle, Stethoscope, UserRound } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,10 +10,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { useMedplumAuth } from '@/lib/auth-medplum';
 import { fetchOrganizationDetails, saveOrganizationDetails } from '@/lib/org';
-import { InsurerManager } from '@/components/settings/insurer-manager';
-import { ClinicalCatalogManager } from '@/components/catalogs/clinical-catalog-manager';
-import { FollowUpSettings } from '@/components/settings/follow-up-settings';
-import { DocumentTemplateEditor } from '@/components/settings/document-template-editor';
 
 interface UserSettings {
   fullName: string;
@@ -21,9 +18,20 @@ interface UserSettings {
 
 function WorkflowIcon({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
+    <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
       {children}
     </div>
+  );
+}
+
+function OpenSettingsLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Button asChild variant="outline" className="w-full justify-between">
+      <Link href={href}>
+        {label}
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    </Button>
   );
 }
 
@@ -117,26 +125,26 @@ export default function SettingsPage() {
         <div className="text-sm text-muted-foreground">Signed in as: {profileEmail}</div>
       </div>
 
-      <div className="grid grid-flow-dense gap-4 min-[900px]:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-flow-dense gap-3 min-[900px]:grid-cols-2 xl:grid-cols-3">
         <Card>
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><IdCard className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Registration</CardTitle>
               <CardDescription>Clinic identity shown on patient documents and registration output.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3">
-              <div className="space-y-2">
+          <CardContent className="space-y-3 px-4 pb-4 pt-0">
+            <div className="grid gap-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="org-name">Clinic name</Label>
                 <Input id="org-name" value={orgName} onChange={(e) => setOrgName(e.target.value)} />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="org-phone">Phone</Label>
                 <Input id="org-phone" value={orgPhone} onChange={(e) => setOrgPhone(e.target.value)} />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="org-address">Address</Label>
                 <Input id="org-address" value={orgAddress} onChange={(e) => setOrgAddress(e.target.value)} />
               </div>
@@ -164,27 +172,27 @@ export default function SettingsPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><ClipboardList className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Check In</CardTitle>
               <CardDescription>Panel insurers available during patient arrival and triage.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <InsurerManager />
+          <CardContent className="px-4 pb-4 pt-0">
+            <OpenSettingsLink href="/settings/check-in" label="Open Check In Settings" />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><CreditCard className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Invoice</CardTitle>
               <CardDescription>Branding used on bills, MCs, referral letters, and receipts.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3 px-4 pb-4 pt-0">
             {logoUrl ? (
               <div className="flex items-center gap-4">
                 <div className="relative h-16 w-16 overflow-hidden rounded border bg-white">
@@ -212,56 +220,56 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+        <Card>
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><BookOpen className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Document Templates</CardTitle>
               <CardDescription>Customise the HTML layout for Medical Certificates and Referral Letters.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <DocumentTemplateEditor />
+          <CardContent className="px-4 pb-4 pt-0">
+            <OpenSettingsLink href="/settings/documents" label="Open Document Templates" />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><MessageCircle className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Follow Up</CardTitle>
               <CardDescription>WhatsApp delivery mode and templates for review requests and appointment reminders.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <FollowUpSettings />
+          <CardContent className="px-4 pb-4 pt-0">
+            <OpenSettingsLink href="/settings/follow-up" label="Open Follow Up Settings" />
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+        <Card>
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><Stethoscope className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Service Catalogs</CardTitle>
               <CardDescription>Orderable catalogs used by the treatment composer, labs, imaging, and generated letters.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <ClinicalCatalogManager />
+          <CardContent className="px-4 pb-4 pt-0">
+            <OpenSettingsLink href="/settings/catalogs" label="Open Service Catalogs" />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><UserRound className="h-4 w-4" /></WorkflowIcon>
             <div>
               <CardTitle>Account</CardTitle>
               <CardDescription>User profile details for this workstation session.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSaveChanges} className="space-y-4">
-              <div className="space-y-2">
+          <CardContent className="px-4 pb-4 pt-0">
+            <form onSubmit={handleSaveChanges} className="space-y-3">
+              <div className="space-y-1.5">
                 <Label htmlFor="fullName">Full Name</Label>
                 <Input
                   id="fullName"
@@ -271,7 +279,7 @@ export default function SettingsPage() {
                   disabled={!isEditing}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="email">Email Address</Label>
                 <Input
                   id="email"
