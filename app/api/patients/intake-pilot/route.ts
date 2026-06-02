@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { QuestionnaireResponse } from "@medplum/fhirtypes";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
 import { savePatientToMedplumWithAdmin, type PatientData } from "@/lib/fhir/patient-service";
@@ -7,9 +6,7 @@ import {
   REGISTRATION_QUESTIONNAIRE_URL,
   REGISTRATION_QUESTIONNAIRE_VERSION,
   MYHIE_QUESTIONNAIRE_RESPONSE_PROFILE_URL,
-  ensureRegistrationQuestionnaire,
-  buildRegistrationQuestionnaireResponse,
-  compareQuestionnaireResponseToPatientPayload,
+  createRegistrationQuestionnaireResponseWithAdmin,
 } from "@/lib/fhir/intake-questionnaire-service";
 
 function validatePatientData(patientData: PatientData): string | null {
@@ -31,7 +28,7 @@ function logPilotEvent(payload: Record<string, unknown>): void {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     const patientData = (await request.json()) as PatientData;
 
     const validationError = validatePatientData(patientData);
@@ -39,11 +36,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const questionnaire = await ensureRegistrationQuestionnaire(medplum);
-    const questionnaireResponse = buildRegistrationQuestionnaireResponse(patientData, questionnaire);
-    const savedResponse = await medplum.createResource<QuestionnaireResponse>(questionnaireResponse);
-
-    const comparison = compareQuestionnaireResponseToPatientPayload(savedResponse, patientData);
+    const { questionnaire, questionnaireResponse: savedResponse, comparison } =
+      await createRegistrationQuestionnaireResponseWithAdmin(patientData, clinicId);
 
     let patientId: string | null = null;
     try {

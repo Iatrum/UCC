@@ -1,6 +1,8 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Questionnaire, QuestionnaireItem, QuestionnaireResponse } from "@medplum/fhirtypes";
 import type { PatientData } from "./patient-service";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
+import { assignResourceToClinicTenant, resolveClinicTenant } from "./clinic-tenancy";
 
 export const REGISTRATION_QUESTIONNAIRE_URL = "https://ucc.emr/fhir/Questionnaire/patient-registration";
 export const REGISTRATION_QUESTIONNAIRE_NAME = "UccPatientRegistration";
@@ -346,5 +348,27 @@ export function compareQuestionnaireResponseToPatientPayload(
     mismatches,
     questionnaireValues,
     patientValues,
+  };
+}
+
+export async function createRegistrationQuestionnaireResponseWithAdmin(
+  patientData: PatientData,
+  clinicId: string
+): Promise<{
+  questionnaire: Questionnaire;
+  questionnaireResponse: QuestionnaireResponse;
+  comparison: IntakeComparisonResult;
+}> {
+  const adminMedplum = await getAdminMedplum();
+  const clinicTenant = await resolveClinicTenant(adminMedplum, clinicId);
+  const questionnaire = await ensureRegistrationQuestionnaire(adminMedplum);
+  const questionnaireResponse = buildRegistrationQuestionnaireResponse(patientData, questionnaire);
+  const savedResponse = await adminMedplum.createResource<QuestionnaireResponse>(questionnaireResponse);
+  await assignResourceToClinicTenant(adminMedplum, "QuestionnaireResponse", savedResponse, clinicTenant);
+
+  return {
+    questionnaire,
+    questionnaireResponse: savedResponse,
+    comparison: compareQuestionnaireResponseToPatientPayload(savedResponse, patientData),
   };
 }

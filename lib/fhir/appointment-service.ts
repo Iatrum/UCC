@@ -229,11 +229,11 @@ export async function getUpcomingAppointmentsForClinic(
     date: `ge${startOfToday.toISOString()}`,
     _sort: 'date',
     _count: String(limit),
-    _compartment: clinicTenant.organizationReference,
+    _compartment: clinicTenant.accountReference,
   });
 
   return appointments
-    .filter((appointment) => resourceMatchesClinicTenant(appointment as any, clinicTenant.organizationId))
+    .filter((appointment) => resourceMatchesClinicTenant(appointment as any, clinicTenant.accountId))
     .map((fhirAppt) => {
       const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
       const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));

@@ -137,7 +137,7 @@ export async function getInventoryMedicationsFromMedplum(
   });
 
   return medications
-    .filter((resource) => isInventoryMedication(resource as FHIRMedication, clinicTenant?.organizationId ?? clinicId))
+    .filter((resource) => isInventoryMedication(resource as FHIRMedication, clinicTenant?.accountId ?? clinicId))
     .map((resource) => mapFhirMedication(resource as FHIRMedication));
 }
 
@@ -148,7 +148,7 @@ export async function getInventoryMedicationByIdFromMedplum(
 ): Promise<SavedInventoryMedication | null> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const resource = await medplum.readResource('Medication', id);
-  if (!isInventoryMedication(resource as FHIRMedication, clinicTenant?.organizationId ?? clinicId)) {
+  if (!isInventoryMedication(resource as FHIRMedication, clinicTenant?.accountId ?? clinicId)) {
     return null;
   }
   return mapFhirMedication(resource as FHIRMedication);
@@ -176,7 +176,7 @@ export async function updateInventoryMedicationInMedplum(
 ): Promise<void> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await medplum.readResource('Medication', id);
-  if (!isInventoryMedication(existing as FHIRMedication, clinicTenant?.organizationId ?? clinicId)) {
+  if (!isInventoryMedication(existing as FHIRMedication, clinicTenant?.accountId ?? clinicId)) {
     throw new Error('Medication not found for this clinic');
   }
 
@@ -207,7 +207,7 @@ export async function deleteInventoryMedicationInMedplum(
 ): Promise<void> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const resource = await medplum.readResource('Medication', id);
-  if (!isInventoryMedication(resource as FHIRMedication, clinicTenant?.organizationId ?? clinicId)) {
+  if (!isInventoryMedication(resource as FHIRMedication, clinicTenant?.accountId ?? clinicId)) {
     throw new Error('Medication not found for this clinic');
   }
   await medplum.deleteResource('Medication', id);

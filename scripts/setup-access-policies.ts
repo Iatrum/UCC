@@ -4,8 +4,8 @@
  *
  * Security model:
  * - Clinic staff access is scoped by a ProjectMembership access parameter:
- *   { name: "clinicOrganization", valueReference: Organization/<id> }.
- * - Patients are assigned to the clinic Organization with $set-accounts.
+ *   { name: "clinicAccount", valueReference: HealthcareService/<id> }.
+ * - Patients are assigned to the clinic HealthcareService with $set-accounts.
  * - Patient-related resources are scoped by Medplum tenant compartments.
  * - Platform admin access remains separate and must never be used by normal
  *   clinic routes.
@@ -42,7 +42,7 @@ const READ_INTERACTIONS: AccessPolicyResource["interaction"] = [
 function clinicCompartmentRule(resourceType: string, interactions = ALL_INTERACTIONS): AccessPolicyResource {
   return {
     resourceType,
-    criteria: `${resourceType}?_compartment=%clinicOrganization`,
+    criteria: `${resourceType}?_compartment=%clinicAccount`,
     interaction: interactions,
   };
 }
@@ -126,6 +126,11 @@ async function setupAccessPolicies() {
       {
         resourceType: "Organization",
         criteria: "Organization?_id=%clinicOrganization",
+        interaction: READ_INTERACTIONS,
+      },
+      {
+        resourceType: "HealthcareService",
+        criteria: "HealthcareService?_id=%clinicAccount",
         interaction: READ_INTERACTIONS,
       },
     ],
