@@ -78,6 +78,44 @@ const VARS: EnvVar[] = [
     description: "Cookie domain for cross-subdomain sessions (e.g. .iatrum.com). Defaults to host if unset.",
   },
 
+  // ── Firebase Storage ───────────────────────────────────────────────────
+  {
+    key: "FIREBASE_STORAGE_BUCKET",
+    required: false,
+    description: "Firebase Storage bucket for uploaded patient documents and branding assets. NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET is also accepted at runtime.",
+    validate: (v) => v.includes(".appspot.com") || v.includes(".firebasestorage.app"),
+    validateHint: "Use the bucket name, for example project-id.appspot.com or project-id.firebasestorage.app",
+  },
+  {
+    key: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+    required: false,
+    description: "Public Firebase Storage bucket name, also used as a server fallback if FIREBASE_STORAGE_BUCKET is unset.",
+    validate: (v) => v.includes(".appspot.com") || v.includes(".firebasestorage.app"),
+    validateHint: "Use the bucket name, for example project-id.appspot.com or project-id.firebasestorage.app",
+  },
+  {
+    key: "FIREBASE_SERVICE_ACCOUNT",
+    required: false,
+    description: "Firebase service account JSON or base64 JSON for server-side Storage uploads.",
+    validate: (v) => v.trim().startsWith("{") || /^[A-Za-z0-9+/=_-]+$/.test(v.trim()),
+    validateHint: "Must be raw service account JSON or base64-encoded JSON",
+  },
+  {
+    key: "FIREBASE_PROJECT_ID",
+    required: false,
+    description: "Firebase Admin project ID; used with FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY if FIREBASE_SERVICE_ACCOUNT is unset.",
+  },
+  {
+    key: "FIREBASE_CLIENT_EMAIL",
+    required: false,
+    description: "Firebase Admin client email; used with FIREBASE_PROJECT_ID and FIREBASE_PRIVATE_KEY if FIREBASE_SERVICE_ACCOUNT is unset.",
+  },
+  {
+    key: "FIREBASE_PRIVATE_KEY",
+    required: false,
+    description: "Firebase Admin private key; used with FIREBASE_PROJECT_ID and FIREBASE_CLIENT_EMAIL if FIREBASE_SERVICE_ACCOUNT is unset.",
+  },
+
   // ── Optional AI / integrations ─────────────────────────────────────────
   {
     key: "OPENROUTER_API_KEY",

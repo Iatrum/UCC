@@ -17,6 +17,8 @@ export interface DocumentRegistration {
   contentType: string;
   size?: number;
   uploadedBy?: string;
+  practitionerId?: string;
+  organizationId?: string;
   storagePath?: string; // bucket object path (for cleanup)
 }
 
@@ -85,12 +87,21 @@ export async function createPatientDocument(medplum: MedplumClient, doc: Documen
     throw new Error('Failed to create DocumentReference (missing id)');
   }
 
-  // Create Provenance for audit trail (non-blocking)
-  try {
-    await createProvenanceForResource(medplum, 'DocumentReference', created.id, undefined, undefined, 'CREATE');
-    console.log(`✅ Created Provenance for DocumentReference/${created.id}`);
-  } catch (error) {
-    console.warn(`⚠️  Failed to create Provenance for DocumentReference (non-blocking):`, error);
+  if (doc.practitionerId || doc.organizationId) {
+    // Create Provenance for audit trail (non-blocking)
+    try {
+      await createProvenanceForResource(
+        medplum,
+        'DocumentReference',
+        created.id,
+        doc.practitionerId,
+        doc.organizationId,
+        'CREATE'
+      );
+      console.log(`✅ Created Provenance for DocumentReference/${created.id}`);
+    } catch (error) {
+      console.warn(`⚠️  Failed to create Provenance for DocumentReference (non-blocking):`, error);
+    }
   }
 
   return created.id;
