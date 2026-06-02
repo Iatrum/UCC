@@ -27,7 +27,7 @@ export function BrandLogo({
         alt={showWordmark ? "" : "Iatrum"}
         width={405}
         height={414}
-        priority
+        unoptimized
         className="h-full w-auto select-none object-contain"
       />
       {showWordmark && (

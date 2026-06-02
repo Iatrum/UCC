@@ -43,16 +43,16 @@ const appointmentStatuses = [
 
 const appointmentSchema = z.object({
   patientId: z
-    .string({ error: (issue) => (issue.input === undefined ? "Patient is required" : undefined) })
+    .string("Patient is required")
     .min(1, "Patient is required"),
   scheduledDate: z
-    .string({ error: (issue) => (issue.input === undefined ? "Date is required" : undefined) })
+    .string("Date is required")
     .min(1, "Date is required"),
   scheduledTime: z
-    .string({ error: (issue) => (issue.input === undefined ? "Time is required" : undefined) })
+    .string("Time is required")
     .min(1, "Time is required"),
   clinician: z
-    .string({ error: (issue) => (issue.input === undefined ? "Clinician is required" : undefined) })
+    .string("Clinician is required")
     .min(1, "Clinician is required"),
   visitType: z.string().optional(),
   notes: z.string().optional(),

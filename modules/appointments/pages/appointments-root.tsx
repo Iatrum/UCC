@@ -29,8 +29,8 @@ interface Appointment {
 
 const activeStatuses: AppointmentStatus[] = ["scheduled", "checked_in"];
 
-async function getAppointments(): Promise<Appointment[]> {
-  const response = await fetch("/api/appointments", { credentials: "include" });
+async function getAppointments(signal?: AbortSignal): Promise<Appointment[]> {
+  const response = await fetch("/api/appointments", { credentials: "include", signal });
   const data = await response.json();
 
   if (!response.ok || !data.success) {
@@ -53,28 +53,25 @@ export default function AppointmentsRootPage() {
   const [calendarViewMode, setCalendarViewMode] = useState<ViewMode>("Month");
 
   useEffect(() => {
-    let cancelled = false;
-    void loadAppointments(cancelled);
+    const controller = new AbortController();
+    void loadAppointments(controller.signal);
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
-  async function loadAppointments(cancelled = false) {
+  async function loadAppointments(signal?: AbortSignal) {
     setError(null);
     setLoading(true);
     try {
-      const data = await getAppointments();
-      if (!cancelled) {
-        setAppointments(data);
-      }
+      const data = await getAppointments(signal);
+      setAppointments(data);
     } catch (err) {
+      if (signal?.aborted) return;
       console.error("Failed to load appointments", err);
-      if (!cancelled) {
-        setError("Unable to load appointments right now. Please try again.");
-      }
+      setError("Unable to load appointments right now. Please try again.");
     } finally {
-      if (!cancelled) {
+      if (!signal?.aborted) {
         setLoading(false);
       }
     }
