@@ -1,7 +1,7 @@
 import type { MedplumClient } from '@medplum/core';
 import type { ChargeItemDefinition, Money } from '@medplum/fhirtypes';
 
-export type ClinicalCatalogType = 'lab' | 'imaging' | 'document';
+export type ClinicalCatalogType = 'lab' | 'imaging' | 'document' | 'diagnosis';
 
 export interface ClinicalCatalogItem {
   id: string;
@@ -66,7 +66,7 @@ function buildUrl(type: ClinicalCatalogType, name: string, clinicId: string): st
 
 function mapDefinition(definition: ChargeItemDefinition): ClinicalCatalogItem | null {
   const type = getStringExtension(definition, CATALOG_TYPE_EXTENSION_URL) as ClinicalCatalogType | undefined;
-  if (type !== 'lab' && type !== 'imaging' && type !== 'document') return null;
+  if (type !== 'lab' && type !== 'imaging' && type !== 'document' && type !== 'diagnosis') return null;
 
   const coding = definition.code?.coding?.[0];
   const name = definition.title || definition.code?.text || coding?.display || 'Unnamed catalog item';
@@ -109,6 +109,7 @@ export async function getClinicalCatalogItems(
 ): Promise<ClinicalCatalogItem[]> {
   const definitions = await medplum.searchResources('ChargeItemDefinition', {
     identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: '200',
   });
 
   return definitions

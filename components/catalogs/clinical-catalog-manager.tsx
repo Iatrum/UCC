@@ -43,6 +43,7 @@ const TYPE_LABELS: Record<CatalogManagerType, string> = {
   lab: "Lab Tests",
   imaging: "Imaging",
   document: "Document Types",
+  diagnosis: "Diagnoses",
 };
 
 const EMPTY_FORM: Omit<ClinicalCatalogItem, "id"> = {
@@ -66,7 +67,7 @@ export interface ClinicalCatalogManagerProps {
 }
 
 export function ClinicalCatalogManager({
-  types = ["lab", "imaging", "document", "procedure"],
+  types = ["diagnosis", "lab", "imaging", "document", "procedure"],
   defaultType,
   className,
   onCatalogChange,
@@ -83,6 +84,7 @@ export function ClinicalCatalogManager({
     lab: [],
     imaging: [],
     document: [],
+    diagnosis: [],
   });
   const [loading, setLoading] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -262,13 +264,14 @@ export function ClinicalCatalogManager({
               </div>
               <Button type="button" onClick={() => setCreating(true)}>
                 <Plus className="mr-2 h-4 w-4" />
-                Add {TYPE_LABELS[type].replace(/s$/, "")}
+                Add {singularLabel(type)}
               </Button>
             </div>
             <CatalogTable
               rows={filteredRows}
               loading={loading}
               deletingIds={deletingIds}
+              showPrice={type !== "diagnosis"}
               onEdit={(item) => {
                 setEditingDocumentDefault(usingDocumentDefaults);
                 setEditing(item);
@@ -358,7 +361,7 @@ export function ClinicalCatalogManager({
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add {TYPE_LABELS[activeType].replace(/s$/, "")}</DialogTitle>
+            <DialogTitle>Add {singularLabel(activeType)}</DialogTitle>
           </DialogHeader>
           <CatalogForm
             initial={{ ...EMPTY_FORM, type: clinicalType, system: defaultSystem(clinicalType) }}
@@ -422,12 +425,14 @@ function CatalogTable({
   rows,
   loading,
   deletingIds,
+  showPrice,
   onEdit,
   onDelete,
 }: {
   rows: ClinicalCatalogItem[];
   loading: boolean;
   deletingIds: Record<string, boolean>;
+  showPrice?: boolean;
   onEdit: (item: ClinicalCatalogItem) => void;
   onDelete: (item: ClinicalCatalogItem) => void;
 }) {
@@ -439,7 +444,7 @@ function CatalogTable({
             <TableHead>Name</TableHead>
             <TableHead>Code</TableHead>
             <TableHead>Category</TableHead>
-            <TableHead>Price</TableHead>
+            {showPrice ? <TableHead>Price</TableHead> : null}
             <TableHead>Status</TableHead>
             <TableHead className="w-[110px] text-right">Actions</TableHead>
           </TableRow>
@@ -447,14 +452,14 @@ function CatalogTable({
         <TableBody>
           {loading ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={showPrice ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
                 Loading catalog...
               </TableCell>
             </TableRow>
           ) : null}
           {!loading && rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={showPrice ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
                 No catalog items found.
               </TableCell>
             </TableRow>
@@ -466,7 +471,7 @@ function CatalogTable({
               <TableCell>
                 {[item.category, item.modality].filter(Boolean).join(" / ") || "-"}
               </TableCell>
-              <TableCell>RM {item.defaultPrice.toFixed(2)}</TableCell>
+              {showPrice ? <TableCell>RM {item.defaultPrice.toFixed(2)}</TableCell> : null}
               <TableCell>
                 <Badge variant={item.active ? "secondary" : "outline"}>{item.active ? "Active" : "Inactive"}</Badge>
               </TableCell>
@@ -587,16 +592,18 @@ function CatalogForm({
             </Select>
           </div>
         ) : null}
-        <div className="space-y-1">
-          <Label>Default Price</Label>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.defaultPrice}
-            onChange={(event) => setForm({ ...form, defaultPrice: event.target.value })}
-          />
-        </div>
+        {form.type !== "diagnosis" ? (
+          <div className="space-y-1">
+            <Label>Default Price</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.defaultPrice}
+              onChange={(event) => setForm({ ...form, defaultPrice: event.target.value })}
+            />
+          </div>
+        ) : null}
         <div className="flex items-center justify-between rounded-md border px-3 py-2">
           <Label>Active</Label>
           <Switch checked={form.active} onCheckedChange={(checked) => setForm({ ...form, active: checked })} />
@@ -620,5 +627,11 @@ function CatalogForm({
 
 function defaultSystem(type: ClinicalCatalogType): string {
   if (type === "lab" || type === "imaging") return "http://loinc.org";
+  if (type === "diagnosis") return "http://hl7.org/fhir/sid/icd-10";
   return "https://ucc.emr/document-type";
+}
+
+function singularLabel(type: CatalogManagerType): string {
+  if (type === "diagnosis") return "Diagnosis";
+  return TYPE_LABELS[type].replace(/s$/, "");
 }
