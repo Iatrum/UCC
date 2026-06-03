@@ -133,7 +133,7 @@ export async function getInventoryMedicationsFromMedplum(
   const medications = await medplum.searchResources('Medication', {
     _count: '500',
     _sort: '-_lastUpdated',
-    _compartment: clinicTenant?.organizationReference,
+    _compartment: clinicTenant?.accountReference,
   });
 
   return medications
