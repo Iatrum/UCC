@@ -214,10 +214,11 @@ export async function DELETE(request: NextRequest) {
     await requireClinicAuth(request);
     const body = await request.json();
     const draftId: string = body.draftId;
-    const entryId: string = body.entryId;
+    const entryId: string | undefined = body.entryId;
+    const clearAll: boolean = body.clearAll === true;
 
-    if (!draftId || !entryId) {
-      return NextResponse.json({ success: false, error: "draftId and entryId are required" }, { status: 400 });
+    if (!draftId || (!entryId && !clearAll)) {
+      return NextResponse.json({ success: false, error: "draftId and entryId or clearAll are required" }, { status: 400 });
     }
 
     const docRef = adminDb.collection(COLLECTION).doc(draftId);
@@ -227,7 +228,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const existing = existingSnap.data() as StoredPlan;
-    const entries = existing.entries.filter((entry) => entry.id !== entryId);
+    const entries = clearAll ? [] : existing.entries.filter((entry) => entry.id !== entryId);
     const summary = computeTreatmentPlanSummary(entries);
     const now = Timestamp.now();
 

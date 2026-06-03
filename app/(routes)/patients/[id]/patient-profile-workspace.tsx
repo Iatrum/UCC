@@ -141,6 +141,19 @@ function mergeByVisit(consultations: ProfileConsultation[]): ProfileConsultation
   return Array.from(visits.values());
 }
 
+function latestSignedConsultation(consultations: ProfileConsultation[]): SignedConsultationForTreatment | null {
+  return consultations.reduce<SignedConsultationForTreatment | null>((latest, consultation) => {
+    if (!consultation.id) return latest;
+
+    const signedConsultation = consultation as SignedConsultationForTreatment;
+    if (!latest) return signedConsultation;
+
+    const latestTime = latest.date ? new Date(latest.date).getTime() : 0;
+    const candidateTime = consultation.date ? new Date(consultation.date).getTime() : 0;
+    return candidateTime > latestTime ? signedConsultation : latest;
+  }, null);
+}
+
 export default function PatientProfileWorkspace({
   patientId,
   patient,
@@ -243,6 +256,12 @@ export default function PatientProfileWorkspace({
   }, [queueStatus, toast, updateQueueStatus]);
 
   const visibleConsultations = useMemo(() => mergeByVisit(consultations), [consultations]);
+  const latestTreatmentConsultation = useMemo(
+    () => latestSignedConsultation(visibleConsultations),
+    [visibleConsultations]
+  );
+  const treatmentConsultation = signedConsultationForTreatment ?? latestTreatmentConsultation;
+  const treatmentDraftId = `profile-treatment-${patientId}-${treatmentConsultation?.id || "pending"}`;
 
   const treatmentItemsCatalog = useMemo(
     () =>
@@ -335,7 +354,7 @@ export default function PatientProfileWorkspace({
   }
 
   function openTreatmentPanel() {
-    if (!signedConsultationForTreatment) {
+    if (!treatmentConsultation) {
       setDrawerMode("consult");
       setPanelOpen(true);
       toast({
@@ -430,8 +449,6 @@ export default function PatientProfileWorkspace({
   async function handleTreatmentSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (treatmentSubmitting) return;
-
-    const treatmentConsultation = signedConsultationForTreatment;
 
     if (!treatmentConsultation) {
       toast({
@@ -565,6 +582,16 @@ export default function PatientProfileWorkspace({
         }
       }
 
+      try {
+        await fetch("/api/consultations/plan", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draftId: treatmentDraftId, clearAll: true }),
+        });
+      } catch (error) {
+        console.error("Treatment draft clear error:", error);
+      }
+
       toast({
         title: "Treatment Signed",
         description: orderErrors.length
@@ -572,6 +599,9 @@ export default function PatientProfileWorkspace({
           : "Treatment visit was saved.",
         variant: orderErrors.length ? "destructive" : "default",
       });
+      setTreatmentEntries([]);
+      setTreatmentSummary(emptyTreatmentSummary);
+      setTreatmentPanelAnimationVersion((current) => current + 1);
       setPanelOpen(false);
       router.refresh();
     } catch (error) {
@@ -919,10 +949,10 @@ export default function PatientProfileWorkspace({
                   >
                     <div className="space-y-3 px-5 py-4">
                       <OrderComposer
-                        draftId={`profile-treatment-${patientId}-${signedConsultationForTreatment?.id || "pending"}`}
+                        draftId={treatmentDraftId}
                         patientId={patientId}
-                        consultationId={signedConsultationForTreatment?.id}
-                        consultation={signedConsultationForTreatment}
+                        consultationId={treatmentConsultation?.id}
+                        consultation={treatmentConsultation}
                         initialEntries={emptyTreatmentEntries}
                         persistDrafts
                         items={treatmentItemsCatalog}
