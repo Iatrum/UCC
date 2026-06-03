@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Basic } from "@medplum/fhirtypes";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
 import type { Insurer } from "@/lib/insurers";
@@ -37,7 +38,8 @@ function validateInsurer(input: any): string | null {
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const resources = await medplum.searchResources("Basic", {
       code: `${CODE_SYSTEM}|${CODE_VALUE}`,
       _count: "500",
@@ -56,7 +58,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const body = await req.json().catch(() => null);
     const validationError = validateInsurer(body);
     if (validationError) {
@@ -84,7 +87,8 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const body = await req.json().catch(() => null);
     if (!body?.id) {
       return NextResponse.json({ success: false, error: "id is required" }, { status: 400 });
@@ -116,7 +120,8 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const id = new URL(req.url).searchParams.get("id");
     if (!id) {
       return NextResponse.json({ success: false, error: "id is required" }, { status: 400 });

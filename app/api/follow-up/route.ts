@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
 import {
@@ -12,7 +13,8 @@ import {
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const followUps = await getAllFollowUps(medplum, clinicId);
     return NextResponse.json({ success: true, count: followUps.length, followUps });
   } catch (error) {
@@ -22,7 +24,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const body = await req.json().catch(() => null);
 
     if (!body?.patientName || !body?.type || !body?.message) {

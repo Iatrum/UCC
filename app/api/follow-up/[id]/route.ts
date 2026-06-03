@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { ForbiddenError, handleRouteError } from "@/lib/server/route-helpers";
 import {
@@ -17,7 +18,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const { id } = await params;
     const body = await req.json().catch(() => null);
     const status = body?.status as FollowUpStatus | undefined;
@@ -55,7 +57,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const { id } = await params;
 
     if (!id) {

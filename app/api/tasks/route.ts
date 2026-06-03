@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listBillingExceptionTasks } from "@/lib/fhir/billing-task-service";
-import { getAllFollowUps } from "@/lib/fhir/communication-service";
+import { getAllFollowUpsWithOperationalClient } from "@/lib/fhir/communication-service";
 import {
   mapBillingTaskToUnifiedTask,
   mapFollowUpsToReminderTasks,
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const includeFollowUps = type === "all" || type === "follow-up";
     const [billingTasks, followUps] = await Promise.all([
       includeBilling ? listBillingExceptionTasks(medplum, status, clinicId) : Promise.resolve([]),
-      includeFollowUps ? getAllFollowUps(medplum, clinicId) : Promise.resolve([]),
+      includeFollowUps ? getAllFollowUpsWithOperationalClient(clinicId) : Promise.resolve([]),
     ]);
 
     const billingItems = billingTasks.map(mapBillingTaskToUnifiedTask);

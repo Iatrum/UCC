@@ -5,6 +5,7 @@ import {
   assignResourceToClinicTenant,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
+  type ClinicTenant,
 } from './clinic-tenancy';
 
 export interface InventoryMedicationData {
@@ -66,9 +67,16 @@ function toInventoryExtension(data: InventoryMedicationData): Extension {
   };
 }
 
-function toFhirMedication(data: InventoryMedicationData): FHIRMedication {
+function clinicAccountMeta(tenant: ClinicTenant): FHIRMedication['meta'] {
+  return {
+    accounts: [{ reference: tenant.accountReference }] as any,
+  } as FHIRMedication['meta'];
+}
+
+function toFhirMedication(data: InventoryMedicationData, clinicTenant?: ClinicTenant): FHIRMedication {
   return {
     resourceType: 'Medication',
+    meta: clinicTenant ? clinicAccountMeta(clinicTenant) : undefined,
     identifier: [
       { system: INVENTORY_IDENTIFIER_SYSTEM, value: INVENTORY_IDENTIFIER_VALUE },
     ],
@@ -133,7 +141,7 @@ export async function getInventoryMedicationsFromMedplum(
   const medications = await medplum.searchResources('Medication', {
     _count: '500',
     _sort: '-_lastUpdated',
-    _compartment: clinicTenant?.organizationReference,
+    _compartment: clinicTenant?.accountReference,
   });
 
   return medications
@@ -160,7 +168,10 @@ export async function createInventoryMedicationInMedplum(
   clinicId: string
 ): Promise<string> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-  const created = await medplum.createResource(toFhirMedication(data));
+  if (!clinicTenant) {
+    throw new Error('Clinic tenant is required for inventory medication');
+  }
+  const created = await medplum.createResource(toFhirMedication(data, clinicTenant));
   await assignResourceToClinicTenant(medplum, 'Medication', created, clinicTenant);
   if (!created.id) {
     throw new Error('Failed to create inventory medication');
@@ -195,7 +206,7 @@ export async function updateInventoryMedicationInMedplum(
 
   await medplum.updateResource({
     ...existing,
-    ...toFhirMedication(merged),
+    ...toFhirMedication(merged, clinicTenant ?? undefined),
     id,
   } as FHIRMedication);
 }

@@ -1,6 +1,7 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Appointment, Communication, Extension, Organization, Patient } from "@medplum/fhirtypes";
 import { env } from "@/lib/env";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 
 const FOLLOW_UP_CATEGORY_SYSTEM = "https://ucc.emr/communication-category";
 const FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM = "https://ucc.emr/follow-up/source";
@@ -414,6 +415,10 @@ export async function getAllFollowUps(
     .map(mapCommunicationToFollowUp);
   if (!clinicId) return followUps;
   return followUps.filter((f) => f.clinicId === clinicId);
+}
+
+export async function getAllFollowUpsWithOperationalClient(clinicId?: string): Promise<FollowUp[]> {
+  return getAllFollowUps(await getAdminMedplum(), clinicId);
 }
 
 export async function updateFollowUpStatus(

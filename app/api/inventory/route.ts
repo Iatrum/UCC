@@ -6,12 +6,14 @@ import {
   getInventoryMedicationsFromMedplum,
   updateInventoryMedicationInMedplum,
 } from '@/lib/fhir/inventory-service';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
 export async function GET(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -32,7 +34,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const data = await request.json();
 
     if (!data?.name) {
@@ -52,7 +55,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { medicationId, ...updates } = await request.json();
 
     if (!medicationId) {
@@ -68,7 +72,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

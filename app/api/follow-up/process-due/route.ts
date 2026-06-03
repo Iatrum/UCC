@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllFollowUps, sendFollowUpWithTwilio } from "@/lib/fhir/communication-service";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
 
 export async function POST(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const followUps = await getAllFollowUps(medplum, clinicId);
     const now = Date.now();
     const dueTwilio = followUps.filter((followUp) => {

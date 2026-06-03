@@ -6,17 +6,19 @@ import {
   getProceduresFromMedplum,
   updateProcedureInMedplum,
 } from '@/lib/fhir/procedure-service';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
 export async function GET(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (id) {
-      const procedure = await getProcedureByIdFromMedplum(medplum, id);
+      const procedure = await getProcedureByIdFromMedplum(medplum, id, clinicId);
       if (!procedure) {
         return NextResponse.json({ success: false, error: 'Procedure not found' }, { status: 404 });
       }
@@ -32,7 +34,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const data = await request.json();
 
     if (!data?.name) {
@@ -52,7 +55,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { procedureId, ...updates } = await request.json();
 
     if (!procedureId) {
@@ -68,7 +72,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -76,7 +81,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing procedure id' }, { status: 400 });
     }
 
-    await deleteProcedureInMedplum(medplum, id);
+    await deleteProcedureInMedplum(medplum, id, clinicId);
     return NextResponse.json({ success: true, message: 'Procedure deleted successfully' });
   } catch (error) {
     return handleRouteError(error, 'DELETE /api/procedures');
