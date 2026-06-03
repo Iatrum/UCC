@@ -34,4 +34,3 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "GET /api/scheduling/slots");
   }
 }
-

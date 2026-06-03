@@ -52,4 +52,3 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "POST /api/scheduling/slots/generate");
   }
 }
-

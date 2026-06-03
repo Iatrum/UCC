@@ -114,6 +114,8 @@ async function setupAccessPolicies() {
       clinicCompartmentRule("Medication"),
       clinicCompartmentRule("Communication"),
       clinicCompartmentRule("QuestionnaireResponse"),
+      clinicCompartmentRule("Schedule"),
+      clinicCompartmentRule("Slot"),
       {
         resourceType: "Practitioner",
         interaction: READ_INTERACTIONS,
