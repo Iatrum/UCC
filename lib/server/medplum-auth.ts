@@ -4,10 +4,10 @@
  */
 
 import { MedplumClient, type ProfileResource } from '@medplum/core';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
-import { REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
+import { CLINIC_COOKIE, REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import { AuthError, ClinicContextError, ForbiddenError } from '@/lib/server/route-helpers';
 import { env } from '@/lib/env';
 // Re-export so callers can import getAdminMedplum from either file.
@@ -335,6 +335,54 @@ export async function requireClinicAuth(
   }
 
   await assertClinicAssignment(medplum, profile, clinicId);
+  return { medplum, clinicId };
+}
+
+/**
+ * Page/layout variant of `requireClinicAuth` that blocks wrong-clinic users
+ * before the clinic app shell renders.
+ */
+export async function requireClinicPageAuth(
+  nextPath: string = '/dashboard'
+): Promise<{ medplum: MedplumClient; clinicId: string }> {
+  let medplum: MedplumClient;
+  let profile: ProfileResource;
+
+  try {
+    medplum = await getMedplumForRequest();
+    const currentProfile = await medplum.getProfileAsync();
+    if (!currentProfile) {
+      throw new AuthError('No Medplum profile available');
+    }
+    profile = currentProfile as ProfileResource;
+  } catch {
+    redirect(`/login?next=${encodeURIComponent(nextPath)}`);
+  }
+
+  const [{ getHostFromHeaders, resolvePortalPresentation }, cookieStore, headerStore] =
+    await Promise.all([
+      import('@/lib/server/subdomain-host'),
+      cookies(),
+      headers(),
+    ]);
+  const host = getHostFromHeaders(headerStore);
+  const pathname = headerStore.get('x-pathname') ?? nextPath;
+  const { clinicIdForValidation: clinicId } = resolvePortalPresentation({
+    host,
+    pathname,
+    clinicCookieValue: cookieStore.get(CLINIC_COOKIE)?.value,
+  });
+
+  if (!clinicId) {
+    redirect(`/login?error=clinic_required&next=${encodeURIComponent(nextPath)}`);
+  }
+
+  try {
+    await assertClinicAssignment(medplum, profile, clinicId);
+  } catch {
+    redirect(`/login?error=clinic_forbidden&next=${encodeURIComponent(nextPath)}`);
+  }
+
   return { medplum, clinicId };
 }
 

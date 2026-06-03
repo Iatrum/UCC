@@ -6,6 +6,7 @@ import {
   resolvePortalPresentation,
 } from "@/lib/server/subdomain-host";
 import { listNavigationModulesForClinic } from "@/lib/module-registry";
+import { requireClinicPageAuth } from "@/lib/server/medplum-auth";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -59,6 +60,10 @@ export default async function AppRoutesLayout({
   const sessionToken = cookieStore.get(SESSION_COOKIE)?.value;
   if (!skipAuth && !sessionToken && !isPublicPath) {
     redirect("/login");
+  }
+
+  if (!skipAuth && sessionToken && !isPublicPath) {
+    await requireClinicPageAuth(pathname || "/dashboard");
   }
 
   const modules = await listNavigationModulesForClinic(clinicId).catch(() => []);
