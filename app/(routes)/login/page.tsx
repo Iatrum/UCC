@@ -50,9 +50,14 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const authError = searchParams.get("error");
+  const isClinicForbidden = authError === "clinic_forbidden";
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) {
+      return;
+    }
+    if (isClinicForbidden) {
       return;
     }
 
@@ -77,7 +82,7 @@ function LoginForm() {
     }
 
     router.replace(redirectUrl);
-  }, [authLoading, authenticatedClinicId, isAdmin, isAuthenticated, router, searchParams]);
+  }, [authLoading, authenticatedClinicId, isAdmin, isAuthenticated, isClinicForbidden, router, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,6 +147,11 @@ function LoginForm() {
           <CardDescription>Sign in to your EMR account</CardDescription>
         </CardHeader>
         <CardContent>
+          {isClinicForbidden && (
+            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              Your account is not assigned to this clinic. Sign in with an account that has access to this clinic.
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

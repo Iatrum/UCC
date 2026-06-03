@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import { getConsultationFromMedplum } from "@/lib/fhir/consultation-service";
 import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
 import { toFhirPatient, toFhirEncounter, toFhirCondition, toFhirMedicationRequest, toFhirServiceRequest } from "@/lib/fhir/mappers";
-import { getMedplumForRequest } from "@/lib/server/medplum-auth";
-import { getClinicIdFromRequest } from "@/lib/server/clinic";
+import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { z } from "zod";
 import { writeServerAuditLog } from "@/lib/server/logging";
 
@@ -14,12 +13,13 @@ const exportBodySchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     // Auth: require valid Medplum session (practitioner token)
-    let medplum: Awaited<ReturnType<typeof getMedplumForRequest>>;
+    let authContext: Awaited<ReturnType<typeof requireClinicAuth>>;
     try {
-      medplum = await getMedplumForRequest(req);
+      authContext = await requireClinicAuth(req);
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
+    const { medplum, clinicId } = authContext;
     const practitionerProfile = medplum.getProfile();
     const actorId = practitionerProfile?.id ?? 'unknown';
 
@@ -30,12 +30,10 @@ export async function POST(req: NextRequest) {
     }
     const { consultationId } = parsed.data;
 
-    const clinicId = await getClinicIdFromRequest(req);
-
-    const consultation = await getConsultationFromMedplum(consultationId, clinicId ?? undefined, medplum);
+    const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
     if (!consultation) return new Response(JSON.stringify({ error: 'Consultation not found' }), { status: 404 });
 
-    const patient = await getPatientFromMedplum(consultation.patientId, clinicId ?? undefined, medplum);
+    const patient = await getPatientFromMedplum(consultation.patientId, clinicId, medplum);
     if (!patient) return new Response(JSON.stringify({ error: 'Patient not found' }), { status: 404 });
 
     // Create minimal FHIR resources and link
@@ -74,5 +72,4 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'Unexpected error' }), { status: 500 });
   }
 }
-
 

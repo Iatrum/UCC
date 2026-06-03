@@ -29,14 +29,14 @@ function provenancePractitionerId(profile: any): string | undefined {
 
 export async function GET(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get('patientId');
     if (!patientId) {
       return NextResponse.json({ error: 'Missing patientId' }, { status: 400 });
     }
 
-    const patient = await getPatientFromMedplum(patientId, undefined, medplum);
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Missing required fields: patientId and files' }, { status: 400 });
       }
 
-      const patient = await getPatientFromMedplum(patientId, undefined, medplum);
+      const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: patientId, title, url, contentType' }, { status: 400 });
     }
 
-    const patient = await getPatientFromMedplum(patientId, undefined, medplum);
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
