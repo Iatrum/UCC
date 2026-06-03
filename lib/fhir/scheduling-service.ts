@@ -1,6 +1,9 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Appointment, Patient, Practitioner, Schedule, Slot } from "@medplum/fhirtypes";
 import { assignResourceToClinicTenant, resolveClinicTenant } from "./clinic-tenancy";
+import { createAppointmentReminderFollowUp } from "@/lib/fhir/communication-service";
+import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
+import { getAdminMedplum } from "@/lib/server/medplum-admin";
 
 const CLINIC_SCHEDULE_IDENTIFIER_SYSTEM = "urn:iatrum:schedule:clinic-practitioner";
 const SLOT_SEARCH_COUNT = "2000";
@@ -122,6 +125,10 @@ export async function listClinicSchedules(
     .map(mapSchedule);
 }
 
+export async function listClinicSchedulesWithAdmin(clinicId: string): Promise<ScheduleSummary[]> {
+  return listClinicSchedules(await getAdminMedplum(), clinicId);
+}
+
 export async function ensureClinicianSchedule(
   medplum: MedplumClient,
   input: EnsureScheduleInput
@@ -157,6 +164,12 @@ export async function ensureClinicianSchedule(
   await assignResourceToClinicTenant(medplum, "Schedule", created, clinicTenant);
 
   return mapSchedule(created);
+}
+
+export async function ensureClinicianScheduleWithAdmin(
+  input: EnsureScheduleInput
+): Promise<ScheduleSummary> {
+  return ensureClinicianSchedule(await getAdminMedplum(), input);
 }
 
 export async function generateSlotsForSchedule(
@@ -222,6 +235,13 @@ export async function generateSlotsForSchedule(
   return { created, existing };
 }
 
+export async function generateSlotsForScheduleWithAdmin(
+  clinicId: string,
+  input: GenerateSlotsInput
+): Promise<{ created: number; existing: number }> {
+  return generateSlotsForSchedule(await getAdminMedplum(), clinicId, input);
+}
+
 export async function findSlots(
   medplum: MedplumClient,
   clinicId: string,
@@ -279,6 +299,13 @@ export async function findSlots(
     })
     .sort((a, b) => (a.start || "").localeCompare(b.start || ""))
     .map((slot) => mapSlot(slot, scheduleById));
+}
+
+export async function findSlotsWithAdmin(
+  clinicId: string,
+  input: FindSlotsInput
+): Promise<SlotSummary[]> {
+  return findSlots(await getAdminMedplum(), clinicId, input);
 }
 
 function getPractitionerDisplayName(practitioner: Practitioner): string {
@@ -462,6 +489,32 @@ export async function bookSlotToAppointment(
   return { appointmentId: appointment.id || "", slotId: slot.id || "" };
 }
 
+export async function bookSlotToAppointmentWithAdmin(
+  clinicId: string,
+  input: BookSlotInput & { reminderDaysBefore?: number }
+): Promise<{ appointmentId: string; slotId: string }> {
+  const medplum = await getAdminMedplum();
+  const patient = await getPatientFromMedplum(input.patientId, clinicId, medplum, {
+    includeMedicalHistory: false,
+  });
+  if (!patient) {
+    throw new Error("Patient not found in clinic scope");
+  }
+
+  const result = await bookSlotToAppointment(medplum, clinicId, input);
+  try {
+    await createAppointmentReminderFollowUp(medplum, {
+      clinicId,
+      appointmentId: result.appointmentId,
+      daysBefore: input.reminderDaysBefore,
+    });
+  } catch (followUpError) {
+    console.error("[scheduling] Appointment booked but reminder follow-up creation failed", result.appointmentId, followUpError);
+  }
+
+  return result;
+}
+
 export async function manualBookAppointmentWithSlot(
   medplum: MedplumClient,
   clinicId: string,
@@ -565,4 +618,30 @@ export async function manualBookAppointmentWithSlot(
     }
     throw error;
   }
+}
+
+export async function manualBookAppointmentWithSlotWithAdmin(
+  clinicId: string,
+  input: ManualBookAppointmentInput & { reminderDaysBefore?: number }
+): Promise<{ appointmentId: string; slotId: string }> {
+  const medplum = await getAdminMedplum();
+  const patient = await getPatientFromMedplum(input.patientId, clinicId, medplum, {
+    includeMedicalHistory: false,
+  });
+  if (!patient) {
+    throw new Error("Patient not found in clinic scope");
+  }
+
+  const result = await manualBookAppointmentWithSlot(medplum, clinicId, input);
+  try {
+    await createAppointmentReminderFollowUp(medplum, {
+      clinicId,
+      appointmentId: result.appointmentId,
+      daysBefore: input.reminderDaysBefore,
+    });
+  } catch (followUpError) {
+    console.error("[scheduling] Appointment booked but reminder follow-up creation failed", result.appointmentId, followUpError);
+  }
+
+  return result;
 }

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
-import { ensureClinicianSchedule, generateSlotsForSchedule } from "@/lib/fhir/scheduling-service";
+import { ensureClinicianScheduleWithAdmin, generateSlotsForScheduleWithAdmin } from "@/lib/fhir/scheduling-service";
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     if (!clinicId) {
       return NextResponse.json({ error: "Clinic context is required" }, { status: 400 });
     }
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       if (!practitionerId) {
         return NextResponse.json({ error: "Missing practitionerId or scheduleId" }, { status: 400 });
       }
-      const schedule = await ensureClinicianSchedule(medplum, {
+      const schedule = await ensureClinicianScheduleWithAdmin({
         clinicId,
         practitionerId,
         practitionerName,
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       resolvedScheduleId = schedule.id;
     }
 
-    const result = await generateSlotsForSchedule(medplum, clinicId, {
+    const result = await generateSlotsForScheduleWithAdmin(clinicId, {
       scheduleId: resolvedScheduleId,
       start,
       end,

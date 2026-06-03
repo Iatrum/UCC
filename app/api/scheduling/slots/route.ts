@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
-import { findSlots } from "@/lib/fhir/scheduling-service";
+import { findSlotsWithAdmin } from "@/lib/fhir/scheduling-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     if (!clinicId) {
       return NextResponse.json({ error: "Clinic context is required" }, { status: 400 });
     }
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing start/end query params" }, { status: 400 });
     }
 
-    const slots = await findSlots(medplum, clinicId, {
+    const slots = await findSlotsWithAdmin(clinicId, {
       scheduleId,
       practitionerId,
       start,

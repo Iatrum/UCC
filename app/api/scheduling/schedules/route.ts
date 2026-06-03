@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
-import { ensureClinicianSchedule, listClinicSchedules } from "@/lib/fhir/scheduling-service";
+import { ensureClinicianScheduleWithAdmin, listClinicSchedulesWithAdmin } from "@/lib/fhir/scheduling-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     if (!clinicId) {
       return NextResponse.json({ error: "Clinic context is required" }, { status: 400 });
     }
 
-    const schedules = await listClinicSchedules(medplum, clinicId);
+    const schedules = await listClinicSchedulesWithAdmin(clinicId);
     return NextResponse.json({ success: true, schedules, count: schedules.length });
   } catch (error) {
     return handleRouteError(error, "GET /api/scheduling/schedules");
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     if (!clinicId) {
       return NextResponse.json({ error: "Clinic context is required" }, { status: 400 });
     }
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing practitionerId" }, { status: 400 });
     }
 
-    const schedule = await ensureClinicianSchedule(medplum, {
+    const schedule = await ensureClinicianScheduleWithAdmin({
       clinicId,
       practitionerId,
       practitionerName,
