@@ -11,6 +11,7 @@ import { AlertCircle } from "lucide-react";
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import { mergePatientWithTriageForCheckIn } from "@/lib/fhir/merge-check-in-patient";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
+import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
 
 interface CheckInPageProps {
   params: Promise<{ id: string }>;
@@ -26,9 +27,10 @@ export default async function CheckInPage({ params, searchParams }: CheckInPageP
   } catch {
     redirect("/login");
   }
+  const clinicId = await resolveClinicIdFromServerScope();
   const [patient, triage] = await Promise.all([
-    getPatientFromMedplum(id, undefined, medplum),
-    getTriageForPatient(id, medplum),
+    getPatientFromMedplum(id, clinicId, medplum),
+    getTriageForPatient(id, medplum, clinicId),
   ]);
 
   if (!patient) {

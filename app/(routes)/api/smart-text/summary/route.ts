@@ -10,8 +10,9 @@ const DEFAULT_LIMIT = 5;
 export async function POST(req: NextRequest) {
   try {
     let medplum: Awaited<ReturnType<typeof requireClinicAuth>>["medplum"];
+    let clinicId: Awaited<ReturnType<typeof requireClinicAuth>>["clinicId"];
     try {
-      ({ medplum } = await requireClinicAuth(req));
+      ({ medplum, clinicId } = await requireClinicAuth(req));
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
@@ -33,8 +34,8 @@ export async function POST(req: NextRequest) {
     }
 
     const [patient, consultations] = await Promise.all([
-      getPatientFromMedplum(patientId, undefined, medplum),
-      getPatientConsultationsFromMedplum(patientId, undefined, medplum),
+      getPatientFromMedplum(patientId, clinicId, medplum),
+      getPatientConsultationsFromMedplum(patientId, clinicId, medplum),
     ]);
 
     if (!patient) {

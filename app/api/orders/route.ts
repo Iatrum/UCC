@@ -14,7 +14,7 @@ function prescriptionKey(rx: { medication?: { id?: string; name?: string }; freq
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(req);
+    const { medplum, clinicId } = await requireClinicAuth(req);
     const { searchParams } = new URL(req.url);
     const consultationId = searchParams.get('consultationId');
     const patientId = searchParams.get('patientId');
@@ -24,11 +24,15 @@ export async function GET(req: NextRequest) {
     }
 
     const [patient, consultation] = await Promise.all([
-      getPatientFromMedplum(patientId, undefined, medplum),
-      getConsultationFromMedplum(consultationId, undefined, medplum),
+      getPatientFromMedplum(patientId, clinicId, medplum),
+      getConsultationFromMedplum(consultationId, clinicId, medplum),
     ]);
 
     if (!patient || !consultation) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    }
+
+    if (consultation.patientId !== patientId) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 

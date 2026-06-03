@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { notFound } from 'next/navigation';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import { safeToISOString } from '@/lib/utils';
 import EditPatientForm from './edit-patient-form';
 
@@ -13,7 +14,8 @@ interface Props {
 export default async function EditPatientPage({ params }: Props) {
   const { id } = await params;
   const medplum = await getMedplumForRequest();
-  const patient = await getPatientFromMedplum(id, undefined, medplum);
+  const clinicId = await resolveClinicIdFromServerScope();
+  const patient = await getPatientFromMedplum(id, clinicId, medplum);
 
   if (!patient) {
     notFound();

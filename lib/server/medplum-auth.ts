@@ -247,7 +247,7 @@ async function assertClinicAssignment(
   });
 
   if (!hasMatchingRole) {
-    throw new AuthError(`You are not assigned to clinic '${clinicId}'.`);
+    throw new ForbiddenError(`You are not assigned to clinic '${clinicId}'.`);
   }
 }
 
@@ -312,6 +312,47 @@ export async function requirePlatformAdminPage(
     redirect(`/login?error=admin_required&next=${encodeURIComponent(nextPath)}`);
   }
   return medplum;
+}
+
+/**
+ * Page/layout variant of `requireClinicAuth`.
+ *
+ * This prevents a domain-wide signed-in session from rendering the wrong
+ * clinic shell before API routes get a chance to enforce clinic tenancy.
+ */
+export async function requireClinicPageAuth(
+  nextPath: string = '/dashboard'
+): Promise<{ medplum: MedplumClient; clinicId: string; profile: ProfileResource }> {
+  let medplum: MedplumClient;
+  let profile: ProfileResource;
+  try {
+    [medplum, profile] = await Promise.all([
+      getMedplumForRequest(),
+      getCurrentProfile(),
+    ]);
+  } catch {
+    redirect(`/login?next=${encodeURIComponent(nextPath)}`);
+  }
+
+  const { resolveClinicIdFromServerScope } = await import('@/lib/server/clinic');
+  const clinicId = await resolveClinicIdFromServerScope();
+  if (!clinicId) {
+    redirect(`/login?error=clinic_required&next=${encodeURIComponent(nextPath)}`);
+  }
+
+  try {
+    await assertClinicAssignment(medplum, profile, clinicId);
+  } catch (error) {
+    if (error instanceof ForbiddenError) {
+      redirect(`/login?error=clinic_forbidden&next=${encodeURIComponent(nextPath)}`);
+    }
+    if (error instanceof AuthError) {
+      redirect(`/login?next=${encodeURIComponent(nextPath)}`);
+    }
+    throw error;
+  }
+
+  return { medplum, clinicId, profile };
 }
 
 /**
