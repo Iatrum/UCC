@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Basic } from '@medplum/fhirtypes';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import {
@@ -82,7 +83,8 @@ function belongsToClinic(resource: Basic, clinicId: string) {
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
@@ -114,7 +116,8 @@ export async function POST(req: NextRequest) {
       await requireClinicAuth(req);
       return disabledResponse();
     }
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const input = await req.json();
 
     if (!input.supplierId || !input.supplierName) {
@@ -156,7 +159,8 @@ export async function PATCH(req: NextRequest) {
       await requireClinicAuth(req);
       return disabledResponse();
     }
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const body = await req.json();
     const { id, action, ...rest } = body;
 
@@ -273,7 +277,8 @@ export async function DELETE(req: NextRequest) {
       await requireClinicAuth(req);
       return disabledResponse();
     }
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) {

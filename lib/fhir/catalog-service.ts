@@ -4,6 +4,7 @@ import {
   assignResourceToClinicTenant,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
+  type ClinicTenant,
 } from './clinic-tenancy';
 
 export type ClinicalCatalogType = 'lab' | 'imaging' | 'document' | 'diagnosis';
@@ -68,6 +69,12 @@ function buildUrl(type: ClinicalCatalogType, name: string, clinicId: string): st
   return `https://ucc.emr/catalog/${clinicId}/${type}/${slug}`;
 }
 
+function clinicAccountMeta(tenant: ClinicTenant): ChargeItemDefinition['meta'] {
+  return {
+    accounts: [{ reference: tenant.accountReference }] as any,
+  } as ChargeItemDefinition['meta'];
+}
+
 function mapDefinition(definition: ChargeItemDefinition): ClinicalCatalogItem | null {
   const type = getStringExtension(definition, CATALOG_TYPE_EXTENSION_URL) as ClinicalCatalogType | undefined;
   if (type !== 'lab' && type !== 'imaging' && type !== 'document' && type !== 'diagnosis') return null;
@@ -123,9 +130,13 @@ export async function createClinicalCatalogItem(
   item: Omit<ClinicalCatalogItem, 'id'>
 ): Promise<string> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
+  if (!clinicTenant) {
+    throw new Error('Clinic tenant is required for catalog items');
+  }
   const name = item.name.trim();
   const definition: ChargeItemDefinition = {
     resourceType: 'ChargeItemDefinition',
+    meta: clinicAccountMeta(clinicTenant),
     status: item.active === false ? 'retired' : 'active',
     url: buildUrl(item.type, name, clinicId),
     title: name,

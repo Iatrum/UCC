@@ -32,6 +32,15 @@ function isServiceCatalogDefinition(definition: ChargeItemDefinition): boolean {
   );
 }
 
+function isProcedureForClinic(definition: ChargeItemDefinition, clinicId: string): boolean {
+  return Boolean(
+    !isServiceCatalogDefinition(definition) &&
+      definition.identifier?.some(
+        (identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
+      )
+  );
+}
+
 function getDefaultPrice(definition: ChargeItemDefinition): number {
   const priceComponent = definition.propertyGroup?.[0]?.priceComponent?.[0];
   const amount = priceComponent?.amount as Money | undefined;
@@ -127,10 +136,12 @@ async function getDefinitionById(
 
 export async function getProcedureByIdFromMedplum(
   medplum: MedplumClient,
-  id: string
+  id: string,
+  clinicId?: string
 ): Promise<ProcedureItem | null> {
   const definition = await getDefinitionById(medplum, id);
   if (definition && isServiceCatalogDefinition(definition)) return null;
+  if (definition && clinicId && !isProcedureForClinic(definition, clinicId)) return null;
   return definition ? mapDefinitionToProcedure(definition) : null;
 }
 
@@ -141,7 +152,7 @@ export async function getProceduresFromMedplum(
   const definitions = await medplum.searchResources('ChargeItemDefinition', {
     identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
   });
-  return definitions.filter((definition) => !isServiceCatalogDefinition(definition)).map(mapDefinitionToProcedure);
+  return definitions.filter((definition) => isProcedureForClinic(definition, clinicId)).map(mapDefinitionToProcedure);
 }
 
 export async function createProcedureInMedplum(
@@ -182,6 +193,9 @@ export async function updateProcedureInMedplum(
   if (isServiceCatalogDefinition(existing)) {
     throw new Error('Procedure not found');
   }
+  if (!isProcedureForClinic(existing, clinicId)) {
+    throw new Error('Procedure not found');
+  }
 
   const nextName = updates.name?.trim() || existing.title || existing.code?.text || 'Procedure';
   const nextDescription = updates.notes !== undefined ? updates.notes?.trim() || undefined : existing.description;
@@ -217,10 +231,11 @@ export async function updateProcedureInMedplum(
 
 export async function deleteProcedureInMedplum(
   medplum: MedplumClient,
-  id: string
+  id: string,
+  clinicId?: string
 ): Promise<void> {
   const existing = await getDefinitionById(medplum, id);
-  if (!existing || isServiceCatalogDefinition(existing)) {
+  if (!existing || isServiceCatalogDefinition(existing) || (clinicId && !isProcedureForClinic(existing, clinicId))) {
     throw new Error('Procedure not found');
   }
   await medplum.deleteResource('ChargeItemDefinition', id);

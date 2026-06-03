@@ -6,6 +6,7 @@ import {
   updateClinicalCatalogItem,
   type ClinicalCatalogType,
 } from '@/lib/fhir/catalog-service';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
@@ -24,7 +25,8 @@ function catalogNotFoundResponse() {
 
 export async function GET(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const type = parseType(searchParams.get('type'));
     const items = await getClinicalCatalogItems(medplum, clinicId, type);
@@ -36,7 +38,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const data = await request.json();
     const type = parseType(data?.type);
 
@@ -65,7 +68,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { id, ...updates } = await request.json();
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
@@ -84,7 +88,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Organization } from '@medplum/fhirtypes';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import {
@@ -61,7 +62,8 @@ function belongsToClinic(org: Organization, clinicId: string) {
 
 export async function GET(req: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const orgs = await medplum.searchResources('Organization', {
       identifier: `${SUPPLIER_SYSTEM}|${SUPPLIER_CODE}`,
       _count: '200',
@@ -81,7 +83,8 @@ export async function POST(req: NextRequest) {
       await requireClinicAuth(req);
       return disabledResponse();
     }
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const data = await req.json();
     if (!data?.name?.trim()) {
       return NextResponse.json({ success: false, error: 'name is required' }, { status: 400 });
@@ -99,7 +102,8 @@ export async function PATCH(req: NextRequest) {
       await requireClinicAuth(req);
       return disabledResponse();
     }
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const { id, ...data } = await req.json();
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
@@ -122,7 +126,8 @@ export async function DELETE(req: NextRequest) {
       await requireClinicAuth(req);
       return disabledResponse();
     }
-    const { medplum, clinicId } = await requireClinicAuth(req);
+    const { clinicId } = await requireClinicAuth(req);
+    const medplum = await getAdminMedplum();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) {
