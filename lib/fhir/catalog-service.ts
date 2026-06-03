@@ -105,7 +105,7 @@ export async function getClinicalCatalogItems(
 ): Promise<ClinicalCatalogItem[]> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const definitions = await medplum.searchResources('ChargeItemDefinition', {
-    _compartment: clinicTenant?.organizationReference,
+    _compartment: clinicTenant?.accountReference,
     _count: '200',
   });
 
