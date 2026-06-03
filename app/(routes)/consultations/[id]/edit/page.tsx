@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { notFound, redirect } from 'next/navigation';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import { getConsultationFromMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getTriageForPatient } from '@/lib/fhir/triage-service';
@@ -23,14 +24,15 @@ export default async function EditConsultationPage({ params }: Props) {
     redirect('/login');
   }
 
-  const consultation = await getConsultationFromMedplum(id, undefined, medplum);
+  const clinicId = await resolveClinicIdFromServerScope();
+  const consultation = await getConsultationFromMedplum(id, clinicId, medplum);
   if (!consultation) {
     notFound();
   }
 
   const [patient, triageData] = await Promise.all([
-    getPatientFromMedplum(consultation.patientId, undefined, medplum),
-    getTriageForPatient(consultation.patientId, medplum)
+    getPatientFromMedplum(consultation.patientId, clinicId, medplum),
+    getTriageForPatient(consultation.patientId, medplum, clinicId)
       .catch(() => ({ triage: null, queueAddedAt: null })),
   ]);
 

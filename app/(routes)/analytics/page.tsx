@@ -6,6 +6,7 @@ import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
 import { getAllPatientsFromMedplum } from "@/lib/fhir/patient-service";
 import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
+import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
 import AnalyticsCharts from "@/components/analytics/analytics-charts";
 
 function getCurrentTimestamp(): number {
@@ -14,10 +15,11 @@ function getCurrentTimestamp(): number {
 
 export default async function AnalyticsPage() {
   const medplum = await getMedplumForRequest();
-  const patients = await getAllPatientsFromMedplum(300, undefined, medplum);
+  const clinicId = await resolveClinicIdFromServerScope();
+  const patients = await getAllPatientsFromMedplum(300, clinicId, medplum);
   // Fetch consultations for all patients (simple approach; can be optimized with an aggregate collection)
   const consultations = (
-    await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, undefined, medplum)))
+    await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, clinicId, medplum)))
   ).flat();
 
   // Overview stats
