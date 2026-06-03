@@ -1,5 +1,5 @@
 import type { MedplumClient } from "@medplum/core";
-import type { Organization, Parameters, Patient, Reference } from "@medplum/fhirtypes";
+import type { HealthcareService, Organization, Parameters, Patient, Reference } from "@medplum/fhirtypes";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 
 export const CLINIC_IDENTIFIER_SYSTEM = "clinic";
@@ -9,12 +9,15 @@ export type ClinicTenant = {
   organization: Organization;
   organizationId: string;
   organizationReference: string;
+  account: HealthcareService;
+  accountId: string;
+  accountReference: string;
 };
 
-function referenceId(reference?: string): string | undefined {
+function parseReference(reference?: string): { resourceType: string; id: string } | undefined {
   if (!reference) return undefined;
   const [resourceType, id] = reference.split("/");
-  return resourceType === "Organization" && id ? id : undefined;
+  return resourceType && id ? { resourceType, id } : undefined;
 }
 
 export function getClinicIdentifierValue(resource: { identifier?: { system?: string; value?: string }[] }): string | undefined {
@@ -40,6 +43,25 @@ async function findClinicOrganization(
   }) as Organization | undefined;
 }
 
+async function findClinicAccount(
+  medplum: MedplumClient,
+  clinicId: string
+): Promise<HealthcareService | undefined> {
+  const existing = await medplum.searchOne("HealthcareService", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }) as HealthcareService | undefined;
+  if (existing?.id) {
+    return existing;
+  }
+
+  const directoryMedplum = await getAdminMedplum();
+  return await directoryMedplum.searchOne("HealthcareService", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }) as HealthcareService | undefined;
+}
+
 export async function resolveClinicTenant(
   medplum: MedplumClient,
   clinicId: string | undefined | null
@@ -57,11 +79,19 @@ export async function resolveClinicTenant(
     throw new Error(`Clinic Organization not found for clinic '${clinicId}'.`);
   }
 
+  const account = await findClinicAccount(medplum, clinicId);
+  if (!account?.id) {
+    throw new Error(`Clinic account HealthcareService not found for clinic '${clinicId}'.`);
+  }
+
   return {
     clinicId,
     organization,
     organizationId: organization.id,
     organizationReference: `Organization/${organization.id}`,
+    account,
+    accountId: account.id,
+    accountReference: `HealthcareService/${account.id}`,
   };
 }
 
@@ -91,7 +121,7 @@ export function resourceMatchesClinicTenant(
     ...(resource.meta?.compartment ?? []).map((ref) => ref.reference),
   ].filter((ref): ref is string => Boolean(ref));
 
-  return orgReferences.some((ref) => referenceId(ref) === clinicId);
+  return orgReferences.some((ref) => parseReference(ref)?.id === clinicId);
 }
 
 export async function assignPatientToClinicTenant(
@@ -113,7 +143,7 @@ export async function assignResourceToClinicTenant(
     medplum,
     resourceType,
     resource,
-    [{ reference: tenant.organizationReference }]
+    [{ reference: tenant.accountReference }]
   );
 }
 
@@ -152,5 +182,16 @@ export async function assignResourceToAccountReferences(
     ],
   };
 
-  await medplum.post(`fhir/R4/${resourceType}/${resource.id}/$set-accounts`, parameters);
+  try {
+    await medplum.post(`fhir/R4/${resourceType}/${resource.id}/$set-accounts`, parameters);
+  } catch (error) {
+    const outcomeId = (error as any)?.outcome?.id;
+    const message = error instanceof Error ? error.message : String(error);
+    if (outcomeId !== "forbidden" && !message.toLowerCase().includes("forbidden")) {
+      throw error;
+    }
+
+    const adminMedplum = await getAdminMedplum();
+    await adminMedplum.post(`fhir/R4/${resourceType}/${resource.id}/$set-accounts`, parameters);
+  }
 }

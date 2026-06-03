@@ -167,7 +167,7 @@ async function invoiceBelongsToClinic(
   if (!clinicId) return true;
   if (!invoice) return false;
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-  return resourceMatchesClinicTenant(invoice as any, clinicTenant?.organizationId ?? clinicId);
+  return resourceMatchesClinicTenant(invoice as any, clinicTenant?.accountId ?? clinicId);
 }
 
 async function assertInvoiceBelongsToClinic(medplum: MedplumClient, invoice: Invoice, clinicId?: string): Promise<void> {
@@ -287,7 +287,7 @@ async function findExistingInvoice(
   const matches = await medplum.searchResources("Invoice", {
     identifier: `${INVOICE_IDENTIFIER_SYSTEM}|${consultationId}`,
     _count: "1",
-    ...(clinicTenant ? { _compartment: clinicTenant.organizationReference } : {}),
+    ...(clinicTenant ? { _compartment: clinicTenant.accountReference } : {}),
   });
   for (const invoice of matches ?? []) {
     if (await invoiceBelongsToClinic(medplum, invoice as Invoice, clinicId)) {
@@ -403,7 +403,7 @@ export async function getPatientInvoices(medplum: MedplumClient, patientId: stri
   const results = await medplum.searchResources("Invoice", {
     subject: `Patient/${patientId}`,
     _sort: "-date",
-    ...(clinicTenant ? { _compartment: clinicTenant.organizationReference } : {}),
+    ...(clinicTenant ? { _compartment: clinicTenant.accountReference } : {}),
   });
   const filtered: Invoice[] = [];
   for (const invoice of results as Invoice[]) {
@@ -417,7 +417,7 @@ export async function getConsultationInvoice(medplum: MedplumClient, consultatio
   const results = await medplum.searchResources("Invoice", {
     identifier: `${INVOICE_IDENTIFIER_SYSTEM}|${consultationId}`,
     _count: "1",
-    ...(clinicTenant ? { _compartment: clinicTenant.organizationReference } : {}),
+    ...(clinicTenant ? { _compartment: clinicTenant.accountReference } : {}),
   });
   for (const invoice of (results as Invoice[]) ?? []) {
     if (await invoiceBelongsToClinic(medplum, invoice, clinicId)) return invoice;

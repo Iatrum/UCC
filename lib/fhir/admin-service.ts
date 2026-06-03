@@ -3,7 +3,7 @@
  * Uses Medplum client credentials to access all organisations.
  */
 import type { MedplumClient } from "@medplum/core";
-import type { AccessPolicy, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
+import type { AccessPolicy, HealthcareService, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
   getEnabledModuleIdsFromOrganization,
@@ -22,10 +22,25 @@ const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const CLINIC_STAFF_POLICY_NAME = "UCC Clinic Staff Policy";
 
 async function getClinicPolicyParameters(
-  _medplum: MedplumClient,
+  medplum: MedplumClient,
   clinicOrganizationId: string
 ): Promise<NonNullable<ProjectMembership["access"]>[number]["parameter"]> {
+  const organization = await medplum.readResource("Organization", clinicOrganizationId) as Organization;
+  const clinicId = organization.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM)?.value;
+  if (!clinicId) {
+    throw new Error(`Clinic Organization/${clinicOrganizationId} is missing identifier ${CLINIC_IDENTIFIER_SYSTEM}|<clinicId>.`);
+  }
+
+  const account = await medplum.searchOne("HealthcareService", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }) as HealthcareService | undefined;
+  if (!account?.id) {
+    throw new Error(`Clinic account HealthcareService not found for clinic '${clinicId}'.`);
+  }
+
   return [
+    { name: "clinicAccount", valueReference: { reference: `HealthcareService/${account.id}` } },
     { name: "clinicOrganization", valueReference: { reference: `Organization/${clinicOrganizationId}` } },
   ];
 }

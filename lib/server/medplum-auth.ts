@@ -19,6 +19,10 @@ const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 const MEDPLUM_BASE_URL = env.MEDPLUM_BASE_URL.replace(/\/$/, '');
 const MEDPLUM_CLIENT_ID = env.MEDPLUM_CLIENT_ID || process.env.NEXT_PUBLIC_MEDPLUM_CLIENT_ID || '';
 
+export function isLocalAuthDisabled(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DISABLE_AUTH === 'true';
+}
+
 /**
  * Decode a JWT payload without verifying the signature — only used to read
  * the `exp` claim locally so we can reject obviously expired tokens before

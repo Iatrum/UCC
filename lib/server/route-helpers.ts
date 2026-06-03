@@ -45,10 +45,37 @@ export class ConflictError extends Error {
   }
 }
 
+function isForbiddenLikeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const maybeError = error as {
+    message?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+    outcome?: { id?: unknown; issue?: { code?: unknown }[] };
+  };
+
+  if (maybeError.status === 403 || maybeError.statusCode === 403) {
+    return true;
+  }
+
+  if (maybeError.outcome?.id === 'forbidden') {
+    return true;
+  }
+
+  if (maybeError.outcome?.issue?.some((issue) => issue.code === 'forbidden')) {
+    return true;
+  }
+
+  return typeof maybeError.message === 'string' && maybeError.message.toLowerCase() === 'forbidden';
+}
+
 /**
  * Maps a caught error to the correct HTTP response.
  *
  * - AuthError      → 401  (client should re-authenticate)
+ * - ForbiddenError → 403  (authenticated but not allowed)
+ * - Medplum 403    → 403  (raw OperationOutcome/authz failure)
  * - Any other      → 500  (unexpected server failure)
  *
  * Always logs the error server-side so it is visible in logs without
@@ -70,6 +97,14 @@ export function handleRouteError(
 
   if (error instanceof ForbiddenError) {
     console.warn(`${label} Forbidden:`, error.message);
+    return NextResponse.json(
+      { error: 'You do not have permission to perform this action.' },
+      { status: 403 }
+    );
+  }
+
+  if (isForbiddenLikeError(error)) {
+    console.warn(`${label} Forbidden:`, error);
     return NextResponse.json(
       { error: 'You do not have permission to perform this action.' },
       { status: 403 }

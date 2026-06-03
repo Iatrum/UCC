@@ -701,7 +701,7 @@ export async function getActiveTriageEncounter(
   if (!encounters?.length) return null;
   const encounter: any = (encounters as any[]).find((enc: any) =>
     enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL) &&
-    resourceMatchesClinicTenant(enc, clinicTenant?.organizationId)
+    resourceMatchesClinicTenant(enc, clinicTenant?.accountId)
   );
   if (!encounter) return null;
   const parsed = parseTriageExtension(encounter.extension);

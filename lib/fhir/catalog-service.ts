@@ -110,7 +110,7 @@ export async function getClinicalCatalogItems(
   });
 
   return definitions
-    .filter((definition) => resourceMatchesClinicTenant(definition as any, clinicTenant?.organizationId))
+    .filter((definition) => resourceMatchesClinicTenant(definition as any, clinicTenant?.accountId))
     .map(mapDefinition)
     .filter((item): item is ClinicalCatalogItem => Boolean(item))
     .filter((item) => !type || item.type === type)
@@ -158,7 +158,7 @@ export async function updateClinicalCatalogItem(
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
-  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.organizationId)) throw new Error('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.accountId)) throw new Error('Catalog item not found');
 
   const current = mapDefinition(existing);
   if (!current) throw new Error('Catalog item not found');
@@ -200,6 +200,6 @@ export async function deleteClinicalCatalogItemForClinic(
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
-  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.organizationId)) throw new Error('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.accountId)) throw new Error('Catalog item not found');
   await medplum.deleteResource('ChargeItemDefinition', id);
 }

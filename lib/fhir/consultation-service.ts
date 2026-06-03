@@ -260,12 +260,12 @@ async function getOrCreatePatient(
     });
     await assignPatientToClinicTenant(medplum, patient as FHIRPatient, clinicTenant);
     console.log(`✅ Created FHIR Patient: ${patient.id}`);
-  } else if (clinicTenant && !matchesClinic(patient as any, clinicTenant.organizationId)) {
+  } else if (clinicTenant && !matchesClinic(patient as any, clinicTenant.accountId)) {
     // Patient exists but not linked to this clinic -> deny
     throw new Error('Patient does not belong to this clinic');
   } else if (clinicTenant) {
     // Ensure existing patient carries the clinic Organization tenant.
-    const needsTenant = !matchesClinic(patient as any, clinicTenant.organizationId);
+    const needsTenant = !matchesClinic(patient as any, clinicTenant.accountId);
     if (needsTenant) {
       patient = await medplum.updateResource({
         ...patient,
@@ -506,7 +506,7 @@ export async function getConsultationFromMedplum(
   try {
     const client = medplum ?? (await getAdminMedplum());
     const clinicTenant = await resolveClinicTenant(client, clinicId);
-    const clinicScopeId = clinicTenant?.organizationId ?? clinicId;
+    const clinicScopeId = clinicTenant?.accountId ?? clinicId;
     
     // Get the encounter
     const encounter = await client.readResource('Encounter', encounterId);
@@ -647,7 +647,7 @@ export async function getPatientConsultationsFromMedplum(
   try {
     const client = medplum ?? (await getAdminMedplum());
     const clinicTenant = await resolveClinicTenant(client, clinicId);
-    const clinicScopeId = clinicTenant?.organizationId ?? clinicId;
+    const clinicScopeId = clinicTenant?.accountId ?? clinicId;
 
     // Find encounters scoped to the clinic Organization, then filter by patient identifier.
     const searchParams: Record<string, string> = clinicId
@@ -920,7 +920,7 @@ export async function getRecentConsultationsFromMedplum(
   try {
     const client = medplum;
     const clinicTenant = await resolveClinicTenant(client, clinicId);
-    const clinicScopeId = clinicTenant?.organizationId ?? clinicId;
+    const clinicScopeId = clinicTenant?.accountId ?? clinicId;
     
     const encounters = await client.searchResources('Encounter', {
       _count: String(limit),
