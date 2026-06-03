@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import {
-  savePatientToMedplum,
+  savePatientToMedplumWithAdmin,
   getPatientFromMedplum,
   getAllPatientsFromMedplum,
   searchPatientsInMedplum,
@@ -20,7 +20,7 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     const patientData = await request.json();
 
     // Validate required fields
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const patientId = await savePatientToMedplum(patientData, clinicId ?? undefined, medplum);
+    const patientId = await savePatientToMedplumWithAdmin(patientData, clinicId ?? undefined);
 
     return NextResponse.json({
       success: true,
@@ -126,6 +126,5 @@ export async function DELETE(request: NextRequest) {
     return handleRouteError(error, 'DELETE /api/patients');
   }
 }
-
 
 
