@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
           size: file.size,
           uploadedBy,
           practitionerId,
+          clinicId,
           storagePath,
         });
         documents.push({ id, title: file.name, url, contentType: file.type, size: file.size, storagePath });
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest) {
       size,
       uploadedBy: bodyUploadedBy || uploadedBy,
       practitionerId,
+      clinicId,
       storagePath,
     });
     return NextResponse.json({ success: true, id });
@@ -160,7 +162,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
-    await updatePatientDocument(medplum, id, { title });
+    await updatePatientDocument(medplum, id, { title, clinicId });
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleRouteError(error, 'PATCH /api/documents');

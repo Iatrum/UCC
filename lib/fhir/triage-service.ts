@@ -4,16 +4,19 @@ import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
 import {
+  CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
   type ClinicTenant,
+  withClinicIdentifier,
 } from './clinic-tenancy';
 
 /** Build the serviceProvider field that ties a triage Encounter to a branch Organization. */
 function clinicEncounterScope(tenant: ClinicTenant | null): Record<string, any> {
   if (!tenant) return {};
   return {
+    identifier: [{ system: 'clinic', value: tenant.clinicId }],
     serviceProvider: { reference: tenant.organizationReference },
   };
 }
@@ -21,14 +24,14 @@ function clinicEncounterScope(tenant: ClinicTenant | null): Record<string, any> 
 /** Verify an Encounter belongs to the given clinic. Throws if it does not. */
 function assertEncounterBelongsToClinic(encounter: any, tenant: ClinicTenant | null): void {
   if (!tenant) return; // no scope -> no assertion (admin callers only)
-  if (!resourceMatchesClinicTenant(encounter, tenant.organizationId)) {
+  if (!resourceMatchesClinicTenant(encounter, tenant.clinicId)) {
     throw new Error(`Access denied: encounter does not belong to clinic '${tenant.clinicId}'`);
   }
 }
 
 function patientBelongsToClinic(patient: any, tenant: ClinicTenant | null): boolean {
   if (!tenant) return true;
-  return resourceMatchesClinicTenant(patient, tenant.organizationId);
+  return resourceMatchesClinicTenant(patient, tenant.clinicId);
 }
 
 const TRIAGE_ENCOUNTER_EXTENSION_URL = 'https://ucc.emr/triage-encounter';
@@ -429,24 +432,27 @@ export async function saveTriageEncounter(
     const otherExtensions =
       (encounter.extension || []).filter((ext: any) => ext.url !== TRIAGE_ENCOUNTER_EXTENSION_URL);
 
-    const updatedEncounter = await client.updateResource({
-      ...encounter,
-      status: 'triaged',
-      period: {
-        ...(encounter.period || {}),
-        start: encounter.period?.start || triageAtIso,
+    const updatedEncounter = await client.updateResource(withClinicIdentifier(
+      {
+        ...encounter,
+        status: 'triaged',
+        period: {
+          ...(encounter.period || {}),
+          start: encounter.period?.start || triageAtIso,
+        },
+        priority: {
+          coding: [
+            {
+              system: 'http://terminology.hl7.org/CodeSystem/v3-ActPriority',
+              code: String(triagePayload.triageLevel),
+              display: `Triage Level ${triagePayload.triageLevel}`,
+            },
+          ],
+        },
+        extension: [...otherExtensions, buildTriageExtension(triagePayload, triageAtIso, queueStatus)],
       },
-      priority: {
-        coding: [
-          {
-            system: 'http://terminology.hl7.org/CodeSystem/v3-ActPriority',
-            code: String(triagePayload.triageLevel),
-            display: `Triage Level ${triagePayload.triageLevel}`,
-          },
-        ],
-      },
-      extension: [...otherExtensions, buildTriageExtension(triagePayload, triageAtIso, queueStatus)],
-    });
+      clinicId
+    ));
     encounterId = updatedEncounter.id!;
   } else {
     const encounter = await validateAndCreate(client, {
@@ -596,10 +602,13 @@ export async function updateTriageEncounter(
 
   const otherExtensions = (encounter as any).extension?.filter((ext: any) => ext.url !== TRIAGE_ENCOUNTER_EXTENSION_URL) || [];
 
-  await client.updateResource({
-    ...(encounter as any),
-    extension: [...otherExtensions, triageExt],
-  });
+  await client.updateResource(withClinicIdentifier(
+    {
+      ...(encounter as any),
+      extension: [...otherExtensions, triageExt],
+    },
+    clinicId
+  ));
 }
 
 export async function updateQueueStatusForPatient(
@@ -674,10 +683,13 @@ export async function updateQueueStatusForPatient(
     newExtensions.push(triageExt);
   }
 
-  await client.updateResource({
-    ...encounter,
-    extension: newExtensions,
-  });
+  await client.updateResource(withClinicIdentifier(
+    {
+      ...encounter,
+      extension: newExtensions,
+    },
+    clinicId
+  ));
 }
 
 export async function getActiveTriageEncounter(
@@ -695,13 +707,13 @@ export async function getActiveTriageEncounter(
     status: 'arrived,triaged,in-progress,finished',
     _count: '10',
     _sort: '-_lastUpdated',
-    ...(clinicTenant ? { 'service-provider': clinicTenant.organizationReference } : {}),
+    ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
   });
 
   if (!encounters?.length) return null;
   const encounter: any = (encounters as any[]).find((enc: any) =>
     enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL) &&
-    resourceMatchesClinicTenant(enc, clinicTenant?.accountId)
+    resourceMatchesClinicTenant(enc, clinicTenant?.clinicId)
   );
   if (!encounter) return null;
   const parsed = parseTriageExtension(encounter.extension);
@@ -757,7 +769,7 @@ export async function getTriageQueueForToday(
     `status=arrived,triaged,in-progress,finished` +
     `&date=ge${startIso}&date=lt${endIso}` +
     `&_count=${limit}&_sort=date` +
-    `&service-provider=${clinicTenant.organizationReference}` +
+    `&identifier=${encodeURIComponent(`${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`)}` +
     `&_include=Encounter:subject`;
 
   const bundle = (await client.search('Encounter', query)) as any;

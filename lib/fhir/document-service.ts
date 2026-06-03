@@ -9,6 +9,7 @@ import type { DocumentReference } from '@medplum/fhirtypes';
 import { STORAGE_PATH_EXTENSION_URL } from './structure-definitions';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
+import { withClinicIdentifier } from './clinic-tenancy';
 
 export interface DocumentRegistration {
   patientId: string; // FHIR Patient ID
@@ -19,6 +20,7 @@ export interface DocumentRegistration {
   uploadedBy?: string;
   practitionerId?: string;
   organizationId?: string;
+  clinicId?: string;
   storagePath?: string; // bucket object path (for cleanup)
 }
 
@@ -39,7 +41,7 @@ export interface PatientDocumentSummary {
 export async function createPatientDocument(medplum: MedplumClient, doc: DocumentRegistration): Promise<string> {
   const nowIso = new Date().toISOString();
 
-  const resource: DocumentReference = {
+  const resource: DocumentReference = withClinicIdentifier<DocumentReference>({
     resourceType: 'DocumentReference',
     status: 'current',
     type: {
@@ -74,7 +76,7 @@ export async function createPatientDocument(medplum: MedplumClient, doc: Documen
           },
         ]
       : undefined,
-  };
+  }, doc.clinicId);
 
   const validation = validateFhirResource(resource);
   logValidation('DocumentReference', validation);
@@ -142,7 +144,7 @@ export async function listPatientDocuments(medplum: MedplumClient, patientId: st
 export async function updatePatientDocument(
   medplum: MedplumClient,
   documentId: string,
-  updates: { title?: string }
+  updates: { title?: string; clinicId?: string }
 ): Promise<void> {
   const doc = await medplum.readResource('DocumentReference', documentId) as DocumentReference;
   const updated: DocumentReference = { ...doc };
@@ -155,7 +157,7 @@ export async function updatePatientDocument(
       ...(updated.content.slice(1) ?? []),
     ];
   }
-  await medplum.updateResource(updated);
+  await medplum.updateResource(withClinicIdentifier(updated, updates.clinicId));
 }
 
 /**

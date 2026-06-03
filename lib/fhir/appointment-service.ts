@@ -4,7 +4,13 @@
 
 import { MedplumClient, OperationOutcomeError, getStatus } from '@medplum/core';
 import type { Appointment as FHIRAppointment } from '@medplum/fhirtypes';
-import { assignResourceToClinicTenant, resolveClinicTenant, resourceMatchesClinicTenant } from './clinic-tenancy';
+import {
+  CLINIC_IDENTIFIER_SYSTEM,
+  assignResourceToClinicTenant,
+  resolveClinicTenant,
+  resourceMatchesClinicTenant,
+  withClinicIdentifier,
+} from './clinic-tenancy';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
 function patientIdFromActorReference(ref: string | undefined): string {
@@ -42,8 +48,6 @@ export interface SavedAppointment extends AppointmentData {
 const EXT_CHECKIN   = 'urn:iatrum:appointment/checkin-at';
 const EXT_COMPLETED = 'urn:iatrum:appointment/completed-at';
 const EXT_CANCELLED = 'urn:iatrum:appointment/cancelled-at';
-const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
-
 /**
  * Save appointment to Medplum
  */
@@ -64,7 +68,7 @@ export async function saveAppointmentToMedplum(
     endTime.setMinutes(endTime.getMinutes() + 30);
   }
 
-  const fhirAppointment: FHIRAppointment = {
+  const fhirAppointment: FHIRAppointment = withClinicIdentifier<FHIRAppointment>({
     resourceType: 'Appointment',
     status: appointmentData.status,
     start: scheduledTime,
@@ -88,7 +92,7 @@ export async function saveAppointmentToMedplum(
     reasonCode: appointmentData.reason ? [{ text: appointmentData.reason }] : undefined,
     appointmentType: appointmentData.type ? { text: appointmentData.type } : undefined,
     comment: appointmentData.notes,
-  };
+  }, clinicId);
 
   const saved = await medplum.createResource(fhirAppointment);
   await assignResourceToClinicTenant(medplum, 'Appointment', saved, clinicTenant);
@@ -229,11 +233,11 @@ export async function getUpcomingAppointmentsForClinic(
     date: `ge${startOfToday.toISOString()}`,
     _sort: 'date',
     _count: String(limit),
-    _compartment: clinicTenant.accountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
   });
 
   return appointments
-    .filter((appointment) => resourceMatchesClinicTenant(appointment as any, clinicTenant.accountId))
+    .filter((appointment) => resourceMatchesClinicTenant(appointment as any, clinicId))
     .map((fhirAppt) => {
       const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
       const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));

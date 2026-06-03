@@ -2,6 +2,7 @@ import type { MedplumClient } from "@medplum/core";
 import type { Appointment, Communication, Extension, Organization, Patient } from "@medplum/fhirtypes";
 import { env } from "@/lib/env";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
+import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
 
 const FOLLOW_UP_CATEGORY_SYSTEM = "https://ucc.emr/communication-category";
 const FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM = "https://ucc.emr/follow-up/source";
@@ -241,15 +242,18 @@ function replaceExtensionsRemoving(
 
 async function findExistingFollowUpBySource(
   medplum: MedplumClient,
+  clinicId: string | undefined,
   sourceType: FollowUpSourceType | undefined,
   sourceId: string | undefined
 ): Promise<Communication | undefined> {
   if (!sourceType || !sourceId) return undefined;
   const results = await medplum.searchResources("Communication", {
     identifier: `${FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM}|${sourceIdentifierValue(sourceType, sourceId)}`,
-    _count: "1",
+    _count: "20",
   });
-  return results?.[0] as Communication | undefined;
+  return (results as Communication[] | undefined)?.find(
+    (comm) => !clinicId || comm.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId)
+  );
 }
 
 export async function resolveClinicWhatsAppDeliveryMode(
@@ -335,16 +339,19 @@ export async function createFollowUp(
   medplum: MedplumClient,
   input: CreateFollowUpInput
 ): Promise<FollowUp> {
-  const existing = await findExistingFollowUpBySource(medplum, input.sourceType, input.sourceId);
+  const existing = await findExistingFollowUpBySource(medplum, input.clinicId, input.sourceType, input.sourceId);
   if (existing) return mapCommunicationToFollowUp(existing);
 
   const deliveryMode = input.deliveryMode ?? await resolveClinicWhatsAppDeliveryMode(medplum, input.clinicId);
   const deliveryStatus: FollowUpDeliveryStatus = "pending";
-  const identifiers = input.sourceType && input.sourceId
-    ? [{ system: FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM, value: sourceIdentifierValue(input.sourceType, input.sourceId) }]
-    : undefined;
+  const identifiers = [
+    { system: CLINIC_IDENTIFIER_SYSTEM, value: input.clinicId },
+    ...(input.sourceType && input.sourceId
+      ? [{ system: FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM, value: sourceIdentifierValue(input.sourceType, input.sourceId) }]
+      : []),
+  ];
 
-  const comm: Communication = {
+  const comm: Communication = withClinicIdentifier<Communication>({
     resourceType: "Communication",
     status: "preparation",
     identifier: identifiers,
@@ -376,7 +383,7 @@ export async function createFollowUp(
       ...stringExt(SOURCE_ID_EXTENSION_URL, input.sourceId),
       ...dateTimeExt(DUE_DATE_EXTENSION_URL, input.dueDate),
     ],
-  };
+  }, input.clinicId);
 
   const saved = await medplum.createResource(comm);
   const followUp = mapCommunicationToFollowUp(saved as Communication);
@@ -407,6 +414,7 @@ export async function getAllFollowUps(
   clinicId?: string
 ): Promise<FollowUp[]> {
   const results = await medplum.searchResources("Communication", {
+    ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
     _sort: "-_lastUpdated",
     _count: "200",
   });

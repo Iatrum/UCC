@@ -1,9 +1,11 @@
 import type { MedplumClient } from '@medplum/core';
 import type { ChargeItemDefinition, Money } from '@medplum/fhirtypes';
 import {
+  CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
+  withClinicIdentifier,
   type ClinicTenant,
 } from './clinic-tenancy';
 
@@ -110,14 +112,13 @@ export async function getClinicalCatalogItems(
   clinicId: string,
   type?: ClinicalCatalogType
 ): Promise<ClinicalCatalogItem[]> {
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const definitions = await medplum.searchResources('ChargeItemDefinition', {
-    _compartment: clinicTenant?.accountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _count: '200',
   });
 
   return definitions
-    .filter((definition) => resourceMatchesClinicTenant(definition as any, clinicTenant?.accountId))
+    .filter((definition) => resourceMatchesClinicTenant(definition as any, clinicId))
     .map(mapDefinition)
     .filter((item): item is ClinicalCatalogItem => Boolean(item))
     .filter((item) => !type || item.type === type)
@@ -134,7 +135,7 @@ export async function createClinicalCatalogItem(
     throw new Error('Clinic tenant is required for catalog items');
   }
   const name = item.name.trim();
-  const definition: ChargeItemDefinition = {
+  const definition: ChargeItemDefinition = withClinicIdentifier({
     resourceType: 'ChargeItemDefinition',
     meta: clinicAccountMeta(clinicTenant),
     status: item.active === false ? 'retired' : 'active',
@@ -152,7 +153,7 @@ export async function createClinicalCatalogItem(
     ],
     extension: buildExtensions(item),
     propertyGroup: buildPrice(item.defaultPrice),
-  };
+  }, clinicId);
 
   const created = await medplum.createResource(definition);
   await assignResourceToClinicTenant(medplum, 'ChargeItemDefinition', created, clinicTenant);
@@ -166,10 +167,9 @@ export async function updateClinicalCatalogItem(
   id: string,
   updates: Partial<ClinicalCatalogItem>
 ): Promise<void> {
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
-  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.accountId)) throw new Error('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicId)) throw new Error('Catalog item not found');
 
   const current = mapDefinition(existing);
   if (!current) throw new Error('Catalog item not found');
@@ -183,7 +183,7 @@ export async function updateClinicalCatalogItem(
     active: updates.active ?? current.active,
   };
 
-  await medplum.updateResource({
+  const updatedDefinition: ChargeItemDefinition = withClinicIdentifier<ChargeItemDefinition>({
     ...existing,
     status: next.active ? 'active' : 'retired',
     title: next.name,
@@ -196,7 +196,8 @@ export async function updateClinicalCatalogItem(
     },
     extension: buildExtensions(next),
     propertyGroup: buildPrice(next.defaultPrice),
-  });
+  }, clinicId);
+  await medplum.updateResource(updatedDefinition);
 }
 
 export async function deleteClinicalCatalogItem(medplum: MedplumClient, id: string): Promise<void> {
@@ -208,9 +209,8 @@ export async function deleteClinicalCatalogItemForClinic(
   clinicId: string,
   id: string
 ): Promise<void> {
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const existing = await readDefinition(medplum, id);
   if (!existing) throw new Error('Catalog item not found');
-  if (!resourceMatchesClinicTenant(existing as any, clinicTenant?.accountId)) throw new Error('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicId)) throw new Error('Catalog item not found');
   await medplum.deleteResource('ChargeItemDefinition', id);
 }
