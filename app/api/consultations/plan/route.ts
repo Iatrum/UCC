@@ -16,6 +16,7 @@ let warnedPlanStoreUnavailable = false;
 
 type StoredPlan = {
   draftId: string;
+  clinicId?: string;
   patientId: string;
   consultationId?: string;
   entries: TreatmentPlanEntry[];
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
   const consultationId = searchParams.get("consultationId") || undefined;
 
   try {
-    await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
 
     if (!draftId) {
       return NextResponse.json({ success: false, error: "draftId or patientId is required" }, { status: 400 });
@@ -122,6 +123,9 @@ export async function GET(request: NextRequest) {
     }
 
     const data = snap.data() as StoredPlan;
+    if (data.clinicId && data.clinicId !== clinicId) {
+      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    }
     return NextResponse.json({ success: true, plan: toSnapshot(data) });
   } catch (error) {
     if (draftId && isPlanStoreUnavailable(error)) {
@@ -134,7 +138,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const draftId: string = body.draftId;
     const patientId: string = body.patientId;
@@ -157,6 +161,9 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toDate().toISOString();
     const existingSnap = await docRef.get();
     const existingData = existingSnap.exists ? (existingSnap.data() as StoredPlan) : null;
+    if (existingData?.clinicId && existingData.clinicId !== clinicId) {
+      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    }
     const existingEntries = existingData?.entries || [];
     const match = entryInput.id ? existingEntries.find((item) => item.id === entryInput.id) : undefined;
     const normalized = normalizeTreatmentPlanEntry(entryInput, nowIso, match);
@@ -171,6 +178,7 @@ export async function POST(request: NextRequest) {
     await docRef.set(
       {
         draftId,
+        clinicId,
         patientId,
         consultationId,
         entries,
@@ -211,13 +219,14 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const draftId: string = body.draftId;
-    const entryId: string = body.entryId;
+    const entryId: string | undefined = body.entryId;
+    const clearAll: boolean = body.clearAll === true;
 
-    if (!draftId || !entryId) {
-      return NextResponse.json({ success: false, error: "draftId and entryId are required" }, { status: 400 });
+    if (!draftId || (!entryId && !clearAll)) {
+      return NextResponse.json({ success: false, error: "draftId and entryId or clearAll are required" }, { status: 400 });
     }
 
     const docRef = adminDb.collection(COLLECTION).doc(draftId);
@@ -227,7 +236,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     const existing = existingSnap.data() as StoredPlan;
-    const entries = existing.entries.filter((entry) => entry.id !== entryId);
+    if (existing.clinicId && existing.clinicId !== clinicId) {
+      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    }
+    const entries = clearAll ? [] : existing.entries.filter((entry) => entry.id !== entryId);
     const summary = computeTreatmentPlanSummary(entries);
     const now = Timestamp.now();
 

@@ -1,6 +1,13 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Appointment, Patient, Practitioner, Schedule, Slot } from "@medplum/fhirtypes";
-import { assignResourceToClinicTenant, resolveClinicTenant, type ClinicTenant } from "./clinic-tenancy";
+import {
+  CLINIC_IDENTIFIER_SYSTEM,
+  assignResourceToClinicTenant,
+  resolveClinicTenant,
+  resourceMatchesClinicTenant,
+  withClinicIdentifier,
+  type ClinicTenant,
+} from "./clinic-tenancy";
 
 const CLINIC_SCHEDULE_IDENTIFIER_SYSTEM = "urn:iatrum:schedule:clinic-practitioner";
 const SLOT_SEARCH_COUNT = "2000";
@@ -118,13 +125,12 @@ export async function listClinicSchedules(
   if (!clinicTenant) {
     throw new Error("Clinic tenant is required for scheduling");
   }
-  const clinicAccountReference = clinicTenant.accountReference;
   const schedules = await medplum.searchResources("Schedule", {
     _count: "200",
-    _compartment: clinicAccountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
   });
   return (schedules || [])
-    .filter((schedule) => parseScheduleIdentifier(schedule).clinicId === clinicId)
+    .filter((schedule) => parseScheduleIdentifier(schedule).clinicId === clinicId && resourceMatchesClinicTenant(schedule as any, clinicId))
     .map(mapSchedule);
 }
 
@@ -139,10 +145,9 @@ export async function ensureClinicianSchedule(
   const identifier = buildScheduleIdentifier(input.clinicId, input.practitionerId);
   const existing = await medplum.searchOne("Schedule", {
     identifier: `${CLINIC_SCHEDULE_IDENTIFIER_SYSTEM}|${identifier}`,
-    _compartment: clinicTenant.accountReference,
   });
 
-  if (existing?.id) {
+  if (existing?.id && resourceMatchesClinicTenant(existing as any, input.clinicId)) {
     return mapSchedule(existing);
   }
 
@@ -154,14 +159,14 @@ export async function ensureClinicianSchedule(
     // Best effort only; fallback to provided display.
   }
 
-  const created = await medplum.createResource<Schedule>({
+  const created = await medplum.createResource<Schedule>(withClinicIdentifier<Schedule>({
     resourceType: "Schedule",
     meta: clinicAccountMeta(clinicTenant) as any,
     active: true,
     identifier: [{ system: CLINIC_SCHEDULE_IDENTIFIER_SYSTEM, value: identifier }],
     actor: [{ reference: `Practitioner/${input.practitionerId}`, display: practitionerName }],
     comment: "Slots pilot schedule",
-  });
+  }, input.clinicId));
   await assignResourceToClinicTenant(medplum, "Schedule", created, clinicTenant);
 
   return mapSchedule(created);
@@ -193,7 +198,7 @@ export async function generateSlotsForSchedule(
 
   const existingSlots = await medplum.searchResources("Slot", {
     schedule: `Schedule/${input.scheduleId}`,
-    _compartment: clinicTenant.accountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _count: SLOT_SEARCH_COUNT,
   });
 
@@ -217,14 +222,14 @@ export async function generateSlotsForSchedule(
     if (existingStarts.has(startIso)) {
       existing += 1;
     } else {
-      const slot = await medplum.createResource<Slot>({
+      const slot = await medplum.createResource<Slot>(withClinicIdentifier<Slot>({
         resourceType: "Slot",
         meta: clinicAccountMeta(clinicTenant) as any,
         schedule: { reference: `Schedule/${input.scheduleId}` },
         status: "free",
         start: startIso,
         end: slotEnd.toISOString(),
-      });
+      }, clinicId));
       await assignResourceToClinicTenant(medplum, "Slot", slot, clinicTenant);
       created += 1;
     }
@@ -275,7 +280,7 @@ export async function findSlots(
       selectedSchedules.map((schedule) =>
         medplum.searchResources("Slot", {
           schedule: `Schedule/${schedule.id}`,
-          _compartment: clinicTenant.accountReference,
+          identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
           _count: String(input.count ?? Number(SLOT_SEARCH_COUNT)),
         })
       )
@@ -360,7 +365,7 @@ async function assertNoSchedulingConflict(
   }
   const slots = await medplum.searchResources("Slot", {
     schedule: `Schedule/${scheduleId}`,
-    _compartment: clinicTenant.accountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _count: SLOT_SEARCH_COUNT,
   });
 
@@ -377,7 +382,7 @@ async function assertNoSchedulingConflict(
 
   const appointments = await medplum.searchResources("Appointment", {
     date: `ge${startIso}`,
-    _compartment: clinicTenant.accountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _count: "200",
   });
 
@@ -409,7 +414,7 @@ async function findExactFreeSlot(
   }
   const slots = await medplum.searchResources("Slot", {
     schedule: `Schedule/${scheduleId}`,
-    _compartment: clinicTenant.accountReference,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _count: SLOT_SEARCH_COUNT,
   });
 
@@ -456,7 +461,7 @@ export async function bookSlotToAppointment(
   if (!clinicTenant) {
     throw new Error("Clinic tenant is required for scheduling");
   }
-  const appointment = await medplum.createResource<Appointment>({
+  const appointment = await medplum.createResource<Appointment>(withClinicIdentifier<Appointment>({
     resourceType: "Appointment",
     meta: clinicAccountMeta(clinicTenant) as any,
     status: "booked",
@@ -486,13 +491,13 @@ export async function bookSlotToAppointment(
     ],
     reasonCode: input.reason ? [{ text: input.reason }] : undefined,
     comment: "Booked via slots pilot",
-  });
+  }, clinicId));
   await assignResourceToClinicTenant(medplum, "Appointment", appointment, clinicTenant);
 
-  await medplum.updateResource<Slot>({
+  await medplum.updateResource<Slot>(withClinicIdentifier({
     ...slot,
     status: "busy",
-  });
+  }, clinicId));
 
   return { appointmentId: appointment.id || "", slotId: slot.id || "" };
 }
@@ -544,12 +549,12 @@ export async function manualBookAppointmentWithSlot(
     throw new Error("Clinic tenant is required for scheduling");
   }
   const slot = existingFreeSlot
-    ? await medplum.updateResource<Slot>({
+    ? await medplum.updateResource<Slot>(withClinicIdentifier({
         ...existingFreeSlot,
         status: "busy",
         comment: "Reserved by manual appointment booking",
-      })
-    : await medplum.createResource<Slot>({
+      }, clinicId))
+    : await medplum.createResource<Slot>(withClinicIdentifier<Slot>({
         resourceType: "Slot",
         meta: clinicAccountMeta(clinicTenant) as any,
         schedule: { reference: `Schedule/${schedule.id}` },
@@ -557,11 +562,11 @@ export async function manualBookAppointmentWithSlot(
         start: startIso,
         end: endIso,
         comment: "Reserved by manual appointment booking",
-      });
+      }, clinicId));
   await assignResourceToClinicTenant(medplum, "Slot", slot, clinicTenant);
 
   try {
-    const appointment = await medplum.createResource<Appointment>({
+    const appointment = await medplum.createResource<Appointment>(withClinicIdentifier<Appointment>({
       resourceType: "Appointment",
       meta: clinicAccountMeta(clinicTenant) as any,
       status: "booked",
@@ -588,18 +593,18 @@ export async function manualBookAppointmentWithSlot(
       reasonCode: input.reason ? [{ text: input.reason }] : undefined,
       appointmentType: input.type ? { text: input.type } : undefined,
       comment: input.notes,
-    });
+    }, clinicId));
     await assignResourceToClinicTenant(medplum, "Appointment", appointment, clinicTenant);
 
     return { appointmentId: appointment.id || "", slotId: slot.id || "" };
   } catch (error) {
     try {
       if (slot.id) {
-        await medplum.updateResource<Slot>({
+        await medplum.updateResource<Slot>(withClinicIdentifier({
           ...slot,
           status: "free",
           comment: "Released after failed manual appointment booking",
-        });
+        }, clinicId));
       }
     } catch {
       // Preserve the original appointment creation error.

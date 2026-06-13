@@ -24,6 +24,32 @@ export function getClinicIdentifierValue(resource: { identifier?: { system?: str
   return resource.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM)?.value;
 }
 
+export function withClinicIdentifier<T extends { identifier?: { system?: string; value?: string }[] }>(
+  resource: T,
+  clinicId?: string | null
+): T {
+  if (!clinicId) return resource;
+
+  const identifiers = resource.identifier ?? [];
+  const hasClinicIdentifier = identifiers.some(
+    (identifier) =>
+      identifier.system === CLINIC_IDENTIFIER_SYSTEM &&
+      identifier.value === clinicId
+  );
+
+  if (hasClinicIdentifier) return resource;
+
+  return {
+    ...resource,
+    identifier: [
+      ...identifiers.filter(
+        (identifier) => identifier.system !== CLINIC_IDENTIFIER_SYSTEM
+      ),
+      { system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId },
+    ],
+  };
+}
+
 async function findClinicOrganization(
   medplum: MedplumClient,
   clinicId: string
@@ -110,6 +136,16 @@ export function resourceMatchesClinicTenant(
 ): boolean {
   if (clinicId === null) return true;
   if (!clinicId) return true;
+
+  if (
+    resource.identifier?.some(
+      (identifier) =>
+        identifier.system === CLINIC_IDENTIFIER_SYSTEM &&
+        identifier.value === clinicId
+    )
+  ) {
+    return true;
+  }
 
   const orgReferences = [
     resource.managingOrganization?.reference,

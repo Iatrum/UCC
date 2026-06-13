@@ -5,6 +5,11 @@
 
 import { MedplumClient } from '@medplum/core';
 import type { ServiceRequest } from '@medplum/fhirtypes';
+import {
+  CLINIC_IDENTIFIER_SYSTEM,
+  resourceMatchesClinicTenant,
+  withClinicIdentifier,
+} from './clinic-tenancy';
 
 export interface ReferralData {
   patientId: string;
@@ -45,8 +50,12 @@ function specialtyFromServiceRequest(serviceRequest: ServiceRequest): string {
 /**
  * Save referral to Medplum as ServiceRequest
  */
-export async function saveReferralToMedplum(medplum: MedplumClient, referralData: ReferralData): Promise<string> {
-  const serviceRequest: ServiceRequest = {
+export async function saveReferralToMedplum(
+  medplum: MedplumClient,
+  referralData: ReferralData,
+  clinicId?: string
+): Promise<string> {
+  const serviceRequest: ServiceRequest = withClinicIdentifier<ServiceRequest>({
     resourceType: 'ServiceRequest',
     status: 'active',
     intent: 'order',
@@ -82,7 +91,7 @@ export async function saveReferralToMedplum(medplum: MedplumClient, referralData
     authoredOn: referralData.date
       ? (typeof referralData.date === 'string' ? referralData.date : referralData.date.toISOString())
       : new Date().toISOString(),
-  };
+  }, clinicId);
 
   const saved = await medplum.createResource(serviceRequest);
   console.log(`✅ Created FHIR ServiceRequest (Referral): ${saved.id}`);
@@ -93,10 +102,17 @@ export async function saveReferralToMedplum(medplum: MedplumClient, referralData
 /**
  * Get referral from Medplum
  */
-export async function getReferralFromMedplum(medplum: MedplumClient, referralId: string): Promise<SavedReferral | null> {
+export async function getReferralFromMedplum(
+  medplum: MedplumClient,
+  referralId: string,
+  clinicId?: string
+): Promise<SavedReferral | null> {
   try {
     const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
     if (!isReferralServiceRequest(serviceRequest)) {
+      return null;
+    }
+    if (clinicId && !resourceMatchesClinicTenant(serviceRequest as any, clinicId)) {
       return null;
     }
 
@@ -129,9 +145,13 @@ export async function getReferralFromMedplum(medplum: MedplumClient, referralId:
 export async function updateReferralInMedplum(
   medplum: MedplumClient,
   referralId: string,
-  updates: Partial<Pick<ReferralData, 'urgency' | 'reason' | 'clinicalInfo' | 'doctorName'>> & { status?: SavedReferral['status'] }
+  updates: Partial<Pick<ReferralData, 'urgency' | 'reason' | 'clinicalInfo' | 'doctorName'>> & { status?: SavedReferral['status'] },
+  clinicId?: string
 ): Promise<void> {
   const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
+  if (clinicId && !resourceMatchesClinicTenant(serviceRequest as any, clinicId)) {
+    throw new Error('Referral not found');
+  }
 
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;
@@ -140,23 +160,38 @@ export async function updateReferralInMedplum(
   if (updates.clinicalInfo !== undefined) updated.note = updates.clinicalInfo ? [{ text: updates.clinicalInfo }] : undefined;
   if (updates.doctorName !== undefined) updated.requester = updates.doctorName ? { display: updates.doctorName } : undefined;
 
-  await medplum.updateResource(updated);
+  await medplum.updateResource(withClinicIdentifier(updated, clinicId));
 }
 
 /**
  * Delete (revoke) a referral
  */
-export async function deleteReferralFromMedplum(medplum: MedplumClient, referralId: string): Promise<void> {
+export async function deleteReferralFromMedplum(
+  medplum: MedplumClient,
+  referralId: string,
+  clinicId?: string
+): Promise<void> {
+  if (clinicId) {
+    const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
+    if (!resourceMatchesClinicTenant(serviceRequest as any, clinicId)) {
+      throw new Error('Referral not found');
+    }
+  }
   await medplum.deleteResource('ServiceRequest', referralId);
 }
 
 /**
  * Get patient referrals from Medplum
  */
-export async function getPatientReferralsFromMedplum(medplum: MedplumClient, patientId: string): Promise<SavedReferral[]> {
+export async function getPatientReferralsFromMedplum(
+  medplum: MedplumClient,
+  patientId: string,
+  clinicId?: string
+): Promise<SavedReferral[]> {
   try {
     const serviceRequests = await medplum.searchResources('ServiceRequest', {
       subject: `Patient/${patientId}`,
+      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
       _sort: '-authored',
     });
 
@@ -165,7 +200,7 @@ export async function getPatientReferralsFromMedplum(medplum: MedplumClient, pat
         if (!isReferralServiceRequest(sr)) {
           return null;
         }
-        const saved = await getReferralFromMedplum(medplum, sr.id!);
+        const saved = await getReferralFromMedplum(medplum, sr.id!, clinicId);
         return saved;
       })
     );

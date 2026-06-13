@@ -1,5 +1,6 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Annotation, Task } from "@medplum/fhirtypes";
+import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
 
 const BILLING_EXCEPTION_CODE_SYSTEM = "https://ucc.emr/task-type";
 const BILLING_EXCEPTION_CODE = "billing-exception";
@@ -53,7 +54,10 @@ export function buildBillingExceptionTaskResource(input: CreateBillingExceptionT
       coding: [{ system: BILLING_EXCEPTION_CODE_SYSTEM, code: BILLING_EXCEPTION_CODE }],
       text: "Billing exception follow-up",
     },
-    identifier: [buildBillingExceptionIdentifier(input.consultationId)],
+    identifier: [
+      { system: CLINIC_IDENTIFIER_SYSTEM, value: input.clinicId },
+      buildBillingExceptionIdentifier(input.consultationId),
+    ],
     description,
     authoredOn: nowIso(),
     for: { reference: `Patient/${input.patientId}` },
@@ -109,6 +113,9 @@ export async function listBillingExceptionTasks(
     _sort: "-_lastUpdated",
     _count: "100",
   };
+  if (clinicId) {
+    params.identifier = `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`;
+  }
   if (status === "open") {
     params.status = "requested,in-progress";
   }
@@ -158,9 +165,9 @@ export async function updateBillingExceptionTaskStatus(
     annotations.push({ time: nowIso(), text: cleanedNote });
   }
 
-  return medplum.updateResource({
+  return medplum.updateResource(withClinicIdentifier({
     ...task,
     status,
     note: annotations.length > 0 ? annotations : undefined,
-  });
+  }, getBillingTaskClinicId(task)));
 }

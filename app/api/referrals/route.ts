@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
 
-    const referralId = await saveReferralToMedplum(medplum, referralData);
+    const referralId = await saveReferralToMedplum(medplum, referralData, clinicId);
     return NextResponse.json({ success: true, referralId, message: 'Referral saved to FHIR successfully' });
   } catch (error) {
     return handleRouteError(error, 'POST /api/referrals');
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const patientId = searchParams.get('patientId');
 
     if (referralId) {
-      const referral = await getReferralFromMedplum(medplum, referralId);
+      const referral = await getReferralFromMedplum(medplum, referralId, clinicId);
       if (!referral) {
         return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
       }
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
-      const referrals = await getPatientReferralsFromMedplum(medplum, patientId);
+      const referrals = await getPatientReferralsFromMedplum(medplum, patientId, clinicId);
       return NextResponse.json({ success: true, count: referrals.length, referrals });
     }
 
@@ -84,7 +84,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing referralId' }, { status: 400 });
     }
 
-    const referral = await getReferralFromMedplum(medplum, referralId);
+    const referral = await getReferralFromMedplum(medplum, referralId, clinicId);
     if (!referral) {
       return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
     }
@@ -93,7 +93,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
     }
 
-    await updateReferralInMedplum(medplum, referralId, updates);
+    await updateReferralInMedplum(medplum, referralId, updates, clinicId);
     return NextResponse.json({ success: true, message: 'Referral updated successfully' });
   } catch (error) {
     return handleRouteError(error, 'PATCH /api/referrals');
@@ -110,7 +110,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Missing referralId' }, { status: 400 });
     }
 
-    const referral = await getReferralFromMedplum(medplum, referralId);
+    const referral = await getReferralFromMedplum(medplum, referralId, clinicId);
     if (!referral) {
       return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
     }
@@ -119,7 +119,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
     }
 
-    await deleteReferralFromMedplum(medplum, referralId);
+    await deleteReferralFromMedplum(medplum, referralId, clinicId);
     return NextResponse.json({ success: true, message: 'Referral deleted successfully' });
   } catch (error) {
     return handleRouteError(error, 'DELETE /api/referrals');

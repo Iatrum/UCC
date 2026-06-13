@@ -18,9 +18,11 @@ import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
 import { ConflictError } from '@/lib/server/route-helpers';
 import {
+  CLINIC_IDENTIFIER_SYSTEM,
   assignPatientToClinicTenant,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
+  withClinicIdentifier,
 } from './clinic-tenancy';
 
 // Local Patient interface that matches your app
@@ -325,7 +327,7 @@ export async function savePatientToMedplum(
   console.log(`💾 Saving patient to Medplum FHIR...`);
 
   const clinicTenant = await resolveClinicTenant(client, clinicId);
-  const duplicatePatient = await findPatientByNric(client, patientData.nric, clinicTenant?.accountId ?? clinicId);
+  const duplicatePatient = await findPatientByNric(client, patientData.nric, clinicId);
   if (duplicatePatient) {
     throwDuplicatePatientConflict(duplicatePatient);
   }
@@ -384,7 +386,10 @@ export async function savePatientToMedplum(
     ] : undefined,
   };
 
-  const fhirPatient = addManagingOrganization(basePatient, clinicTenant?.organizationReference);
+  const fhirPatient = withClinicIdentifier(
+    addManagingOrganization(basePatient, clinicTenant?.organizationReference),
+    clinicId
+  );
 
   const savedPatient = await validateAndCreate<FHIRPatient>(client, fhirPatient);
   await assignPatientToClinicTenant(client, savedPatient, clinicTenant);
@@ -528,11 +533,10 @@ export async function getPatientFromMedplum(
 ): Promise<SavedPatient | null> {
   try {
     const client = medplum ?? (await getAdminMedplum());
-    const clinicTenant = await resolveClinicTenant(client, clinicId);
-    const clinicScopeId = clinicTenant?.accountId ?? clinicId;
+    await resolveClinicTenant(client, clinicId);
 
     const fhirPatient = await client.readResource('Patient', patientId);
-    if (!matchesClinic(fhirPatient, clinicScopeId)) {
+    if (!matchesClinic(fhirPatient, clinicId)) {
       return null;
     }
     const patientData = fhirPatientToPatientData(fhirPatient);
@@ -573,9 +577,8 @@ export async function saveTriageToMedplum(
   const { getAdminMedplum } = await import('@/lib/server/medplum-admin');
   const medplum = await getAdminMedplum();
   const existingPatient = await medplum.readResource('Patient', patientId);
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-  const clinicScopeId = clinicTenant?.accountId ?? clinicId;
-  if (clinicScopeId) assertMatchesClinic(existingPatient, clinicScopeId, `Patient/${patientId}`);
+  await resolveClinicTenant(medplum, clinicId);
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
 
   const newExtension = buildTriageExtension({
     ...triageData,
@@ -587,7 +590,7 @@ export async function saveTriageToMedplum(
   const filteredExtensions = existingExtensions.filter((ext: any) => ext.url !== TRIAGE_EXTENSION_URL);
 
   await medplum.updateResource({
-    ...existingPatient,
+    ...withClinicIdentifier(existingPatient, clinicId),
     extension: [...filteredExtensions, newExtension],
   });
 }
@@ -599,9 +602,8 @@ export async function updateQueueStatusInMedplum(patientId: string, status: Queu
   const { getAdminMedplum } = await import('@/lib/server/medplum-admin');
   const medplum = await getAdminMedplum();
   const existingPatient = await medplum.readResource('Patient', patientId);
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-  const clinicScopeId = clinicTenant?.accountId ?? clinicId;
-  if (clinicScopeId) assertMatchesClinic(existingPatient, clinicScopeId, `Patient/${patientId}`);
+  await resolveClinicTenant(medplum, clinicId);
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
   const extensions = existingPatient.extension || [];
   const nowIso = new Date().toISOString();
 
@@ -642,7 +644,7 @@ export async function updateQueueStatusInMedplum(patientId: string, status: Queu
   }
 
   await medplum.updateResource({
-    ...existingPatient,
+    ...withClinicIdentifier(existingPatient, clinicId),
     extension: newExtensions,
   });
 }
@@ -660,28 +662,24 @@ export async function searchPatientsInMedplum(
     if (!trimmed) {
       return [];
     }
-    const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-    const clinicScopeId = clinicTenant?.accountId ?? clinicId;
+    await resolveClinicTenant(medplum, clinicId);
 
     // Run server-side searches in parallel: name contains, NRIC (nric|), NRIC (ic|).
-    // Clinic scoping is enforced by Medplum account compartment and post-filtered.
-    const tenantScope = clinicTenant ? { _compartment: clinicTenant.accountReference } : {};
+    // Phase 1 clinic scoping is enforced by the app-level clinic identifier
+    // post-filter so exact NRIC identifier searches can still work.
     const [nameResults, nricResults, icResults] = await Promise.all([
       medplum.searchResources('Patient', {
         'name:contains': trimmed,
         active: 'true',
         _count: '50',
-        ...tenantScope,
       }),
       medplum.searchResources('Patient', {
         identifier: `nric|${trimmed}`,
         _count: '50',
-        ...tenantScope,
       }),
       medplum.searchResources('Patient', {
         identifier: `ic|${trimmed}`,
         _count: '50',
-        ...tenantScope,
       }),
     ]);
 
@@ -696,7 +694,7 @@ export async function searchPatientsInMedplum(
     }
 
     return merged
-      .filter((patient) => matchesClinic(patient as any, clinicScopeId))
+      .filter((patient) => matchesClinic(patient as any, clinicId))
       .filter((patient) => patient.active !== false)
       .map((patient) => fhirPatientToPatientData(patient))
       .slice(0, 50);
@@ -717,7 +715,6 @@ export async function getAllPatientsFromMedplum(
   try {
     const client = medplum;
     const clinicTenant = await resolveClinicTenant(client, clinicId);
-    const clinicScopeId = clinicTenant?.accountId ?? clinicId;
 
     // Scope by Medplum tenant compartment/account. clinicId is only the UI slug
     // used to resolve the Organization tenant.
@@ -726,7 +723,7 @@ export async function getAllPatientsFromMedplum(
         _count: String(limit),
         _sort: '-_lastUpdated',
         active: 'true',
-        ...(clinicTenant ? { _compartment: clinicTenant.accountReference } : {}),
+        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
       }),
       client.searchResources('Encounter', {
         // Include all active statuses so newly checked-in patients show correct
@@ -735,7 +732,7 @@ export async function getAllPatientsFromMedplum(
         status: 'arrived,triaged,in-progress,finished',
         _sort: '-date',
         _count: '500',
-        ...(clinicTenant ? { 'service-provider': clinicTenant.organizationReference } : {}),
+        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
       }),
     ]);
 
@@ -769,7 +766,7 @@ export async function getAllPatientsFromMedplum(
     }
 
     return patients
-      .filter((patient) => matchesClinic(patient as any, clinicScopeId))
+      .filter((patient) => matchesClinic(patient as any, clinicId))
       .map((patient) => {
         const data = fhirPatientToPatientData(patient);
         const lv = lastVisitByPatientId.get(data.id);
@@ -801,16 +798,18 @@ export async function updatePatientInMedplum(
 
   const existingPatient = await client.readResource('Patient', patientId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
-  const clinicScopeId = clinicTenant?.accountId ?? clinicId;
-  if (clinicScopeId) assertMatchesClinic(existingPatient, clinicScopeId, `Patient/${patientId}`);
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
 
   // Merge updates
-  const updatedPatient: FHIRPatient = addManagingOrganization({
-    ...existingPatient,
-  }, clinicTenant?.organizationReference);
+  const updatedPatient: FHIRPatient = withClinicIdentifier(
+    addManagingOrganization({
+      ...existingPatient,
+    }, clinicTenant?.organizationReference),
+    clinicId
+  );
 
   if (updates.nric && updates.nric !== fhirPatientToPatientData(existingPatient).nric) {
-    const duplicatePatient = await findPatientByNric(client, updates.nric, clinicScopeId, {
+    const duplicatePatient = await findPatientByNric(client, updates.nric, clinicId, {
       excludePatientId: patientId,
     });
     if (duplicatePatient) {
@@ -866,10 +865,12 @@ export async function archivePatientInMedplum(
 ): Promise<void> {
   const existingPatient = await medplum.readResource('Patient', patientId);
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-  const clinicScopeId = clinicTenant?.accountId ?? clinicId;
-  if (clinicScopeId) assertMatchesClinic(existingPatient, clinicScopeId, `Patient/${patientId}`);
-  await medplum.updateResource(addManagingOrganization({
-    ...existingPatient,
-    active: false,
-  }, clinicTenant?.organizationReference));
+  if (clinicId) assertMatchesClinic(existingPatient, clinicId, `Patient/${patientId}`);
+  await medplum.updateResource(withClinicIdentifier(
+    addManagingOrganization({
+      ...existingPatient,
+      active: false,
+    }, clinicTenant?.organizationReference),
+    clinicId
+  ));
 }
