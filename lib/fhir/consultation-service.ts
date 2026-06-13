@@ -23,6 +23,7 @@ import { formatMedicationNameWithStrength } from '@/lib/prescriptions';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignPatientToClinicTenant,
+  getClinicIdentifierValue,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
   withClinicIdentifier,
@@ -267,8 +268,9 @@ async function getOrCreatePatient(
     // Patient exists but not linked to this clinic -> deny
     throw new Error('Patient does not belong to this clinic');
   } else if (clinicTenant) {
-    // Ensure existing patient carries the clinic Organization tenant.
-    const needsTenant = !matchesClinic(patient as any, clinicId);
+    // Ensure existing patient carries the clinic identifier and Organization tenant,
+    // even if it previously matched only via a legacy managingOrganization/account reference.
+    const needsTenant = getClinicIdentifierValue(patient as any) !== clinicId;
     if (needsTenant) {
       patient = await medplum.updateResource({
         ...withClinicIdentifier(patient as FHIRPatient, clinicId),
