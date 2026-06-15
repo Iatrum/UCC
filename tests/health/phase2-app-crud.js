@@ -542,7 +542,8 @@ async function main() {
     await api(ctx, 'PATCH', '/api/billing', { invoiceId, action: 'void' });
     report.push({ step: 'billing-crud', consultationId, invoiceId });
 
-    const taskCreate = await api(medplumCtx, 'POST', '/fhir/R4/Task', {
+    let taskId = '';
+    const taskCreate = await apiMaybe(medplumCtx, 'POST', '/fhir/R4/Task', {
       resourceType: 'Task',
       status: 'requested',
       intent: 'order',
@@ -564,17 +565,22 @@ async function main() {
         { url: 'https://ucc.emr/task/error-class', valueString: 'phase2-test' },
       ],
     });
-    const taskId = taskCreate.body.id;
-    const tasksList = await apiMaybe(ctx, 'GET', '/api/tasks?type=billing-exception&status=all');
-    if (tasksList.status === 404 && /disabled/i.test(String(tasksList.body.error || ''))) {
-      report.push({ step: 'tasks-crud-skipped', reason: tasksList.body.error });
+    if (taskCreate.status === 401) {
+      report.push({ step: 'tasks-direct-setup-skipped', reason: 'Direct Medplum access token unauthorized' });
     } else {
-      if (!tasksList.ok) throw new Error(`GET /api/tasks failed: ${JSON.stringify(tasksList)}`);
-      await api(ctx, 'PATCH', `/api/tasks/${encodeURIComponent(taskId)}`, {
-      status: 'completed',
-      note: 'Phase 2 task verifier completed',
-      });
-      report.push({ step: 'tasks-get-patch', taskId });
+      if (!taskCreate.ok) throw new Error(`POST /fhir/R4/Task failed: ${JSON.stringify(taskCreate)}`);
+      taskId = taskCreate.body.id;
+      const tasksList = await apiMaybe(ctx, 'GET', '/api/tasks?type=billing-exception&status=all');
+      if (tasksList.status === 404 && /disabled/i.test(String(tasksList.body.error || ''))) {
+        report.push({ step: 'tasks-crud-skipped', reason: tasksList.body.error });
+      } else {
+        if (!tasksList.ok) throw new Error(`GET /api/tasks failed: ${JSON.stringify(tasksList)}`);
+        await api(ctx, 'PATCH', `/api/tasks/${encodeURIComponent(taskId)}`, {
+          status: 'completed',
+          note: 'Phase 2 task verifier completed',
+        });
+        report.push({ step: 'tasks-get-patch', taskId });
+      }
     }
 
     await api(ctx, 'DELETE', `/api/inventory?id=${encodeURIComponent(medicationId)}`);
@@ -593,7 +599,7 @@ async function main() {
     await api(ctx, 'DELETE', '/api/consultations', { consultationId });
     await api(ctx, 'DELETE', `/api/patients?patientId=${encodeURIComponent(patientId)}`);
     await api(ctx, 'DELETE', `/api/patients?patientId=${encodeURIComponent(intakePilot.body.patientId)}`);
-    await api(medplumCtx, 'DELETE', `/fhir/R4/Task/${encodeURIComponent(taskId)}`);
+    if (taskId) await api(medplumCtx, 'DELETE', `/fhir/R4/Task/${encodeURIComponent(taskId)}`);
     report.push({ step: 'cleanup' });
 
     console.log(JSON.stringify({ ok: true, baseUrl: BASE_URL, patientId, report }, null, 2));

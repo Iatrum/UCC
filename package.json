@@ -20,7 +20,12 @@
     "medplum:backfill-clinic-identifiers": "bun run scripts/backfill-clinic-identifiers.ts",
     "seed:procedures": "bun tsx tests/seeds/seed-procedures.ts",
     "seed": "bun tsx tests/seeds/seed.ts",
-    "seed:patient": "bun run tests/seeds/seed-one-patient.mjs"
+    "seed:patient": "bun run tests/seeds/seed-one-patient.mjs",
+    "health:crud": "node scripts/health-check-crud.js",
+    "health:phase1-crud": "node scripts/health-check-crud.js phase1",
+    "health:phase2-crud": "node scripts/health-check-crud.js phase2",
+    "health:policy": "node tests/health/phase3-policy-contract.js",
+    "health:phase4": "node scripts/health-check-phase4.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

@@ -35,6 +35,8 @@ const RESOURCE_TYPES = [
   "Medication",
   "Communication",
   "QuestionnaireResponse",
+  "Schedule",
+  "Slot",
 ] as const;
 
 type AnyResource = Resource & Record<string, any>;
@@ -58,16 +60,30 @@ function refId(reference?: string): string | undefined {
 
 async function main() {
   const medplum = await getAdminMedplum();
+  const organizationClinic = new Map<string, string>();
   const patientClinic = new Map<string, string>();
   const encounterClinic = new Map<string, string>();
   const requestClinic = new Map<string, string>();
   const studyClinic = new Map<string, string>();
 
+  const organizations = await medplum.searchResources("Organization", { _count: "10000" });
+  for (const organization of organizations as AnyResource[]) {
+    const clinicId = clinicIdentifier(organization);
+    if (organization.id && clinicId) {
+      organizationClinic.set(organization.id, clinicId);
+    }
+  }
+
+  function clinicFromOrganizationReference(reference?: string): string | undefined {
+    const organizationId = refId(reference);
+    return organizationId ? organizationClinic.get(organizationId) || organizationId : undefined;
+  }
+
   const patients = await medplum.searchResources("Patient", { _count: "10000" });
   for (const patient of patients as AnyResource[]) {
     const clinicId =
       clinicIdentifier(patient) ||
-      refId(patient.managingOrganization?.reference);
+      clinicFromOrganizationReference(patient.managingOrganization?.reference);
     if (patient.id && clinicId) {
       patientClinic.set(patient.id, clinicId);
     }
@@ -78,7 +94,7 @@ async function main() {
     const patientId = refId(encounter.subject?.reference);
     const clinicId =
       clinicIdentifier(encounter) ||
-      refId(encounter.serviceProvider?.reference) ||
+      clinicFromOrganizationReference(encounter.serviceProvider?.reference) ||
       (patientId ? patientClinic.get(patientId) : undefined);
     if (encounter.id && clinicId) {
       encounterClinic.set(encounter.id, clinicId);
@@ -131,8 +147,8 @@ async function main() {
 
       const clinicId =
         invoiceClinic ||
-        refId(resource.managingOrganization?.reference) ||
-        refId(resource.serviceProvider?.reference) ||
+        clinicFromOrganizationReference(resource.managingOrganization?.reference) ||
+        clinicFromOrganizationReference(resource.serviceProvider?.reference) ||
         (encounterId ? encounterClinic.get(encounterId) : undefined) ||
         (basedOnId ? requestClinic.get(basedOnId) : undefined) ||
         (studyId ? studyClinic.get(studyId) : undefined) ||

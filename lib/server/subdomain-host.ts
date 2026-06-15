@@ -24,7 +24,7 @@ export function deriveSubdomainContext(host: string | null): SubdomainContext {
   // iatrum.com domain without extra configuration.
   const [sub] = parts;
 
-  if (sub === "admin") return { type: "admin" };
+  if (sub === "admin" || sub === "apex") return { type: "admin" };
   if (["www", "app", "auth"].includes(sub)) return { type: "none" };
   return { type: "clinic", clinicId: sub };
 }

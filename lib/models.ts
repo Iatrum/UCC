@@ -264,8 +264,8 @@ export async function getConsultationsWithDetails(
 
     const clinicTenant = clinicId ? await resolveClinicTenant(medplum, clinicId) : null;
     const encounters = clinicTenant
-      ? (await searchEncounterPage({ 'service-provider': clinicTenant.organizationReference }) ?? [])
-          .filter((encounter) => encounter.id && resourceMatchesClinicTenant(encounter as any, clinicTenant.organizationId))
+      ? (await searchEncounterPage({ identifier: `clinic|${clinicId}` }) ?? [])
+          .filter((encounter) => encounter.id && resourceMatchesClinicTenant(encounter as any, clinicId))
       : await searchEncounterPage({});
 
     const parseQueueStatus = (enc: any): { queueStatus: QueueStatus; queueAddedAt?: string | null } => {

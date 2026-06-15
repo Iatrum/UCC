@@ -3,16 +3,18 @@
  * Setup Medplum Access Policies.
  *
  * Security model:
- * - Clinic staff access is scoped by a ProjectMembership access parameter:
- *   { name: "clinicAccount", valueReference: HealthcareService/<id> }.
- * - Patients are assigned to the clinic HealthcareService with $set-accounts.
- * - Patient-related resources are scoped by Medplum tenant compartments.
+ * - Clinic staff access is scoped by the stable clinic identifier:
+ *   { name: "clinicId", valueString: "<clinic-subdomain>" }.
+ * - Clinic-owned FHIR resources carry identifier { system: "clinic", value: clinicId }.
+ * - HealthcareService account parameters remain on memberships for compatibility
+ *   with existing Medplum account metadata, but policy criteria must not rely on
+ *   `_compartment` or account-only searches.
  * - Platform admin access remains separate and must never be used by normal
  *   clinic routes.
  */
 
 import { MedplumClient } from "@medplum/core";
-import type { AccessPolicy, AccessPolicyResource } from "@medplum/fhirtypes";
+import type { AccessPolicy, AccessPolicyResource, Organization, ProjectMembership } from "@medplum/fhirtypes";
 
 const MEDPLUM_BASE_URL = process.env.MEDPLUM_BASE_URL || "http://localhost:8103";
 const MEDPLUM_CLIENT_ID = process.env.MEDPLUM_CLIENT_ID;
@@ -21,6 +23,7 @@ const MEDPLUM_CLIENT_SECRET = process.env.MEDPLUM_CLIENT_SECRET;
 const CLINIC_POLICY_NAME = "UCC Clinic Staff Policy";
 const PLATFORM_ADMIN_POLICY_NAME = "UCC Platform Admin Policy";
 const PATIENT_PORTAL_POLICY_NAME = "UCC Patient Portal Policy";
+const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 
 const ALL_INTERACTIONS: AccessPolicyResource["interaction"] = [
   "create",
@@ -39,10 +42,10 @@ const READ_INTERACTIONS: AccessPolicyResource["interaction"] = [
   "vread",
 ];
 
-function clinicCompartmentRule(resourceType: string, interactions = ALL_INTERACTIONS): AccessPolicyResource {
+function clinicIdentifierRule(resourceType: string, interactions = ALL_INTERACTIONS): AccessPolicyResource {
   return {
     resourceType,
-    criteria: `${resourceType}?_compartment=%clinicAccount`,
+    criteria: `${resourceType}?identifier=${CLINIC_IDENTIFIER_SYSTEM}|%clinicId`,
     interaction: interactions,
   };
 }
@@ -77,68 +80,132 @@ async function upsertAccessPolicy(
   return medplum.createResource<AccessPolicy>(policy);
 }
 
-async function setupAccessPolicies() {
-  if (!MEDPLUM_CLIENT_ID || !MEDPLUM_CLIENT_SECRET) {
-    throw new Error("Missing MEDPLUM_CLIENT_ID or MEDPLUM_CLIENT_SECRET");
+function referenceId(reference?: string): string | undefined {
+  return reference?.split("/")?.[1];
+}
+
+function parameterValue(
+  parameters: NonNullable<NonNullable<ProjectMembership["access"]>[number]["parameter"]>,
+  name: string
+): string | undefined {
+  const parameter = parameters.find((item) => item.name === name) as any;
+  return parameter?.valueString || referenceId(parameter?.valueReference?.reference);
+}
+
+async function getClinicIdentifierForOrganization(
+  medplum: MedplumClient,
+  organizationId: string
+): Promise<string | undefined> {
+  const organization = await medplum.readResource("Organization", organizationId) as Organization;
+  return organization.identifier?.find((identifier) => identifier.system === CLINIC_IDENTIFIER_SYSTEM)?.value;
+}
+
+async function withIdentifierPolicyParameters(
+  medplum: MedplumClient,
+  membership: ProjectMembership,
+  clinicPolicyReference: string
+): Promise<{ membership: ProjectMembership; changed: boolean }> {
+  let changed = false;
+  const access = [];
+
+  for (const entry of membership.access || []) {
+    const parameters = [...(entry.parameter || [])];
+    const hasPolicyReference = entry.policy.reference === clinicPolicyReference;
+    const organizationId =
+      parameterValue(parameters, "clinicOrganizationId") ||
+      parameterValue(parameters, "clinicOrganization");
+    const hasLegacyClinicScope =
+      Boolean(parameterValue(parameters, "clinicAccount")) ||
+      Boolean(parameterValue(parameters, "clinicOrganization"));
+
+    if ((hasPolicyReference || hasLegacyClinicScope) && organizationId) {
+      const clinicId = parameterValue(parameters, "clinicId") || await getClinicIdentifierForOrganization(medplum, organizationId);
+      if (clinicId && !parameterValue(parameters, "clinicId")) {
+        parameters.push({ name: "clinicId", valueString: clinicId });
+        changed = true;
+      }
+      if (!parameterValue(parameters, "clinicOrganizationId")) {
+        parameters.push({ name: "clinicOrganizationId", valueString: organizationId });
+        changed = true;
+      }
+    }
+
+    access.push({ ...entry, parameter: parameters });
   }
 
-  const medplum = new MedplumClient({
-    baseUrl: MEDPLUM_BASE_URL,
-    clientId: MEDPLUM_CLIENT_ID,
-    clientSecret: MEDPLUM_CLIENT_SECRET,
-  });
+  return changed ? { membership: { ...membership, access }, changed } : { membership, changed };
+}
 
-  await medplum.startClientLogin(MEDPLUM_CLIENT_ID, MEDPLUM_CLIENT_SECRET);
+async function reconcileClinicStaffMemberships(
+  medplum: MedplumClient,
+  clinicPolicyReference: string
+): Promise<number> {
+  const memberships = await medplum.searchResources("ProjectMembership", { _count: "1000" });
+  let updated = 0;
 
-  const clinicStaffPolicy = await upsertAccessPolicy(medplum, {
+  for (const membership of memberships as ProjectMembership[]) {
+    if (!membership.id || !membership.access?.length) continue;
+    const result = await withIdentifierPolicyParameters(medplum, membership, clinicPolicyReference);
+    if (!result.changed) continue;
+    await medplum.updateResource(result.membership);
+    updated += 1;
+  }
+
+  return updated;
+}
+
+export function buildClinicStaffPolicy(): Omit<AccessPolicy, "id"> {
+  return {
     resourceType: "AccessPolicy",
     name: CLINIC_POLICY_NAME,
     resource: [
-      clinicCompartmentRule("Patient"),
-      clinicCompartmentRule("Encounter"),
-      clinicCompartmentRule("Observation"),
-      clinicCompartmentRule("Condition"),
-      clinicCompartmentRule("Procedure"),
-      clinicCompartmentRule("MedicationRequest"),
-      clinicCompartmentRule("MedicationStatement"),
-      clinicCompartmentRule("AllergyIntolerance"),
-      clinicCompartmentRule("ServiceRequest"),
-      clinicCompartmentRule("DiagnosticReport"),
-      clinicCompartmentRule("ImagingStudy"),
-      clinicCompartmentRule("DocumentReference"),
-      clinicCompartmentRule("Appointment"),
-      clinicCompartmentRule("Invoice"),
-      clinicCompartmentRule("Task"),
-      clinicCompartmentRule("Basic"),
-      clinicCompartmentRule("ChargeItemDefinition"),
-      clinicCompartmentRule("Medication"),
-      clinicCompartmentRule("Communication"),
-      clinicCompartmentRule("QuestionnaireResponse"),
-      clinicCompartmentRule("Schedule"),
-      clinicCompartmentRule("Slot"),
+      clinicIdentifierRule("Patient"),
+      clinicIdentifierRule("Encounter"),
+      clinicIdentifierRule("Observation"),
+      clinicIdentifierRule("Condition"),
+      clinicIdentifierRule("Procedure"),
+      clinicIdentifierRule("MedicationRequest"),
+      clinicIdentifierRule("MedicationStatement"),
+      clinicIdentifierRule("AllergyIntolerance"),
+      clinicIdentifierRule("ServiceRequest"),
+      clinicIdentifierRule("DiagnosticReport"),
+      clinicIdentifierRule("ImagingStudy"),
+      clinicIdentifierRule("DocumentReference"),
+      clinicIdentifierRule("Appointment"),
+      clinicIdentifierRule("Invoice"),
+      clinicIdentifierRule("Task"),
+      clinicIdentifierRule("Basic"),
+      clinicIdentifierRule("ChargeItemDefinition"),
+      clinicIdentifierRule("Medication"),
+      clinicIdentifierRule("Communication"),
+      clinicIdentifierRule("QuestionnaireResponse"),
+      clinicIdentifierRule("Schedule"),
+      clinicIdentifierRule("Slot"),
       {
         resourceType: "Practitioner",
         interaction: READ_INTERACTIONS,
       },
       {
         resourceType: "PractitionerRole",
-        criteria: "PractitionerRole?organization=%clinicOrganization",
+        criteria: "PractitionerRole?organization=Organization/%clinicOrganizationId",
         interaction: READ_INTERACTIONS,
       },
       {
         resourceType: "Organization",
-        criteria: "Organization?_id=%clinicOrganization",
+        criteria: `Organization?identifier=${CLINIC_IDENTIFIER_SYSTEM}|%clinicId`,
         interaction: READ_INTERACTIONS,
       },
       {
         resourceType: "HealthcareService",
-        criteria: "HealthcareService?_id=%clinicAccount",
+        criteria: `HealthcareService?identifier=${CLINIC_IDENTIFIER_SYSTEM}|%clinicId`,
         interaction: READ_INTERACTIONS,
       },
     ],
-  });
+  };
+}
 
-  const platformAdminPolicy = await upsertAccessPolicy(medplum, {
+export function buildPlatformAdminPolicy(): Omit<AccessPolicy, "id"> {
+  return {
     resourceType: "AccessPolicy",
     name: PLATFORM_ADMIN_POLICY_NAME,
     resource: [
@@ -159,9 +226,11 @@ async function setupAccessPolicies() {
         interaction: ALL_INTERACTIONS,
       },
     ],
-  });
+  };
+}
 
-  const patientPortalPolicy = await upsertAccessPolicy(medplum, {
+export function buildPatientPortalPolicy(): Omit<AccessPolicy, "id"> {
+  return {
     resourceType: "AccessPolicy",
     name: PATIENT_PORTAL_POLICY_NAME,
     resource: [
@@ -177,15 +246,39 @@ async function setupAccessPolicies() {
         interaction: ["create", "read", "update", "search", "history", "vread"],
       },
     ],
+  };
+}
+
+export async function setupAccessPolicies() {
+  if (!MEDPLUM_CLIENT_ID || !MEDPLUM_CLIENT_SECRET) {
+    throw new Error("Missing MEDPLUM_CLIENT_ID or MEDPLUM_CLIENT_SECRET");
+  }
+
+  const medplum = new MedplumClient({
+    baseUrl: MEDPLUM_BASE_URL,
+    clientId: MEDPLUM_CLIENT_ID,
+    clientSecret: MEDPLUM_CLIENT_SECRET,
   });
+
+  await medplum.startClientLogin(MEDPLUM_CLIENT_ID, MEDPLUM_CLIENT_SECRET);
+
+  const clinicStaffPolicy = await upsertAccessPolicy(medplum, buildClinicStaffPolicy());
+  const platformAdminPolicy = await upsertAccessPolicy(medplum, buildPlatformAdminPolicy());
+  const patientPortalPolicy = await upsertAccessPolicy(medplum, buildPatientPortalPolicy());
+  const reconciledMemberships = clinicStaffPolicy.id
+    ? await reconcileClinicStaffMemberships(medplum, `AccessPolicy/${clinicStaffPolicy.id}`)
+    : 0;
 
   console.log("Medplum Access Policies ready:");
   console.log(`MEDPLUM_POLICY_CLINIC_STAFF=${clinicStaffPolicy.id}`);
   console.log(`MEDPLUM_POLICY_PLATFORM_ADMIN=${platformAdminPolicy.id}`);
   console.log(`MEDPLUM_POLICY_PATIENT=${patientPortalPolicy.id}`);
+  console.log(`RECONCILED_CLINIC_STAFF_MEMBERSHIPS=${reconciledMemberships}`);
 }
 
-setupAccessPolicies().catch((error) => {
-  console.error("Failed to setup Medplum access policies:", error);
-  process.exit(1);
-});
+if (import.meta.main) {
+  setupAccessPolicies().catch((error) => {
+    console.error("Failed to setup Medplum access policies:", error);
+    process.exit(1);
+  });
+}

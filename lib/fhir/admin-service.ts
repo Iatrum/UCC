@@ -40,6 +40,8 @@ async function getClinicPolicyParameters(
   }
 
   return [
+    { name: "clinicId", valueString: clinicId },
+    { name: "clinicOrganizationId", valueString: clinicOrganizationId },
     { name: "clinicAccount", valueReference: { reference: `HealthcareService/${account.id}` } },
     { name: "clinicOrganization", valueReference: { reference: `Organization/${clinicOrganizationId}` } },
   ];

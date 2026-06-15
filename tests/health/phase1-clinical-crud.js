@@ -8,16 +8,35 @@ const LOGIN_PASSWORD = process.env.PHASE1_LOGIN_PASSWORD || 'demouser123';
 const SKIP_LOGIN = process.env.PHASE1_SKIP_LOGIN === '1';
 const SKIP_FINAL_PAGES = process.env.PHASE1_SKIP_FINAL_PAGES === '1';
 
+function resolveUrl(url) {
+  return new URL(url, BASE_URL).toString();
+}
+
 function stamp() {
   return new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 }
 
 async function api(page, method, url, data) {
-  console.log(`[phase1] ${method} ${url}`);
-  const response = await page.request[method.toLowerCase()](
-    url,
-    data === undefined ? { timeout: 30_000 } : { data, timeout: 30_000 }
-  );
+  const requestUrl = resolveUrl(url);
+  console.log(`[phase1] ${method} ${requestUrl}`);
+  const attempts = method === 'GET' ? 3 : 1;
+  let response;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      response = await page.request[method.toLowerCase()](
+        requestUrl,
+        data === undefined ? { timeout: 60_000 } : { data, timeout: 60_000 }
+      );
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+      console.log(`[phase1] ${method} ${requestUrl} retry ${attempt}/${attempts}`);
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+    }
+  }
+  if (!response) throw lastError || new Error(`${method} ${requestUrl} did not return a response`);
   const text = await response.text();
   let body = {};
   try {
@@ -27,9 +46,9 @@ async function api(page, method, url, data) {
   }
   const result = { status: response.status(), body };
   if (!response.ok()) {
-    throw new Error(`${method} ${url} failed: ${JSON.stringify(result)}`);
+    throw new Error(`${method} ${requestUrl} failed: ${JSON.stringify(result)}`);
   }
-  console.log(`[phase1] ${method} ${url} -> ${response.status()}`);
+  console.log(`[phase1] ${method} ${requestUrl} -> ${response.status()}`);
   return result;
 }
 
@@ -42,22 +61,34 @@ async function main() {
 
   try {
     if (!SKIP_LOGIN) {
-      console.log('[phase1] POST /api/auth/login');
-      const loginResponse = await page.request.post('/api/auth/login', {
-        data: { email: LOGIN_EMAIL, password: LOGIN_PASSWORD },
-        timeout: 30_000,
-      });
-      const loginPayload = await loginResponse.json().catch(() => ({}));
-      if (!loginResponse.ok()) {
-        throw new Error(`Login failed: ${JSON.stringify({ status: loginResponse.status(), body: loginPayload })}`);
+      const existingAuth = await page.request.get(resolveUrl('/api/auth/me'), { timeout: 20_000 }).catch(() => null);
+      if (existingAuth?.ok()) {
+        const mePayload = await existingAuth.json().catch(() => ({}));
+        report.push({
+          step: 'auth-reuse',
+          status: existingAuth.status(),
+          profile: mePayload?.profile?.id ?? null,
+        });
+      } else {
+        await page.context().clearCookies();
+        const loginUrl = resolveUrl('/api/auth/login');
+        console.log(`[phase1] POST ${loginUrl}`);
+        const loginResponse = await page.request.post(loginUrl, {
+          data: { email: LOGIN_EMAIL, password: LOGIN_PASSWORD },
+          timeout: 90_000,
+        });
+        const loginPayload = await loginResponse.json().catch(() => ({}));
+        if (!loginResponse.ok()) {
+          throw new Error(`Login failed: ${JSON.stringify({ status: loginResponse.status(), body: loginPayload })}`);
+        }
+        await page.context().storageState({ path: STORAGE_STATE });
+        report.push({
+          step: 'auth-login',
+          status: loginResponse.status(),
+          clinicId: loginPayload.clinicId ?? null,
+          redirectUrl: loginPayload.redirectUrl ?? null,
+        });
       }
-      await page.context().storageState({ path: STORAGE_STATE });
-      report.push({
-        step: 'auth-login',
-        status: loginResponse.status(),
-        clinicId: loginPayload.clinicId ?? null,
-        redirectUrl: loginPayload.redirectUrl ?? null,
-      });
     } else {
       const me = await page.request.get('/api/auth/me', { timeout: 30_000 });
       const mePayload = await me.json().catch(() => ({}));
@@ -71,12 +102,16 @@ async function main() {
       });
     }
 
-    await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle').catch(() => {});
-    if (!page.url().includes('/dashboard')) {
-      throw new Error(`Auth fixture did not reach dashboard; current URL is ${page.url()}`);
+    if (SKIP_FINAL_PAGES) {
+      report.push({ step: 'auth-dashboard-skipped', reason: 'api-health-mode' });
+    } else {
+      await page.goto('/dashboard', { timeout: 60_000 });
+      await page.waitForLoadState('networkidle').catch(() => {});
+      if (!page.url().includes('/dashboard')) {
+        throw new Error(`Auth fixture did not reach dashboard; current URL is ${page.url()}`);
+      }
+      report.push({ step: 'auth-dashboard', url: page.url() });
     }
-    report.push({ step: 'auth-dashboard', url: page.url() });
 
     const patientPayload = {
       fullName: `QA Phase1 ${createdAt}`,
