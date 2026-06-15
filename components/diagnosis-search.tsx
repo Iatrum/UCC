@@ -96,7 +96,10 @@ export function DiagnosisSearch({ value, onChange }: DiagnosisSearchProps) {
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      <PopoverContent
+        align="start"
+        className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0"
+      >
         <Command shouldFilter={false}>
           <CommandInput
             placeholder="Search diagnosis, ICD-10, or SNOMED..."
