@@ -56,7 +56,7 @@ export default function EditPatientForm({ patient }: Props) {
   const { toast } = useToast();
   const router = useRouter();
   const [duplicateConflict, setDuplicateConflict] = React.useState<{
-    patientId: string;
+    patientId?: string;
     patientName?: string;
     nric?: string;
   } | null>(null);
@@ -135,8 +135,7 @@ export default function EditPatientForm({ patient }: Props) {
     } catch (error: any) {
       if (
         error instanceof PatientApiError &&
-        error.code === "DUPLICATE_NRIC" &&
-        error.existingPatientId
+        error.code === "DUPLICATE_NRIC"
       ) {
         setDuplicateConflict({
           patientId: error.existingPatientId,
@@ -344,13 +343,15 @@ export default function EditPatientForm({ patient }: Props) {
                           {duplicateConflict.patientName ? ` ${duplicateConflict.patientName}` : " another patient"}.
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => router.push(`/patients/${duplicateConflict.patientId}`)}
-                      >
-                        Open conflicting patient
-                      </Button>
+                      {duplicateConflict.patientId ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => router.push(`/patients/${duplicateConflict.patientId}`)}
+                        >
+                          Open conflicting patient
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </div>

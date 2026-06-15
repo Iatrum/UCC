@@ -113,6 +113,17 @@ export async function DELETE(req: NextRequest) {
  */
 export async function GET() {
   try {
+    if (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DISABLE_AUTH === "true") {
+      return NextResponse.json({
+        authenticated: true,
+        accessToken: null,
+        clinicId:
+          process.env.LOCAL_AUTH_CLINIC_ID ||
+          process.env.NEXT_PUBLIC_LOCAL_AUTH_CLINIC_ID ||
+          null,
+      });
+    }
+
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE);
     const clinicCookie = cookieStore.get(CLINIC_COOKIE);
