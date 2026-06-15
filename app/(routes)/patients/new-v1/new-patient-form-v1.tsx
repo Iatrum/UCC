@@ -59,7 +59,7 @@ export default function NewPatientFormV1({
   const { toast } = useToast();
   const router = useRouter();
   const [duplicateConflict, setDuplicateConflict] = React.useState<{
-    patientId: string;
+    patientId?: string;
     patientName?: string;
     nric?: string;
   } | null>(null);
@@ -199,8 +199,7 @@ export default function NewPatientFormV1({
       console.error("Failed to register patient through the new flow:", error);
       if (
         error instanceof PatientApiError &&
-        error.code === "DUPLICATE_NRIC" &&
-        error.existingPatientId
+        error.code === "DUPLICATE_NRIC"
       ) {
         setDuplicateConflict({
           patientId: error.existingPatientId,
@@ -479,13 +478,15 @@ export default function NewPatientFormV1({
                           {duplicateConflict.patientName ? ` to ${duplicateConflict.patientName}` : ""}.
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => router.push(`/patients/${duplicateConflict.patientId}/check-in`)}
-                      >
-                        Open existing patient
-                      </Button>
+                      {duplicateConflict.patientId ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => router.push(`/patients/${duplicateConflict.patientId}/check-in`)}
+                        >
+                          Open existing patient
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </div>

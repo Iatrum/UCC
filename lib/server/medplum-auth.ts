@@ -367,6 +367,26 @@ export async function requireClinicAuth(
   req: NextRequest
 ): Promise<{ medplum: MedplumClient; clinicId: string }> {
   const { getClinicIdFromRequest } = await import('@/lib/server/clinic');
+
+  if (isLocalAuthDisabled()) {
+    const { getAdminMedplum } = await import('@/lib/server/medplum-admin');
+    const clinicId =
+      (await getClinicIdFromRequest(req)) ||
+      process.env.LOCAL_AUTH_CLINIC_ID ||
+      process.env.NEXT_PUBLIC_LOCAL_AUTH_CLINIC_ID;
+
+    if (!clinicId) {
+      throw new ClinicContextError(
+        'Local auth is disabled, but no clinic context is configured. Set LOCAL_AUTH_CLINIC_ID in .env.local.'
+      );
+    }
+
+    return {
+      medplum: await getAdminMedplum(),
+      clinicId,
+    };
+  }
+
   const [medplum, clinicId, profile] = await Promise.all([
     getMedplumForRequest(req),
     getClinicIdFromRequest(req),
