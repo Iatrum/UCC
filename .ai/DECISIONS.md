@@ -1,0 +1,9 @@
+# DECISIONS
+- 2026-10-31 D1: One local branch `ai-work` (per user), not worktrees. One builder at a time.
+- 2026-10-31 D2: Codex usage read from session rollout `rate_limits` (no headless `/status`, openai/codex#10233). Claude usage: only `is_error`/limit text + cost (no headless `/usage`).
+- 2026-10-31 D3: `next build` may run while dev server runs: Next 16 writes dev output to `.next/dev` (nextjs.org/docs/app/api-reference/cli/next). Use `build:ci` (skips env validation that needs prod secrets).
+- 2026-10-31 D4: e2e suite copied into `e2e/` with its own package.json; `node_modules` symlinked to the old suite, `.secrets/` copied and git-ignored. `e2e/**` excluded from app tsconfig so app lint is unaffected. Original `/workspace/ucc-e2e-suite` left intact.
+- 2026-10-31 D5: `next build` fails on box Node 20.19 (`e.util.markAsUncloneable is not a function` in /api/ocr; undici needs `worker_threads.markAsUncloneable`, Node >=22.10). Pre-existing env issue, not code. Installed official Node 22.23.4 (sha256 verified) to `~/.local/node22`, used ONLY for the build step. Dev server untouched.
+- 2026-10-31 D6: Restarted the :3210 dev server with `NODE_OPTIONS=--max-old-space-size=3072` (it was running with 8001 MB, RSS 4.9 GB). Same command `next dev --webpack -p 3210`, log in /workspace/ai-logs/devserver.log. Note: Next dev auto-restarts near the heap cap ("approaching the used memory threshold") – tolerated by the suite.
+- 2026-10-31 D7: Playwright reports/artifacts moved OUT of the repo (`/workspace/ai-logs/e2e-reports`, override `UCC_REPORTS`). Writing them inside the repo made Next dev do Fast-Refresh full reloads mid-test (register form reload loop -> 9 false failures). Also never edit app files while the suite runs.
+- 2026-10-31 D8: check-all.sh warms the dev server (scripts/warmup.mjs) before the suite.
