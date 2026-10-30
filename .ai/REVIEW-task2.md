@@ -1,0 +1,12 @@
+# Review task2 (Claude sonnet, read-only)
+
+Reviewed `e2e/scripts/seed-clinics.ts` against `.ai/PLAN-task2.md`, `AGENTS.md`, the clinic-tenancy model (`lib/fhir/clinic-tenancy.ts`), and the verifier (`e2e/scripts/clinic-check.ts`). Cross-checked FHIR R4 types against `@medplum/fhirtypes` (e.g. confirmed `Encounter.class` is `Coding`, not `CodeableConcept`, so the flat `{system,code,display}` at line 171 is correct, not a bug).
+
+- **MINOR** (L135–138): Reused `PractitionerRole` is not passed through `assertClinic`, unlike every other reused resource (demo org L94, `directory()` reuse L123). Low risk since the search is already scoped by `organization=orgRef.reference`, but inconsistent with the script's own defensive pattern.
+- **MINOR** (L90–102): `labCategory` is derived once from an existing `demo`-clinic `ServiceRequest` and then reused verbatim for all 4 clinics' lab orders. If that pre-existing resource ever carries unexpected/extra category codings, they silently propagate into every new clinic's seeded data on every run.
+- **MINOR** (L119–127): `directory()` matches an existing Organization/HealthcareService purely by `clinic|<slug>` identifier, with no check that it was seed-created (no `ucc-dummy-v1` tag check). If a non-seed Organization with that identifier ever exists for `kl-sentral`/`pj-damansara`/`jb-larkin` (e.g. from manual testing), the script silently adopts it and attaches 6 fake patients to it instead of failing closed the way the `demo` path does (L92, exact-one-match-or-throw).
+- **MINOR** (L224–227): The catch-all swallows the entire error, not logging even `error.message`/type. Deliberate per the comment (avoid leaking SDK payloads), but makes local failures harder to triage than necessary.
+
+Everything else checks out: idempotency (unique `SEED|<key>` identifiers per resource, `createResourceIfNoneExist`), clinic separation (`assertClinic` enforces exactly one `clinic` identifier on every created resource, matching `clinic-check.ts`'s expectations exactly), accounts assigned to Patient both before and after child-resource creation per plan, FHIR R4 required fields present on all resource types, localhost-only guard with credential/query/hash rejection, no secrets or PII printed (fallback admin password mirrors the existing `e2e/lib/env.ts` convention, not a new secret), and no critical (`HH`/`LL`) interpretation flags.
+
+**Verdict: APPROVE**
