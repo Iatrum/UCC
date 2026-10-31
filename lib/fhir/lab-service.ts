@@ -28,6 +28,10 @@ import {
 
 export { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult };
 
+export type ReceivedLabResult = Omit<LabResult, 'status'> & {
+  status?: Observation['status'];
+};
+
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
 
 export type LabOrderTest = LabTestCode | {
@@ -135,10 +139,12 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
  */
 export async function receiveLabResults(
   serviceRequestId: string,
-  results: LabResult[],
+  results: ReceivedLabResult[],
   conclusion?: string,
   medplum?: MedplumClient
 ): Promise<string> {
+  // POCT analysers send completed results; normalize once for both resource statuses.
+  const normalizedResults = results.map(result => ({ ...result, status: result.status ?? 'final' }));
   const client = medplum ?? (await getAdminMedplum());
   
   console.log(`📊 Receiving lab results for ServiceRequest ${serviceRequestId}`);
@@ -154,10 +160,10 @@ export async function receiveLabResults(
   // Create Observation resources (prepare for Bundle)
   const observationResources: Observation[] = [];
   
-  for (const result of results) {
+  for (const result of normalizedResults) {
     observationResources.push({
       resourceType: 'Observation',
-      status: result.status as any,
+      status: result.status,
       code: {
         coding: [{
           system: 'http://loinc.org',
@@ -196,7 +202,7 @@ export async function receiveLabResults(
   // Note: We'll need to update result references after Observations are created
   const diagnosticReportResource: DiagnosticReport = {
     resourceType: 'DiagnosticReport',
-    status: results.every(r => r.status === 'final') ? 'final' : 'partial',
+    status: normalizedResults.every(r => r.status === 'final') ? 'final' : 'partial',
     code: serviceRequest.code || { text: 'Laboratory Report' },
     subject: {
       reference: serviceRequest.subject.reference,

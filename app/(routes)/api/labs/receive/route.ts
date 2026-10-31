@@ -8,33 +8,39 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { receiveLabResults, type LabResult } from '@/lib/fhir/lab-service';
+import { receiveLabResults, type ReceivedLabResult } from '@/lib/fhir/lab-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { verifyDeviceApiKey } from '@/lib/server/device-api-key';
 
 export const runtime = 'nodejs';
 
 interface ReceiveLabResultsRequest {
   serviceRequestId: string;
-  results: LabResult[];
+  results: ReceivedLabResult[];
   conclusion?: string;
-  apiKey?: string; // For authentication from external POCT systems
+  // Legacy back-compat only: body keys may be logged; use the supported x-api-key header.
+  apiKey?: string;
 }
+
+const OBSERVATION_STATUSES = new Set([
+  'registered', 'preliminary', 'final', 'amended', 'corrected',
+  'cancelled', 'entered-in-error', 'unknown',
+]);
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReceiveLabResultsRequest = await request.json();
+    const body: ReceiveLabResultsRequest | null = await request.json().catch(() => null);
 
-    // Validate API key if provided (optional - implement your own auth)
-    const expectedApiKey = process.env.POCT_API_KEY;
-    if (expectedApiKey && body.apiKey !== expectedApiKey) {
+    const auth = verifyDeviceApiKey(request, body, 'POCT_API_KEY');
+    if (!auth.ok) {
       return NextResponse.json(
-        { error: 'Unauthorized: Invalid API key' },
-        { status: 401 }
+        { error: 'Unauthorized' },
+        { status: auth.status }
       );
     }
 
     // Validate required fields
-    if (!body.serviceRequestId) {
+    if (!body?.serviceRequestId) {
       return NextResponse.json(
         { error: 'serviceRequestId is required' },
         { status: 400 }
@@ -50,9 +56,15 @@ export async function POST(request: NextRequest) {
 
     // Validate each result
     for (const result of body.results) {
-      if (!result.testCode || !result.testName || result.value === undefined) {
+      if (!result?.testCode || !result.testName || result.value === undefined) {
         return NextResponse.json(
           { error: 'Each result must have testCode, testName, and value' },
+          { status: 400 }
+        );
+      }
+      if (result.status !== undefined && !OBSERVATION_STATUSES.has(result.status)) {
+        return NextResponse.json(
+          { error: 'Invalid result.status: must be a FHIR R4 Observation status' },
           { status: 400 }
         );
       }
@@ -73,14 +85,11 @@ export async function POST(request: NextRequest) {
       message: 'Lab results received and stored successfully',
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error receiving lab results:', error);
     
     return NextResponse.json(
-      { 
-        error: 'Failed to receive lab results',
-        details: error.message 
-      },
+      { error: 'Failed to receive lab results' },
       { status: 500 }
     );
   }

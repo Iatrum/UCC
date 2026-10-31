@@ -10,30 +10,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { receiveImagingStudy, type ImagingStudyData } from '@/lib/fhir/imaging-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { verifyDeviceApiKey } from '@/lib/server/device-api-key';
 
 export const runtime = 'nodejs';
 
 interface ReceiveImagingStudyRequest {
   serviceRequestId: string;
   study: ImagingStudyData;
-  apiKey?: string; // For authentication from external PACS
+  // Legacy back-compat only: body keys may be logged; use the supported x-api-key header.
+  apiKey?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReceiveImagingStudyRequest = await request.json();
+    const body: ReceiveImagingStudyRequest | null = await request.json().catch(() => null);
 
-    // Validate API key if provided (optional - implement your own auth)
-    const expectedApiKey = process.env.PACS_API_KEY;
-    if (expectedApiKey && body.apiKey !== expectedApiKey) {
+    const auth = verifyDeviceApiKey(request, body, 'PACS_API_KEY');
+    if (!auth.ok) {
       return NextResponse.json(
-        { error: 'Unauthorized: Invalid API key' },
-        { status: 401 }
+        { error: 'Unauthorized' },
+        { status: auth.status }
       );
     }
 
     // Validate required fields
-    if (!body.serviceRequestId) {
+    if (!body?.serviceRequestId) {
       return NextResponse.json(
         { error: 'serviceRequestId is required' },
         { status: 400 }
@@ -68,14 +69,11 @@ export async function POST(request: NextRequest) {
       message: 'Imaging study received and stored successfully',
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error receiving imaging study:', error);
     
     return NextResponse.json(
-      { 
-        error: 'Failed to receive imaging study',
-        details: error.message 
-      },
+      { error: 'Failed to receive imaging study' },
       { status: 500 }
     );
   }

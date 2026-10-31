@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { watch, shot, uiLogin, saveJson, known, Issue } from '../lib/app';
 import { byPatient, fhir } from '../lib/fhir';
-import { RUN } from '../lib/env';
+import { RUN, POCT_KEY } from '../lib/env';
 
 // Full patient journey "in and out", one shared browser page, serial.
 // Core-flow asserts are hard; known-bug probes are collected and asserted together in the final test.
@@ -144,12 +144,12 @@ test('06 composer (plan API stubbed as persistence-unavailable): meds, services,
 test('07 lab result ingest -> Labs & Imaging tab', async ({ request }) => {
   step = '07-lab-results';
   expect(facts.labSR, 'FBC ServiceRequest id').toBeTruthy();
-  const r = await request.post('/api/labs/receive', { data: { serviceRequestId: facts.labSR, conclusion: 'Mild leukocytosis (FAKE)',
+  const r = await request.post('/api/labs/receive', { headers: { 'x-api-key': POCT_KEY }, data: { serviceRequestId: facts.labSR, conclusion: 'Mild leukocytosis (FAKE)',
     results: [{ testCode: '718-7', testName: 'Haemoglobin', value: 13.9, unit: 'g/dL', referenceRange: '13-17' },
               { testCode: '6690-2', testName: 'White cell count', value: 12.4, unit: '10*9/L', referenceRange: '4-11', interpretation: 'high' }] } });
   facts.labReceiveNoStatus = `${r.status()} ${(await r.text()).slice(0, 200)}`;
   bug(r.ok(), '/api/labs/receive returns 500 when result.status is omitted (route validation does not require/default it)');
-  const r2 = await request.post('/api/labs/receive', { data: { serviceRequestId: facts.labSR, conclusion: 'Mild leukocytosis (FAKE)',
+  const r2 = await request.post('/api/labs/receive', { headers: { 'x-api-key': POCT_KEY }, data: { serviceRequestId: facts.labSR, conclusion: 'Mild leukocytosis (FAKE)',
     results: [{ testCode: '718-7', testName: 'Haemoglobin', value: 13.9, unit: 'g/dL', referenceRange: '13-17', status: 'final', interpretation: 'normal' },
               { testCode: '6690-2', testName: 'White cell count', value: 12.4, unit: '10*9/L', referenceRange: '4-11', status: 'final', interpretation: 'high' }] } });
   facts.labReceive = `${r2.status()} ${(await r2.text()).slice(0, 200)}`;

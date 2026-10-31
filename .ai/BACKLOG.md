@@ -4,7 +4,7 @@
 1. [x] AGENTS.md, CLAUDE.md, .ai/, e2e suite in repo (`e2e/`, no secrets)
 2. [x] Realistic dummy-data seed for 4 clinics (fake patients, encounters, orders, results)
 3. [x] Composer bug: items roll back when `/api/consultations/plan` fails ("Unable to detect a Project Id") but UI still says "autosaved"
-4. [ ] Lock `/api/labs/receive` when `POCT_API_KEY` unset; fix 500 on lab result with no status
+4. [x] Lock `/api/labs/receive` when `POCT_API_KEY` unset; fix 500 on lab result with no status
 
 3b. [x] Composer hydration race (item lost if added before draft loaded)
 

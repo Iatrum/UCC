@@ -15,3 +15,10 @@
 - **Why:** Found by recording the network calls in a test run: the draft load answered after the first add. React docs warn that late fetch answers must not overwrite newer state (react.dev/learn/you-might-not-need-an-effect#fetching-data).
 - **Tests:** lint, types, build, full e2e (20/23, same as before), 4-clinic check. The "composer loses item without Firebase" known bug is now fixed.
 - **Please test:** open a patient > Sign consult > Treatment, immediately add Paracetamol, wait 5 s: it should stay ("1 × RM 0.50"). Delete it and wait: it should stay deleted.
+
+## 2026-10-31 Task 4 – Lab and X-ray result receivers are now locked
+- **What changed:** The two endpoints that analysers and PACS use to send results (`/api/labs/receive`, `/api/imaging/receive`) used to accept anything from anyone if the server had no key set. Now they refuse (401) unless the device sends the right key in the `x-api-key` header. Keys are compared in a timing-safe way. Error replies no longer show internal error text. A lab result with no status used to crash (500); it is now saved as "final", and a wrong status gets a clear 400.
+- **Why:** OWASP API Security 2023 (broken authentication: fail closed); FHIR R4 Observation.status is required (hl7.org/fhir/R4/observation.html).
+- **Tests:** lint, types, build, full e2e now 21/23 (the "labs/receive requires a key" security test passes for the first time), 4-clinic check.
+- **Before deploying:** set `POCT_API_KEY` and `PACS_API_KEY` on staging/production and give the same key to the analyser/PACS, or results will be refused.
+- **Please test:** in the Labs & Imaging tab of a test patient, results sent by the e2e run still appear.

@@ -12,3 +12,7 @@
 - 2026-10-31 D11: Task 3b root cause found by an out-of-repo probe (/workspace/ai-logs/probe): NOT a re-render loop (round-1 hunch wrong) but a race – items added before the draft GET answered were overwritten when it answered. Fix = merge on hydration (local wins, removed ids excluded) instead of disabling the picker until loaded (no extra wait for busy doctors).
 - 2026-10-31 D12: On a real draftId change on a mounted composer the screen is reset to the new draft first (Claude review MAJOR), so old-draft items never leak into a new consultation.
 - 2026-10-31 D13: Task 4 scope extended to /api/imaging/receive (same open-when-env-unset hole with PACS_API_KEY) via one shared helper. Per-clinic device keys / clinic match left for POCT phase 2 (backlog).
+- 2026-10-31 D14: Device receivers fail closed with 401 when the key env is unset (not 503), so unconfigured servers look the same as a wrong key to attackers. Key via `x-api-key` header; body `apiKey` kept only for the documented legacy example.
+- 2026-10-31 D15: Missing lab `status` defaults to `final` (POCT analysers send completed results; Observation.status is 1..1 in FHIR R4). Invalid status -> 400.
+- 2026-10-31 D16: Box `.env.local` got random fake local POCT_API_KEY/PACS_API_KEY; e2e reads its copy from git-ignored `e2e/.secrets/poct_key`. Staging/production keys must be set by the user (Hostinger boundary) – without them the receivers now refuse all results.
+- 2026-10-31 D17: e2e baseline moved to 21/23 after Task 4 (old one kept as baseline/results-20of23-round1.json).
