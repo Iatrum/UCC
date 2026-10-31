@@ -55,7 +55,10 @@ export async function loadModuleDefinition(moduleId: string): Promise<ModuleDefi
     return null;
   }
 
-  if (!existsSync(path.join(modulesDirectory, moduleId))) {
+  if (
+    !existsSync(path.join(modulesDirectory, moduleId)) ||
+    existsSync(path.join(modulesDirectory, moduleId, ".disabled"))
+  ) {
     return null;
   }
 
@@ -160,28 +163,31 @@ export async function listNavigationModulesForClinic(
   ]);
   const registeredById = new Map(registeredModules.map((module) => [module.id, module]));
 
-  return enabledModuleIds
-    .map((moduleId) => {
-      const registeredModule = registeredById.get(moduleId);
-      if (registeredModule) {
-        return registeredModule;
-      }
+  const navigationModules = await Promise.all(enabledModuleIds.map(async (moduleId) => {
+    const registeredModule = registeredById.get(moduleId);
+    if (registeredModule) {
+      return registeredModule.routePath && await loadModulePage(moduleId)
+        ? registeredModule
+        : null;
+    }
 
-      const legacyModule = MODULES[moduleId as keyof typeof MODULES];
-      if (!legacyModule?.route) {
-        return null;
-      }
+    // These routes are implemented directly in app/, without a module package.
+    if (moduleId !== "inventory" && moduleId !== "analytics") {
+      return null;
+    }
 
-      return {
-        id: legacyModule.id,
-        label: legacyModule.name,
-        description: legacyModule.description,
-        routePath: legacyModule.route,
-        icon: legacyModule.icon,
-        pages: {},
-      } satisfies ModuleDefinition;
-    })
-    .filter((module): module is ModuleDefinition => Boolean(module));
+    const legacyModule = MODULES[moduleId];
+    return {
+      id: legacyModule.id,
+      label: legacyModule.name,
+      description: legacyModule.description,
+      routePath: legacyModule.route!,
+      icon: legacyModule.icon,
+      pages: {},
+    } satisfies ModuleDefinition;
+  }));
+
+  return navigationModules.filter((module): module is ModuleDefinition => Boolean(module));
 }
 
 export async function listAvailableBranchModules(): Promise<ModuleDefinition[]> {
