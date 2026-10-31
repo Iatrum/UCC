@@ -55,18 +55,26 @@ function getSingleInventoryValue(root: Extension | undefined, key: InventoryFiel
   return getInventoryValues(root, key)[0];
 }
 
-function toInventoryExtension(data: InventoryMedicationData): Extension {
-  return {
-    url: INVENTORY_EXTENSION_URL,
-    extension: [
-      { url: 'category', valueString: data.category },
-      { url: 'stock', valueInteger: data.stock },
-      { url: 'minimumStock', valueInteger: data.minimumStock },
-      { url: 'unit', valueString: data.unit },
-      { url: 'unitPrice', valueDecimal: data.unitPrice },
-      ...data.strengths.map((strength) => ({ url: 'strength', valueString: strength })),
-    ],
-  };
+function toInventoryExtension(data: InventoryMedicationData): Extension | undefined {
+  const entries: Extension[] = [
+    { url: 'category', valueString: data.category },
+    { url: 'stock', valueInteger: data.stock },
+    { url: 'minimumStock', valueInteger: data.minimumStock },
+    { url: 'unit', valueString: data.unit },
+    { url: 'unitPrice', valueDecimal: data.unitPrice },
+    ...(data.strengths ?? []).map((strength) => ({ url: 'strength', valueString: strength })),
+  ];
+
+  const filtered = entries.filter((entry) => {
+    const value = entry.valueString ?? entry.valueInteger ?? entry.valueDecimal;
+    return value !== undefined && value !== '';
+  });
+
+  if (filtered.length === 0) {
+    return undefined;
+  }
+
+  return { url: INVENTORY_EXTENSION_URL, extension: filtered };
 }
 
 function clinicAccountMeta(tenant: ClinicTenant): FHIRMedication['meta'] {
@@ -75,7 +83,16 @@ function clinicAccountMeta(tenant: ClinicTenant): FHIRMedication['meta'] {
   } as FHIRMedication['meta'];
 }
 
-function toFhirMedication(data: InventoryMedicationData, clinicId?: string, clinicTenant?: ClinicTenant): FHIRMedication {
+function toFhirMedication(
+  data: InventoryMedicationData,
+  clinicId?: string,
+  clinicTenant?: ClinicTenant,
+  existingExtensions?: Extension[]
+): FHIRMedication {
+  const inventoryExtension = toInventoryExtension(data);
+  const otherExtensions = (existingExtensions ?? []).filter((ext) => ext.url !== INVENTORY_EXTENSION_URL);
+  const extension = inventoryExtension ? [...otherExtensions, inventoryExtension] : otherExtensions;
+
   return withClinicIdentifier({
     resourceType: 'Medication',
     meta: clinicTenant ? clinicAccountMeta(clinicTenant) : undefined,
@@ -98,7 +115,7 @@ function toFhirMedication(data: InventoryMedicationData, clinicId?: string, clin
     },
     form: data.dosageForm ? { text: data.dosageForm } : undefined,
     batch: data.expiryDate ? { expirationDate: data.expiryDate } : undefined,
-    extension: [toInventoryExtension(data)],
+    extension: extension.length > 0 ? extension : undefined,
   }, clinicId);
 }
 
@@ -206,7 +223,7 @@ export async function updateInventoryMedicationInMedplum(
 
   await medplum.updateResource({
     ...existing,
-    ...toFhirMedication(merged, clinicId, clinicTenant ?? undefined),
+    ...toFhirMedication(merged, clinicId, clinicTenant ?? undefined, existing.extension),
     id,
   } as FHIRMedication);
 }

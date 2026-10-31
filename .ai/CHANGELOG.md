@@ -22,3 +22,7 @@
 - **Tests:** lint, types, build, full e2e now 21/23 (the "labs/receive requires a key" security test passes for the first time), 4-clinic check.
 - **Before deploying:** set `POCT_API_KEY` and `PACS_API_KEY` on staging/production and give the same key to the analyser/PACS, or results will be refused.
 - **Please test:** in the Labs & Imaging tab of a test patient, results sent by the e2e run still appear.
+
+## 2026-10-31 Task 6c – Adding stock without strengths no longer crashes
+- **What changed:** Adding an inventory item through the API without a "strengths" list gave a server error (500). Now a missing list is treated as empty, and bad stock / minimum stock / price values get a clear 400 message instead of a crash. Empty fields are no longer saved as blank FHIR extensions, and editing an item keeps any other extensions it already had.
+- **Why:** FHIR R4 ext-1 (hl7.org/fhir/R4/extensibility.html#Extension) says every extension needs a value; OWASP API guidance says bad input should get 4xx, not 500.

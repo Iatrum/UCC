@@ -10,6 +10,16 @@ import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
+const FHIR_INTEGER_MAX = 2147483647;
+
+function isNonNegativeInteger(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= FHIR_INTEGER_MAX;
+}
+
+function isNonNegativeFiniteNumber(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(request);
@@ -41,6 +51,27 @@ export async function POST(request: NextRequest) {
     if (!data?.name) {
       return NextResponse.json({ success: false, error: 'Missing required field: name' }, { status: 400 });
     }
+
+    if (
+      data.strengths !== undefined &&
+      (!Array.isArray(data.strengths) || !data.strengths.every((strength: unknown) => typeof strength === 'string'))
+    ) {
+      return NextResponse.json({ success: false, error: 'strengths must be an array of strings' }, { status: 400 });
+    }
+
+    if (data.stock !== undefined && !isNonNegativeInteger(data.stock)) {
+      return NextResponse.json({ success: false, error: 'stock must be a non-negative integer' }, { status: 400 });
+    }
+
+    if (data.minimumStock !== undefined && !isNonNegativeInteger(data.minimumStock)) {
+      return NextResponse.json({ success: false, error: 'minimumStock must be a non-negative integer' }, { status: 400 });
+    }
+
+    if (data.unitPrice !== undefined && !isNonNegativeFiniteNumber(data.unitPrice)) {
+      return NextResponse.json({ success: false, error: 'unitPrice must be a non-negative number' }, { status: 400 });
+    }
+
+    data.strengths = data.strengths ?? [];
 
     const medicationId = await createInventoryMedicationInMedplum(medplum, data, clinicId);
     return NextResponse.json({
