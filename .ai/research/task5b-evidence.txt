@@ -1,0 +1,45 @@
+=== Task 5b non-superAdmin containment retest ===
+admin login: status=200 membership.admin=true project.superAdmin=true
+project ensured: superAdmin=false
+cleanup: removedStaleIdentities=0
+project admin invited: membershipCreated=true
+project-admin login: status=200 membership.admin=true project.superAdmin=false
+access policy + 2 organizations ensured: policyCreated=true orgACreated=true orgBCreated=true
+doctorA + staffB invited: doctorAHasMembership=true staffBHasMembership=true
+practitioner roles ensured: doctorARole=true staffBRole=true
+sensitive fixtures: telecomAndNarrativeSeeded=true
+control restore: finalGrantsRestored=true
+
+| Assertion | Status | Count | PASS/FAIL |
+| --- | --- | --- | --- |
+| doctorA auth context + policy assigned (verified via superAdmin read) | 200 | - | PASS |
+| ProjectMembership denied/no-others (with policy) | 403 | 0 | PASS |
+| User denied/no-others (with policy) | 403 | 0 | PASS |
+| Project denied/no-others (with policy) | 403 | 0 | PASS |
+| Practitioner directory masked + staffB fixture present (with policy) | 200 | 0 | PASS |
+| PractitionerRole directory masked + staffB fixture present (with policy) | 200 | 0 | PASS |
+| Practitioner/staffB direct read telecom+text absent | 200 | 0 | PASS |
+| Practitioner/staffB _elements=telecom absent | 200 | 0 | PASS |
+| Practitioner/staffB _history telecom absent | 200 | 0 | PASS |
+| PractitionerRole?_include=PractitionerRole:practitioner telecom absent | 200 | 0 | PASS |
+| Practitioner/staffB vread telecom+text absent | 200 | 0 | PASS |
+| PractitionerRole/staffB direct read telecom+text absent | 200 | 0 | PASS |
+| PractitionerRole/staffB _elements telecom+text absent | 200 | 0 | PASS |
+| PractitionerRole/staffB _history telecom+text absent | 200 | 0 | PASS |
+| PractitionerRole/staffB PUT denied | 403 | 0 | PASS |
+| PractitionerRole/staffB vread telecom+text absent | 200 | 0 | PASS |
+| Practitioner reverse include fixtures masked | 200 | 0 | PASS |
+| POST Practitioner denied | 403 | 0 | PASS |
+| PUT Practitioner/staffB denied | 403 | 0 | PASS |
+| PATCH Practitioner/staffB denied | 403 | 0 | PASS |
+| DELETE Practitioner/staffB denied | 403 | 0 | PASS |
+| POST PractitionerRole denied | 403 | 0 | PASS |
+| PATCH PractitionerRole/staffB denied | 403 | 0 | PASS |
+| DELETE PractitionerRole/staffB denied | 403 | 0 | PASS |
+| AccessPolicy read+write denied | get=403 post=403 | - | PASS |
+| Patient search works | 200 | - | PASS |
+| ProjectMembership denied/no-others (control, no policy) | 403 | 0 | PASS |
+| User denied/no-others (control, no policy) | 403 | 0 | PASS |
+| Project denied/no-others (control, no policy) | 403 | 0 | PASS |
+| Practitioner telecom exposed (control, no policy) | 200 | 3 | PASS |
+teardown: PractitionerRole: status=200 | PractitionerRole: status=200 | ProjectMembership: status=200 | ProjectMembership: status=200 | ProjectMembership: status=200 | Practitioner: status=200 | Practitioner: status=200 | Practitioner: status=200 | User: status=200 | User: status=200 | User: status=200
