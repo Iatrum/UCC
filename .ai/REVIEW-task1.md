@@ -1,0 +1,7 @@
+- **MAJOR** — `e2e/scripts/check-all.sh:8–14` masks failures: exit codes are printed, but the final `tee` normally returns 0 even when lint, build, E2E, or clinic checks fail. Accumulate failures and explicitly exit nonzero.
+- **MAJOR** — `check-all.sh` never compares against a baseline, so it cannot enforce “no new failures.” Reused reports/output directories can also summarize stale results after a failed run.
+- **MAJOR** — `e2e/scripts/clinic-check.ts` passes with zero clinics, ignores missing clinic identifiers, checks only the first Patient page, and never checks Encounters or access isolation. It can report success despite clinic separation defects.
+- **MINOR** — `e2e/global-setup.ts:30` assumes `.secrets/` exists. Fresh checkouts using `UCC_PASSWORD` still fail saving session state; create the directory first.
+- **MINOR** — `e2e/README.md` directs users to the old external suite; update the working directory to this repository’s `e2e/`.
+- **MINOR** — No private secrets or real patient data found in the diff; the embedded Medplum password is a documented local default. `git check-ignore` confirms secrets, session state, reports, and node_modules are covered.
+- **MINOR** — No direct app build/type-lint regression found: both tsconfigs exclude `e2e/**`. ESLint has separate configuration; these exclusions do not exclude E2E files from `lint:eslint`. Build/tests were not run during this read-only review.

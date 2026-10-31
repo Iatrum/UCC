@@ -338,6 +338,7 @@ function isDraftPersistenceUnavailable(error: unknown): boolean {
   return (
     message.includes("UNAUTHENTICATED") ||
     message.includes("invalid authentication credentials") ||
+    message.includes("Unable to detect a Project Id") ||
     message.includes("persistence is unavailable") ||
     message.includes("Failed to load treatment plan draft") ||
     message.includes("Failed to save treatment plan entry") ||
@@ -369,6 +370,12 @@ export function OrderComposer({
   const [hydrated, setHydrated] = React.useState(false);
   const [savingIds, setSavingIds] = React.useState<Record<string, boolean>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
+  const [saveErrorMessage, setSaveErrorMessage] = React.useState<string | null>(null);
+  const persistenceDisabledRef = React.useRef(persistenceDisabled);
+  const disablePersistence = React.useCallback(() => {
+    persistenceDisabledRef.current = true;
+    setPersistenceDisabled(true);
+  }, []);
   const [detailEntryId, setDetailEntryId] = React.useState<string | null>(null);
   const [editingDocumentEntryId, setEditingDocumentEntryId] = React.useState<string | null>(null);
   const [mcDays, setMcDays] = React.useState(1);
@@ -385,6 +392,10 @@ export function OrderComposer({
   const [mcTemplateHtml, setMcTemplateHtml] = React.useState<string | null>(null);
   const [referralTemplateHtml, setReferralTemplateHtml] = React.useState<string | null>(null);
 
+
+  React.useEffect(() => {
+    persistenceDisabledRef.current = persistenceDisabled;
+  }, [persistenceDisabled]);
 
   const catalogByTab = React.useMemo<Record<TreatmentPlanTab, CatalogItem[]>>(
     () => ({
@@ -559,7 +570,7 @@ export function OrderComposer({
         const data = await loadDraft();
         if (!active) return;
         if (data.persistenceAvailable === false) {
-          setPersistenceDisabled(true);
+          disablePersistence();
         }
         if (data.plan.entries.length > 0) {
           publishPlan(data.plan.entries);
@@ -570,7 +581,14 @@ export function OrderComposer({
         if (!active) return;
         publishPlan(initialEntries);
         if (isDraftPersistenceUnavailable(error)) {
-          setPersistenceDisabled(true);
+          disablePersistence();
+        } else {
+          setSaveErrorMessage("Could not load saved draft.");
+          toast({
+            title: "Could not load saved draft",
+            description: "The previously saved draft could not be loaded.",
+            variant: "destructive",
+          });
         }
         console.error("Failed to hydrate treatment plan draft:", error);
       } finally {
@@ -580,7 +598,7 @@ export function OrderComposer({
     return () => {
       active = false;
     };
-  }, [initialEntries, loadDraft, persistDrafts, publishPlan]);
+  }, [initialEntries, loadDraft, persistDrafts, publishPlan, toast]);
 
   const persistEntry = React.useCallback(
     async (entry: TreatmentPlanEntryInput, rollback: () => void) => {
@@ -597,19 +615,24 @@ export function OrderComposer({
         });
         const data = await response.json().catch(() => ({}));
         if (data?.persistenceAvailable === false) {
-          setPersistenceDisabled(true);
+          disablePersistence();
           return;
         }
         if (!response.ok || !data?.success) {
           throw new Error(data?.error || "Failed to save treatment plan entry");
         }
+        if (persistenceDisabledRef.current) {
+          return;
+        }
+        setSaveErrorMessage(null);
         publishPlan(data.plan.entries as TreatmentPlanEntry[]);
       } catch (error) {
         if (isDraftPersistenceUnavailable(error)) {
-          setPersistenceDisabled(true);
+          disablePersistence();
           return;
         }
         rollback();
+        setSaveErrorMessage("Last change was not saved.");
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to save treatment plan changes.",
@@ -677,19 +700,24 @@ export function OrderComposer({
         });
         const data = await response.json().catch(() => ({}));
         if (data?.persistenceAvailable === false) {
-          setPersistenceDisabled(true);
+          disablePersistence();
           return;
         }
         if (!response.ok || !data?.success) {
           throw new Error(data?.error || "Failed to delete entry");
         }
+        if (persistenceDisabledRef.current) {
+          return;
+        }
+        setSaveErrorMessage(null);
         publishPlan(data.plan.entries as TreatmentPlanEntry[]);
       } catch (error) {
         if (isDraftPersistenceUnavailable(error)) {
-          setPersistenceDisabled(true);
+          disablePersistence();
           return;
         }
         publishPlan(prev);
+        setSaveErrorMessage("Last change was not saved.");
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to delete treatment plan entry.",
@@ -882,9 +910,17 @@ export function OrderComposer({
           <Button type="submit" className="w-full" disabled={!hydrated || submitting}>
             {submitting ? "Saving…" : submitLabel}
           </Button>
-          <p className="text-[11px] text-muted-foreground">
-            {Object.keys(savingIds).length > 0 ? "Autosaving order composer…" : "All changes autosaved."}
-          </p>
+          {persistDrafts ? (
+            <p className="text-[11px] text-muted-foreground">
+              {Object.keys(savingIds).length > 0
+                ? "Autosaving order composer…"
+                : persistenceDisabled
+                ? "Not saved to server – this draft is only on this screen until you Sign."
+                : saveErrorMessage
+                ? saveErrorMessage
+                : "All changes autosaved."}
+            </p>
+          ) : null}
         </div>
       </div>
 

@@ -44,3 +44,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .gstack/
+
+# AI e2e suite (no secrets in git)
+e2e/.secrets/
+e2e/reports/
+e2e/node_modules
