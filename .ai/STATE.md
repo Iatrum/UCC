@@ -38,3 +38,5 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 13:09 Task 5 committed (policy+script, containment FAILED due to superAdmin project; rolled back; decision in BACKLOG). Gate task5-r2 PASS 22/23 (task5 r1 = dev-server timeout flake). Next: U1.
 - 13:09 U1 audit launched (Claude, /workspace/ai-logs/u1).
 - 13:41 Round 6: admin e2e already done+committed (6d, PR #212). Task 5 PR #213. NEXT: U1 (audit was launched 13:09, check /workspace/ai-logs/u1); Task 5 containment blocked by superAdmin project (decision in BACKLOG).
+- 13:55 Round 7: box was OOM (orphan tb-rel vitest workers 12GB, killed); U1 Claude run had produced nothing (killed). Medplum + dev server restarted. Next: Task 5 non-superAdmin retest.
+- 14:05 Task 5 decision D20 (test in non-superAdmin project). Claude building task5b test script (/workspace/ai-logs/task5b). U1 audit relaunched (Claude, /workspace/ai-logs/u1/claude2.json).
