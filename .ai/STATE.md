@@ -49,3 +49,4 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 15:12 PR #213 updated (pushed b2df4b8 to ai/task-5, body: root cause, 31/31 evidence, prod action for user). Gate u2 running.
 - 15:30 Gate u2 r1 11/23 INVALID: Medplum login 429 (rate limit after task5b test logins) -> 01 login failed and serial tests cascaded. Rerunning as u2-r2 after cooldown.
 - 15:20 Task 6e (deactivate/reactivate user) committed f11d038 (cherry-pick of PR #214, ai/task-6e). Gate 6e-aiwork PASS 22/23, clinics 0; admin e2e 24 WORKS 0 BROKEN (r1 dev-restart flake). Claude session limit until 18:00 MYT. Dev server :3210 now serves /workspace/iatrum-ucc.
+- 15:15 Rerun gate u2-r2 on ai-work (incl 6e f11d038), dev server serves iatrum-ucc.
