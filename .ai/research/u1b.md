@@ -13,3 +13,6 @@ Official references verified before browser mutations:
 - https://react.dev/reference/react-dom/components/input — input semantics and accessible labels.
 
 No changes to FHIR SDK APIs, application code, or runtime dependencies are proposed. Synthetic 500 responses are intercepted only in the audit browser and must be labelled as injected evidence.
+
+## Authorized composer continuation
+The user subsequently authorized signing only the existing fake patient's consultation note. The note was signed once; Treatment and checkout were left unsigned. All six catalog types were added through the live picker. Read order-composer draft hydration, persistence, item/document detail controls, and patient-profile-workspace catalog mapping/sign handlers. Active US imaging is excluded by a DX-only filter. Real draft GET responses returned persistenceAvailable:false; a separate browser-only 5s delay exposes the pre-hydration autosaved label. No Firebase replacement or application edit. Screenshot/facts caveats and scope are recorded with findings #15–22.
