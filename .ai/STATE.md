@@ -21,3 +21,5 @@ See bottom of file.
   - WARNING: probe 05 still FAILS functionally: POST /api/consultations/plan -> 503 persistenceAvailable:false, footer shows "Not saved to server…", but item is gone ("No line items yet"). Suspect: hydration useEffect deps [initialEntries, loadDraft, publishPlan(onPlanChange)] re-run on parent re-render and `publishPlan(initialEntries)` wipes entries. Not fixed (out of scope this round).
   - Screenshots: /workspace/ai-logs/task3/shots/before-composer.png (26 Oct, pre-fix), after-composer.png (this gate).
 - NEXT (08:00 round): Task 3b = fix hydration wipe (run once per key / skip publish after user edits), verify probe 05 keeps "1 × RM 0.50". Then Task 4 (research in .ai/research/task4-labs-receive.md). Not pushed.
+- 08:03 Round 2 start. Codex 5h window fresh (reset 07:56), weekly 1% (resets Thu 5 Nov 00:08 MYT). Claude OK (test call).
+- 08:10 Task 3b: probe showed race (GET draft answers after first add). Plan -> Claude critique REVISE -> Codex built -> Claude CHANGES (1 MAJOR) -> Codex fix loop 1 -> Claude APPROVE. Gate task3b-r3 PASS (20/23, clinics 0), probe 05 now keeps item. Committed.

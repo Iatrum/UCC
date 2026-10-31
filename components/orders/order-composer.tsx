@@ -366,6 +366,10 @@ export function OrderComposer({
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [entries, setEntries] = React.useState<TreatmentPlanEntry[]>([]);
+  const entriesRef = React.useRef<TreatmentPlanEntry[]>([]);
+  const userTouchedRef = React.useRef(false);
+  const removedIdsRef = React.useRef(new Set<string>());
+  const lastDraftIdRef = React.useRef<string | null>(null);
   const [summary, setSummary] = React.useState<TreatmentPlanSummary>(() => computeTreatmentPlanSummary([]));
   const [hydrated, setHydrated] = React.useState(false);
   const [savingIds, setSavingIds] = React.useState<Record<string, boolean>>({});
@@ -486,6 +490,7 @@ export function OrderComposer({
   const publishPlan = React.useCallback(
     (nextEntries: TreatmentPlanEntry[]) => {
       const nextSummary = computeTreatmentPlanSummary(nextEntries);
+      entriesRef.current = nextEntries;
       setEntries(nextEntries);
       setSummary(nextSummary);
       onPlanChange?.(nextEntries, nextSummary);
@@ -556,9 +561,32 @@ export function OrderComposer({
   }, [consultationId, draftId, patientId]);
 
   React.useEffect(() => {
+    if (lastDraftIdRef.current !== draftId) {
+      const isDraftTransition = lastDraftIdRef.current !== null;
+      lastDraftIdRef.current = draftId;
+      userTouchedRef.current = false;
+      removedIdsRef.current.clear();
+      if (isDraftTransition) {
+        publishPlan(initialEntries);
+      }
+    }
+
+    const publishHydratedPlan = (serverEntries: TreatmentPlanEntry[]) => {
+      if (!userTouchedRef.current) {
+        publishPlan(serverEntries);
+        return;
+      }
+      const localEntries = entriesRef.current;
+      const localIds = new Set(localEntries.map((entry) => entry.id));
+      publishPlan([
+        ...localEntries,
+        ...serverEntries.filter((entry) => !localIds.has(entry.id) && !removedIdsRef.current.has(entry.id)),
+      ]);
+    };
+
     if (!persistDrafts) {
       queueMicrotask(() => {
-        publishPlan(initialEntries);
+        publishHydratedPlan(initialEntries);
         setHydrated(true);
       });
       return;
@@ -573,13 +601,13 @@ export function OrderComposer({
           disablePersistence();
         }
         if (data.plan.entries.length > 0) {
-          publishPlan(data.plan.entries);
+          publishHydratedPlan(data.plan.entries);
           return;
         }
-        publishPlan(initialEntries);
+        publishHydratedPlan(initialEntries);
       } catch (error) {
         if (!active) return;
-        publishPlan(initialEntries);
+        publishHydratedPlan(initialEntries);
         if (isDraftPersistenceUnavailable(error)) {
           disablePersistence();
         } else {
@@ -598,7 +626,7 @@ export function OrderComposer({
     return () => {
       active = false;
     };
-  }, [initialEntries, loadDraft, persistDrafts, publishPlan, toast]);
+  }, [draftId, initialEntries, loadDraft, persistDrafts, publishPlan, toast]);
 
   const persistEntry = React.useCallback(
     async (entry: TreatmentPlanEntryInput, rollback: () => void) => {
@@ -651,6 +679,7 @@ export function OrderComposer({
 
   const addCatalogItem = React.useCallback(
     async (tab: TreatmentPlanTab, item: CatalogItem) => {
+      userTouchedRef.current = true;
       const nowIso = new Date().toISOString();
       const optimistic: TreatmentPlanEntry = {
         id: crypto.randomUUID(),
@@ -684,6 +713,8 @@ export function OrderComposer({
 
   const removeEntry = React.useCallback(
     async (entry: TreatmentPlanEntry) => {
+      userTouchedRef.current = true;
+      removedIdsRef.current.add(entry.id);
       const prev = entries;
       const next = prev.filter((item) => item.id !== entry.id);
       publishPlan(next);
@@ -756,6 +787,7 @@ export function OrderComposer({
 
   const updateEntryField = React.useCallback(
     async (entry: TreatmentPlanEntry, patch: Partial<TreatmentPlanEntryInput>) => {
+      userTouchedRef.current = true;
       const prev = entries;
       const next = prev.map((item) => {
         if (item.id !== entry.id) return item;
@@ -941,7 +973,10 @@ export function OrderComposer({
                     type="number"
                     min="1"
                     value={mcDays}
-                    onChange={(event) => setMcDays(Number(event.target.value || 1))}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDays(Number(event.target.value || 1));
+                    }}
                   />
                 </div>
                 <div>
@@ -949,7 +984,10 @@ export function OrderComposer({
                   <Input
                     type="date"
                     value={mcStartDate}
-                    onChange={(event) => setMcStartDate(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcStartDate(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
@@ -957,7 +995,10 @@ export function OrderComposer({
                   <Input
                     placeholder="Dr. ..."
                     value={mcDoctorName}
-                    onChange={(event) => setMcDoctorName(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDoctorName(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
@@ -965,7 +1006,10 @@ export function OrderComposer({
                   <Input
                     placeholder="Diagnosis"
                     value={mcDiagnosis}
-                    onChange={(event) => setMcDiagnosis(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDiagnosis(event.target.value);
+                    }}
                   />
                 </div>
               </div>
@@ -993,14 +1037,23 @@ export function OrderComposer({
               <div className="space-y-3">
                 <div>
                   <Label className="text-xs">Referral to:</Label>
-                  <Input value={referralTo} onChange={(event) => setReferralTo(event.target.value)} />
+                  <Input
+                    value={referralTo}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setReferralTo(event.target.value);
+                    }}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Diagnosis</Label>
                   <Input
                     placeholder="Diagnosis"
                     value={referralDiagnosis}
-                    onChange={(event) => setReferralDiagnosis(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setReferralDiagnosis(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
@@ -1008,7 +1061,10 @@ export function OrderComposer({
                   <Textarea
                     className="min-h-[260px] leading-6"
                     value={referralContent}
-                    onChange={(event) => setReferralContent(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setReferralContent(event.target.value);
+                    }}
                   />
                 </div>
                 <div className="rounded-md border p-2 text-xs text-muted-foreground">
@@ -1059,6 +1115,7 @@ export function OrderComposer({
                 <Input
                   value={detailEntry.name}
                   onChange={(event) => {
+                    userTouchedRef.current = true;
                     const next = entries.map((item) =>
                       item.id === detailEntry.id ? { ...item, name: event.target.value } : item
                     );
@@ -1076,6 +1133,7 @@ export function OrderComposer({
                     step="1"
                     value={detailEntry.quantity}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const value = Number(event.target.value || 0);
                       const next = entries.map((item) =>
                         item.id === detailEntry.id
@@ -1101,6 +1159,7 @@ export function OrderComposer({
                     step="0.01"
                     value={detailEntry.unitPrice}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const value = Number(event.target.value || 0);
                       const next = entries.map((item) =>
                         item.id === detailEntry.id
@@ -1125,6 +1184,7 @@ export function OrderComposer({
                   placeholder="Instruction"
                   value={detailEntry.instruction || ""}
                   onChange={(event) => {
+                    userTouchedRef.current = true;
                     const next = entries.map((item) =>
                       item.id === detailEntry.id ? { ...item, instruction: event.target.value } : item
                     );
@@ -1139,6 +1199,7 @@ export function OrderComposer({
                     placeholder="Dosage"
                     value={detailEntry.dosage || ""}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const next = entries.map((item) =>
                         item.id === detailEntry.id ? { ...item, dosage: event.target.value } : item
                       );
@@ -1150,6 +1211,7 @@ export function OrderComposer({
                     placeholder="Frequency"
                     value={detailEntry.frequency || ""}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const next = entries.map((item) =>
                         item.id === detailEntry.id ? { ...item, frequency: event.target.value } : item
                       );
@@ -1161,6 +1223,7 @@ export function OrderComposer({
                     placeholder="Duration"
                     value={detailEntry.duration || ""}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const next = entries.map((item) =>
                         item.id === detailEntry.id ? { ...item, duration: event.target.value } : item
                       );
