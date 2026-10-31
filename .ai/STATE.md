@@ -61,3 +61,4 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 17:15 Gate u2c-aw2 PASS 22/23. Cherry-picked u2d+u2e into ai-work; one combined gate u2de (usage saving).
 - 17:20 PR #217 (U2c). Gate u2de running; Codex re-review u2e running.
 - 17:05 Handed off remaining U2d/U2e PRs + U1b wrap-up to one Codex session (log /workspace/ai-logs/codex-handoff.out). Gate u2de running; u2e re-review APPROVE.
+- 2026-10-31 Step 1 complete: u2de OVERALL PASS (lint 0, build 0, e2e 22/23 baseline, only known-bug probes summary fails, clinics 0), gated on ai-work per D22. Screenshot commits pushed normally on ai/task-u2d (5ea915c) and ai/task-u2e (d65dba8); draft PRs https://github.com/Iatrum/UCC/pull/218 and https://github.com/Iatrum/UCC/pull/219. Both Codex APPROVE (U2e re-review after fixes). No sidebar/nav or production changes.
