@@ -60,3 +60,4 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 16:50 (times above labelled 17:05 were wrong, actually ~16:35) Reverted U2a (D21). Killed u2c-aw gate (included U2a), rerunning as u2c-aw2.
 - 17:15 Gate u2c-aw2 PASS 22/23. Cherry-picked u2d+u2e into ai-work; one combined gate u2de (usage saving).
 - 17:20 PR #217 (U2c). Gate u2de running; Codex re-review u2e running.
+- 17:05 Handed off remaining U2d/U2e PRs + U1b wrap-up to one Codex session (log /workspace/ai-logs/codex-handoff.out). Gate u2de running; u2e re-review APPROVE.
