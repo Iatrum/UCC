@@ -296,3 +296,55 @@ NODE_OPTIONS=--max-old-space-size=3072 node scripts/access-policy/apply-local-st
 Do not deploy this as a successful containment or broaden assignment: the doctor has already been restored. Resolving the superAdmin project topology or changing the server's injected-grant behavior requires separate review. Broad clinical clinic isolation remains outside this experiment.
 
 Validation: Node syntax check passed; a nonlocal URL was rejected before credential access/network; actual dry-run, apply, repeat-apply, rollback preview, rollback, repeat-rollback and final restored-state dry-run passed. **No full e2e suite or check-all gate was run**, per the Builder instruction; Dev owns that gate. This Builder made no `app/` or `lib/` edits, no commit, and no remote operations. Concurrent edits to `lib/fhir/admin-service.ts` and `e2e/tests/admin.spec.ts` appeared during execution and were left untouched.
+
+## Non-superAdmin retest
+
+Task 5b, 2026-10-31. New script `scripts/access-policy/test-nonsuperadmin-containment.mjs` (localhost:8113 only, never logs tokens/passwords/bodies, fake `@example.invalid` data only, no `app/`/`lib/` edits, not committed). It creates/reuses a disposable non-superAdmin Project (`UCC Task5 NonSuperAdmin Test`, verified `superAdmin` falsy), invites a project admin plus two fake clinic Practitioners (doctorA with the existing `ucc-local-staff-containment.json` policy, staffB with no policy) plus a PractitionerRole per fixture (carrying its own telecom), creates two fake Organizations (`clinic|task5-a`, `clinic|task5-b`), then runs the doctorA negative tests directly against `:8113`, plus a no-policy control (temporarily stripped from the membership via the superAdmin token, then restored under `try`/`finally` and reverified). Evidence (status/count/boolean only) written to `/workspace/ai-logs/task5b/evidence.txt` (outside the repo). An exclusive `test.lock` file in that directory serializes reruns; by default the three fake identities (project admin, doctorA, staffB) are deleted at the end of every run (`--keep` retains them for inspection), and a User is only deleted once no `ProjectMembership` anywhere still references it, so a shared identity is never collaterally removed. The script exits non-zero if any assertion fails.
+
+### Codex security review (CHANGES) and fixes
+
+An independent Codex review of the first version (`/workspace/ai-logs/task5b/codex-rev.out`) returned **CHANGES** with five MAJOR findings, all addressed except the explicitly out-of-scope one:
+
+1. *"Failed assertions still exit successfully."* Fixed: the script now exits 1 if any assertion's `pass !== true`.
+2. *"Assertions can pass without proving the expected context or data... search checks accept malformed 200 responses... inspect only the first page... never require the known staff fixture to appear."* Fixed: a new `collectPages` helper validates every page is a well-formed `Bundle` and follows `link rel=next` (capped, cycle-guarded) before any assertion runs; a new `assertDoctorAuthContext` check enforces `auth/me` status 200, `project.id` equals the test project, `project.superAdmin !== true`, `membership.admin !== true`, **and** independently re-reads the `ProjectMembership` resource via the superAdmin token to confirm `accessPolicy.reference` matches the created policy (not the ambiguous `auth/me.accessPolicy` field used in the prior diagnostic line); the Practitioner/PractitionerRole directory assertions now require the staffB fixture to actually appear in results before passing.
+3. *"PractitionerRole is never created or tested... no direct-read field assertion, narrative check, `_include`/`_revinclude`, history/vread or `_elements` probes."* Fixed: added a PractitionerRole fixture per Practitioner (with its own `telecom`), plus direct-read, `_elements=telecom`, `_history`, and `PractitionerRole?_include=PractitionerRole:practitioner` masking assertions, and POST/PUT/PATCH/DELETE-denied coverage for both Practitioner and PractitionerRole.
+4. *"Cleanup... deletes global `User` resources based on matching fake email without checking other memberships, and ignores DELETE statuses... lacks `try/finally`... no final teardown."* Fixed: `deleteOwnedIdentity` checks every DELETE status (`fail()`s on anything other than 200/204/404) and only deletes a `User` after confirming (via `ProjectMembership?user=`) it has no remaining memberships anywhere; the control strip/restore is now wrapped in `try/finally` so a thrown assertion still restores the policy; a final teardown (skippable with `--keep`) removes all three fake identities at the end of every run.
+5. *"Reruns are not concurrency-safe."* (MINOR) Fixed: an exclusive `test.lock` file (`wx` flag) now serializes runs, mirroring `apply-local-staff-policy.mjs`'s existing lock pattern.
+
+**Left out of scope, by instruction:** *"Cross-clinic containment is absent... no cross-clinic requests are tested."* Confirmed and intentionally not fixed here — this script only exercises staff-directory containment (ProjectMembership/User/Project/AccessPolicy denial, Practitioner/PractitionerRole telecom masking). `ucc-local-staff-containment.json` grants Patient/Encounter/Observation/etc. project-wide with no clinic criteria, so cross-clinic clinical-data isolation remains a materially larger, separately-reviewed follow-up (consistent with the "Risks and rollback" section above: "Broad clinical clinic isolation remains outside this experiment"). The MINOR "no server-version assertion" finding was also not addressed (not requested).
+
+### Result (hardened script, 23 assertions)
+
+All 23 assertions passed; script exit code 0; teardown of all three fake identities succeeded (membership/practitioner/user all deleted, status 200 each):
+
+| Assertion | Status | Count | PASS/FAIL |
+| --- | --- | --- | --- |
+| doctorA auth context + policy assigned (verified via superAdmin read) | 200 | - | PASS |
+| ProjectMembership denied/no-others (with policy) | 403 | 0 | PASS |
+| User denied/no-others (with policy) | 403 | 0 | PASS |
+| Project denied/no-others (with policy) | 403 | 0 | PASS |
+| Practitioner directory masked + staffB fixture present (with policy) | 200 | 0 | PASS |
+| PractitionerRole directory masked + staffB fixture present (with policy) | 200 | 0 | PASS |
+| Practitioner/staffB direct read telecom+text absent | 200 | 0 | PASS |
+| Practitioner/staffB _elements=telecom absent | 200 | 0 | PASS |
+| Practitioner/staffB _history telecom absent | 200 | 0 | PASS |
+| PractitionerRole?_include=PractitionerRole:practitioner telecom absent | 200 | 0 | PASS |
+| POST Practitioner denied | 403 | 0 | PASS |
+| PUT Practitioner/staffB denied | 403 | 0 | PASS |
+| PATCH Practitioner/staffB denied | 403 | 0 | PASS |
+| DELETE Practitioner/staffB denied | 403 | 0 | PASS |
+| POST PractitionerRole denied | 403 | 0 | PASS |
+| PATCH PractitionerRole/staffB denied | 403 | 0 | PASS |
+| DELETE PractitionerRole/staffB denied | 403 | 0 | PASS |
+| AccessPolicy read+write denied | get=403 post=403 | - | PASS |
+| Patient search works | 200 | - | PASS |
+| ProjectMembership denied/no-others (control, no policy) | 403 | 0 | PASS |
+| User denied/no-others (control, no policy) | 403 | 0 | PASS |
+| Project denied/no-others (control, no policy) | 403 | 0 | PASS |
+| Practitioner telecom exposed (control, no policy) | 200 | 3 | PASS |
+
+The control still confirms the discrepancy noted above as "upstream v5.2.8 already rejects wildcard access to ProjectMembership/User for non-admins": even with **no** accessPolicy at all, a non-admin membership in a non-superAdmin project still gets ProjectMembership/User/Project denied (project-admin resource types are excluded from the legacy wildcard regardless of policy). The policy's incremental, measurable effect in a non-superAdmin project is exactly the Practitioner/PractitionerRole telecom mask (3 other entries' telecom exposed in the control vs. 0 with the policy, now proven across search, direct read, `_elements`, `_history` and `_include`) plus denying create/update/patch/delete on Practitioner and PractitionerRole and denying reads/writes of AccessPolicy outright (all omitted from the explicit allowlist). This is the behavior the original build intended; it was only unreachable in the local superAdmin project because `applyProjectAdminAccessPolicy` injects the omitted project-admin grants unconditionally for superAdmin projects (see the fa6bada source citation above).
+
+Conclusion unchanged: the containment policy works as designed once the project is not `superAdmin`. Production clinics must run in a non-superAdmin project (the local dev project's `superAdmin:true` is a local-only artifact; confirming this for production is a Hostinger-boundary task left to the user). The local superAdmin project itself remains unremediated. Cross-clinic clinical-data isolation remains unverified and out of scope for this script.
+
+Conclusion: the containment policy works as designed once the project is not `superAdmin`. Production clinics must run in a non-superAdmin project (the local dev project's `superAdmin:true` is a local-only artifact; confirming this for production is explicitly a Hostinger-boundary task left to the user, per the existing "Discrepancy resolved" note above). The local superAdmin project itself remains unremediated and should not be treated as representative of production behavior.
