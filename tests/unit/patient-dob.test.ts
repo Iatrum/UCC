@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatMalaysianDate, isIsoDate, parseMalaysianDate, parseMalaysianNricDob } from "../../lib/patient-dob";
+import { appointmentDob, shouldAutofillDob, formatMalaysianDate, isIsoDate, parseMalaysianDate, parseMalaysianNricDob } from "../../lib/patient-dob";
 
 describe("Malaysian NRIC DOB", () => {
   test("uses current year's two-digit boundary", () => {
@@ -23,4 +23,31 @@ test("Malaysian date input round trips to ISO", () => {
   }
   expect(isIsoDate("2026-02-30")).toBe(false);
   expect(formatMalaysianDate("29/0")).toBe("29/0");
+});
+
+
+test("appointment DOB omits missing and invalid dates without throwing", () => {
+  for (const input of [undefined, null, "", new Date(""), new Date(NaN), "invalid", "2026-02-30", "0000-01-01"]) {
+    expect(appointmentDob(input)).toBeUndefined();
+  }
+  expect(appointmentDob(new Date("2000-02-29T00:00:00Z"))).toBe("2000-02-29");
+  expect(appointmentDob("2000-02-29")).toBe("2000-02-29");
+  expect(appointmentDob("2000-02-29T00:00:00Z")).toBe("2000-02-29");
+});
+
+test("year zero is invalid in ISO and Malaysian DOBs", () => {
+  expect(isIsoDate("0000-01-01")).toBe(false);
+  expect(parseMalaysianDate("01/01/0000")).toBeNull();
+  expect(isIsoDate("0001-01-01")).toBe(true);
+});
+
+test("NRIC autofill respects manual ownership even when cleared or equal to the derived DOB", () => {
+  const auto = "2000-02-29";
+  expect(shouldAutofillDob("", null, false)).toBe(true);
+  expect(shouldAutofillDob(auto, auto, false)).toBe(true); // NRIC can update an automatic value
+  expect(shouldAutofillDob("1999-01-01", null, false)).toBe(false); // existing DOB
+  expect(shouldAutofillDob("01/", auto, true)).toBe(false);
+  expect(shouldAutofillDob("", auto, true)).toBe(false); // select-all/delete
+  expect(shouldAutofillDob(auto, auto, true)).toBe(false); // manual value matches NRIC
+  expect(shouldAutofillDob("", null, true)).toBe(false); // later NRIC change
 });

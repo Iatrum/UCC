@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useMemo, useState } from "react";
-import { formatMalaysianDate } from "@/lib/patient-dob";
+import { appointmentDob, formatMalaysianDate } from "@/lib/patient-dob";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
@@ -237,7 +237,7 @@ export default function NewAppointmentForm() {
       id: patient.id,
       name: patient.fullName,
       contact: patient.phone,
-        dob: typeof patient.dateOfBirth === "string" ? patient.dateOfBirth.slice(0, 10) : patient.dateOfBirth?.toISOString().slice(0, 10),
+        dob: appointmentDob(patient.dateOfBirth),
     }));
   }, [patients]);
 

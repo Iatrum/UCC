@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { formatMalaysianDate } from "@/lib/patient-dob";
+import { appointmentDob, formatMalaysianDate } from "@/lib/patient-dob";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
@@ -273,7 +273,7 @@ export default function AppointmentsSlotsPilotPage() {
         id: patient.id,
         name: patient.fullName,
         contact: patient.phone,
-        dob: typeof patient.dateOfBirth === "string" ? patient.dateOfBirth.slice(0, 10) : patient.dateOfBirth?.toISOString().slice(0, 10),
+        dob: appointmentDob(patient.dateOfBirth),
         nric: patient.nric,
       })),
     [patients]

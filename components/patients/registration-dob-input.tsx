@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Input } from "@/components/ui/input";
-import { formatMalaysianDate, parseMalaysianDate, parseMalaysianNricDob } from "@/lib/patient-dob";
+import { formatMalaysianDate, parseMalaysianDate, parseMalaysianNricDob, shouldAutofillDob } from "@/lib/patient-dob";
 
 type Props = Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & {
   nric: string;
@@ -11,10 +11,11 @@ type Props = Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & {
 };
 
 export function RegistrationDobInput({ nric, value = "", onChange, ...props }: Props) {
+  const manuallyEdited = React.useRef(false);
   const lastAuto = React.useRef<string | null>(null);
   const derived = parseMalaysianNricDob(nric);
   React.useEffect(() => {
-    if (derived && (!value || value === lastAuto.current)) {
+    if (derived && shouldAutofillDob(value, lastAuto.current, manuallyEdited.current)) {
       lastAuto.current = derived;
       if (value !== derived) onChange(derived);
     }
@@ -25,7 +26,7 @@ export function RegistrationDobInput({ nric, value = "", onChange, ...props }: P
       <Input {...props} type="text" inputMode="numeric" placeholder="dd/mm/yyyy"
         value={formatMalaysianDate(value)}
         onChange={(event) => {
-          lastAuto.current = null;
+          manuallyEdited.current = true;
           onChange(parseMalaysianDate(event.target.value) ?? event.target.value);
         }} />
       {derived && value && value !== derived ? (
