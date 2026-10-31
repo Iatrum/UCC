@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { formatMalaysianDate } from "@/lib/patient-dob";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
@@ -130,6 +131,7 @@ type PatientOption = {
   id: string;
   name: string;
   contact?: string | null;
+  dob?: string;
   nric?: string | null;
 };
 
@@ -271,6 +273,7 @@ export default function AppointmentsSlotsPilotPage() {
         id: patient.id,
         name: patient.fullName,
         contact: patient.phone,
+        dob: typeof patient.dateOfBirth === "string" ? patient.dateOfBirth.slice(0, 10) : patient.dateOfBirth?.toISOString().slice(0, 10),
         nric: patient.nric,
       })),
     [patients]
@@ -456,6 +459,7 @@ export default function AppointmentsSlotsPilotPage() {
                   <div className="rounded-md border bg-muted/40 p-4 text-sm text-muted-foreground">
                     <p className="font-medium text-foreground">Selected patient</p>
                     <p>{selectedPatient.name}</p>
+                    {selectedPatient.dob ? <p>Date of birth: {formatMalaysianDate(selectedPatient.dob)}</p> : null}
                     {[selectedPatient.nric, selectedPatient.contact].filter(Boolean).length > 0 ? (
                       <p>{[selectedPatient.nric, selectedPatient.contact].filter(Boolean).join(" - ")}</p>
                     ) : null}
