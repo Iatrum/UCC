@@ -15,15 +15,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Image,
-  LayoutDashboard,
   LogOut,
   MessageCircle,
   Package,
   Puzzle,
-  Receipt,
   Settings,
   TestTube,
-  Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
@@ -40,12 +37,7 @@ type SidebarProps = {
   modules?: SidebarModule[];
 };
 
-// Always visible regardless of clinic module toggles — the doctor's most-used pages.
-const baseNavigation: Array<{ name: string; href: string; icon: LucideIcon }> = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Patients", href: "/patients", icon: Users },
-  { name: "Billing", href: "/orders", icon: Receipt },
-];
+const baseNavigation: Array<{ name: string; href: string; icon: LucideIcon }> = [];
 
 const bottomNavigation = [
   { name: "Settings", href: "/settings", icon: Settings },
@@ -73,7 +65,7 @@ const moduleIconMap: Record<string, LucideIcon> = {
 export default function Sidebar({ modules = [] }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, loading, signOut } = useMedplumAuth();
+  const { profile, signOut } = useMedplumAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
@@ -118,12 +110,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
             </Link>
           )}
           {isCollapsed && (
-            <Link
-              href="/dashboard"
-              className="mx-auto flex items-center"
-              title="Dashboard"
-              aria-label="Dashboard"
-            >
+            <Link href="/dashboard" className="mx-auto flex items-center" title="Dashboard">
               <BrandLogo showWordmark={false} className="h-8 w-8" />
             </Link>
           )}
@@ -154,7 +141,6 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                     isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "px-3 py-2"
                   )}
                   title={isCollapsed ? item.name : undefined}
-                  aria-label={isCollapsed ? item.name : undefined}
                 >
                   <item.icon className="h-4 w-4 flex-shrink-0" />
                   {!isCollapsed && <span className="ml-2">{item.name}</span>}
@@ -187,22 +173,13 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                     isCollapsed ? "mx-auto h-11 w-11 justify-center p-2 md:h-8 md:w-8" : "px-3 py-2"
                   )}
                   title={isCollapsed ? item.name : undefined}
-                  aria-label={isCollapsed ? item.name : undefined}
                 >
                   <item.icon className="h-4 w-4 flex-shrink-0" />
                   {!isCollapsed && <span className="ml-2">{item.name}</span>}
                 </Link>
               );
             })}
-            {loading ? (
-              <div
-                className={cn(
-                  "animate-pulse rounded-lg bg-muted",
-                  isCollapsed ? "mx-auto h-11 w-11 md:h-8 md:w-8" : "mx-1 h-8"
-                )}
-                aria-hidden="true"
-              />
-            ) : profile ? (
+            {profile ? (
               <Button
                 variant="ghost"
                 className={cn(
@@ -214,7 +191,6 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                   router.replace('/login');
                 }}
                 title={isCollapsed ? "Logout" : undefined}
-                aria-label={isCollapsed ? "Logout" : undefined}
               >
                 <LogOut className="h-4 w-4 flex-shrink-0" />
                 {!isCollapsed && <span className="ml-2">Logout</span>}
@@ -228,11 +204,7 @@ export default function Sidebar({ modules = [] }: SidebarProps) {
                 )}
                 asChild
               >
-                <Link
-                  href="/login"
-                  title={isCollapsed ? "Login" : undefined}
-                  aria-label={isCollapsed ? "Login" : undefined}
-                >
+                <Link href="/login" title={isCollapsed ? "Login" : undefined}>
                   <LogOut className="h-4 w-4 flex-shrink-0 rotate-180" />
                   {!isCollapsed && <span className="ml-2">Login</span>}
                 </Link>
