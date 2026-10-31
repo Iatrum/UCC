@@ -16,3 +16,4 @@
 - 2026-10-31 D15: Missing lab `status` defaults to `final` (POCT analysers send completed results; Observation.status is 1..1 in FHIR R4). Invalid status -> 400.
 - 2026-10-31 D16: Box `.env.local` got random fake local POCT_API_KEY/PACS_API_KEY; e2e reads its copy from git-ignored `e2e/.secrets/poct_key`. Staging/production keys must be set by the user (Hostinger boundary) – without them the receivers now refuse all results.
 - 2026-10-31 D17: e2e baseline moved to 21/23 after Task 4 (old one kept as baseline/results-20of23-round1.json).
+- 2026-10-31 D18: Task 6a: non-admin on /admin gets an inline notice on /login (no auto-follow of an admin `next`), instead of a new access-denied page. Fresh login by a non-admin with an admin `next` goes straight to their clinic dashboard. `safeNext` rejects control chars, backslashes and anything that normalises to `//` (Codex review found 2 open-redirect bypasses; fixed in 2 loops).

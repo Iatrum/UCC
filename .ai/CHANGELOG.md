@@ -26,3 +26,8 @@
 ## 2026-10-31 Task 6c – Adding stock without strengths no longer crashes
 - **What changed:** Adding an inventory item through the API without a "strengths" list gave a server error (500). Now a missing list is treated as empty, and bad stock / minimum stock / price values get a clear 400 message instead of a crash. Empty fields are no longer saved as blank FHIR extensions, and editing an item keeps any other extensions it already had.
 - **Why:** FHIR R4 ext-1 (hl7.org/fhir/R4/extensibility.html#Extension) says every extension needs a value; OWASP API guidance says bad input should get 4xx, not 500.
+
+## 2026-10-31 Task 6a – No more /admin redirect loop for clinic staff
+- **What changed:** A signed-in clinic user (not a platform admin) who opens /admin used to bounce between /admin and the login page until the page crashed. Now they land once on the login page with "This account is not a platform admin" and two buttons: "Go to my clinic dashboard" and "Sign in as a different user". The admin area stays admin-only (server check unchanged). The `next=` link after login is now checked strictly so it can't send people to another website.
+- **Why:** The login page followed `next=/admin` even when the server had just said `admin_required`. OWASP Unvalidated Redirects cheat sheet for the `next` check.
+- **Please test:** sign in as a doctor, open /admin -> one notice, no flicker; button goes to the dashboard. Sign in as admin -> /admin works as before.
