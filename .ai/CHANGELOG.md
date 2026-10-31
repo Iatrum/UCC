@@ -31,3 +31,8 @@
 - **What changed:** A signed-in clinic user (not a platform admin) who opens /admin used to bounce between /admin and the login page until the page crashed. Now they land once on the login page with "This account is not a platform admin" and two buttons: "Go to my clinic dashboard" and "Sign in as a different user". The admin area stays admin-only (server check unchanged). The `next=` link after login is now checked strictly so it can't send people to another website.
 - **Why:** The login page followed `next=/admin` even when the server had just said `admin_required`. OWASP Unvalidated Redirects cheat sheet for the `next` check.
 - **Please test:** sign in as a doctor, open /admin -> one notice, no flicker; button goes to the dashboard. Sign in as admin -> /admin works as before.
+
+## 2026-10-31 Task 6b – "Too many attempts" no longer shown as "wrong password"
+- **What changed:** When Medplum blocks sign-in for a minute (5 tries per IP per minute), the login page now says "Too many sign-in attempts. Please wait about N seconds and try again." instead of "Incorrect email or password". If Medplum is down or answers 5xx it says the sign-in server is busy/unavailable. A real wrong password still shows the same generic message (no hint whether the email exists). The API now returns 429 + `Retry-After` for this case.
+- **Why:** Medplum rate limits /auth/login and answers 429 with a `RateLimit: …;t=<secs>` header (medplum.com/docs/rate-limits, checked locally); RFC 6585/9110 for 429 + Retry-After.
+- **Please test:** on the login page type a wrong password 6 times quickly -> the 6th shows "Too many sign-in attempts…". Wait a minute -> normal sign-in works.
