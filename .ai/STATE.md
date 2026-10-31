@@ -28,3 +28,8 @@ See bottom of file.
 - 11:03 Claude review call 1 FAILED: 'Not logged in' (needs user /login). Fallback reviewer: Codex.
 - 11:03 Codex review (fallback) APPROVE, 0 MAJOR. Running gate task6c.
 - 11:10 Gate task6c PASS: lint 0, build 0, e2e 22/23 (new baseline; only known-bug probes summary fails), clinics 0. Committed f6d41e0. Codex 5h 6% (reset 13:15 MYT), weekly 2% (reset Thu 5 Nov 00:08 MYT). Claude: 1 call, not logged in. Pushed; round done, stop.
+- 11:45 Round 4 start. Codex 5h 6% (reset 13:15 MYT). Claude logged in OK (bash -lc).
+- 12:05 Task 6a committed ce8836a (Claude build, Codex review CHANGES x2 -> fixed). Gate PASS 22/23. PR #210 (draft, ai/task-6a from origin/dev). NOTE: #209 already merged into dev (958ca03).
+- 12:14 Task 6b committed (Codex build, Claude+Codex APPROVE). Gate PASS 22/23. PR #211. Codex 5h 11%.
+- 12:16 Running: admin full e2e (Codex, e2e/tests/admin.spec.ts, findings /workspace/ai-logs/admin-e2e/FINDINGS.md) + Task 5 research (Codex).
+- Per-task PR flow: worktree /workspace/ucc-pr-<id> from origin/dev, cherry-pick, keep dev's .ai files + append entry.
