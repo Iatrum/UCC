@@ -16,6 +16,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
   const rows: Row[] = [];
   let nn = 0, page: Page;
   const issues: string[] = [];
+  let allowClientValidation400 = false;
   let orgId = '', clinicId = '', userId = '';
   const orgName = `e2e-${RUN}-organisation`, clinicName = `e2e-${RUN}-clinic`;
   const email = `e2e-${RUN}@example.invalid`;
@@ -56,7 +57,9 @@ test('full local admin audit (one login)', async ({ browser }) => {
   const submit = async (url: string, method: string, button: string) => {
     const response = page.waitForResponse(r => new URL(r.url()).pathname === url && r.request().method() === method);
     await page.getByRole('button', { name: button, exact: true }).click();
-    return json(await response);
+    const r = await response;
+    // Delete handlers navigate immediately; Chromium may discard the response body.
+    return method === 'DELETE' && r.ok() ? undefined : json(r);
   };
   const choose = async (id: string, label: string) => {
     await page.locator(`#${id}`).click();
@@ -74,7 +77,13 @@ test('full local admin audit (one login)', async ({ browser }) => {
     expect(login.isAdmin).toBe(true);
     const context = await browser.newContext({ baseURL: BASE, storageState: await api.storageState(), viewport: { width: 1440, height: 1000 } });
     page = await context.newPage();
-    page.on('console', msg => { if (msg.type() === 'error') issues.push(`console: ${msg.text()}`); });
+    page.on('console', msg => {
+      if (msg.type() !== 'error') return;
+      if (allowClientValidation400 &&
+          msg.text() === 'Failed to load resource: the server responded with a status of 400 (Bad Request)' &&
+          msg.location().url === `${BASE}/api/admin/create-medplum-client`) return;
+      issues.push(`console: ${msg.text()}`);
+    });
     page.on('pageerror', e => issues.push(`pageerror: ${e.message}`));
     page.on('response', r => { if (r.status() >= 500) issues.push(`HTTP ${r.status()} ${new URL(r.url()).pathname}`); });
     // Refuse browser requests to external services, even when deployment settings contain external URLs.
@@ -172,9 +181,14 @@ test('full local admin audit (one login)', async ({ browser }) => {
     await step('client creation validation', 'app/(routes)/api/admin/create-medplum-client/route.ts:17', async () => {
       await visit('/admin/create-medplum-client'); await page.locator('#medplumUrl').fill('http://localhost:8113'); await page.locator('#email').fill(email);
       const response = page.waitForResponse(r => r.url().endsWith('/api/admin/create-medplum-client') && r.request().method() === 'POST');
-      await page.getByRole('button', { name: 'Create Client Credentials' }).click();
-      const r = await response; expect(r.status()).toBe(400); expect((await r.json()).error).toBe('Missing required fields');
-      await expect(page.getByText('❌ Error: Missing required fields')).toBeVisible();
+      allowClientValidation400 = true;
+      try {
+        await page.getByRole('button', { name: 'Create Client Credentials' }).click();
+        const r = await response; expect(r.status()).toBe(400); expect((await r.json()).error).toBe('Missing required fields');
+        await expect(page.getByText('❌ Error: Missing required fields')).toBeVisible();
+      } finally {
+        allowClientValidation400 = false;
+      }
     });
     await step('create client/API key and revoke', 'app/(routes)/api/admin/create-medplum-client/route.ts:29', async () => {}, 'Success path untested: endpoint necessarily performs a second login, prohibited by task. No API-key/revoke UI or route exists.');
     await step('separate user deactivate/revoke', 'app/(admin)/admin/users/[id]/user-edit-form.tsx:270', async () => {}, 'Delete User is the only access revocation action; tested during cleanup.');
