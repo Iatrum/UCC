@@ -33,3 +33,8 @@ See bottom of file.
 - 12:14 Task 6b committed (Codex build, Claude+Codex APPROVE). Gate PASS 22/23. PR #211. Codex 5h 11%.
 - 12:16 Running: admin full e2e (Codex, e2e/tests/admin.spec.ts, findings /workspace/ai-logs/admin-e2e/FINDINGS.md) + Task 5 research (Codex).
 - Per-task PR flow: worktree /workspace/ucc-pr-<id> from origin/dev, cherry-pick, keep dev's .ai files + append entry.
+Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareService) uncommitted, reviewed; gating.
+- 12:54 Task 6d committed (invite 500 fix) + admin e2e spec update. Gate task6d PASS 22/23; admin spec 21 WORKS 0 BROKEN 4 NOT PRESENT (role edit, settings save, API keys/revoke, user deactivate). PR ai/task-6d. Next: Task 5.
+- 13:09 Task 5 committed (policy+script, containment FAILED due to superAdmin project; rolled back; decision in BACKLOG). Gate task5-r2 PASS 22/23 (task5 r1 = dev-server timeout flake). Next: U1.
+- 13:09 U1 audit launched (Claude, /workspace/ai-logs/u1).
+- 13:41 Round 6: admin e2e already done+committed (6d, PR #212). Task 5 PR #213. NEXT: U1 (audit was launched 13:09, check /workspace/ai-logs/u1); Task 5 containment blocked by superAdmin project (decision in BACKLOG).
