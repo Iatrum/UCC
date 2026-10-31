@@ -1,5 +1,5 @@
-import { notFound } from "next/navigation";
+import { ModuleUnavailable } from "@/components/module-unavailable";
 
 export default function RecordsPage() {
-  notFound();
+  return <ModuleUnavailable feature="Records" />;
 }
