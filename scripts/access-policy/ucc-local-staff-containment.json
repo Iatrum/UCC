@@ -1,0 +1,137 @@
+{
+  "resourceType": "AccessPolicy",
+  "name": "UCC Local Staff Containment v1",
+  "resource": [
+    {
+      "resourceType": "Practitioner",
+      "readonly": true,
+      "hiddenFields": [
+        "telecom",
+        "text"
+      ]
+    },
+    {
+      "resourceType": "PractitionerRole",
+      "readonly": true,
+      "hiddenFields": [
+        "telecom",
+        "text"
+      ]
+    },
+    {
+      "resourceType": "Organization",
+      "readonly": true
+    },
+    {
+      "resourceType": "HealthcareService",
+      "readonly": true
+    },
+    {
+      "resourceType": "Location",
+      "readonly": true
+    },
+    {
+      "resourceType": "Patient"
+    },
+    {
+      "resourceType": "Encounter"
+    },
+    {
+      "resourceType": "Observation"
+    },
+    {
+      "resourceType": "Condition"
+    },
+    {
+      "resourceType": "AllergyIntolerance"
+    },
+    {
+      "resourceType": "MedicationStatement"
+    },
+    {
+      "resourceType": "MedicationRequest"
+    },
+    {
+      "resourceType": "Medication",
+      "readonly": true
+    },
+    {
+      "resourceType": "Procedure"
+    },
+    {
+      "resourceType": "ServiceRequest"
+    },
+    {
+      "resourceType": "DiagnosticReport"
+    },
+    {
+      "resourceType": "ImagingStudy"
+    },
+    {
+      "resourceType": "Appointment"
+    },
+    {
+      "resourceType": "Schedule"
+    },
+    {
+      "resourceType": "Slot"
+    },
+    {
+      "resourceType": "Invoice"
+    },
+    {
+      "resourceType": "Task"
+    },
+    {
+      "resourceType": "DocumentReference"
+    },
+    {
+      "resourceType": "Provenance",
+      "interaction": [
+        "create",
+        "read",
+        "search"
+      ]
+    },
+    {
+      "resourceType": "AuditEvent",
+      "interaction": [
+        "create"
+      ]
+    },
+    {
+      "resourceType": "ChargeItemDefinition",
+      "readonly": true
+    },
+    {
+      "resourceType": "Basic",
+      "readonly": true
+    },
+    {
+      "resourceType": "Communication"
+    },
+    {
+      "resourceType": "Questionnaire",
+      "readonly": true
+    },
+    {
+      "resourceType": "QuestionnaireResponse"
+    },
+    {
+      "resourceType": "StructureDefinition",
+      "readonly": true
+    },
+    {
+      "resourceType": "SearchParameter",
+      "readonly": true
+    },
+    {
+      "resourceType": "ValueSet",
+      "readonly": true
+    },
+    {
+      "resourceType": "CodeSystem",
+      "readonly": true
+    }
+  ]
+}
