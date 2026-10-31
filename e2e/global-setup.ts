@@ -4,6 +4,9 @@ import { BASE, USER, PASSWORD } from './lib/env';
 // One API login per run (Medplum rate-limits auth ~5/min/IP and the app reports that as "Incorrect email or password").
 // Also seeds idempotent fake catalog fixtures the workflow needs.
 export default async function () {
+  // The standalone admin suite owns its single login and must not seed clinic data.
+  const specs = process.argv.filter((arg) => /\.spec\.[cm]?[jt]s$/.test(arg));
+  if (specs.length === 1 && /(^|\/)admin\.spec\.ts$/.test(specs[0])) return;
   const ctx = await request.newContext({ baseURL: BASE });
   let ok = false;
   for (let i = 0; i < 3 && !ok; i++) {
