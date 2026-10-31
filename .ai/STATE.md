@@ -56,3 +56,4 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 15:55 Round 8: backlog += clinic clinical isolation. Starting U2c(#3 404s), U2d(#4 template preview), U2e(#5 DOB/NRIC) in worktrees /workspace/ucc-pr-u2c/d/e from origin/dev; Codex builds.
 - 16:15 U2c/d/e built by Codex, committed in worktrees. U1b live composer+Lab audit done (#8-14, Codex). Next: Codex review, gates per worktree.
 - 16:30 U1b composer pass done (#15-22). Review: u2c APPROVE, u2d APPROVE, u2e CHANGES (MAJOR appt form crash on missing DOB). Gating u2c next.
+- 17:05 Gate u2c on dev-based worktree 17/23: 07 lab ingest 401 because origin/dev lacks Task 4 (x-api-key receiver) + 6c inventory -> serial skips 08-10; not u2c. Decision: gate each U2 change on ai-work (consistent 22/23 baseline). Cherry-picked u2c into ai-work.
