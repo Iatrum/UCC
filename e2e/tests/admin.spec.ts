@@ -20,10 +20,13 @@ test('full local admin audit (one login)', async ({ browser }) => {
   let orgId = '', clinicId = '', userId = '';
   const orgName = `e2e-${RUN}-organisation`, clinicName = `e2e-${RUN}-clinic`;
   const email = `e2e-${RUN}@example.invalid`;
+  const fakePassword = `Fake-only-${RUN}-X!`;
+  const retained = await request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
+  let beforeStatus: any;
   const api = await request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
   const shot = async (name: string) => {
     const file = `shots/${String(++nn).padStart(2, '0')}-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
-    await page.screenshot({ path: `${OUT}/${file}`, fullPage: true, mask: [page.locator('input[type="password"]')] });
+    await page.screenshot({ path: `${OUT}/${file}`, fullPage: true, caret: 'initial', mask: [page.locator('input[type="password"]')] });
     return file;
   };
   const step = async (name: string, cause: string, fn: () => Promise<void>, absent = '') => {
@@ -70,6 +73,22 @@ test('full local admin audit (one login)', async ({ browser }) => {
     await page.getByRole('button', { name: trigger, exact: true }).click();
     await shot(`${trigger}-confirmation`);
     await submit(url, 'DELETE', confirm);
+  };
+  const toggleStatus = async (id: string, trigger: string, confirm: string) => {
+    await visit(`/admin/users/${id}`);
+    await page.getByRole('button', { name: trigger, exact: true }).click();
+    await shot(`${trigger}-confirmation`);
+    return submit(`/api/admin/users/${id}/status`, 'PATCH', confirm);
+  };
+  // Fresh, unauthenticated context so probing the fake user's login never
+  // clobbers the one admin session (`api`) used for the rest of this run.
+  const tryLogin = async (loginEmail: string, loginPassword: string): Promise<number> => {
+    const probe = await request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
+    try {
+      return (await probe.post('/api/auth/login', { data: { email: loginEmail, password: loginPassword } })).status();
+    } finally {
+      await probe.dispose();
+    }
   };
   try {
     // Deliberately no retry: exactly one authentication attempt for the entire run.
@@ -154,7 +173,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
       await page.locator('#firstName').fill(`e2e-${RUN}`); await page.locator('#lastName').fill('Fake'); await page.locator('#email').fill(email);
       await page.locator('#sendEmailInvite').click(); await expect(page.getByRole('button', { name: 'Send Invite', exact: true })).toBeVisible(); await shot('email-invite-enabled');
       await page.locator('#sendEmailInvite').click();
-      await page.locator('#password').fill(`Fake-only-${RUN}-X!`);
+      await page.locator('#password').fill(fakePassword);
       await submit('/api/admin/users/invite', 'POST', 'Create User');
     });
     // Lookup also catches partial invitation success when assignment fails.
@@ -191,7 +210,47 @@ test('full local admin audit (one login)', async ({ browser }) => {
       }
     });
     await step('create client/API key and revoke', 'app/(routes)/api/admin/create-medplum-client/route.ts:29', async () => {}, 'Success path untested: endpoint necessarily performs a second login, prohibited by task. No API-key/revoke UI or route exists.');
-    await step('separate user deactivate/revoke', 'app/(admin)/admin/users/[id]/user-edit-form.tsx:270', async () => {}, 'Delete User is the only access revocation action; tested during cleanup.');
+    await step('deactivate user blocks login and filters by status', 'app/api/admin/users/[id]/status/route.ts', async () => {
+      if (!userId) throw new Error('Fake user unavailable');
+      const anonymous = await request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
+      try {
+        expect([401, 403], "anonymous status denied").toContain((await anonymous.patch(`/api/admin/users/${userId}/status`, { data: { active: false } })).status());
+      } finally { await anonymous.dispose(); }
+      await json(await retained.post('/api/auth/login', { data: { email, password: fakePassword } }));
+      expect((await retained.get('/api/patients?limit=1')).status()).toBe(200);
+      expect((await retained.patch(`/api/admin/users/${userId}/status`, { data: { active: false } })).status()).toBe(403);
+      beforeStatus = await json(await api.get(`/api/admin/users/${userId}`));
+      await toggleStatus(userId, 'Deactivate User', 'Deactivate');
+      expect([401, 403], 'retained clinical session denied').toContain((await retained.get('/api/patients?limit=1')).status());
+      expect((await json(await api.get(`/api/admin/users/${userId}`))).active).toBe(false);
+      await visit('/admin/users?status=deactivated');
+      await expect(page.getByText(email)).toBeVisible();
+      await visit('/admin/users?status=active');
+      await expect(page.getByText(email)).toHaveCount(0);
+      const loginRes = await tryLogin(email, fakePassword);
+      expect([401, 403], 'fresh login denied').toContain(loginRes);
+    });
+    await step('reactivate user restores login', 'app/api/admin/users/[id]/status/route.ts', async () => {
+      if (!userId) throw new Error('Fake user unavailable');
+      await toggleStatus(userId, 'Reactivate User', 'Reactivate');
+      expect((await json(await api.get(`/api/admin/users/${userId}`))).active).toBe(true);
+      const loginRes = await tryLogin(email, fakePassword);
+      expect(loginRes).toBe(200);
+      const after = await json(await api.get(`/api/admin/users/${userId}`));
+      expect({ ...after, active: undefined }).toEqual({ ...beforeStatus, active: undefined });
+    });
+    await step('block self-deactivation', 'app/api/admin/users/[id]/status/route.ts', async () => {
+      const me = await json(await api.get('/api/auth/me'));
+      if (me.summary?.resourceType !== 'Practitioner' || !me.summary?.id) {
+        throw new Error(`Platform admin profile is resourceType=${me.summary?.resourceType}, not Practitioner; cannot exercise self-deactivation guard.`);
+      }
+      const res = await api.patch(`/api/admin/users/${me.summary.id}/status`, { data: { active: false } });
+      if (res.status() !== 403) throw new Error(`Expected 403 blocking self-deactivation, got HTTP ${res.status()}`);
+      await visit(`/admin/users/${me.summary.id}`);
+      await shot('self-deactivate-blocked');
+      await expect(page.getByText('You cannot deactivate your own account.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Deactivate User', exact: true })).toHaveCount(0);
+    });
   } finally {
     if (page) {
       // Only delete IDs discovered from exact RUN-owned objects, never existing fixtures.
@@ -216,7 +275,8 @@ test('full local admin audit (one login)', async ({ browser }) => {
       await page.context().close();
     }
     const escape = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 5000);
-    fs.writeFileSync(`${OUT}/FINDINGS.md`, `# Local admin E2E — RUN ${RUN}\n\nOne isolated admin login; no retries, no doctor global setup, no external navigation. Screenshots relative to this report.\n\n| Function | Result | Evidence | Suspected root cause file:line |\n|---|---|---|---|\n${rows.map(r => `| ${escape(r.function)} | ${r.result} | ${escape(r.evidence)} | ${escape(r.cause)} |`).join('\n')}\n\nSummary: ${rows.filter(r => r.result === 'WORKS').length} WORKS, ${rows.filter(r => r.result === 'BROKEN').length} BROKEN, ${rows.filter(r => r.result === 'NOT PRESENT').length} NOT PRESENT/explicit coverage limitations. Client success cannot be verified within the one-login constraint. Full check-all intentionally not run: user requested only this spec.\n`);
+    fs.writeFileSync(`${OUT}/FINDINGS.md`, `# Local admin E2E — RUN ${RUN}\n\nOne isolated admin login; no retries, no doctor global setup, no external navigation. Screenshots relative to this report.\n\n| Function | Result | Evidence | Suspected root cause file:line |\n|---|---|---|---|\n${rows.map(r => `| ${escape(r.function)} | ${r.result} | ${escape(r.evidence)} | ${escape(r.cause)} |`).join('\n')}\n\nSummary: ${rows.filter(r => r.result === 'WORKS').length} WORKS, ${rows.filter(r => r.result === 'BROKEN').length} BROKEN, ${rows.filter(r => r.result === 'NOT PRESENT').length} NOT PRESENT/explicit coverage limitations. Client success cannot be verified within the one-login constraint. Full gate results are recorded separately in the task research notes.\n`);
+    await retained.dispose();
     await api.dispose();
   }
 });
