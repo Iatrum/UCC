@@ -27,11 +27,27 @@ class LoginRouteError extends Error {
   constructor(
     public readonly code: string,
     message: string,
-    public readonly status: number
+    public readonly status: number,
+    public readonly retryAfterSeconds?: number
   ) {
     super(message);
     this.name = 'LoginRouteError';
   }
+}
+
+function getRetryAfterSeconds(response: Response): number {
+  const retryAfter = response.headers.get('Retry-After')?.trim();
+  let seconds: number | undefined;
+  if (retryAfter) {
+    seconds = /^\d+$/.test(retryAfter)
+      ? Number(retryAfter)
+      : (Date.parse(retryAfter) - Date.now()) / 1000;
+  }
+  if (seconds === undefined || !Number.isFinite(seconds)) {
+    const reset = response.headers.get('RateLimit')?.match(/(?:^|;)\s*t\s*=\s*(\d+)/i);
+    seconds = reset ? Number(reset[1]) : 60;
+  }
+  return Math.min(600, Math.max(1, Math.ceil(seconds)));
 }
 
 function createPkcePair(): { codeVerifier: string; codeChallenge: string } {
@@ -95,19 +111,37 @@ async function startEmailPasswordLogin(
   password: string,
   codeChallenge: string
 ): Promise<string> {
-  const response = await fetch(`${MEDPLUM_BASE_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email,
-      password,
-      clientId: MEDPLUM_CLIENT_ID,
-      projectId: MEDPLUM_PROJECT_ID || undefined,
-      scope: 'openid profile offline_access',
-      codeChallenge,
-      codeChallengeMethod: 'S256',
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${MEDPLUM_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password,
+        clientId: MEDPLUM_CLIENT_ID,
+        projectId: MEDPLUM_PROJECT_ID || undefined,
+        scope: 'openid profile offline_access',
+        codeChallenge,
+        codeChallengeMethod: 'S256',
+      }),
+    });
+
+  } catch {
+    throw new LoginRouteError('AUTH_UNAVAILABLE', 'The sign-in server is busy or unavailable.', 503);
+  }
+
+  if (response.status === 429) {
+    throw new LoginRouteError(
+      'AUTH_RATE_LIMITED',
+      'Too many sign-in attempts.',
+      429,
+      getRetryAfterSeconds(response)
+    );
+  }
+  if (response.status >= 500) {
+    throw new LoginRouteError('AUTH_UNAVAILABLE', 'The sign-in server is busy or unavailable.', 503);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -153,6 +187,15 @@ async function exchangeAuthorizationCode(
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   });
+
+  if (response.status === 429) {
+    throw new LoginRouteError(
+      'AUTH_RATE_LIMITED',
+      'Too many sign-in attempts.',
+      429,
+      getRetryAfterSeconds(response)
+    );
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || typeof payload?.access_token !== 'string') {
@@ -344,8 +387,13 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof LoginRouteError) {
       return NextResponse.json(
-        { code: error.code, error: error.message },
-        { status: error.status }
+        { code: error.code, error: error.message, retryAfterSeconds: error.retryAfterSeconds },
+        {
+          status: error.status,
+          headers: error.retryAfterSeconds !== undefined
+            ? { 'Retry-After': String(error.retryAfterSeconds) }
+            : undefined,
+        }
       );
     }
 

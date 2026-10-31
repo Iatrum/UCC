@@ -14,3 +14,4 @@
 - POCT labs phases 1-3
 - POCT X-ray
 - Dispensing; MC/referral docs
+- Task 6b follow-ups: anchor rate-limit match on code prefix; AUTH_UNAVAILABLE for token-exchange network errors

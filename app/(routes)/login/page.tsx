@@ -113,7 +113,13 @@ function LoginForm() {
       const raw = error instanceof Error ? error.message : "";
       let description = "Unable to sign in. Please try again.";
 
-      if (raw.startsWith("AUTH_CREDENTIALS")) {
+      if (raw.startsWith("AUTH_RATE_LIMITED")) {
+        const retrySeconds = raw.match(/^AUTH_RATE_LIMITED:(\d+):/);
+        const seconds = retrySeconds ? Math.min(600, Math.max(1, Number(retrySeconds[1]))) : 60;
+        description = `Too many sign-in attempts. Please wait about ${seconds} seconds and try again.`;
+      } else if (raw.startsWith("AUTH_UNAVAILABLE")) {
+        description = "The sign-in server is busy or unavailable. Please try again shortly.";
+      } else if (raw.startsWith("AUTH_CREDENTIALS")) {
         description = "Incorrect email or password. Please check and try again.";
       } else if (raw.startsWith("AUTH_NETWORK")) {
         description =

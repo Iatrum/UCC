@@ -9,3 +9,8 @@
 ## 2026-10-31 Task 2 – Fake data for 4 clinics (local only)
 - New script `e2e/scripts/seed-clinics.ts` fills the local test Medplum with obviously fake data for 4 clinics (Demo, Klinik Bravo, Charlie, Delta): 6 patients each, with visits, diagnoses, blood count lab orders and results.
 - Safe to run again (it does not make duplicates). It refuses to run against anything except localhost.
+
+## 2026-10-31 Task 6b – "Too many attempts" no longer shown as "wrong password"
+- **What changed:** When Medplum blocks sign-in for a minute (5 tries per IP per minute), the login page now says "Too many sign-in attempts. Please wait about N seconds and try again." instead of "Incorrect email or password". If Medplum is down or answers 5xx it says the sign-in server is busy/unavailable. A real wrong password still shows the same generic message (no hint whether the email exists). The API now returns 429 + `Retry-After` for this case.
+- **Why:** Medplum rate limits /auth/login and answers 429 with a `RateLimit: …;t=<secs>` header (medplum.com/docs/rate-limits, checked locally); RFC 6585/9110 for 429 + Retry-After.
+- **Please test:** on the login page type a wrong password 6 times quickly -> the 6th shows "Too many sign-in attempts…". Wait a minute -> normal sign-in works.
