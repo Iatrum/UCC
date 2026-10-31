@@ -21,6 +21,23 @@ function getIdFromReference(reference?: string): string | undefined {
 const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 const CLINIC_STAFF_POLICY_NAME = "UCC Clinic Staff Policy";
 
+async function ensureClinicAccount(
+  medplum: MedplumClient,
+  organization: Organization,
+  clinicId: string
+) {
+  if (!organization.id) {
+    throw new Error("Clinic Organization is missing its resource ID.");
+  }
+  return medplum.createResourceIfNoneExist<HealthcareService>({
+    resourceType: "HealthcareService",
+    active: true,
+    name: organization.name,
+    identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
+    providedBy: { reference: `Organization/${organization.id}` },
+  }, new URLSearchParams({ identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` }).toString());
+}
+
 async function getClinicPolicyParameters(
   medplum: MedplumClient,
   clinicOrganizationId: string
@@ -31,10 +48,7 @@ async function getClinicPolicyParameters(
     throw new Error(`Clinic Organization/${clinicOrganizationId} is missing identifier ${CLINIC_IDENTIFIER_SYSTEM}|<clinicId>.`);
   }
 
-  const account = await medplum.searchOne("HealthcareService", {
-    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-    _count: "1",
-  }) as HealthcareService | undefined;
+  const account = await ensureClinicAccount(medplum, organization, clinicId);
   if (!account?.id) {
     throw new Error(`Clinic account HealthcareService not found for clinic '${clinicId}'.`);
   }
@@ -410,7 +424,8 @@ export async function saveOrganizationDetailsToMedplum(
     }),
   };
 
-  await medplum.createResource(org);
+  const organization = await medplum.createResource(org);
+  await ensureClinicAccount(medplum, organization, subdomain);
 }
 
 function practitionerDisplayName(p: Practitioner): string {
@@ -733,7 +748,7 @@ export async function invitePractitionerToMedplum(
   }
 
   const response = await fetch(
-    `${medplum.getBaseUrl()}/admin/projects/${projectId}/invite`,
+    new URL(`admin/projects/${projectId}/invite`, medplum.getBaseUrl()),
     {
       method: "POST",
       headers: {
@@ -752,7 +767,12 @@ export async function invitePractitionerToMedplum(
     }
   );
 
-  const outcome = await response.json();
+  let outcome;
+  try {
+    outcome = await response.json();
+  } catch {
+    throw new Error(`Medplum invite returned a non-JSON response (HTTP ${response.status}).`);
+  }
 
   if (!response.ok || (outcome as any)?.resourceType === "OperationOutcome") {
     const issue = (outcome as any)?.issue?.[0];

@@ -14,3 +14,4 @@
 - POCT labs phases 1-3
 - POCT X-ray
 - Dispensing; MC/referral docs
+- Task 5 decision needed: local Medplum project is superAdmin=true; Medplum injects ProjectMembership/User/Project grants for every member, so any AccessPolicy cannot hide staff directory. Fix = staff in a non-superAdmin project (topology change, user decision). Policy+script committed, rolled back locally.

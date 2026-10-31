@@ -21,3 +21,4 @@ See bottom of file.
   - WARNING: probe 05 still FAILS functionally: POST /api/consultations/plan -> 503 persistenceAvailable:false, footer shows "Not saved to server…", but item is gone ("No line items yet"). Suspect: hydration useEffect deps [initialEntries, loadDraft, publishPlan(onPlanChange)] re-run on parent re-render and `publishPlan(initialEntries)` wipes entries. Not fixed (out of scope this round).
   - Screenshots: /workspace/ai-logs/task3/shots/before-composer.png (26 Oct, pre-fix), after-composer.png (this gate).
 - NEXT (08:00 round): Task 3b = fix hydration wipe (run once per key / skip publish after user edits), verify probe 05 keeps "1 × RM 0.50". Then Task 4 (research in .ai/research/task4-labs-receive.md). Not pushed.
+- 2026-10-31 15:05 Task 5b: containment re-tested in a NON-superAdmin local project: 31/31 PASS (see .ai/research/task5b-evidence.txt).
