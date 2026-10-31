@@ -54,3 +54,4 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 16:00 NOTE: another agent checked out origin/ai/task-6a/6b/6e detached in THIS repo at 15:44 (merging origin/dev); switched back to ai-work. Gate u2-r2 (15:03-15:22, on ai-work 2a1d327) PASS 22/23.
 - 16:10 PRs: U2a #215, U2b #216 (draft, before/after shots in .ai/ux-shots/<task>). PR #213 was MERGED 15:19 MYT incl. 5b retest commits. Done this round.
 - 15:55 Round 8: backlog += clinic clinical isolation. Starting U2c(#3 404s), U2d(#4 template preview), U2e(#5 DOB/NRIC) in worktrees /workspace/ucc-pr-u2c/d/e from origin/dev; Codex builds.
+- 16:15 U2c/d/e built by Codex, committed in worktrees. U1b live composer+Lab audit done (#8-14, Codex). Next: Codex review, gates per worktree.
