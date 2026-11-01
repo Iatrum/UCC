@@ -1,5 +1,11 @@
 # CHANGELOG (plain language)
 
+## 2026-11-01 Task 8 — fake-data staging plan
+- Planned an isolated Medplum instance/non-superAdmin clinical project and separate Firebase project, Firestore and Storage. Nothing provisioned, deployed or purchased.
+- Required a staging adapter that attests targets before writes; preserved current localhost safety guards. Added strict baseline validation, clinical DELETE denial and durable-save/upload acceptance.
+- Validation on ai-work: task8-1101 OVERALL PASS; lint 0, build 0, e2e 22/23 (only known baseline summary fails), clinics 0. This is regression evidence, not staging readiness.
+- Review: single-model review (Codex builder + fresh Codex reviewer), APPROVE after one fix loop; no remaining MAJOR/MINOR. Docs only; screenshots not applicable.
+
 ## 2026-11-01 Task 7 — Medplum network lockdown plan
 - Added an inventory-first plan for private backend ports, controlled browser HTTPS access, private operator tools, device ingress, route aliases and batch-operation risks.
 - All rollout/rollback work is marked USER ACTIONS. No network, production, credentials or application code changed. Receiver fail-closed authentication and clinical isolation remain deployment prerequisites.

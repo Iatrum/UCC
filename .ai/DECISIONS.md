@@ -27,3 +27,7 @@
 - 2026-11-01T08:04:20+08:00 D24: Task 7 is plan only; keep controlled browser HTTPS API because browser SDK still exists. Inventory all four Medplum aliases and batch/operation bypass paths; no guessed production proxy rules or deployment.
 
 - 2026-11-01T10:01:51+08:00 D25: Resume reconciliation: fetched origin/task-7 explicitly (remote fetch default covers ai-work only); PR #220 at 8aad2f2 has identical plan/research/review to recovered 5b73f0a, only clearer changelog. Remote retained; clean task worktree reset to remote after preserving ai/task-7-recovered-5b73f0a. No duplicate PR or force push. Existing gate remains valid: documentation content identical.
+
+- 2026-11-01T10:03:25+08:00 D26: Task 8 chooses separate staging instance/non-superAdmin clinical project plus separate Firebase and fail-closed target attestation before writes. Existing URL overrides cannot safely retarget the full gate; preserve local guards. Missing no-cost durable-storage environment is BLOCKED, not a fallback pass.
+
+- 2026-11-01T11:54:10+08:00 D27: Follow 10:18 user priority recorded in shared STATE/BACKLOG: POCT Tasks 9-12 ahead of isolation/U3. Finish Task 8; Task 9 stays research-only per prompt. Tasks 10-12 have no detailed specification in repo yet; research will define safe prerequisites before implementation. Isolation draft retained in external round logs, not shipped.

@@ -72,3 +72,12 @@ Sat Oct 31 12:43:53 +08 2026 Round 5 resume: 6d fix (invite URL + HealthcareServ
 - 2026-11-01T08:06:54+08:00 Task 7 step 4: fresh Codex re-review APPROVE, no remaining findings; single-model review. Full gate has lint/build 0, workflow progressing without new failures.
 
 - 2026-11-01T10:01:51+08:00 Task 7 resumed/completed: PR https://github.com/Iatrum/UCC/pull/220 already contains identical APPROVE-reviewed documents. Local ai/task-7 now matches origin 8aad2f2; recovered 5b73f0a retained in backup ref. Integrated remote changelog and approved docs in one ai-work commit. Gate task7-1101 OVERALL PASS (lint/build 0, e2e 22/23 baseline-only summary failure, clinics 0). Usage primary 11%, weekly 20%; deleted gitlink untouched. Next Task 8 staging PLAN.
+
+- 2026-11-01T10:03:25+08:00 Task 8 research/plan drafted in ucc-pr-8 from origin/dev; copied to ai-work for D22 gate. Separate attested staging adapter required; no provisioning or remote tests. Fresh Codex review and local gate next.
+
+- 2026-11-01T10:04:18+08:00 Task 8 review CHANGES (2 MAJOR: baseline fail-open, omitted DELETE; 1 MINOR missing prerequisite link). Docs corrected in loop 1; re-review next. Gate lint/build 0, warmup running.
+
+## USER PRIORITY CHANGE (1 Nov 10:18 MYT)
+User: do POCT lab (Tasks 9-11) and POCT X-ray (Task 12) NEXT, before clinic isolation and U3a/U3b/U3c usability. Finish the current task (Task 8) cleanly, then start Task 9.
+
+- 2026-11-01T11:54:10+08:00 Task 8 complete: https://github.com/Iatrum/UCC/pull/221 draft, 6572517; fresh Codex APPROVE after loop 1. Gate task8-1101 OVERALL PASS (lint/build 0, e2e 22/23 baseline-only summary failure, clinics 0). Integrated docs/changelog, preserved 10:18 user priority note and deleted gitlink. Usage primary 29%, weekly 23%. Next Task 9 research-only POCT phase 1; isolation draft remains unintegrated outside repo.

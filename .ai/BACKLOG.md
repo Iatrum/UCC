@@ -20,3 +20,6 @@
 - Task 6b follow-ups: anchor rate-limit match on code prefix; AUTH_UNAVAILABLE for token-exchange network errors
 - Task 5 decision needed: local Medplum project is superAdmin=true; Medplum injects ProjectMembership/User/Project grants for every member, so any AccessPolicy cannot hide staff directory. Fix = staff in a non-superAdmin project (topology change, user decision). Policy+script committed, rolled back locally.
 - Clinic clinical isolation (from Task 5): AccessPolicy clinical grants have no clinic criteria, so a staff user can read other clinics' Patient/Encounter/etc via direct FHIR. Plan: per-clinic tenant (HealthcareService/Organization) + meta.accounts backfill + parameterized policy (_compartment criteria), multi-clinic staff, admin-client paths. Needs plan + Codex/Claude security review.
+
+## USER PRIORITY CHANGE (1 Nov 10:18 MYT)
+User: do POCT lab (Tasks 9-11) and POCT X-ray (Task 12) NEXT, before clinic isolation and U3a/U3b/U3c usability. Finish the current task (Task 8) cleanly, then start Task 9.
