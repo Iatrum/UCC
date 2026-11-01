@@ -1,5 +1,12 @@
 # CHANGELOG (plain language)
 
+## 2026-11-01 Task 7 — Medplum network lockdown plan
+- Added an inventory-first plan for private backend ports, controlled browser HTTPS access, private operator tools, device ingress, route aliases and batch-operation risks.
+- All rollout/rollback work is marked USER ACTIONS. No network, production, credentials or application code changed. Receiver fail-closed authentication and clinical isolation remain deployment prerequisites.
+- Validation: ai-work gate `task7-1101` PASS: lint 0, build 0, e2e 22/23 (only baseline known-bug summary), clinics 0. This validates app regression safety, not the unexecuted network plan.
+- Review: single-model review (Codex builder + fresh Codex reviewer), APPROVE after one correction loop, no remaining MAJOR/MINOR. UI screenshots not applicable (docs only).
+
+
 ## 2026-10-31 Task 1 – AI team setup
 - Added `AGENTS.md` (one short rule list for all AIs); `CLAUDE.md` now imports it.
 - Added `.ai/` notes folder (state, backlog, decisions, reviews, research).
