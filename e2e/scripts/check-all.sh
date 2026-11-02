@@ -5,7 +5,7 @@
 set -u
 LABEL=${1:-run}; BASE=${2:-/workspace/ai-logs/baseline/results.json}
 REPO=$(cd "$(dirname "$0")/../.." && pwd); OUT=/workspace/ai-logs/$LABEL; mkdir -p "$OUT"; FAIL=0
-export NODE_OPTIONS=--max-old-space-size=3072
+export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=1536}
 step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c" | tee -a "$OUT/summary.txt"; [ $c -eq 0 ] || FAIL=1; }
 : > "$OUT/summary.txt"; cd "$REPO"
 step lint bun run lint

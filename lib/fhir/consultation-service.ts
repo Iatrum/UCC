@@ -1,3 +1,4 @@
+import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
  * 
@@ -36,6 +37,7 @@ export interface ConsultationData {
   patientId: string;
   chiefComplaint: string;
   diagnosis: string;
+  billingItems?: import("@/lib/models").ProcedureRecord[];
   procedures?: Array<{ name: string; price?: number; quantity?: number; orderIndex?: number; category?: OrderCategory; notes?: string; procedureId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
   notes?: string;
   progressNote?: string;
@@ -550,6 +552,7 @@ export async function getConsultationFromMedplum(
       diagnosis: conditions[0] ? ((conditions[0] as any).code?.text || '') : '',
       notes: (clinicalNotes as any)?.valueString,
       progressNote: (progressNote as any)?.valueString,
+      billingItems: investigationBillItems(encounter),
       procedures: procedures.map((proc: Procedure) => ({
         name: (proc as any).code?.text || 'Procedure',
         notes: proc.note?.[0]?.text,
@@ -614,6 +617,7 @@ function buildSavedConsultation(
     diagnosis: conditions[0] ? ((conditions[0] as any).code?.text || '') : '',
     notes: (clinicalNotes as any)?.valueString,
     progressNote: (progressNote as any)?.valueString,
+    billingItems: investigationBillItems(encounter),
     procedures: procedures.map((proc: Procedure) => ({
       name: (proc as any).code?.text || 'Procedure',
       notes: proc.note?.[0]?.text,

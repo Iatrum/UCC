@@ -61,6 +61,7 @@ interface PatientProfileWorkspaceProps {
   consultations: ProfileConsultation[];
   patientAge: number | null;
   medicalHistory: MedicalHistory;
+  poctEnabled: boolean;
 }
 
 const emptyTreatmentSummary: TreatmentPlanSummary = {
@@ -160,6 +161,7 @@ export default function PatientProfileWorkspace({
   consultations,
   patientAge,
   medicalHistory,
+  poctEnabled,
 }: PatientProfileWorkspaceProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -489,7 +491,9 @@ export default function PatientProfileWorkspace({
       category: "items",
       price: entry.unitPrice,
     }));
-    const billableProcedureEntries = [...serviceEntries, ...documentEntries];
+    const investigationEntries = serviceEntries.filter((entry) => entry.meta?.kind === "poct" || entry.meta?.kind === "lab");
+    const poctEntries = investigationEntries.filter((entry) => entry.meta?.kind === "poct");
+    const billableProcedureEntries = [...serviceEntries.filter((entry) => entry.meta?.kind !== "poct" && entry.meta?.kind !== "lab"), ...documentEntries];
     const procedures: ProcedureRecord[] = billableProcedureEntries.map((entry) => ({
       name: entry.name,
       quantity: entry.quantity,
@@ -516,8 +520,28 @@ export default function PatientProfileWorkspace({
         modality: entry.meta?.modality || "DX",
       }));
 
+    if (poctEntries.length > 0 && !poctEnabled) {
+      toast({ title: "POCT is disabled for this clinic", variant: "destructive" });
+      return;
+    }
+
     try {
       setTreatmentSubmitting(true);
+      // Place POCT first: failed/offline orders leave the composer intact for retry.
+      // The server uses each draft entry id as a conditional-create key.
+      for (const entry of poctEntries) {
+        const poctResponse = await fetch("/api/labs/order", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patientId, encounterId: treatmentConsultation.id,
+            tests: [{ code: entry.meta?.code, display: entry.name }],
+            poct: { code: entry.meta?.code, analyserId: entry.meta?.analyserId, entryId: entry.id },
+          }),
+        });
+        if (!poctResponse.ok) {
+          const failure = await poctResponse.json().catch(() => ({}));
+          throw new Error(failure.error || "POCT order failed. Please check the analyser.");
+        }
+      }
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -525,6 +549,8 @@ export default function PatientProfileWorkspace({
           consultationId: treatmentConsultation.id,
           procedures,
           prescriptions,
+          billingItems: investigationEntries.map((entry) => ({ id: entry.id, name: entry.name, price: entry.unitPrice,
+            quantity: entry.quantity, orderIndex: entry.orderIndex, category: entry.tab })),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -963,6 +989,7 @@ export default function PatientProfileWorkspace({
                         submitLabel="Sign"
                         submitting={treatmentSubmitting}
                         patient={patient}
+                        poctEnabled={poctEnabled}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>

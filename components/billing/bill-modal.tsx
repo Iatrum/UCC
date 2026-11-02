@@ -134,7 +134,7 @@ export default function BillModal({ isOpen, onClose, isLoading, data }: BillModa
       dosage: formatPrescriptionDetails(p),
       price: p.price ?? 0,
     }));
-    const procedures = (consultation.procedures || []).map((proc) => ({
+    const procedures = [...(consultation.procedures || []), ...(consultation.billingItems || [])].map((proc) => ({
       name: proc.name,
       description: patientFacingProcedureNote(proc.notes, proc.category),
       price: proc.price ?? 0,

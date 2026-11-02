@@ -197,7 +197,7 @@ function normalizeProcedureCategory(procedure: Consultation["procedures"][number
 function buildCheckoutItems(consultation: Consultation | null): CheckoutItem[] {
   if (!consultation) return [];
 
-  const procedures = (consultation.procedures || []).map((procedure, index) => {
+  const procedures = [...(consultation.procedures || []), ...(consultation.billingItems || [])].map((procedure, index) => {
     const category = normalizeProcedureCategory(procedure);
     return {
       id: `procedure-${index}`,

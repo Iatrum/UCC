@@ -14,6 +14,7 @@ import { formatDisplayDate, calculateAge, safeToISOString } from "@/lib/utils";
 import type { SerializedPatient } from "@/components/patients/patient-card";
 import { notFound, redirect } from 'next/navigation';
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
+import { isModuleEnabledForClinic } from "@/lib/module-registry";
 import PatientProfileWorkspace from "./patient-profile-workspace";
 
 function getCurrentTimestamp(): number {
@@ -34,11 +35,12 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
   }
   const clinicId = await resolveClinicIdFromServerScope();
   // Fetch data in parallel from Medplum FHIR (source of truth)
-  const [patientData, consultationsData, triageData, appointmentsData] = await Promise.all([
+  const [patientData, consultationsData, triageData, appointmentsData, poctEnabled] = await Promise.all([
     getPatientFromMedplum(id, clinicId, medplum),
     getPatientConsultationsFromMedplum(id, clinicId, medplum),
     getTriageForPatient(id, medplum, clinicId),
     getPatientAppointmentsFromMedplum(medplum, id),
+    isModuleEnabledForClinic("poct", clinicId),
   ]);
 
   if (!patientData) {
@@ -296,6 +298,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
             consultations={consultations}
             patientAge={patientAge}
             medicalHistory={medicalHistory}
+            poctEnabled={poctEnabled}
           />
         </div>
       </div>
