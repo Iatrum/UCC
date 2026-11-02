@@ -23,3 +23,6 @@
 
 ## USER PRIORITY CHANGE (1 Nov 10:18 MYT)
 User: do POCT lab (Tasks 9-11) and POCT X-ray (Task 12) NEXT, before clinic isolation and U3a/U3b/U3c usability. Finish the current task (Task 8) cleanly, then start Task 9.
+
+## Process gap found while rebasing Task 9's PR onto `dev` (2 Nov)
+Task 4 (`/api/labs/receive` and `/api/imaging/receive` x-api-key auth, missing-status 500 fix) and Task 6c (inventory `strengths` validation guard) are committed on `ai-work` and documented as done in CHANGELOG/DECISIONS, but neither ever got its own PR into `dev` (checked `gh pr list` — no match). `dev` still has the old insecure/crashing versions of both. This is why dev-based gates for later tasks (U2c note, and now Task 9) hit unrelated failures around tests 07 ("lab result ingest", 401 invalid API key) and the inventory validation API test (500 instead of 4xx) — confirmed by diffing `origin/dev` vs `ai-work` for `lib/fhir/inventory-service.ts` and `app/(routes)/api/labs/receive/route.ts`. Action: open two small standalone PRs (`ai/task-4`, `ai/task-6c`) from `ai-work`'s existing commits into `dev` before relying on a dev-based gate again.
