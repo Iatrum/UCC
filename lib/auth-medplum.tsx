@@ -199,6 +199,12 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (payload?.code === 'AUTH_RATE_LIMITED') {
+          const seconds = typeof payload.retryAfterSeconds === 'number' && Number.isFinite(payload.retryAfterSeconds)
+            ? Math.min(600, Math.max(1, Math.ceil(payload.retryAfterSeconds)))
+            : 60;
+          throw new Error(`AUTH_RATE_LIMITED:${seconds}: ${payload?.error || 'Too many sign-in attempts.'}`);
+        }
         throw new Error(`${payload?.code || 'AUTH_UNKNOWN'}: ${payload?.error || 'Login failed.'}`);
       }
 
@@ -266,6 +272,16 @@ function classifyAuthError(error: unknown): Error {
   const msg =
     error instanceof Error ? error.message : String(error ?? '');
   const lower = msg.toLowerCase();
+
+  if (lower.includes('auth_rate_limited') || lower.includes('429') || lower.includes('too many')) {
+    const retrySeconds = msg.match(/AUTH_RATE_LIMITED:(\d+):/i);
+    const seconds = retrySeconds ? Math.min(600, Math.max(1, Number(retrySeconds[1]))) : 60;
+    return new Error(`AUTH_RATE_LIMITED:${seconds}: Too many sign-in attempts.`);
+  }
+
+  if (lower.includes('auth_unavailable')) {
+    return new Error('AUTH_UNAVAILABLE: The sign-in server is busy or unavailable. Please try again shortly.');
+  }
 
   if (
     lower.includes('failed to fetch') ||
