@@ -1,3 +1,11 @@
+/** POCT stays in the services tab so existing drafts remain compatible. */
+export interface PoctEntryMeta extends Record<string, string> {
+  kind: "poct";
+  code: string;
+  analyserId: string;
+  analyserName: string;
+}
+
 export type TreatmentPlanTab = "items" | "services" | "packages" | "documents";
 
 export interface TreatmentPlanEntryInput {

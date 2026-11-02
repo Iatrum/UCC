@@ -6,6 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createLabOrder, updateLabOrder, deleteLabOrder, type LabOrderRequest } from '@/lib/fhir/lab-service';
+import { handleRouteError } from '@/lib/server/route-helpers';
+import { getCurrentProfile } from '@/lib/server/medplum-auth';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
@@ -30,6 +32,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (body.poct) {
+      const profile = await getCurrentProfile(request);
+      if (profile.resourceType !== 'Practitioner' || !profile.id) {
+        return NextResponse.json({ error: 'Practitioner required for POCT orders' }, { status: 403 });
+      }
+      body.orderedBy = `Practitioner/${profile.id}`;
+    }
     // Create the lab order
     const serviceRequestId = await createLabOrder(body, medplum, clinicId);
 
@@ -39,16 +48,8 @@ export async function POST(request: NextRequest) {
       message: `Lab order created for ${body.tests.length} tests`,
     });
 
-  } catch (error: any) {
-    console.error('Error creating lab order:', error);
-    
-    return NextResponse.json(
-      {
-        error: 'Failed to create lab order',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/labs/order');
   }
 }
 
