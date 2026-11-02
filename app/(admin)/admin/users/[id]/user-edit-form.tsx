@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, CircleCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -36,14 +37,17 @@ import { useAdminPath } from "@/hooks/use-admin-path";
 interface Props {
   user: PractitionerDetail;
   clinics: ClinicSummary[];
+  isSelf: boolean;
 }
 
-export default function UserEditForm({ user, clinics }: Props) {
+export default function UserEditForm({ user, clinics, isSelf }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const adminPath = useAdminPath();
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [active, setActive] = useState(user.active);
   const [form, setForm] = useState({
     firstName: user.firstName ?? "",
     lastName: user.lastName ?? "",
@@ -132,6 +136,37 @@ export default function UserEditForm({ user, clinics }: Props) {
     }
   };
 
+  const handleStatusChange = async (nextActive: boolean) => {
+    setStatusSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update user status");
+      }
+      setActive(nextActive);
+      toast({
+        title: nextActive ? "User reactivated" : "User deactivated",
+        description: nextActive
+          ? `${user.name} can sign in again.`
+          : `${user.name} can no longer sign in or access the clinic.`,
+      });
+      router.refresh();
+    } catch (err: any) {
+      toast({
+        title: nextActive ? "Cannot reactivate" : "Cannot deactivate",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center gap-3">
@@ -140,13 +175,78 @@ export default function UserEditForm({ user, clinics }: Props) {
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{user.name}</h1>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">{user.name}</h1>
+            <Badge variant={active ? "secondary" : "destructive"}>
+              {active === null ? "No login" : active ? "Active" : "Deactivated"}
+            </Badge>
+          </div>
           {user.email && (
             <p className="text-muted-foreground text-sm">{user.email}</p>
           )}
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Account Access</CardTitle>
+          <CardDescription>
+            {active === null
+              ? "No login is linked to this user in the managed project."
+              : active
+              ? "This user can sign in and access their assigned clinics."
+              : "This user cannot sign in or access any clinic. Their profile, roles, and history are unchanged."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {active === null ? (
+            <p className="text-sm text-muted-foreground">No login available to manage.</p>
+          ) : isSelf ? (
+            <p className="text-sm text-muted-foreground">
+              You cannot deactivate your own account.
+            </p>
+          ) : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant={active ? "outline" : "default"}
+                  disabled={statusSaving}
+                >
+                  {active ? (
+                    <Ban className="h-4 w-4 mr-2" />
+                  ) : (
+                    <CircleCheck className="h-4 w-4 mr-2" />
+                  )}
+                  {statusSaving
+                    ? "Saving..."
+                    : active
+                      ? "Deactivate User"
+                      : "Reactivate User"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {active ? "Deactivate" : "Reactivate"} {user.name}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {active
+                      ? "They will immediately lose the ability to sign in or access any clinic. Their Practitioner profile, roles, and history are kept and this can be reversed at any time."
+                      : "They will be able to sign in and access their assigned clinics again."}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleStatusChange(!active)}>
+                    {active ? "Deactivate" : "Reactivate"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

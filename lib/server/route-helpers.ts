@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isUnauthenticated, OperationOutcomeError } from '@medplum/core';
 
 /**
  * Thrown when a request lacks valid authentication.
@@ -45,6 +46,36 @@ export class ConflictError extends Error {
   }
 }
 
+/**
+ * Medplum re-checks ProjectMembership.active on every authenticated request
+ * (see .ai/research/task6e-deactivate.md) and rejects with an OperationOutcome
+ * whose issue details read "Profile not active" / "Project not active". That's
+ * a 400 `invalid` from Medplum's own API, but from our app's perspective it's
+ * an auth failure, not a server bug — map it to 401 with a clear message.
+ */
+const MEDPLUM_INACTIVE_REASON = /^(Profile|Project) not active$/;
+
+function isAccountInactiveError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const maybeError = error as {
+    message?: unknown;
+    outcome?: { issue?: { details?: { text?: unknown }; diagnostics?: unknown }[] };
+  };
+
+  if (MEDPLUM_INACTIVE_REASON.test(String(maybeError.message ?? ""))) {
+    return true;
+  }
+
+  return Boolean(
+    maybeError.outcome?.issue?.some(
+      (issue) =>
+        MEDPLUM_INACTIVE_REASON.test(String(issue.details?.text ?? "")) ||
+        MEDPLUM_INACTIVE_REASON.test(String(issue.diagnostics ?? ""))
+    )
+  );
+}
+
 function isForbiddenLikeError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -87,7 +118,7 @@ export function handleRouteError(
 ): NextResponse {
   const label = context ? `[${context}]` : '';
 
-  if (error instanceof AuthError) {
+  if (error instanceof AuthError || (error instanceof OperationOutcomeError && isUnauthenticated(error.outcome))) {
     console.warn(`${label} Auth failure:`, error.message);
     return NextResponse.json(
       { error: 'Authentication required. Please log in.' },
@@ -100,6 +131,14 @@ export function handleRouteError(
     return NextResponse.json(
       { error: 'You do not have permission to perform this action.' },
       { status: 403 }
+    );
+  }
+
+  if (isAccountInactiveError(error)) {
+    console.warn(`${label} Account deactivated:`, error);
+    return NextResponse.json(
+      { error: 'Your account has been deactivated. Contact an administrator.' },
+      { status: 401 }
     );
   }
 

@@ -4,6 +4,7 @@
  */
 import type { MedplumClient } from "@medplum/core";
 import type { AccessPolicy, HealthcareService, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
+import { ConflictError } from "@/lib/server/route-helpers";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
   getEnabledModuleIdsFromOrganization,
@@ -355,6 +356,7 @@ export interface PractitionerSummary {
   name: string;
   email?: string;
   organizations?: { id: string; name: string }[];
+  active: boolean | null;
 }
 
 export interface PractitionerDetail extends PractitionerSummary {
@@ -438,14 +440,38 @@ function practitionerDisplayName(p: Practitioner): string {
   );
 }
 
+/** Resolve the managed project from the authenticated service identity. */
+export async function getManagedProjectId(medplum: MedplumClient): Promise<string> {
+  const me = await medplum.get("auth/me");
+  if (!me.project?.id) throw new Error("Managed Medplum project unavailable");
+  return me.project.id;
+}
+
+/** Follow every search page; never select a membership from another project. */
+async function getMembershipsByProfileRef(
+  medplum: MedplumClient
+): Promise<Map<string, ProjectMembership>> {
+  const projectId = await getManagedProjectId(medplum);
+  const byProfileRef = new Map<string, ProjectMembership>();
+  for await (const memberships of medplum.searchResourcePages("ProjectMembership", { project: `Project/${projectId}`, _count: "500" })) {
+    for (const membership of memberships) {
+      if (membership.project?.reference === `Project/${projectId}` && membership.profile?.reference) {
+        byProfileRef.set(membership.profile.reference, membership);
+      }
+    }
+  }
+  return byProfileRef;
+}
+
 export async function getPractitionersFromMedplum(
   medplum?: MedplumClient
 ): Promise<PractitionerSummary[]> {
   medplum ??= await getAdminMedplum();
-  const [practitioners, roles, organizations] = await Promise.all([
+  const [practitioners, roles, organizations, membershipsByProfileRef] = await Promise.all([
     medplum.searchResources("Practitioner", { _count: "200" }),
     medplum.searchResources("PractitionerRole", { _count: "500" }),
     medplum.searchResources("Organization", { _count: "200" }),
+    getMembershipsByProfileRef(medplum),
   ]);
 
   const orgById = new Map<string, { id: string; name: string }>();
@@ -470,11 +496,13 @@ export async function getPractitionersFromMedplum(
     const orgs = orgIds
       .map((id) => orgById.get(id))
       .filter((v): v is { id: string; name: string } => Boolean(v));
+    const membership = p.id ? membershipsByProfileRef.get(`Practitioner/${p.id}`) : undefined;
     return {
       id: p.id ?? "",
       name: practitionerDisplayName(p),
       email,
       organizations: orgs,
+      active: membership ? membership.active !== false : null,
     };
   });
 }
@@ -492,10 +520,13 @@ export async function getPractitionerFromMedplum(
 
   if (practitioner.active === false) return null;
 
-  const roles = await medplum.searchResources("PractitionerRole", {
-    practitioner: `Practitioner/${id}`,
-    _count: "100",
-  });
+  const [roles, membershipsByProfileRef] = await Promise.all([
+    medplum.searchResources("PractitionerRole", {
+      practitioner: `Practitioner/${id}`,
+      _count: "100",
+    }),
+    getMembershipsByProfileRef(medplum),
+  ]);
 
   const organizationIds = Array.from(
     new Set(
@@ -518,6 +549,7 @@ export async function getPractitionerFromMedplum(
   const email = practitioner.telecom?.find((t) => t.system === "email")?.value;
   const firstName = practitioner.name?.[0]?.given?.join(" ");
   const lastName = practitioner.name?.[0]?.family;
+  const membership = membershipsByProfileRef.get(`Practitioner/${id}`);
 
   return {
     id: practitioner.id ?? "",
@@ -527,7 +559,39 @@ export async function getPractitionerFromMedplum(
     email,
     organizations,
     organizationIds,
+    active: membership ? membership.active !== false : null,
   };
+}
+
+/**
+ * Activate or deactivate a Practitioner's Medplum login (ProjectMembership.active)
+ * without touching the Practitioner resource, their PractitionerRole assignments,
+ * or clinical history. Medplum re-checks membership.active on every authenticated
+ * request (see .ai/research/task6e-deactivate.md), so this takes effect immediately
+ * even for an already-issued, unexpired access token.
+ */
+export async function setPractitionerActiveInMedplum(
+  practitionerId: string,
+  active: boolean
+): Promise<PractitionerDetail> {
+  const medplum = await getAdminMedplum();
+  const practitionerRef = `Practitioner/${practitionerId}`;
+  const membershipsByProfileRef = await getMembershipsByProfileRef(medplum);
+  const membership = membershipsByProfileRef.get(practitionerRef);
+
+  if (!membership?.id) {
+    throw new ConflictError("No Medplum login found for this user in the managed project.");
+  }
+
+  await medplum.patchResource("ProjectMembership", membership.id, [
+    { op: membership.active === undefined ? "add" : "replace", path: "/active", value: active },
+  ]);
+
+  const detail = await getPractitionerFromMedplum(practitionerId);
+  if (!detail) {
+    throw new Error("Practitioner not found after status update");
+  }
+  return detail;
 }
 
 export async function updatePractitionerInMedplum(
