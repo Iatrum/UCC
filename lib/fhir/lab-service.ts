@@ -18,6 +18,10 @@ import type {
 import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
+import { POCT_TESTS } from './lab-constants';
+import { POCT_TAG_SYSTEM, requireOnlineAnalyser } from './poct-device';
+import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 import {
   assignResourceToAccountReferences,
@@ -43,6 +47,7 @@ export interface LabOrderRequest {
   priority?: 'routine' | 'urgent' | 'asap' | 'stat';
   clinicalNotes?: string;
   orderedBy?: string;
+  poct?: { code: string; analyserId: string; entryId: string };
 }
 
 function resolveLabTest(test: LabOrderTest): { code: string; display: string; system: string } {
@@ -64,8 +69,24 @@ function resolveLabTest(test: LabOrderTest): { code: string; display: string; sy
 export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient, clinicId: string): Promise<string> {
   const client = medplum;
   const clinicTenant = await resolveClinicTenant(client, clinicId);
-  
-  console.log(`📋 Creating lab order for patient ${order.patientId}`);
+  const clinicQuery = { identifier: `clinic|${clinicId}` };
+  const patient = await client.searchOne('Patient', { ...clinicQuery, _id: order.patientId });
+  if (!patient) throw new ForbiddenError('Patient unavailable in current clinic');
+  if (order.encounterId) {
+    const encounter = await client.searchOne('Encounter', { ...clinicQuery, _id: order.encounterId });
+    if (!encounter || encounter.subject?.reference !== `Patient/${order.patientId}`) throw new ForbiddenError('Encounter unavailable in current clinic');
+  }
+  const poctTest = order.poct && POCT_TESTS.find((t) => t.code === order.poct!.code);
+  if (order.poct) {
+    if (!(await isModuleEnabledForClinic('poct', clinicId))) {
+      throw new ForbiddenError('POCT module is disabled for this clinic');
+    }
+    if (!poctTest || !order.encounterId || !/^[a-zA-Z0-9-]{1,64}$/.test(order.poct.entryId || '') || !/^[a-zA-Z0-9-]{1,64}$/.test(order.poct.analyserId || '')) {
+      throw new ConflictError('Invalid POCT order');
+    }
+    await requireOnlineAnalyser(client, clinicId, order.poct.analyserId, poctTest.analyserType);
+    order = { ...order, tests: [{ code: poctTest.code, display: poctTest.name, system: poctTest.system }] };
+  }
 
   // Create a ServiceRequest for each test
   const serviceRequests: ServiceRequest[] = [];
@@ -73,9 +94,13 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
   for (const testCode of order.tests) {
     const test = resolveLabTest(testCode);
     
-    const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
+    const resource: ServiceRequest = {
       resourceType: 'ServiceRequest',
-      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
+      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId },
+        ...(order.poct ? [{ system: 'https://ucc.emr/poct/order-entry', value: `${clinicId}:${order.encounterId}:${order.poct.entryId}` }] : [])],
+      meta: order.poct ? { tag: [{ system: POCT_TAG_SYSTEM, code: 'poct' }] } : undefined,
+      category: [{ coding: [{ system: 'http://snomed.info/sct', code: '108252007', display: 'Laboratory procedure' }] }],
+      performer: order.poct ? [{ reference: `Device/${order.poct.analyserId}` }] : undefined,
       status: 'active',
       intent: 'order',
       priority: order.priority || 'routine',
@@ -102,7 +127,10 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
       note: order.clinicalNotes ? [{
         text: order.clinicalNotes,
       }] : undefined,
-    });
+    };
+    const serviceRequest = order.poct
+      ? await client.createResourceIfNoneExist(resource, new URLSearchParams({ identifier: `https://ucc.emr/poct/order-entry|${clinicId}:${order.encounterId}:${order.poct.entryId}` }).toString())
+      : await validateAndCreate<ServiceRequest>(client, resource);
     await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
     
     serviceRequests.push(serviceRequest);

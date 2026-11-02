@@ -1,5 +1,7 @@
 "use client";
 
+import { PoctSection } from "./poct-section";
+
 import * as React from "react";
 import { Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -56,6 +58,7 @@ interface OrderComposerProps {
   submitLabel?: string;
   submitting?: boolean;
   patient?: { id: string; fullName: string; nric: string } | null;
+  poctEnabled?: boolean;
 }
 
 function calcMcEndDate(startDate: string, numDays: number): string {
@@ -362,6 +365,7 @@ export function OrderComposer({
   submitLabel = "Sign Order",
   submitting = false,
   patient = null,
+  poctEnabled = false,
 }: OrderComposerProps) {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -833,6 +837,9 @@ export function OrderComposer({
             </div>
           ) : null}
 
+          {poctEnabled && (
+            <PoctSection entries={entries} query={searchQuery} onAdd={(item) => addCatalogItem("services", item)} />
+          )}
           <div className="space-y-2">
             <p className="text-sm font-medium">Order</p>
             {sortedEntries.length === 0 ? (
@@ -840,6 +847,7 @@ export function OrderComposer({
             ) : (
               sortedEntries.map((entry) => {
                 const openEntry = () => {
+                  if (entry.meta?.kind === "poct") return;
                   const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
                   if (entry.tab === "documents" && kind !== null) {
                     setMcDays(Number(entry.meta?.mcDays || 1));
@@ -871,9 +879,9 @@ export function OrderComposer({
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-                        {kindLabelForTab(entry.tab)}
+                        {entry.meta?.kind === "poct" ? "POCT" : kindLabelForTab(entry.tab)}
                       </Badge>
-                      <span className="truncate font-medium">{entry.name}</span>
+                      <span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.meta?.kind === "poct" && <span className="block truncate text-xs text-muted-foreground">Will run on {entry.meta.analyserName}</span>}</span>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {entry.quantity} × RM {entry.unitPrice.toFixed(2)}

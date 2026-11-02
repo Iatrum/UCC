@@ -1,3 +1,4 @@
+import { investigationBillItems, investigationBillingExtensions, INVESTIGATION_BILLING_URL } from '@/lib/fhir/investigation-billing';
 import { NextRequest, NextResponse } from 'next/server';
 import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(req);
     const body = await req.json();
-    const { consultationId, procedures, prescriptions } = body;
+    const { consultationId, procedures, prescriptions, billingItems } = body;
 
     if (!consultationId) {
       return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
@@ -59,6 +60,23 @@ export async function POST(req: NextRequest) {
     const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
     if (!consultation) {
       return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
+    }
+
+    if (billingItems !== undefined) {
+      if (!Array.isArray(billingItems) || billingItems.some((item: any) =>
+        typeof item.id !== 'string' || typeof item.name !== 'string' || !Number.isFinite(item.price) || item.price < 0 ||
+        !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+        return NextResponse.json({ error: 'Invalid investigation bill lines' }, { status: 400 });
+      }
+      const encounter = await medplum.searchOne('Encounter', { _id: consultationId, identifier: `clinic|${clinicId}` }, { cache: 'no-cache' });
+      if (!encounter) return NextResponse.json({ error: 'Consultation not found' }, { status: 404 });
+      const merged = new Map(investigationBillItems(encounter).map((item) => [item.id, item]));
+      for (const item of billingItems) merged.set(item.id, { id: item.id, name: item.name, price: item.price,
+        quantity: item.quantity, orderIndex: item.orderIndex, category: 'services' });
+      await medplum.updateResource({ ...encounter, extension: [
+        ...(encounter.extension || []).filter((e) => e.url !== INVESTIGATION_BILLING_URL),
+        ...investigationBillingExtensions([...merged.values()]),
+      ] });
     }
 
     const existingProcKeys = new Set((consultation.procedures || []).map(procedureKey));

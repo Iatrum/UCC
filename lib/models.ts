@@ -63,6 +63,7 @@ export interface Consultation {
   chiefComplaint: string;
   diagnosis: string;
   procedures: ProcedureRecord[];
+  billingItems?: ProcedureRecord[];
   notes?: string;
   prescriptions: Prescription[];
   createdAt?: Date;

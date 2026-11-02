@@ -64,7 +64,12 @@ const nextConfig = {
       },
     ];
   },
-  webpack: (config) => {
+  webpack: (config, { dev }) => {
+    // Opt-in for the small local e2e box; keep production compilation unchanged.
+    if (dev && process.env.UCC_LOW_MEMORY_DEV === '1') {
+      config.cache = false;
+      config.devtool = false;
+    }
     config.resolve.alias.canvas = false;
     config.resolve.alias.encoding = false;
     config.resolve.fallback = {
