@@ -1,5 +1,7 @@
 "use client";
 
+import { RegistrationDobInput } from "@/components/patients/registration-dob-input";
+import { isIsoDate } from "@/lib/patient-dob";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import * as z from "zod";
@@ -19,7 +21,7 @@ import { PatientApiError, savePatientThroughIntakePilot } from "@/lib/fhir/patie
 const patientFormSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters"),
   nric: z.string().regex(/^\d{6}-\d{2}-\d{4}$/, "Invalid NRIC format (e.g., 880705-56-5975)"),
-  dateOfBirth: z.string().optional(),
+  dateOfBirth: z.string().refine(isIsoDate, "Enter a valid date as dd/mm/yyyy"),
   gender: z.enum(["male", "female", "other"]),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   phone: z.string().regex(/^\+?[0-9]{8,15}$/, "Invalid phone number"),
@@ -97,28 +99,10 @@ export default function NewPatientFormV1({
     }
   };
 
-  const getNRICDate = (nric: string): string => {
-    const birthDate = nric.slice(0, 6);
-    const year = parseInt(birthDate.slice(0, 2));
-    const month = parseInt(birthDate.slice(2, 4));
-    const day = parseInt(birthDate.slice(4, 6));
-    const fullYear = year + (year >= 30 ? 1900 : 2000);
-    const formattedMonth = month.toString().padStart(2, "0");
-    const formattedDay = day.toString().padStart(2, "0");
-    return `${fullYear}-${formattedMonth}-${formattedDay}`;
-  };
-
   const nric = useWatch({
     control: form.control,
     name: "nric",
   });
-
-  React.useEffect(() => {
-    if (nric && nric.length >= 6) {
-      const birthDate = getNRICDate(nric.replace(/[^0-9]/g, ""));
-      form.setValue("dateOfBirth", birthDate);
-    }
-  }, [nric, form]);
 
   async function onSubmit(data: PatientFormValues) {
     try {
@@ -301,13 +285,7 @@ export default function NewPatientFormV1({
                       <FormItem>
                         <FormLabel>Date of Birth</FormLabel>
                         <FormControl>
-                          <Input
-                            type="date"
-                            placeholder="Auto-filled from NRIC"
-                            {...field}
-                            disabled
-                            className="bg-muted"
-                          />
+                          <RegistrationDobInput {...field} nric={nric || ""} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

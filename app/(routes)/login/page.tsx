@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { isAdminPath, safeNext } from "@/lib/login-redirect";
 
 function resolveAdminOrigin(): string | null {
   if (typeof window === "undefined") {
@@ -52,6 +53,20 @@ function LoginForm() {
   const { toast } = useToast();
   const authError = searchParams.get("error");
   const isClinicForbidden = authError === "clinic_forbidden";
+  const isAdminRequired = authError === "admin_required";
+  const [showAdminNotice, setShowAdminNotice] = useState(false);
+  const didNavigateOnSubmitRef = useRef(false);
+
+  const goToClinicDashboard = useCallback((clinicIdForNav: string | null) => {
+    if (typeof window !== "undefined" && clinicIdForNav) {
+      const base = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+      if (base && !isLocalHost(window.location.hostname) && !window.location.hostname.startsWith(`${clinicIdForNav}.`)) {
+        window.location.href = `${window.location.protocol}//${clinicIdForNav}.${base}/dashboard`;
+        return;
+      }
+    }
+    router.replace("/dashboard");
+  }, [router]);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) {
@@ -60,9 +75,17 @@ function LoginForm() {
     if (isClinicForbidden) {
       return;
     }
+    if (didNavigateOnSubmitRef.current) {
+      return;
+    }
 
-    const next = searchParams.get("next");
-    const requestedNext = next && next.startsWith("/") ? next : undefined;
+    const requestedNext = safeNext(searchParams.get("next"));
+
+    if (!isAdmin && (isAdminRequired || (requestedNext && isAdminPath(requestedNext)))) {
+      setShowAdminNotice(true);
+      return;
+    }
+
     const redirectUrl = requestedNext ?? (isAdmin ? "/admin" : "/dashboard");
 
     if (typeof window !== "undefined") {
@@ -82,18 +105,23 @@ function LoginForm() {
     }
 
     router.replace(redirectUrl);
-  }, [authLoading, authenticatedClinicId, isAdmin, isAuthenticated, isClinicForbidden, router, searchParams]);
+  }, [authLoading, authenticatedClinicId, isAdmin, isAdminRequired, isAuthenticated, isClinicForbidden, router, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    didNavigateOnSubmitRef.current = true;
     try {
-      const next = searchParams.get("next");
-      const requestedNext = next && next.startsWith("/") ? next : undefined;
-      const { isAdmin, redirectUrl, clinicId } = await signIn(email, password, requestedNext);
+      const requestedNext = safeNext(searchParams.get("next"));
+      const { isAdmin: signedInIsAdmin, redirectUrl, clinicId } = await signIn(email, password, requestedNext);
+
+      if (!signedInIsAdmin && isAdminPath(redirectUrl)) {
+        goToClinicDashboard(clinicId);
+        return;
+      }
 
       if (typeof window !== "undefined") {
-        if (isAdmin) {
+        if (signedInIsAdmin) {
           const adminOrigin = resolveAdminOrigin();
           if (adminOrigin && adminOrigin !== window.location.origin) {
             window.location.href = `${adminOrigin}${redirectUrl}`;
@@ -110,6 +138,7 @@ function LoginForm() {
 
       router.replace(redirectUrl);
     } catch (error) {
+      didNavigateOnSubmitRef.current = false;
       const raw = error instanceof Error ? error.message : "";
       let description = "Unable to sign in. Please try again.";
 
@@ -158,34 +187,59 @@ function LoginForm() {
               Your account is not assigned to this clinic. Sign in with an account that has access to this clinic.
             </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="doctor@clinic.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+          {showAdminNotice ? (
+            <div role="alert" className="space-y-4">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                This account is not a platform admin.
+              </div>
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => goToClinicDashboard(authenticatedClinicId)}
+                >
+                  Go to my clinic dashboard
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => router.push("/logout")}
+                >
+                  Sign in as a different user
+                </Button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="doctor@clinic.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Signing in..." : "Sign in"}
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>

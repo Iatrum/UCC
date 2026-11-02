@@ -48,11 +48,8 @@ interface TemplatePanelProps {
 function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: TemplatePanelProps) {
   const vars = type === "mc" ? MC_VARS : REFERRAL_VARS;
   const [showVars, setShowVars] = React.useState(false);
-  const [previewHtml, setPreviewHtml] = React.useState<string | null>(null);
-
-  const handlePreview = () => {
-    setPreviewHtml(fillPreviewData(html));
-  };
+  const editorId = React.useId();
+  const previewHtml = fillPreviewData(html);
 
   return (
     <div className="space-y-3">
@@ -76,9 +73,6 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
             <Button type="button" variant="outline" size="sm" onClick={onReset}>
               Reset to default
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={handlePreview}>
-              Preview
-            </Button>
             <Button type="button" size="sm" onClick={onSave} disabled={isSaving}>
               {isSaving ? "Saving..." : "Save template"}
             </Button>
@@ -100,24 +94,27 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
         )}
       </div>
 
-      <Textarea
-        value={html}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setPreviewHtml(null);
-        }}
-        className="h-[360px] resize-y overflow-auto font-mono text-xs leading-relaxed"
-        spellCheck={false}
-      />
-
-      {previewHtml && (
-        <iframe
-          srcDoc={previewHtml}
-          className="w-full rounded-md border"
-          style={{ height: 600 }}
-          title="Template preview"
-        />
-      )}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="min-w-0 space-y-2">
+          <label htmlFor={editorId} className="text-sm font-medium">Template HTML</label>
+          <Textarea
+            id={editorId}
+            value={html}
+            onChange={(e) => onChange(e.target.value)}
+            className="h-[600px] resize-y overflow-auto font-mono text-xs leading-relaxed"
+            spellCheck={false}
+          />
+        </div>
+        <div className="min-w-0 space-y-2">
+          <p className="text-sm font-medium">Live preview — fictional sample data</p>
+          <iframe
+            srcDoc={previewHtml}
+            sandbox=""
+            className="h-[600px] w-full rounded-md border bg-white"
+            title={type === "mc" ? "Medical certificate template preview" : "Referral letter template preview"}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -128,6 +125,7 @@ export function DocumentTemplateEditor() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [mcHtml, setMcHtml] = React.useState(DEFAULT_MC_TEMPLATE);
   const [referralHtml, setReferralHtml] = React.useState(DEFAULT_REFERRAL_TEMPLATE);
+  const [saveTarget, setSaveTarget] = React.useState<"mc" | "referral" | null>(null);
   const [resetTarget, setResetTarget] = React.useState<"mc" | "referral" | null>(null);
 
   React.useEffect(() => {
@@ -199,7 +197,7 @@ export function DocumentTemplateEditor() {
             type="mc"
             html={mcHtml}
             onChange={setMcHtml}
-            onSave={() => handleSave("mc")}
+            onSave={() => setSaveTarget("mc")}
             onReset={() => setResetTarget("mc")}
             isSaving={isSaving}
           />
@@ -210,12 +208,34 @@ export function DocumentTemplateEditor() {
             type="referral"
             html={referralHtml}
             onChange={setReferralHtml}
-            onSave={() => handleSave("referral")}
+            onSave={() => setSaveTarget("referral")}
             onReset={() => setResetTarget("referral")}
             isSaving={isSaving}
           />
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={saveTarget !== null} onOpenChange={(open) => { if (!open) setSaveTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save template changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {saveTarget === "mc"
+                ? "Saving this template changes all future MCs. Review the preview before saving."
+                : "Saving this template changes all future referrals. Review the preview before saving."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              onClick={() => { if (saveTarget) void handleSave(saveTarget); }}
+            >
+              Save template
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={resetTarget !== null} onOpenChange={(open) => { if (!open) setResetTarget(null); }}>
         <AlertDialogContent>
