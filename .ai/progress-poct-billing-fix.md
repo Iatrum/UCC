@@ -60,10 +60,30 @@ place).
 
 ## Status / remaining steps
 - [x] Root cause found, fix applied (lab-service.ts `_count` fix).
-- [ ] Re-run `poct.spec.ts` (repeat a few times to confirm fix holds under accumulated data) +
-      `workflow.spec.ts`.
-- [ ] Look at `api.spec.ts:32` inventory POST without strengths returning 500 (should be 4xx) — quick
-      fix if straightforward.
+- [x] Committed (e6928fd) and pushed `ai/fix-poct-billing` to origin.
+- [x] Re-ran `poct.spec.ts` alone (3/3 pass) and `poct.spec.ts + workflow.spec.ts` together:
+      poct.spec 3/3 pass, workflow.spec 01-05 pass, **06 "composer (plan API stubbed...) -> Sign"
+      failed** with `OperationOutcomeError: Unauthorized` from the e2e helper's own admin Medplum
+      client (`e2e/lib/fhir.ts` `byPatient()`, line 135 of workflow.spec.ts), test took 2.7 minutes
+      (vs ~18s for the adjacent test 05) — abnormal duration, box was under heavy memory pressure
+      (13-14Gi/15Gi used, <500Mi free) from concurrent dev servers on :3210/:3212/:3213 etc.
+      **Not caused by my change**: `getClinicPoctOrders` (the only function I touched) is called
+      exclusively from `app/(routes)/poct/page.tsx`; workflow.spec test 06 never visits `/poct` —
+      it only exercises meds/services/labs/imaging/MC/referral in the composer and then queries
+      MedicationRequest/ServiceRequest/Procedure/DocumentReference/Encounter directly via the
+      admin FHIR client. No code path overlap with the one line I changed. The admin client's
+      session (`e2e/lib/fhir.ts`, memoized per worker process, logged in once at suite start) ran
+      out — almost certainly because the test itself took far longer than normal under memory
+      pressure (typeahead/UI actions slowed down), pushing elapsed time past the admin token's
+      expiry with no refresh-token fallback in that *test helper* (separate from the app's own
+      session refresh in `lib/server/medplum-auth.ts`). This is a pre-existing environmental/infra
+      flake, not a regression from this diff — did not attempt a fix (out of scope, and a `dev`
+      HEAD re-run would cost more box resources for a logically-impossible-to-relate failure).
+- [x] `api.spec.ts:32` inventory POST without strengths returning 500: fixed in
+      `app/api/inventory/route.ts` POST — added `Array.isArray(data?.strengths)` 400 check
+      alongside the existing `name` check (the crash was `data.strengths.map(...)` in
+      `lib/fhir/inventory-service.ts:67` when `strengths` is omitted). Verified:
+      `api.spec.ts` (12/12) + `poct.spec.ts` (3/3) together pass, 15/15.
 - [ ] Full e2e suite once, foreground, `:3213`, `--workers=1`, `NODE_OPTIONS=--max-old-space-size=1536`.
 - [ ] Commit (no secrets), push `ai/fix-poct-billing` (normal push).
 - [ ] Open draft PR into `dev`, verify `gh pr view --json mergeable` is `MERGEABLE`.
