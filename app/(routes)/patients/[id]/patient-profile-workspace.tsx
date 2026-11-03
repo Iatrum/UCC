@@ -782,13 +782,13 @@ export default function PatientProfileWorkspace({
                         )}
                       </div>
                       <div className="hidden md:block">
-                        <Table>
+                        <Table className="min-w-[860px]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
-                            <TableHead>Complaint</TableHead>
-                            <TableHead>Diagnosis</TableHead>
+                            <TableHead className="min-w-[200px]">Complaint</TableHead>
+                            <TableHead className="min-w-[200px]">Diagnosis</TableHead>
                             <TableHead>Prescriptions</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
@@ -811,8 +811,8 @@ export default function PatientProfileWorkspace({
                               >
                                 <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
                                 <TableCell>Consultation</TableCell>
-                                <TableCell className="max-w-[200px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
-                                <TableCell className="max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
+                                <TableCell className="min-w-[200px] max-w-[260px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
+                                <TableCell className="min-w-[200px] max-w-[260px] truncate">{consultation.diagnosis}</TableCell>
                                 <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
