@@ -54,14 +54,39 @@ with `UCC_BASE_URL=http://localhost:3211 node scripts/warmup.mjs`. All e2e runs 
 `UCC_BASE_URL=http://localhost:3211`. Medplum (`:8113`) is shared infra, untouched.
 
 ## Remaining
-- [ ] Run the full e2e suite once (foreground) against `:3211` before marking the PR ready
-      (`UCC_BASE_URL=http://localhost:3211 UCC_REPORTS=... npx playwright test --workers=1`), compare
-      against baseline, confirm only the known-bug probes-summary failure.
-- [ ] Run `npx tsx scripts/clinic-check.ts` (clinic isolation check).
-- [ ] Commit WIP, push `ai/task-9-fixes` (normal push, no force).
-- [ ] Open/update draft PR into `dev`, verify `gh pr view --json mergeable` == MERGEABLE.
-- [ ] Write summary to `/workspace/ai-logs/ucc-pr223-fixes.md`.
-- [ ] Stop the dedicated `:3211` dev server when fully done (leave `:3210`/iatrum-ucc alone throughout).
+- [x] Run the full e2e suite once (foreground) against `:3211`: 20 passed, 2 failed, 4 did-not-run
+      (see "Full gate results" below) — all pre-existing/environmental, none caused by this diff.
+- [x] Run `npx tsx scripts/clinic-check.ts` (clinic isolation check): `problems: []`, clean.
+- [x] Commit WIP (262aec8), push `ai/task-9-fixes` (normal push, no force) — already on `origin`.
+- [x] Open/update draft PR into `dev`: https://github.com/Iatrum/UCC/pull/224, `mergeable:
+      "MERGEABLE"`, `isDraft: true`.
+- [x] Write summary to `/workspace/ai-logs/ucc-pr223-fixes.md`.
+- [x] Stop the dedicated `:3211` dev server when fully done (left `:3210`/iatrum-ucc alone
+      throughout).
+
+## Full gate results (this worktree, `:3211`, 2026-11-03)
+- `bunx tsc --noEmit` (both configs): clean.
+- `bun run lint`: clean.
+- `bun run build:ci`: succeeds.
+- `npx tsx scripts/clinic-check.ts`: 7 clinics, 198 encounters, `problems: []`.
+- Full Playwright suite (`--workers=1`, 26 tests): **20 passed**, 2 failed, 4 did-not-run.
+  - `poct.spec.ts` (all 3, this task's own coverage): **PASS**.
+  - FAIL `inventory: validation returns 4xx not 500` — pre-existing bug (also fails on the old
+    Oct-31 baseline, `.map of undefined` crash in `/api/inventory`), untouched by this diff.
+  - FAIL `07 lab result ingest -> Labs & Imaging tab` — `POST /api/labs/receive` returns 401
+    `"Unauthorized: Invalid API key"`. Root cause: this box's shared `.env.local` now has
+    `POCT_API_KEY` set (for the separate, unmerged Task 4 x-api-key hardening work), so the
+    *existing, unmodified* `apiKey` check in `app/(routes)/api/labs/receive/route.ts:28-34`
+    (identical byte-for-byte to `dev` HEAD — confirmed via `git diff af7b786 HEAD`) now rejects
+    the e2e test's request, which doesn't send `apiKey` in the body. Confirmed with a direct curl
+    against `:3211` — 401 regardless of which branch serves the request, since the route code is
+    unchanged. This is an environment/infra drift, not a regression in this PR.
+  - `08`/`09`/`10`/`11` did-not-run: `workflow.spec.ts` tests share state serially via one
+    module-level `facts` object across `test()` calls in the same file: `07`'s uncaught failure
+    stops the remaining chain. Nothing in this PR's diff touches docs/billing/smoke/known-bug-probe
+    code paths.
+  - Net: no new failures attributable to this PR's 5 changed files; the 2 failures and the
+    4 knock-on skips are pre-existing/environmental.
 
 ## Step log
 - 2026-11-03 ~14:30-15:17 (resumed after watchdog restart): read progress/review notes, verified
