@@ -1,12 +1,70 @@
-"use client";
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, TestTube, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import Link from "next/link";
+import { getClinicPoctOrders, type PoctOrderSummary } from "@/lib/fhir/lab-service";
+import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
+import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 
-export default function POCTPage() {
+export const dynamic = "force-dynamic";
+
+function isToday(iso?: string): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+function formatOrderedAt(iso?: string): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString();
+}
+
+function OrderList({ orders, emptyIcon: Icon, emptyText }: {
+  orders: PoctOrderSummary[];
+  emptyIcon: typeof TestTube;
+  emptyText: string;
+}) {
+  if (orders.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <Icon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+        <p>{emptyText}</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="divide-y">
+      {orders.map((order) => (
+        <li key={order.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+          <div className="min-w-0">
+            <p className="font-medium">{order.testName}</p>
+            <p className="text-sm text-muted-foreground">
+              <Link href={`/patients/${order.patientId}`} className="hover:underline">{order.patientName}</Link>
+              {" · "}
+              {formatOrderedAt(order.authoredOn)}
+            </p>
+          </div>
+          <span className="text-xs font-medium uppercase text-muted-foreground">{order.status}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export default async function POCTPage() {
+  const [medplum, clinicId] = await Promise.all([
+    getMedplumForRequest(),
+    resolveClinicIdFromServerScope(),
+  ]);
+  const orders = clinicId ? await getClinicPoctOrders(clinicId, medplum) : [];
+
+  const todaysOrders = orders.filter((order) => isToday(order.authoredOn));
+  const pending = todaysOrders.filter((order) => order.status === "active");
+  const completed = todaysOrders.filter((order) => order.status === "completed");
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -34,7 +92,7 @@ export default function POCTPage() {
             <TestTube className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{todaysOrders.length}</div>
             <p className="text-xs text-muted-foreground">Total tests ordered</p>
           </CardContent>
         </Card>
@@ -45,7 +103,7 @@ export default function POCTPage() {
             <Clock className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{pending.length}</div>
             <p className="text-xs text-muted-foreground">Awaiting results</p>
           </CardContent>
         </Card>
@@ -56,7 +114,7 @@ export default function POCTPage() {
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{completed.length}</div>
             <p className="text-xs text-muted-foreground">Results ready</p>
           </CardContent>
         </Card>
@@ -88,13 +146,11 @@ export default function POCTPage() {
               <CardDescription>Tests awaiting performance or results</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-12 text-muted-foreground">
-                <TestTube className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No pending tests</p>
-                <Button asChild variant="link" className="mt-2">
-                  <Link href="/poct/new">Order a new test</Link>
-                </Button>
-              </div>
+              <OrderList
+                orders={orders.filter((order) => order.status === "active")}
+                emptyIcon={TestTube}
+                emptyText="No pending tests"
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -106,10 +162,11 @@ export default function POCTPage() {
               <CardDescription>Tests with results available</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-12 text-muted-foreground">
-                <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No completed tests today</p>
-              </div>
+              <OrderList
+                orders={completed}
+                emptyIcon={CheckCircle}
+                emptyText="No completed tests today"
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -121,10 +178,7 @@ export default function POCTPage() {
               <CardDescription>Complete test history</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-12 text-muted-foreground">
-                <TestTube className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No tests recorded</p>
-              </div>
+              <OrderList orders={orders} emptyIcon={TestTube} emptyText="No tests recorded" />
             </CardContent>
           </Card>
         </TabsContent>

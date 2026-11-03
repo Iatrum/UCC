@@ -299,7 +299,7 @@ export async function receiveLabResults(
  */
 export async function getPatientLabOrders(patientId: string, medplum: MedplumClient): Promise<ServiceRequest[]> {
   const client = medplum;
-  
+
   const orders = await client.searchResources('ServiceRequest', {
     subject: `Patient/${patientId}`,
     category: 'laboratory',
@@ -307,6 +307,65 @@ export async function getPatientLabOrders(patientId: string, medplum: MedplumCli
   });
 
   return orders;
+}
+
+export interface PoctOrderSummary {
+  id: string;
+  patientId: string;
+  patientName: string;
+  testCode: string;
+  testName: string;
+  status: NonNullable<ServiceRequest['status']>;
+  priority?: ServiceRequest['priority'];
+  authoredOn?: string;
+  analyserId?: string;
+}
+
+function getPatientDisplayName(patient: FHIRPatient): string {
+  const name = patient.name?.[0];
+  if (!name) return patient.id || 'Patient';
+  if (name.text) return name.text;
+  const parts = [...(name.given || []), name.family].filter(Boolean);
+  return parts.join(' ') || patient.id || 'Patient';
+}
+
+/**
+ * Get every POCT order (ServiceRequest tagged `poct`) for a clinic, regardless of patient.
+ * Used by the /poct worklist page so it reflects orders signed from the treatment composer.
+ */
+export async function getClinicPoctOrders(clinicId: string, medplum: MedplumClient): Promise<PoctOrderSummary[]> {
+  const client = medplum;
+
+  const orders = await client.searchResources('ServiceRequest', {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _tag: `${POCT_TAG_SYSTEM}|poct`,
+    _sort: '-authored',
+    _count: '200',
+  }, { cache: 'no-cache' });
+
+  const patientIds = [...new Set(
+    orders.map((order) => order.subject?.reference?.split('/')[1]).filter((id): id is string => Boolean(id))
+  )];
+  const patients = patientIds.length > 0
+    ? await client.searchResources('Patient', { _id: patientIds.join(',') }, { cache: 'no-cache' })
+    : [];
+  const patientMap = new Map(patients.map((patient) => [patient.id, patient]));
+
+  return orders.map((order) => {
+    const patientId = order.subject?.reference?.split('/')[1] || '';
+    const patient = patientMap.get(patientId);
+    return {
+      id: order.id!,
+      patientId,
+      patientName: patient ? getPatientDisplayName(patient) : patientId,
+      testCode: order.code?.coding?.[0]?.code || '',
+      testName: order.code?.text || order.code?.coding?.[0]?.display || 'POCT test',
+      status: order.status || 'active',
+      priority: order.priority,
+      authoredOn: order.authoredOn,
+      analyserId: order.performer?.[0]?.reference?.split('/')[1],
+    };
+  });
 }
 
 function observationToLabResult(obs: Observation): LabResult {

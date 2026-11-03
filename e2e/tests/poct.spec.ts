@@ -66,7 +66,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   await page.goto(`/patients/${patientId}`);
   await page.getByRole('tab', { name: 'Treatment', exact: true }).click();
   await expect(page.getByRole('region', { name: 'POCT', exact: true })).toBeVisible();
-  return { m, patientId, consultationId, clinicId, device, restorePoctModule };
+  return { m, patientId, patientName: `POCT Fake ${suffix}`, consultationId, clinicId, device, restorePoctModule };
 }
 
 test('POCT offline analyser cannot be added; auth, clinic and server guard fail closed', async ({ request, page, playwright, baseURL }) => {
@@ -134,6 +134,12 @@ test('POCT online + Sign creates active Device ServiceRequest, preserves bill an
     expect(consultation.consultation.billingItems).toContainEqual(expect.objectContaining({ name: 'Glucose (capillary)', price: 5, quantity: 1 }));
     await page.goto(`/orders/checkout/${f.consultationId}?patientId=${f.patientId}`);
     await expect(page.getByText('Glucose (capillary)', { exact: true }).first()).toBeVisible();
+    // Signed order must surface on the /poct worklist, not just the checkout screen.
+    await page.goto('/poct');
+    await expect(page.getByText(f.patientName, { exact: true })).toBeVisible();
+    const pendingStat = page.getByText('Pending', { exact: true }).locator('xpath=ancestor::*[@data-slot="card"]');
+    const pendingCount = await pendingStat.getByText(/^\d+$/).innerText();
+    expect(Number(pendingCount)).toBeGreaterThan(0);
   } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
 });
 
