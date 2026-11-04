@@ -1,7 +1,8 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import type { Device, Organization } from '@medplum/fhirtypes';
+import type { Device, Organization, ServiceRequest } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
+import { POCT_API_KEY } from '../lib/env';
 import { randomUUID } from 'node:crypto';
 
 const typeSystem = 'https://ucc.emr/poct/analyser-type';
@@ -170,4 +171,112 @@ test('POCT module disabled for the clinic: composer hides the section and the AP
   } finally {
     await restorePoctModule();
   }
+});
+
+// Signs the fixture's online analyser's Glucose test and returns the resulting ServiceRequest.
+// Duplicated from (not shared with) the "online + Sign" test above so that test stays untouched.
+async function signGlucoseOrder(f: Awaited<ReturnType<typeof fixture>>, page: Page, request: APIRequestContext): Promise<ServiceRequest> {
+  await f.m.updateResource({ ...f.device, status: 'active', property: [{ type: { coding: [{ system: propertySystem, code: 'last-heartbeat' }] }, valueCode: [{ text: new Date().toISOString() }] }] });
+  await expect(page.getByRole('button', { name: 'Add POCT Glucose (capillary)', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Add POCT Glucose (capillary)', exact: true }).click();
+  const ordered = page.waitForResponse((r) => r.url().includes('/api/labs/order') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Sign', exact: true }).click();
+  expect((await ordered).ok()).toBeTruthy();
+  const [sr] = (await byPatient('ServiceRequest', f.patientId)).filter((r: ServiceRequest) => r.code?.coding?.some((c: any) => c.code === '14743-9'));
+  expect(sr).toBeTruthy();
+  return sr;
+}
+
+// Builds a minimal, spec-shaped HL7 ORU^R01 message by hand (not via lib/poct/hl7's own
+// builder) so this test checks the wire contract independently of our encoder.
+function buildTestOruMessage(placerOrderNumber: string, value: number, flag: 'N' | 'H' | 'HH') {
+  const ts = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  const segments = [
+    ['MSH', '^~\\&', 'SIMANALYSER', 'UCC', 'UCC', 'UCC', ts, '', 'ORU^R01', 'TEST-MSG-1', 'P', '2.5.1'].join('|'),
+    ['OBR', '1', placerOrderNumber, '', '', '', ts].join('|'),
+    ['OBX', '1', 'NM', '14743-9^Glucose (capillary)^LN', '', String(value), 'mmol/L', 'To confirm per analyser', flag, '', '', 'F'].join('|'),
+  ];
+  return segments.join('\r') + '\r';
+}
+
+// Builds a minimal, spec-shaped ASTM E1394 result message by hand, same rationale as above.
+function buildTestAstmMessage(placerOrderNumber: string, testCode: string, testName: string, value: number, flag: 'N' | 'H' | 'HH') {
+  const ts = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  const segments = [
+    ['H', '\\^&', '', '', 'SIMANALYSER', '', '', '', '', '', '', 'P', 'E1394-97', ts].join('|'),
+    `O|1|${placerOrderNumber}`,
+    ['R', '1', `^^^${testCode}^${testName}`, String(value), 'mmol/L', 'To confirm per analyser', flag, '', 'F', '', '', ts].join('|'),
+    'L|1|N',
+  ];
+  return segments.join('\r') + '\r';
+}
+
+// Single test covering the whole simulated-analyser bridge: only one UI sign round-trip
+// (signGlucoseOrder) is used; everything else is driven directly via FHIR (f.m, the same
+// superadmin client the fixture already uses) or the api-key-authenticated ingestion route
+// (no clinic-session cookie involved), to keep this test's wall-clock footprint small — the
+// `request` fixture and `page` are separate browser/API contexts that each hold their own copy
+// of the session cookie, and a long test mixing many calls on both risks one of them hitting a
+// stale/rotated refresh token (the "Session expired" cascades documented in prior STATE.md
+// rounds); minimizing cross-context calls after the initial fixture() setup avoids that.
+test('Simulated analyser HL7/ASTM results reach the Lab tab, clear pending, and the bridge rejects a bad key or a non-POCT order', async ({ request, page }) => {
+  const f = await fixture(request, page, true);
+  try {
+    const sr = await signGlucoseOrder(f, page, request);
+
+    await page.goto(`/patients/${f.patientId}/labs-imaging`);
+    await expect(page.getByText('Pending POCT Tests', { exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Glucose (capillary)', exact: true })).toBeVisible();
+    await expect(page.getByText('Laboratory Report')).toHaveCount(0);
+
+    const wrongKey = await request.post('/api/labs/receive/message', {
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: 'wrong-key' },
+    });
+    expect(wrongKey.status()).toBe(401);
+
+    // A non-POCT (plain lab) ServiceRequest, created directly via FHIR (no extra UI/session
+    // round trip), must be rejected by this analyser bridge even with a valid key.
+    const plainSr = await f.m.createResource<ServiceRequest>({
+      resourceType: 'ServiceRequest', status: 'active', intent: 'order',
+      subject: { reference: `Patient/${f.patientId}` },
+      code: { coding: [{ system: 'http://loinc.org', code: '58410-2', display: 'CBC' }] },
+      identifier: [{ system: 'clinic', value: f.clinicId! }],
+    });
+    const rejected = await request.post('/api/labs/receive/message', {
+      data: { format: 'hl7', message: buildTestOruMessage(plainSr.id!, 1, 'N'), apiKey: POCT_API_KEY },
+    });
+    expect(rejected.status()).toBe(400);
+
+    const ingested = await request.post('/api/labs/receive/message', {
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: POCT_API_KEY },
+    });
+    expect(ingested.ok()).toBeTruthy();
+    expect((await ingested.json()).serviceRequestId).toBe(sr.id);
+    expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('completed');
+
+    await page.goto(`/patients/${f.patientId}/labs-imaging`);
+    await expect(page.getByText('Pending POCT Tests', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Laboratory Report')).toBeVisible();
+    await expect(page.getByText('6.8 mmol/L', { exact: true })).toBeVisible();
+    await expect(page.getByText('high', { exact: true })).toBeVisible();
+
+    // ASTM critical result for a second POCT order, also created directly via FHIR (same
+    // Device, no second UI sign round trip needed to exercise the ASTM parser end to end).
+    const sr2 = await f.m.createResource<ServiceRequest>({
+      resourceType: 'ServiceRequest', status: 'active', intent: 'order',
+      subject: { reference: `Patient/${f.patientId}` },
+      code: { coding: [{ system: 'http://loinc.org', code: '1988-5', display: 'CRP' }], text: 'CRP' },
+      identifier: [{ system: 'clinic', value: f.clinicId! }],
+      meta: { tag: [{ system: tagSystem, code: 'poct' }] },
+      performer: [{ reference: `Device/${f.device.id}` }],
+    });
+    const astmIngested = await request.post('/api/labs/receive/message', {
+      data: { format: 'astm', message: buildTestAstmMessage(sr2.id!, '1988-5', 'CRP', 42, 'HH'), apiKey: POCT_API_KEY },
+    });
+    expect(astmIngested.ok()).toBeTruthy();
+
+    await page.goto(`/patients/${f.patientId}/labs-imaging`);
+    await expect(page.getByText('Critical Results Detected', { exact: true })).toBeVisible();
+    await expect(page.getByText('critical', { exact: true })).toBeVisible();
+  } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
 });

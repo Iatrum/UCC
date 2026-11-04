@@ -3,6 +3,10 @@ export const BASE = process.env.UCC_BASE_URL || 'http://localhost:3210';
 export const MEDPLUM = process.env.MEDPLUM_URL || 'http://localhost:8113/';
 export const USER = process.env.UCC_USER || 'doctor@ucc.local';
 export const PASSWORD = process.env.UCC_PASSWORD || fs.readFileSync(path.join(import.meta.dirname, '../.secrets/pw'), 'utf8').trim();
+function readSecret(name: string): string | undefined {
+  try { return fs.readFileSync(path.join(import.meta.dirname, '../.secrets', name), 'utf8').trim(); } catch { return undefined; }
+}
+export const POCT_API_KEY = process.env.POCT_API_KEY || readSecret('poct_key');
 export const MEDPLUM_ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL || 'admin@example.com', password: process.env.MEDPLUM_ADMIN_PASSWORD || 'medplum_admin' };
 export const EVIDENCE = process.env.UCC_EVIDENCE || '/workspace/iatrum-ucc-evidence/e2e';
 export const RUN = process.env.UCC_RUN_ID || new Date().toISOString().replace(/[-:T.Z]/g, '').slice(4, 12);

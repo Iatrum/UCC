@@ -347,7 +347,7 @@ export async function getClinicPoctOrders(clinicId: string, medplum: MedplumClie
     orders.map((order) => order.subject?.reference?.split('/')[1]).filter((id): id is string => Boolean(id))
   )];
   const patients = patientIds.length > 0
-    ? await client.searchResources('Patient', { _id: patientIds.join(',') }, { cache: 'no-cache' })
+    ? await client.searchResources('Patient', { _id: patientIds.join(','), _count: '200' }, { cache: 'no-cache' })
     : [];
   const patientMap = new Map(patients.map((patient) => [patient.id, patient]));
 
@@ -470,7 +470,7 @@ export async function getPatientLabResults(patientId: string, medplum: MedplumCl
   );
 
   const allObservations = allObsIds.length > 0
-    ? await client.searchResources('Observation', { _id: allObsIds.join(',') })
+    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: '200' })
     : [];
 
   const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
@@ -517,7 +517,7 @@ export async function getLabReport(reportId: string, medplum: MedplumClient): Pr
       .filter((id): id is string => Boolean(id));
 
     const observations = obsIds.length > 0
-      ? await client.searchResources('Observation', { _id: obsIds.join(',') })
+      ? await client.searchResources('Observation', { _id: obsIds.join(','), _count: '200' })
       : [];
 
     const obsMap = new Map(observations.map((obs) => [obs.id!, obs]));
@@ -547,7 +547,7 @@ export async function getEncounterLabResults(encounterId: string, medplum: Medpl
   );
 
   const allObservations = allObsIds.length > 0
-    ? await client.searchResources('Observation', { _id: allObsIds.join(',') })
+    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: '200' })
     : [];
 
   const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));

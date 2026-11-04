@@ -61,6 +61,30 @@ that; this round commits WIP incrementally so a kill doesn't lose work again.
    `^app/\(routes\)/api/labs/receive/` (that's how the existing JSON receive route gets away with it).
    Nesting under `receive/` reuses that existing allowlist entry instead of editing the shared lint
    config (smaller diff, no risk of clashing with another in-flight branch also touching that file).
+8. **One consolidated e2e test, not two.** First attempt wrote two separate tests (HL7 happy-path,
+   ASTM+rejection), each calling the shared `fixture()` (its own patient/consult/Device/UI-Treatment-
+   tab round trip) plus a full UI Sign click. Both runs of that version hit `OperationOutcomeError:
+   Unauthorized` / `AuthError: Session expired` partway through — confirmed in
+   `/workspace/ai-logs/task10-devserver.log` ("Session expired. Please sign in again." on
+   `/api/poct/analysers` and `POST /api/patients`). Root cause: Playwright's `page` (browser context)
+   and `request` (API context) fixtures each load their own copy of the saved session+refresh cookies
+   from `.secrets/state.json` at test start, but a refresh triggered in one context doesn't update the
+   other's cookie jar, and refresh tokens are typically single-use/rotating — so once total spec
+   wall-clock crosses the access-token TTL and one context refreshes, the other's now-stale refresh
+   token can fail outright with no fallback. This is e2e-harness infrastructure, not a bug in this
+   task's application code (same category as the many "transient auth flake, cleared on rerun" entries
+   already in `.ai/STATE.md`); re-architecting cross-context cookie sync is out of scope for Task 10.
+   Mitigation actually taken: merged into **one** test that signs via the UI exactly once
+   (`signGlucoseOrder`), and does everything else (second POCT order, non-POCT order, wrong-key check)
+   via direct FHIR (`f.m`, the same superadmin client `fixture()` already uses) or the api-key-authed
+   ingestion route (no clinic-session cookie involved at all) — far less wall-clock, far fewer
+   cross-context calls after the initial `fixture()` setup.
+9. **Dev server for this worktree runs via `bunx next dev --webpack -p 3210`**, not `bun run dev`
+   (which is `next dev --turbopack` and fails here: `TurbopackInternalError: Symlink [project]/
+   node_modules is invalid, it points out of the filesystem root` — this worktree's `node_modules` is
+   a symlink to `/workspace/iatrum-ucc/node_modules` per AGENTS.md's own worktree instructions, and
+   Turbopack in this Next 16.2.1 build won't resolve a symlink that points outside its own directory
+   tree; webpack has no such issue, same as `build:ci` already uses `--webpack` for the same reason).
 
 ## Plan
 - [x] `lib/poct/hl7.ts` — `buildOruMessage()` / `parseOruMessage()` (MSH/OBR/OBX subset).
@@ -80,16 +104,44 @@ that; this round commits WIP incrementally so a kill doesn't lose work again.
 - [x] `tests/unit/poct-messages.test.ts` — round-trip unit tests for hl7.ts/astm.ts. **7/7 pass**
       (`bun test tests/unit/poct-messages.test.ts`). Not part of `check-all.sh`; run manually.
 - [x] `bun run lint` (tsc + `check-clinic-admin-medplum.mjs`) passes clean on all new/changed files.
-- [ ] `e2e/tests/poct.spec.ts` — extend: online analyser + signed order → send an HL7 result via the
-      new route → Lab tab shows it (value/flag) and the pending entry clears. **Not started yet.**
-- [ ] Run the extended `poct.spec.ts` alone, then the full `e2e/scripts/check-all.sh 10` once at the
-      end in the foreground (need to point the shared :3210 dev server at this worktree — check what
-      is currently serving :3210 before touching it).
+- [x] `e2e/lib/env.ts` — added `POCT_API_KEY` export (reads `e2e/.secrets/poct_key`, same pattern as
+      the existing `PASSWORD` export), so the new e2e test can pass the real key without hardcoding it.
+- [x] `e2e/tests/poct.spec.ts` — added one consolidated test (see decision 8 below for why it's one
+      test, not two): signs a POCT order via the UI once, then exercises wrong-key rejection,
+      non-POCT-ServiceRequest rejection, an HL7 result reaching the Lab tab (pending clears, value+flag
+      render, SR completes), and an ASTM critical result (critical banner renders) — the second POCT
+      order for the ASTM case is created directly via FHIR, not a second UI sign round trip.
+- [x] **Found and fixed a pre-existing, unrelated bug while gating**: `getClinicPoctOrders` (used by
+      the `/poct` worklist, not touched by Task 9/9-fixes' own diff review) batch-fetches patient
+      names via `searchResources('Patient', { _id: ids.join(',') })` with no `_count` override: once a
+      clinic has more than Medplum's default page size (20) of distinct POCT patients, only the first
+      20 resolve and the rest silently show their raw UUID instead of a name. Confirmed live against
+      this box's shared `demo` clinic: 42 POCT ServiceRequests, 42 distinct patients, only 20 Patients
+      resolved without `_count`, all 42 with `_count: '200'`. This is exactly why the **pre-existing**
+      "POCT online + Sign…" test (not part of my diff) started failing on `/poct` page a patient name
+      — the clinic has accumulated that many fake patients across the many prior Task 9/10 e2e runs on
+      this shared box. Fixed with a one-line `_count: '200'` add (matching the ServiceRequest search's
+      own cap already on that function) at `lib/fhir/lab-service.ts:350`, and applied the identical fix
+      to the three other unbounded `Observation` `_id:`-join batch lookups in the same file
+      (`getPatientLabResults`, `getLabReport`, `getEncounterLabResults`) since they have the exact same
+      bug shape and sit directly in the Lab tab's own read path (a patient with >20 total observations
+      across their lab history would silently lose older results — a correctness bug, not a styling
+      one). Scoped in-PR (not deferred like the Task 4/6c gaps) because it's one line, in a file this
+      task already touches, and it was actively blocking a clean gate.
+- [ ] Run the e2e spec alone (foreground), then the full `e2e/scripts/check-all.sh 10` once at the end
+      in the foreground. Dev server for this worktree is up on :3210 (webpack, not turbopack — see
+      decision 9), Medplum up on :8113.
 - [ ] Final commit + push after gate passes; open draft PR into `dev`; `gh pr view --json mergeable`.
 - [ ] Write summary to `/workspace/ai-logs/ucc-task10.md`.
 
-## Failing tests
-- None yet — e2e not run yet (that's the next step). Unit tests 7/7 pass. Lint clean.
+## Failing tests (as of the last e2e run, before the fixes above)
+- `tests/poct.spec.ts` "POCT online + Sign…" (pre-existing test): failed on the `/poct` page not
+  showing the patient's name — root-caused and fixed above (`_count` truncation), not yet re-verified.
+- My own 2 new tests (now merged into 1, see decision 8): failed on `OperationOutcomeError: Unauthorized`
+  / a stale session mid-test — root-caused as a session/cookie-rotation issue between the Playwright
+  `page` and `request` contexts on a long-running spec (see decision 8), mitigated by shrinking the
+  test's cross-context footprint; not a bug in the new application code. Not yet re-verified.
+- Unit tests 7/7 pass. Lint clean.
 
 ## Step log
 - 2026-11-04 ~18:20–20:20: built hl7.ts/astm.ts/analyser-bot.ts/receive route/lab-service
@@ -98,5 +150,19 @@ that; this round commits WIP incrementally so a kill doesn't lose work again.
   e2e — **zero commits**, same failure mode as the prior two attempts, just caught earlier this time.
 - 2026-11-04 21:22: resumed. Confirmed uncommitted edits were intact. Fixed the lint failure
   (`check-clinic-admin-medplum.mjs` flagged the new route) by moving it under `receive/message/`
-  instead of a `receive-message/` sibling (decision 7 above) — `bun run lint` now clean. Writing this
-  file next, then committing WIP and pushing before continuing to the e2e test.
+  instead of a `receive-message/` sibling (decision 7 above) — `bun run lint` now clean. Committed WIP
+  244de87, pushed `ai/task-10`. Added `e2e/lib/env.ts` `POCT_API_KEY` export + extended
+  `e2e/tests/poct.spec.ts` with 2 new tests; started the shared :3210 dev server from this worktree
+  (`bunx next dev --webpack -p 3210`, decision 9) since nothing was serving this worktree before.
+- 2026-11-04 ~22:30–23:04: ran `tests/poct.spec.ts` twice (cold, then warm-rerun). Both runs: same 3
+  failures. Root-caused both (decisions 8 and the `_count` bug above) via `error-context.md` snapshots
+  and `/workspace/ai-logs/task10-devserver.log`, confirmed the `_count` truncation live with a
+  throwaway script against this box's actual Medplum data (42 POCT patients, only 20 resolved).
+  Session got interrupted (dead API connection) right as the second rerun was still running in the
+  background — no code lost (already on disk), but the fixes above (lab-service.ts `_count`, the
+  1-test rewrite of poct.spec.ts, this file) weren't committed yet going into this resume.
+- 2026-11-04 ~23:3x (this resume): confirmed all edits from the previous step still on disk and lint
+  still clean; dev server for this worktree still up on :3210. Wrote decisions 8/9 and this log entry.
+  Next: commit this WIP + push, then run `poct.spec.ts` alone in the **foreground** (explicit extended
+  timeout, not relying on default backgrounding) to verify both fixes actually resolve the 3 failures
+  before running the full `check-all.sh 10` gate.
