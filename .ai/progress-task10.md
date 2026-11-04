@@ -134,14 +134,23 @@ that; this round commits WIP incrementally so a kill doesn't lose work again.
 - [ ] Final commit + push after gate passes; open draft PR into `dev`; `gh pr view --json mergeable`.
 - [ ] Write summary to `/workspace/ai-logs/ucc-task10.md`.
 
-## Failing tests (as of the last e2e run, before the fixes above)
-- `tests/poct.spec.ts` "POCT online + Sign…" (pre-existing test): failed on the `/poct` page not
-  showing the patient's name — root-caused and fixed above (`_count` truncation), not yet re-verified.
-- My own 2 new tests (now merged into 1, see decision 8): failed on `OperationOutcomeError: Unauthorized`
-  / a stale session mid-test — root-caused as a session/cookie-rotation issue between the Playwright
-  `page` and `request` contexts on a long-running spec (see decision 8), mitigated by shrinking the
-  test's cross-context footprint; not a bug in the new application code. Not yet re-verified.
-- Unit tests 7/7 pass. Lint clean.
+## Failing tests
+- None. `tests/poct.spec.ts` 4/4 PASS (confirmed on a fresh dev server, `/workspace/ai-logs/task10-poct-r5`,
+  39.2s total). Unit tests 7/7 pass. Lint clean. History of how it got there, for the record:
+  - "POCT online + Sign…" (pre-existing test) failed on `/poct` not showing the patient's name —
+    root cause was the `_count` truncation bug (fixed, decision/plan item above); confirmed fixed.
+  - My new test (after merging 2→1, decision 8) then failed with `page.waitForResponse` timing out on
+    `/api/labs/order` inside `signGlucoseOrder`: the helper clicked "Sign" immediately after "Add"
+    with no wait for the composer to register the add first (unlike the pre-existing "online + Sign"
+    test, which waits for the "Remove" button to appear before signing) — a race in the **test**, not
+    the app (same class of bug this codebase's own Task 3b fixed in the composer itself). Reproduced
+    identically on both a stale dev server (RSS ~2.99GB, near the 3072MB cap, 4.0 min test) and a
+    freshly restarted one (49.2s test, same failure) — ruling out memory pressure as the cause and
+    confirming it was this missing wait. Fixed by adding the same `toBeVisible()` wait; reran, 4/4 pass.
+  - Separately noted: the stale dev server (same process since ~22:35, 3 full runs) had grown to
+    ~2.99GB RSS against the 3072MB `NODE_OPTIONS` cap without an explicit crash/restart log line —
+    restarted it before the final successful run. Not a code issue; just don't reuse a dev server for
+    many consecutive full e2e runs without restarting it.
 
 ## Step log
 - 2026-11-04 ~18:20–20:20: built hl7.ts/astm.ts/analyser-bot.ts/receive route/lab-service
@@ -162,7 +171,10 @@ that; this round commits WIP incrementally so a kill doesn't lose work again.
   background — no code lost (already on disk), but the fixes above (lab-service.ts `_count`, the
   1-test rewrite of poct.spec.ts, this file) weren't committed yet going into this resume.
 - 2026-11-04 ~23:3x (this resume): confirmed all edits from the previous step still on disk and lint
-  still clean; dev server for this worktree still up on :3210. Wrote decisions 8/9 and this log entry.
-  Next: commit this WIP + push, then run `poct.spec.ts` alone in the **foreground** (explicit extended
-  timeout, not relying on default backgrounding) to verify both fixes actually resolve the 3 failures
-  before running the full `check-all.sh 10` gate.
+  still clean; dev server for this worktree still up on :3210. Wrote decisions 8/9 and this log entry,
+  committed (f5b73d2) and pushed. Ran `poct.spec.ts` alone in the foreground (explicit timeout, no
+  backgrounding): the `_count` fix confirmed working (test 2 passes), but my own new test then failed
+  on a `signGlucoseOrder` race (see Failing tests above) — reproduced on both a stale and a freshly
+  restarted dev server, ruling out the server as the cause. Fixed the test race, reran: **4/4 pass**
+  (`/workspace/ai-logs/task10-poct-r5`). Next: full `e2e/scripts/check-all.sh 10` gate in the
+  foreground, then commit, push, open the draft PR.

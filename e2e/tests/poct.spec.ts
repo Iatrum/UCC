@@ -179,6 +179,9 @@ async function signGlucoseOrder(f: Awaited<ReturnType<typeof fixture>>, page: Pa
   await f.m.updateResource({ ...f.device, status: 'active', property: [{ type: { coding: [{ system: propertySystem, code: 'last-heartbeat' }] }, valueCode: [{ text: new Date().toISOString() }] }] });
   await expect(page.getByRole('button', { name: 'Add POCT Glucose (capillary)', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Add POCT Glucose (capillary)', exact: true }).click();
+  // Wait for the composer to actually register the add (same as the "online + Sign" test above)
+  // before signing — clicking Sign immediately after Add races the composer's own state update.
+  await expect(page.getByRole('button', { name: 'Remove Glucose (capillary)', exact: true })).toBeVisible();
   const ordered = page.waitForResponse((r) => r.url().includes('/api/labs/order') && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   expect((await ordered).ok()).toBeTruthy();
