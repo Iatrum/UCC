@@ -120,10 +120,13 @@ surfaces as 403.
 ## Remaining
 - [x] Run full e2e suite in the foreground once; confirmed no new failures vs. baseline (see
       above).
-- [ ] Commit (no `.secrets`/`e2e/.secrets`), push `ai/task-poct-toggle` (normal push).
-- [ ] Open/update the draft PR into `dev`; confirm `gh pr view --json mergeable`.
-- [ ] Write summary to `/workspace/ai-logs/ucc-poct-toggle.md`.
-- [ ] Stop the dedicated `:3212` dev server.
+- [x] Commit (b33ad40, no `.secrets`/`e2e/.secrets`), push `ai/task-poct-toggle` (normal push).
+- [x] Opened draft PR into `dev`: https://github.com/Iatrum/UCC/pull/226 — `mergeable: "MERGEABLE"`,
+      `isDraft: true`.
+- [x] Wrote summary to `/workspace/ai-logs/ucc-poct-toggle.md`.
+- [x] Stopped the dedicated `:3212` dev server.
+
+Task complete.
 
 ## Step log
 - 2026-11-03: resumed after prior runs died on API errors. Fast-forwarded `ai/task-poct-toggle` to
@@ -135,3 +138,10 @@ surfaces as 403.
   pre-existing flake, confirmed via stash-and-rerun against baseline). Dev server for this
   worktree running on `:3212` (not touching `:3210`/other agents' worktrees). Next: full e2e gate,
   commit, push, PR.
+- 2026-11-04: resumed after a stall. Restarted the `:3212` dev server (had gone down between
+  sessions; `:3210` untouched throughout). Ran the full 29-test Playwright suite in the
+  foreground, triaged all 4 failures by isolated re-run / diff-against-dev / cross-checking past
+  documented issues — none are regressions from this diff (see Gate status above). Clinic check
+  clean. Committed b33ad40, pushed `ai/task-poct-toggle`, opened draft PR #226 into `dev`
+  (MERGEABLE). Wrote `/workspace/ai-logs/ucc-poct-toggle.md`. Stopped the `:3212` dev server.
+  Task complete.
