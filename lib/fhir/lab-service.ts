@@ -444,15 +444,32 @@ export async function getPatientLabResults(patientId: string, medplum: MedplumCl
   return mapReportsToSummaries(reports, obsMap, patientId);
 }
 
+function isPoctTaggedOrder(serviceRequest: ServiceRequest): boolean {
+  return Boolean(serviceRequest.meta?.tag?.some((tag) => tag.system === POCT_TAG_SYSTEM && tag.code === 'poct'));
+}
+
+/**
+ * A disabled poct module must block mutation of its own orders, same as it blocks creating
+ * new ones -- but a generic (non-analyser) lab order must stay mutable regardless of the
+ * toggle, since it's a separate, always-on feature.
+ */
+async function assertPoctOrderMutable(serviceRequest: ServiceRequest, clinicId: string): Promise<void> {
+  if (isPoctTaggedOrder(serviceRequest) && !(await isModuleEnabledForClinic('poct', clinicId))) {
+    throw new ForbiddenError('POCT module is disabled for this clinic');
+  }
+}
+
 /**
  * Update a lab order (e.g. cancel or change priority)
  */
 export async function updateLabOrder(
   serviceRequestId: string,
   updates: { status?: 'active' | 'on-hold' | 'revoked' | 'completed'; priority?: 'routine' | 'urgent' | 'asap' | 'stat'; clinicalNotes?: string },
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  clinicId: string
 ): Promise<void> {
   const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  await assertPoctOrderMutable(serviceRequest, clinicId);
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;
   if (updates.priority) updated.priority = updates.priority;
@@ -464,7 +481,9 @@ export async function updateLabOrder(
 /**
  * Delete a lab order
  */
-export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumClient): Promise<void> {
+export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumClient, clinicId: string): Promise<void> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  await assertPoctOrderMutable(serviceRequest, clinicId);
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ServiceRequest ${serviceRequestId}`);
 }
