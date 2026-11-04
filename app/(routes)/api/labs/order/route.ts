@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { serviceRequestId, ...updates } = body;
 
@@ -63,16 +63,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
     }
 
-    await updateLabOrder(serviceRequestId, updates, medplum);
+    await updateLabOrder(serviceRequestId, updates, medplum, clinicId);
     return NextResponse.json({ success: true, message: 'Lab order updated' });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to update lab order', details: error.message }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/labs/order');
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { serviceRequestId } = body;
 
@@ -80,10 +80,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
     }
 
-    await deleteLabOrder(serviceRequestId, medplum);
+    await deleteLabOrder(serviceRequestId, medplum, clinicId);
     return NextResponse.json({ success: true, message: 'Lab order deleted' });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to delete lab order', details: error.message }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/labs/order');
   }
 }
 

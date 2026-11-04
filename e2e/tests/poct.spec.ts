@@ -171,3 +171,41 @@ test('POCT module disabled for the clinic: composer hides the section and the AP
     await restorePoctModule();
   }
 });
+
+test('POCT module disabled after an order exists blocks PATCH/DELETE of that order; a generic lab order stays mutable', async ({ request, page }) => {
+  const f = await fixture(request, page, true);
+  try {
+    const poctOrder = await request.post('/api/labs/order', { data: { patientId: f.patientId, encounterId: f.consultationId,
+      tests: [{ code: '14743-9', display: 'Glucose' }], poct: { code: '14743-9', analyserId: f.device.id, entryId: randomUUID() } } });
+    expect(poctOrder.ok()).toBeTruthy();
+    const { serviceRequestId: poctServiceRequestId } = await poctOrder.json();
+
+    const genericOrder = await request.post('/api/labs/order', { data: { patientId: f.patientId, tests: ['CBC'] } });
+    expect(genericOrder.ok()).toBeTruthy();
+    const { serviceRequestId: genericServiceRequestId } = await genericOrder.json();
+
+    const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
+    try {
+      const patchPoct = await request.patch('/api/labs/order', { data: { serviceRequestId: poctServiceRequestId, priority: 'urgent' } });
+      expect(patchPoct.status()).toBe(403);
+      const deletePoct = await request.delete('/api/labs/order', { data: { serviceRequestId: poctServiceRequestId } });
+      expect(deletePoct.status()).toBe(403);
+      expect((await f.m.readResource('ServiceRequest', poctServiceRequestId)).priority).not.toBe('urgent');
+
+      const patchGeneric = await request.patch('/api/labs/order', { data: { serviceRequestId: genericServiceRequestId, priority: 'urgent' } });
+      expect(patchGeneric.ok()).toBeTruthy();
+      expect((await f.m.readResource('ServiceRequest', genericServiceRequestId)).priority).toBe('urgent');
+    } finally {
+      await disable();
+    }
+
+    const patchPoctAgain = await request.patch('/api/labs/order', { data: { serviceRequestId: poctServiceRequestId, priority: 'stat' } });
+    expect(patchPoctAgain.ok()).toBeTruthy();
+    expect((await f.m.readResource('ServiceRequest', poctServiceRequestId)).priority).toBe('stat');
+    const deleteGeneric = await request.delete('/api/labs/order', { data: { serviceRequestId: genericServiceRequestId } });
+    expect(deleteGeneric.ok()).toBeTruthy();
+  } finally {
+    await f.m.deleteResource('Device', f.device.id!);
+    await f.restorePoctModule();
+  }
+});
