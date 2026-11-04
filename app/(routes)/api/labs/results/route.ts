@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getPatientLabResults, getEncounterLabResults } from '@/lib/fhir/lab-service';
+import { getPatientLabResults, getEncounterLabResults, getPatientPendingPoctOrders } from '@/lib/fhir/lab-service';
 import { getMedplumForRequest } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
@@ -26,15 +26,18 @@ export async function GET(request: NextRequest) {
     }
 
     let reports;
+    let pending;
     if (encounterId) {
       reports = await getEncounterLabResults(encounterId, medplum);
     } else if (patientId) {
       reports = await getPatientLabResults(patientId, medplum);
+      pending = await getPatientPendingPoctOrders(patientId, medplum);
     }
 
     return NextResponse.json({
       success: true,
       reports,
+      pending: pending || [],
     });
 
   } catch (error: any) {

@@ -418,6 +418,40 @@ function mapReportsToSummaries(
   });
 }
 
+export interface PendingPoctOrder {
+  id: string;
+  testCode: string;
+  testName: string;
+  status: NonNullable<ServiceRequest['status']>;
+  priority?: ServiceRequest['priority'];
+  authoredOn?: string;
+  analyserId?: string;
+}
+
+/**
+ * Get POCT orders (ServiceRequest tagged `poct`) for a patient that are still
+ * waiting on a result (not completed/revoked/cancelled). Used by the Lab tab
+ * so a doctor can see a test is in progress, not just the final result.
+ */
+export async function getPatientPendingPoctOrders(patientId: string, medplum: MedplumClient): Promise<PendingPoctOrder[]> {
+  const orders = await medplum.searchResources('ServiceRequest', {
+    subject: `Patient/${patientId}`,
+    _tag: `${POCT_TAG_SYSTEM}|poct`,
+    status: 'active,on-hold',
+    _sort: '-authored',
+  }, { cache: 'no-cache' });
+
+  return orders.map((order) => ({
+    id: order.id!,
+    testCode: order.code?.coding?.[0]?.code || '',
+    testName: order.code?.text || order.code?.coding?.[0]?.display || 'POCT test',
+    status: order.status || 'active',
+    priority: order.priority,
+    authoredOn: order.authoredOn,
+    analyserId: order.performer?.[0]?.reference?.split('/')[1],
+  }));
+}
+
 /**
  * Get all lab results for a patient
  */

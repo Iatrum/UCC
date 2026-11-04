@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, CheckCircle2, TrendingDown, TrendingUp } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, TrendingDown, TrendingUp } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { LabReportSummary } from '@/lib/fhir/lab-constants';
+import type { PendingPoctOrder } from '@/lib/fhir/lab-service';
 
 interface LabResultsViewProps {
   patientId: string;
@@ -16,19 +17,21 @@ interface LabResultsViewProps {
 
 export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) {
   const [reports, setReports] = useState<LabReportSummary[]>([]);
+  const [pending, setPending] = useState<PendingPoctOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadLabResults = useCallback(async () => {
     try {
-      const endpoint = encounterId 
+      const endpoint = encounterId
         ? `/api/labs/results?encounterId=${encounterId}`
         : `/api/labs/results?patientId=${patientId}`;
-      
+
       const response = await fetch(endpoint);
       const data = await response.json();
 
       if (response.ok) {
         setReports(data.reports || []);
+        setPending(data.pending || []);
       }
     } catch (error) {
       console.error('Error loading lab results:', error);
@@ -82,7 +85,7 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
     );
   }
 
-  if (reports.length === 0) {
+  if (reports.length === 0 && pending.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -100,6 +103,41 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
 
   return (
     <div className="space-y-6">
+      {pending.length > 0 && (
+        <Card aria-label="Pending POCT tests">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-500" />
+              Pending POCT Tests
+            </CardTitle>
+            <CardDescription>Waiting on the analyser — results will appear below once received.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Test</TableHead>
+                  <TableHead>Ordered</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pending.map((order) => (
+                  <TableRow key={order.id}>
+                    <TableCell className="font-medium">{order.testName}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {order.authoredOn ? new Date(order.authoredOn).toLocaleString() : 'N/A'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs capitalize">{order.status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
       {reports.map((report) => (
         <Card key={report.id}>
           <CardHeader>
