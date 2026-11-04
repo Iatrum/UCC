@@ -84,8 +84,44 @@ place).
       alongside the existing `name` check (the crash was `data.strengths.map(...)` in
       `lib/fhir/inventory-service.ts:67` when `strengths` is omitted). Verified:
       `api.spec.ts` (12/12) + `poct.spec.ts` (3/3) together pass, 15/15.
-- [ ] Full e2e suite once, foreground, `:3213`, `--workers=1`, `NODE_OPTIONS=--max-old-space-size=1536`.
-- [ ] Commit (no secrets), push `ai/fix-poct-billing` (normal push).
+- [x] Full e2e suite attempt #1 (foreground, blocked on it via TaskOutput since the harness
+      auto-backgrounds anything past ~2min): **15 passed, 2 failed, 9 did-not-run** (2.5m before
+      stopping at test 17). Both failures are shared-infra contention, not this diff:
+      1. `poct.spec.ts` "online + Sign" — `ECONNRESET` on the idempotent-retry POST at line 130
+         (a transient connection reset against `:3213`, not a logic error — every other assertion
+         in that same test passed first, including the billing POST and `/poct` worklist name
+         resolution my fix addresses).
+      2. `workflow.spec.ts` "02 register patient" — `POST /api/patients/intake-pilot 409 Conflict:
+         Patient with NRIC 920312-14-0011 already exists`. `e2e/lib/env.ts`'s `RUN` id is derived
+         from the current minute-granularity timestamp (no `UCC_RUN_ID` set), and this shared box
+         runs many concurrent AI-agent e2e suites against the same shared Medplum (`:8113`) at the
+         same time — another task's `workflow.spec.ts` run in the same wall-clock minute produced
+         the same NRIC first. Confirmed via dev log: the conflict's `existingPatientName` is
+         `E2E Fake 10310011`, a different run's fixture, not mine.
+      Neither failure touches `lib/fhir/lab-service.ts` or `app/api/inventory/route.ts` (the two
+      files this PR changes) in a way that explains the failure — re-running is the correct call,
+      not a code fix.
+- [x] Full e2e suite attempt #2 (with explicit `UCC_RUN_ID` to dodge the shared-box NRIC collision
+      from attempt #1): **21 passed, 1 failed, 4 did-not-run**.
+      - `poct.spec.ts` all 3 pass (no ECONNRESET this time — confirms attempt #1's was transient).
+      - `workflow.spec.ts` 01-06 all pass (including the "06 composer... -> Sign" test that failed
+        for an unrelated reason in the earlier resumed-session run — passed clean here, 2.0m,
+        consistent with box load, not a regression).
+      - FAIL `07 lab result ingest -> Labs & Imaging tab`: `POST /api/labs/receive` → 401
+        `"Unauthorized: Invalid API key"`. **Pre-existing, already documented** in
+        `.ai/progress-task9-fixes.md` (identical symptom/root cause): this box's shared
+        `.env.local` has `POCT_API_KEY` set for unrelated Task-4 work, and the route's existing,
+        untouched API-key check (`app/(routes)/api/labs/receive/route.ts`) rejects the e2e
+        request, which sends no `apiKey`. Confirmed this PR doesn't touch that route or
+        `.env.local`. Environment/infra drift, not a regression from this diff.
+      - 4 did-not-run: `08`/`09`/`10`/`11` in `workflow.spec.ts` share state serially via one
+        module-level `facts` object; `07`'s failure stops the chain (same as documented in the
+        prior task's gate notes).
+      - Net: **no new failures attributable to this PR's 2 changed files** (`lib/fhir/lab-service.ts`,
+        `app/api/inventory/route.ts`); the 1 failure + 4 knock-on skips are pre-existing/environmental,
+        matching the already-known baseline.
+- [x] `bunx tsc --noEmit`: clean. `bun run lint`: clean.
+- [x] Commit (no secrets), push `ai/fix-poct-billing` (normal push) — e6928fd, 593e2e5 pushed.
 - [ ] Open draft PR into `dev`, verify `gh pr view --json mergeable` is `MERGEABLE`.
 - [ ] Write summary to `/workspace/ai-logs/ucc-poct-billing-fix.md`.
 - [ ] Stop the `:3213` dev server.
