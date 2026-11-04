@@ -121,10 +121,12 @@ place).
         `app/api/inventory/route.ts`); the 1 failure + 4 knock-on skips are pre-existing/environmental,
         matching the already-known baseline.
 - [x] `bunx tsc --noEmit`: clean. `bun run lint`: clean.
-- [x] Commit (no secrets), push `ai/fix-poct-billing` (normal push) — e6928fd, 593e2e5 pushed.
-- [ ] Open draft PR into `dev`, verify `gh pr view --json mergeable` is `MERGEABLE`.
-- [ ] Write summary to `/workspace/ai-logs/ucc-poct-billing-fix.md`.
-- [ ] Stop the `:3213` dev server.
+- [x] Commit (no secrets), push `ai/fix-poct-billing` (normal push) — e6928fd, 593e2e5, 17e74b3 pushed.
+- [x] Opened draft PR #225 into `dev`: https://github.com/Iatrum/UCC/pull/225.
+      `gh pr view 225 --json mergeable` → `"MERGEABLE"` (isDraft true, mergeStateStatus UNSTABLE —
+      draft/no reviews yet, not a conflict).
+- [x] Write summary to `/workspace/ai-logs/ucc-poct-billing-fix.md`.
+- [x] Stopped the `:3213` dev server.
 
 ## Environment notes
 - System under heavy memory pressure (12-14Gi/15Gi used) from many concurrent worktree dev servers
