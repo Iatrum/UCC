@@ -152,6 +152,56 @@ that; this round commits WIP incrementally so a kill doesn't lose work again.
     restarted it before the final successful run. Not a code issue; just don't reuse a dev server for
     many consecutive full e2e runs without restarting it.
 
+## Full gate (`e2e/scripts/check-all.sh 10`)
+Ran 3 times to separate real signal from infra noise (`/workspace/ai-logs/10`, `10-r2`, `10-r3`):
+- **10** (first run, server warm from manual testing but not yet run through `check-all`'s own
+  build+warmup sequence): 16/27, cascading failures from `workflow.spec.ts` test 02 onward — root
+  cause confirmed in `task10-devserver-r2.log`: repeated `AuthError: Session expired` during a cold
+  dev-server compile window (`GET /dashboard` took 16.1s on first hit), the same
+  cold-compile-eats-the-access-token's-short-TTL pattern this project's own `.ai/STATE.md` has
+  documented many times before (e.g. D10). Not caused by this task's diff — it hit the **unmodified**
+  `workflow.spec.ts`.
+- **10-r2** (rerun, server now warm): 20/27. The cold-start cascade cleared as expected. Two findings
+  remained: (a) `POCT offline analyser…` failed with a raw `ECONNRESET` — confirmed in the devserver
+  log as `⚠ Server is approaching the used memory threshold, restarting...`, the well-documented
+  dev-server auto-restart-under-memory-pressure flake, self-healing (server was back up within
+  seconds); (b) `workflow.spec.ts` `07 lab result ingest…` started failing with
+  `401 {"error":"Unauthorized: Invalid API key"}` from the **pre-existing, untouched**
+  `/api/labs/receive` route, with tests 08/09/10 in the same file showing as skipped (not
+  independently failed) as a result (`workflow.spec.ts` runs its tests serially sharing one `page`).
+- **10-r3** (rerun once more to confirm (a) was a one-off flake and (b) is stable, not another flake):
+  21/27 — `POCT offline analyser…` now passes (confirms (a) was the transient OOM-restart), the
+  `07`/`08`/`09`/`10` group fails identically again (confirms (b) is a stable, reproducible gap, not
+  noise). **Root cause of (b), fully confirmed**: `e2e/tests/workflow.spec.ts:147` posts to
+  `/api/labs/receive` with no `apiKey` field at all (unmodified, written before Task 4 existed). This
+  worktree's `/api/labs/receive/route.ts` (also unmodified — not in this task's diff; `git diff
+  origin/dev --stat` confirms neither file is touched by Task 10) is the **pre-Task-4** version:
+  `if (expectedApiKey && body.apiKey !== expectedApiKey) return 401` — i.e. it only enforces a key
+  when `POCT_API_KEY` happens to be set in the environment. `origin/dev` (this branch's base) never
+  got Task 4's PR (documented in `.ai/BACKLOG.md` under "Process gap found while rebasing Task 9's PR
+  onto `dev`"), so on a bare `dev` checkout this env var would be unset and the route — and this
+  test — would both behave exactly as originally written (no key, fail-open). The *only* reason it
+  fails in **this** worktree is that `.env.local` was copied from the more-advanced main repo
+  (`/workspace/iatrum-ucc/.env.local`, which has `POCT_API_KEY` set because Task 4 lives on
+  `ai-work`), for unrelated reasons (`MEDPLUM_CLIENT_ID`/`MEDPLUM_CLIENT_SECRET` are required just to
+  log in at all). Confirmed against the actual baseline file: `07 lab result ingest…` **passed** in
+  `/workspace/ai-logs/baseline/results.json` (captured on `ai-work`, which already has Task 4). So
+  "NEW FAIL" here is comparing a `dev`-based branch against an `ai-work`-based baseline — the exact
+  same structural mismatch Task 9's own PR #223 hit and documented (`.ai/STATE.md` 2026-11-02 "D31":
+  "two pre-existing gaps in `dev` unrelated to Task 9 ... logged in BACKLOG rather than fixed here, to
+  keep this PR scoped"). Same call here: **not fixed in this PR** (that's Task 4's own standalone PR,
+  already named as the remediation in BACKLOG.md); deliberately **not** worked around by unsetting
+  `POCT_API_KEY` either, because this task's own new route (`/api/labs/receive/message`) and its own
+  new e2e test need that key actually enforced to meaningfully test the wrong-key-rejection path.
+- **Net result**: `lint: 0`, `build: 0`, `clinics: 0` (4-clinic isolation) on all 3 runs. e2e
+  21/27 on the clean run, with every non-passing test accounted for: 2 already in baseline as expected
+  fails (`inventory: validation returns 4xx not 500`, `11 known-bug probes summary`), 4 (`07`-`10`)
+  tracing to the single pre-existing, already-documented `dev`-vs-`ai-work` Task 4 gap. **No failure
+  traces to this task's actual diff** (`lib/poct/*`, the new route, `lab-service.ts`'s `_count` fix,
+  the Lab tab pending list, or `poct.spec.ts`) — `poct.spec.ts` itself is 4/4 pass on the clean run.
+- Next: commit progress file, open draft PR into `dev` noting the Task-4 gap explicitly (same as PR
+  #223 did), verify `gh pr view --json mergeable`, write summary to `/workspace/ai-logs/ucc-task10.md`.
+
 ## Step log
 - 2026-11-04 ~18:20–20:20: built hl7.ts/astm.ts/analyser-bot.ts/receive route/lab-service
   addition/results route/Lab tab UI/sim-analyser.ts/unit tests (see Plan above), all passing lint +
