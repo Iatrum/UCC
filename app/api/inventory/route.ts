@@ -41,6 +41,9 @@ export async function POST(request: NextRequest) {
     if (!data?.name) {
       return NextResponse.json({ success: false, error: 'Missing required field: name' }, { status: 400 });
     }
+    if (!Array.isArray(data?.strengths)) {
+      return NextResponse.json({ success: false, error: 'Missing required field: strengths' }, { status: 400 });
+    }
 
     const medicationId = await createInventoryMedicationInMedplum(medplum, data, clinicId);
     return NextResponse.json({

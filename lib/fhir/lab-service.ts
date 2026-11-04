@@ -347,7 +347,7 @@ export async function getClinicPoctOrders(clinicId: string, medplum: MedplumClie
     orders.map((order) => order.subject?.reference?.split('/')[1]).filter((id): id is string => Boolean(id))
   )];
   const patients = patientIds.length > 0
-    ? await client.searchResources('Patient', { _id: patientIds.join(',') }, { cache: 'no-cache' })
+    ? await client.searchResources('Patient', { _id: patientIds.join(','), _count: String(patientIds.length) }, { cache: 'no-cache' })
     : [];
   const patientMap = new Map(patients.map((patient) => [patient.id, patient]));
 
