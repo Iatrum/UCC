@@ -347,7 +347,7 @@ export async function getClinicPoctOrders(clinicId: string, medplum: MedplumClie
     orders.map((order) => order.subject?.reference?.split('/')[1]).filter((id): id is string => Boolean(id))
   )];
   const patients = patientIds.length > 0
-    ? await client.searchResources('Patient', { _id: patientIds.join(','), _count: '200' }, { cache: 'no-cache' })
+    ? await client.searchResources('Patient', { _id: patientIds.join(','), _count: String(patientIds.length) }, { cache: 'no-cache' })
     : [];
   const patientMap = new Map(patients.map((patient) => [patient.id, patient]));
 
@@ -470,12 +470,27 @@ export async function getPatientLabResults(patientId: string, medplum: MedplumCl
   );
 
   const allObservations = allObsIds.length > 0
-    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: '200' })
+    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: String(allObsIds.length) })
     : [];
 
   const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
 
   return mapReportsToSummaries(reports, obsMap, patientId);
+}
+
+function isPoctTaggedOrder(serviceRequest: ServiceRequest): boolean {
+  return Boolean(serviceRequest.meta?.tag?.some((tag) => tag.system === POCT_TAG_SYSTEM && tag.code === 'poct'));
+}
+
+/**
+ * A disabled poct module must block mutation of its own orders, same as it blocks creating
+ * new ones -- but a generic (non-analyser) lab order must stay mutable regardless of the
+ * toggle, since it's a separate, always-on feature.
+ */
+async function assertPoctOrderMutable(serviceRequest: ServiceRequest, clinicId: string): Promise<void> {
+  if (isPoctTaggedOrder(serviceRequest) && !(await isModuleEnabledForClinic('poct', clinicId))) {
+    throw new ForbiddenError('POCT module is disabled for this clinic');
+  }
 }
 
 /**
@@ -484,9 +499,11 @@ export async function getPatientLabResults(patientId: string, medplum: MedplumCl
 export async function updateLabOrder(
   serviceRequestId: string,
   updates: { status?: 'active' | 'on-hold' | 'revoked' | 'completed'; priority?: 'routine' | 'urgent' | 'asap' | 'stat'; clinicalNotes?: string },
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  clinicId: string
 ): Promise<void> {
   const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  await assertPoctOrderMutable(serviceRequest, clinicId);
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;
   if (updates.priority) updated.priority = updates.priority;
@@ -498,7 +515,9 @@ export async function updateLabOrder(
 /**
  * Delete a lab order
  */
-export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumClient): Promise<void> {
+export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumClient, clinicId: string): Promise<void> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  await assertPoctOrderMutable(serviceRequest, clinicId);
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ServiceRequest ${serviceRequestId}`);
 }
@@ -517,7 +536,7 @@ export async function getLabReport(reportId: string, medplum: MedplumClient): Pr
       .filter((id): id is string => Boolean(id));
 
     const observations = obsIds.length > 0
-      ? await client.searchResources('Observation', { _id: obsIds.join(','), _count: '200' })
+      ? await client.searchResources('Observation', { _id: obsIds.join(','), _count: String(obsIds.length) })
       : [];
 
     const obsMap = new Map(observations.map((obs) => [obs.id!, obs]));
@@ -547,7 +566,7 @@ export async function getEncounterLabResults(encounterId: string, medplum: Medpl
   );
 
   const allObservations = allObsIds.length > 0
-    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: '200' })
+    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: String(allObsIds.length) })
     : [];
 
   const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
