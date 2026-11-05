@@ -16,3 +16,5 @@ Static review found CSP allowed wss but blocked local ws/8113, so added only the
 Coverage review: replaced full navigation cleanup check with React Lab-panel unmount while socket active, plus31s no-request assertion. This actually detects leaked30s intervals instead of relying on browser JS destruction. Next run relevant POCT spec after Task10 gate.
 
 Long-test harness: the two new live tests obtain their own fresh local fake-staff session and copy cookies to their browser, avoiding reused rotating refresh cookies after the full suite has spent several minutes in earlier tests. Secret-bearing requests remain untraced.
+
+Self-review recorded in REVIEW-task11.md (not independent approval); all product changes saved/pushed. Waiting only for shared-server verification window, then relevant POCT spec and foreground full11 gate.
