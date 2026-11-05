@@ -37,6 +37,7 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onLoa
     loading = true;
     try {
       const response = await fetch(endpoint, { signal: abort.signal, cache: 'no-store' });
+      if (abort.signal.aborted) return;
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
           allowed = false;

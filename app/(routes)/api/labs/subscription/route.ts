@@ -6,7 +6,7 @@ import { isModuleEnabledForClinic } from '@/lib/module-registry';
 
 export const runtime = 'nodejs';
 
-/** A short-lived, patient + clinic scoped binding token, never an admin/access token. */
+/** Patient + clinic scoped WebSocket binding, using the authenticated staff client. */
 export async function POST(request: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(request);
@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
     const params = new URLSearchParams({ subject: `Patient/${patientId}`, identifier: `clinic|${clinicId}` });
     if (encounterId) params.set('encounter', `Encounter/${encounterId}`);
     // Uses Medplum's in-memory WebSocket Subscription flow (verified in pinned SDK).
-    // Leases expire even if a browser vanishes without sending an unbind frame.
+    // The browser renews its lease after rechecking authorization. Medplum 5.2.8
+    // binding JWTs expire after one hour; end is also set on the FHIR resource.
     const end = new Date(Date.now() + 90_000).toISOString();
     try {
       const subscription = await medplum.createResource<Subscription>({
