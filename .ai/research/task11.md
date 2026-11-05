@@ -1,0 +1,7 @@
+# Task 11 research
+- https://github.com/medplum/medplum/blob/main/packages/docs/docs/react/use-subscription.mdx — in-memory WebSocket subscriptions; project websocket-subscriptions flag, fallback necessary when disabled.
+- Pinned @medplum/core source map: src/subscriptions/index.ts rebindCriteriaEntry creates active channel:websocket Subscription, GET Subscription/id/$get-ws-binding-token returns token, websocket-url, expiration. Frames: bind-with-token/unbind-from-token payload.token, ping; Bundle first entry SubscriptionStatus handshake/event-notification with subscription reference. Verified locally, no guessed endpoints.
+- https://www.hl7.org/fhir/R4/subscription.html — criteria are FHIR searches, end bounds subscription life; notifications may carry clinical data so criteria require clinic+patient.
+- https://react.dev/reference/react/useEffect — teardown external connections on dependency change/unmount; abort stale fetches.
+- https://nextjs.org/docs/app/api-reference/directives/use-client — LabResultsView remains browser effect boundary.
+Implementation: authenticated toggle-gated POST /api/labs/subscription issues 90s leases. Native browser WebSocket speaks verified SDK binding protocol; reconnect/renew gets a new gated lease. 30s poll covers unavailable socket/project flag and rechecks module kill switch. All displayed values refetched through clinic-authenticated API; notifications never rendered directly. Firebase unchanged; no composer/sidebar code.
