@@ -161,7 +161,14 @@ test('07 lab result ingest -> Labs & Imaging tab', async ({ request }) => {
   expect(dr.length).toBeGreaterThan(0);
   await page.unroute('**/api/consultations/plan**').catch(() => {});
   await page.goto(`/patients/${facts.patientId}`);
-  await page.getByRole('tab', { name: 'Labs & Imaging' }).click(); await page.waitForTimeout(5000);
+  const labsTab = page.getByRole('tab', { name: 'Labs & Imaging', exact: true });
+  // A cold dev compile can expose the tab before hydration attaches its handler.
+  // Confirm the selected state, then wait for the actual result instead of a fixed sleep.
+  await expect(async () => {
+    await labsTab.click();
+    await expect(labsTab).toHaveAttribute('aria-selected', 'true', { timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(page.getByText(/Haemoglobin|White cell|Full Blood/).first()).toBeVisible();
   await shot(page, '12-patient-labs-tab');
   const txt = await page.locator('main').first().innerText();
   facts.labsTabShowsResult = /Haemoglobin|White cell|Full Blood/i.test(txt);

@@ -228,9 +228,47 @@ Ran 3 times to separate real signal from infra noise (`/workspace/ai-logs/10`, `
   existing test's pattern, not a new behavior. `bun run lint` clean; pushed (`ab64598`).
   `07`-`10` and `11 known-bug probes summary` remain the only other non-passes, both already
   accounted for (Task 4 gap, baseline-expected respectively) — unchanged from the prior analysis.
-- Next: rerun the full gate once more to confirm the retry fix holds, then write the summary to
-  `/workspace/ai-logs/ucc-task10.md` and leave the PR as-is (already open, just needs the branch to
-  keep passing checks once GitHub re-evaluates `ab64598`).
+- **Independent review landed on PR #227** (`.ai/REVIEW-task10.md`, written by another session while
+  this one was running) and found a real MAJOR: the task brief is explicit — *"POCT Lab and POCT
+  X-ray must stay modular behind the existing feature toggle... gate all new UI and API by that
+  toggle"* — but decisions 5/6 above deliberately left the new `/api/labs/receive/message` route and
+  the "Pending POCT Tests" card ungated, reasoning (wrongly, per the brief) that order-creation-time
+  gating was sufficient. Concretely: turning `poct` off for a clinic with an order already in flight
+  did not stop results from still being ingested/displayed for it — not a real kill switch. Also a
+  MINOR: no idempotency guard, so an HL7/ASTM retransmission (expected analyser behaviour, not an
+  edge case) would create a duplicate `DiagnosticReport`.
+- **Fixed both, commit `0da4d5b`** (session-continuity note: this commit was made and pushed in a
+  resumed-but-then-re-stalled turn; recovered and verified on the next resume, nothing lost):
+  `ingestAnalyserMessage` now derives the clinic from the `ServiceRequest`'s own `identifier` and
+  checks `isModuleEnabledForClinic('poct', clinicId)` before writing anything (403 if off, via
+  `ForbiddenError`); a `completed` order's retransmission now returns the *existing* `DiagnosticReport`
+  instead of creating a second one (409 `ConflictError` if a completed order somehow has none); any
+  other non-`active`/`on-hold` status is also rejected (409). `getPatientPendingPoctOrders` now takes
+  an explicit `clinicId`, early-returns `[]` when the module is off, and scopes its own search by
+  `identifier: clinic|<id>` too. `/api/labs/results` upgraded from bare authentication
+  (`getMedplumForRequest`) to `requireClinicAuth` **plus an explicit ownership check** that the
+  target patient/encounter actually belongs to the caller's clinic before returning anything — closes
+  a real cross-clinic read gap on this endpoint that the review didn't even need to flag separately,
+  found while implementing the toggle fix in the same function. `receiveLabResults` now stamps
+  `identifier: clinic|<id>` onto every `Observation` and the `DiagnosticReport` it creates (needed for
+  the idempotency lookup, and a correctness fix in its own right — those resources had no clinic
+  identifier before). New e2e coverage for both: a replay test (same `diagnosticReportId` returned,
+  exactly one `DiagnosticReport` exists, clinic identifiers present on it and its `Observation`s), and
+  a module-disabled test (ingestion 403, order status unchanged, no report created, `pending: []`,
+  Lab tab shows "No lab results available", no "Pending POCT Tests" card). `bun run lint` clean,
+  `bun test tests/unit/poct-messages.test.ts tests/unit/module-settings.test.ts` 10/10 pass,
+  `poct.spec.ts` 5/5 pass standalone. Already pushed to `origin/ai/task-10`.
+- **Final full gate, run 3 times** (`10-final`, `10-final2`, `10-final3`) to separate real signal from
+  this box's now-familiar dev-server-OOM-auto-restart noise: `10-final` hit one restart mid-run
+  (`socket hang up` on 3 unrelated tests — confirmed via `⚠ Server is approaching the used memory
+  threshold, restarting...` in the devserver log, self-healed); `10-final2` (same server, now under
+  cumulative load from 2 consecutive full gates) hit a second restart mid-`workflow.spec.ts` test 06
+  (`page.reload` 240s timeout spanning the restart); `10-final3`, on a freshly restarted dev server,
+  ran clean: **25/30, lint 0, build 0, clinics 0**, with only the already-confirmed `07`-`10` Task-4
+  gap and the baseline-expected `11 known-bug probes summary` not passing. Every POCT-specific test
+  (including both the retry-fix target and the two new review-fix tests) passed in all 3 runs.
+- **Status: done.** PR #227 is open, draft, `MERGEABLE`, all commits pushed. Not merging (not this
+  round's job) and not starting Task 11 (owned by a different session per this round's instructions).
 
 ## Step log
 - 2026-11-04 ~18:20–20:20: built hl7.ts/astm.ts/analyser-bot.ts/receive route/lab-service
@@ -258,3 +296,11 @@ Ran 3 times to separate real signal from infra noise (`/workspace/ai-logs/10`, `
   restarted dev server, ruling out the server as the cause. Fixed the test race, reran: **4/4 pass**
   (`/workspace/ai-logs/task10-poct-r5`). Next: full `e2e/scripts/check-all.sh 10` gate in the
   foreground, then commit, push, open the draft PR.
+- 2026-11-05 (this resume): confirmed `0da4d5b` (review-fix commit from a prior stalled-but-recovered
+  turn) was already committed and pushed, nothing uncommitted. Read `.ai/REVIEW-task10.md` and
+  verified the fix fully addresses both the MAJOR (module-toggle kill switch) and MINOR (idempotency)
+  findings, plus the extra cross-clinic read-gap closed on `/api/labs/results` along the way. Lint,
+  unit tests, and `poct.spec.ts` all pass standalone. Ran the full gate 3 times to separate 2 more
+  transient dev-server OOM-restarts from real signal; `10-final3` on a fresh server: 25/30, only the
+  pre-existing Task-4 gap + baseline-expected probe summary not passing. Done — PR #227 stays open,
+  draft, MERGEABLE. Not merging, not starting Task 11.
