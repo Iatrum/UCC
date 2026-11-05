@@ -2,7 +2,7 @@ import { test, expect, type Page, type APIRequestContext } from '@playwright/tes
 import type { Device, Organization, ServiceRequest } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
-import { POCT_API_KEY } from '../lib/env';
+import { POCT_API_KEY, USER, PASSWORD } from '../lib/env';
 import { randomUUID } from 'node:crypto';
 
 // Analyser requests contain a runtime secret; exclude them from trace artifacts.
@@ -366,8 +366,17 @@ test('POCT module disabled after an order exists blocks PATCH/DELETE of that ord
   }
 });
 
+// The long live-update tests must not reuse another context's rotating refresh
+// cookie. Give these two tests a fresh session and share it with their browser.
+async function freshLiveTestSession(request: APIRequestContext, page: Page) {
+  const login = await request.post('/api/auth/login', { data: { email: USER, password: PASSWORD } });
+  expect(login.ok()).toBeTruthy();
+  await page.context().addCookies((await request.storageState()).cookies);
+}
+
 test('Lab subscription notifications refresh results without navigation; dropped sockets poll and unmount cleans up', async ({ request, page }) => {
   test.setTimeout(180_000);
+  await freshLiveTestSession(request, page);
   const f = await fixture(request, page, true);
   try {
     const sr = await f.m.createResource<ServiceRequest>({
@@ -456,6 +465,7 @@ test('Lab subscription notifications refresh results without navigation; dropped
 
 test('Lab subscription API enforces login, clinic patient/encounter scope and POCT toggle', async ({ request, page, playwright, baseURL }) => {
   test.setTimeout(120_000);
+  await freshLiveTestSession(request, page);
   const f = await fixture(request, page, true);
   const anonymous = await playwright.request.newContext({ baseURL });
   try {

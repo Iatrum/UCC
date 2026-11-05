@@ -14,3 +14,5 @@ Current blocker to browser/full checks: independent Claude process1635347 is run
 Static review found CSP allowed wss but blocked local ws/8113, so added only the configured public Medplum HTTP and WS origins to connect-src. Existing low-memory dev flag UCC_LOW_MEMORY_DEV=1 is available in Next config and should be used for final local gates. Existing draft PR confirmed: https://github.com/Iatrum/UCC/pull/228 (dev target).
 
 Coverage review: replaced full navigation cleanup check with React Lab-panel unmount while socket active, plus31s no-request assertion. This actually detects leaked30s intervals instead of relying on browser JS destruction. Next run relevant POCT spec after Task10 gate.
+
+Long-test harness: the two new live tests obtain their own fresh local fake-staff session and copy cookies to their browser, avoiding reused rotating refresh cookies after the full suite has spent several minutes in earlier tests. Secret-bearing requests remain untraced.
