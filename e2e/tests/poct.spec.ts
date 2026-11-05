@@ -66,6 +66,14 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
     property: [{ type: { coding: [{ system: propertySystem, code: 'last-heartbeat' }] },
       valueCode: [{ text: new Date(Date.now() - (online ? 0 : 300_000)).toISOString() }] }],
   });
+  // Other local runs may leave a different simulated analyser online. Keep the
+  // browser fixture deterministic while retaining the real endpoint/auth/status.
+  await page.route('**/api/poct/analysers', async (route) => {
+    const response = await route.fetch();
+    if (!response.ok()) { await route.fulfill({ response }); return; }
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, analysers: data.analysers.filter((a: { id: string }) => a.id === device.id) } });
+  });
   await page.route('**/api/consultations/plan**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, persistenceAvailable: false, plan: { entries: [], summary: {} } }) }));
   await page.goto(`/patients/${patientId}`);
   await page.getByRole('tab', { name: 'Treatment', exact: true }).click();
