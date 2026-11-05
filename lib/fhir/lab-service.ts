@@ -27,6 +27,7 @@ import {
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
+  getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
 
@@ -174,6 +175,9 @@ export async function receiveLabResults(
   // Get the original service request
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
   const accountRefs = getResourceAccountReferences(serviceRequest);
+  const clinicId = getClinicIdentifierValue(serviceRequest);
+  if (!clinicId) throw new ForbiddenError('Lab order has no clinic identifier');
+  const clinicIdentifier = [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }];
   
   if (!serviceRequest.subject?.reference) {
     throw new Error('ServiceRequest has no patient reference');
@@ -185,6 +189,7 @@ export async function receiveLabResults(
   for (const result of results) {
     observationResources.push({
       resourceType: 'Observation',
+      identifier: clinicIdentifier,
       status: result.status as any,
       code: {
         coding: [{
@@ -224,6 +229,7 @@ export async function receiveLabResults(
   // Note: We'll need to update result references after Observations are created
   const diagnosticReportResource: DiagnosticReport = {
     resourceType: 'DiagnosticReport',
+    identifier: clinicIdentifier,
     status: results.every(r => r.status === 'final') ? 'final' : 'partial',
     code: serviceRequest.code || { text: 'Laboratory Report' },
     subject: {
@@ -433,8 +439,10 @@ export interface PendingPoctOrder {
  * waiting on a result (not completed/revoked/cancelled). Used by the Lab tab
  * so a doctor can see a test is in progress, not just the final result.
  */
-export async function getPatientPendingPoctOrders(patientId: string, medplum: MedplumClient): Promise<PendingPoctOrder[]> {
+export async function getPatientPendingPoctOrders(patientId: string, medplum: MedplumClient, clinicId: string): Promise<PendingPoctOrder[]> {
+  if (!(await isModuleEnabledForClinic('poct', clinicId))) return [];
   const orders = await medplum.searchResources('ServiceRequest', {
+    identifier: `clinic|${clinicId}`,
     subject: `Patient/${patientId}`,
     _tag: `${POCT_TAG_SYSTEM}|poct`,
     status: 'active,on-hold',

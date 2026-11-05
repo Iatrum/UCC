@@ -7,13 +7,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPatientLabResults, getEncounterLabResults, getPatientPendingPoctOrders } from '@/lib/fhir/lab-service';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
     const encounterId = searchParams.get('encounterId');
@@ -25,13 +26,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const target = await medplum.searchOne(encounterId ? 'Encounter' : 'Patient', {
+      _id: (encounterId || patientId)!, identifier: `clinic|${clinicId}`,
+    }, { cache: 'no-cache' });
+    if (!target) throw new ForbiddenError('Lab results unavailable in current clinic');
+
     let reports;
     let pending;
     if (encounterId) {
       reports = await getEncounterLabResults(encounterId, medplum);
     } else if (patientId) {
       reports = await getPatientLabResults(patientId, medplum);
-      pending = await getPatientPendingPoctOrders(patientId, medplum);
+      pending = await getPatientPendingPoctOrders(patientId, medplum, clinicId);
     }
 
     return NextResponse.json({
@@ -41,15 +47,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Error getting lab results:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to get lab results',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+    return handleRouteError(error, 'GET /api/labs/results');
   }
 }
 

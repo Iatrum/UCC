@@ -268,7 +268,21 @@ test('Simulated analyser HL7/ASTM results reach the Lab tab, clear pending, and 
       data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: POCT_API_KEY },
     });
     expect(ingested.ok()).toBeTruthy();
-    expect((await ingested.json()).serviceRequestId).toBe(sr.id);
+    const ingestResult = await ingested.json();
+    expect(ingestResult.serviceRequestId).toBe(sr.id);
+    const replay = await request.post('/api/labs/receive/message', {
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: POCT_API_KEY },
+    });
+    expect(replay.ok()).toBeTruthy();
+    expect((await replay.json()).diagnosticReportId).toBe(ingestResult.diagnosticReportId);
+    const report = await f.m.readResource('DiagnosticReport', ingestResult.diagnosticReportId);
+    expect(report.identifier).toContainEqual({ system: 'clinic', value: f.clinicId });
+    for (const ref of report.result || []) {
+      const observation = await f.m.readResource('Observation', ref.reference!.split('/')[1]);
+      expect(observation.identifier).toContainEqual({ system: 'clinic', value: f.clinicId });
+    }
+    const reports = await f.m.searchResources('DiagnosticReport', { 'based-on': `ServiceRequest/${sr.id}` });
+    expect(reports).toHaveLength(1);
     expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('completed');
 
     await page.goto(`/patients/${f.patientId}/labs-imaging`);
@@ -312,6 +326,19 @@ test('POCT module disabled after an order exists blocks PATCH/DELETE of that ord
 
     const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
     try {
+      const blockedMessage = await request.post('/api/labs/receive/message', {
+        data: { format: 'hl7', message: buildTestOruMessage(poctServiceRequestId, 6.8, 'H'), apiKey: POCT_API_KEY },
+      });
+      expect(blockedMessage.status()).toBe(403);
+      expect((await f.m.readResource('ServiceRequest', poctServiceRequestId)).status).toBe('active');
+      expect(await f.m.searchResources('DiagnosticReport', { 'based-on': `ServiceRequest/${poctServiceRequestId}` })).toHaveLength(0);
+      const labResults = await request.get(`/api/labs/results?patientId=${f.patientId}`);
+      expect(labResults.ok()).toBeTruthy();
+      expect((await labResults.json()).pending).toEqual([]);
+      await page.goto(`/patients/${f.patientId}/labs-imaging`);
+      await expect(page.getByText('No lab results available', { exact: true })).toBeVisible();
+      await expect(page.getByText('Pending POCT Tests', { exact: true })).toHaveCount(0);
+
       const patchPoct = await request.patch('/api/labs/order', { data: { serviceRequestId: poctServiceRequestId, priority: 'urgent' } });
       expect(patchPoct.status()).toBe(403);
       const deletePoct = await request.delete('/api/labs/order', { data: { serviceRequestId: poctServiceRequestId } });

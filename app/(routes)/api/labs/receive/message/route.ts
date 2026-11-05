@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestAnalyserMessage, type AnalyserMessageFormat } from '@/lib/poct/analyser-bot';
+import { ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
 export const runtime = 'nodejs';
@@ -49,7 +50,9 @@ export async function POST(request: NextRequest) {
       message: 'Analyser message received and stored successfully',
     });
   } catch (error: any) {
-    console.error('Error receiving analyser message:', error);
+    if (error instanceof ForbiddenError || error instanceof ConflictError) {
+      return NextResponse.json({ error: error.message }, { status: error instanceof ForbiddenError ? 403 : 409 });
+    }
 
     return NextResponse.json(
       { error: 'Failed to receive analyser message', details: error.message },

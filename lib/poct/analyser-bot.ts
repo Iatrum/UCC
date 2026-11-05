@@ -15,6 +15,9 @@ import type { ServiceRequest } from '@medplum/fhirtypes';
 import { parseOruMessage, oruToLabResults } from './hl7';
 import { parseAstmResult, astmToLabResults } from './astm';
 import { receiveLabResults, type LabResult } from '@/lib/fhir/lab-service';
+import { getClinicIdentifierValue } from '@/lib/fhir/clinic-tenancy';
+import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
 import { POCT_TAG_SYSTEM } from '@/lib/fhir/poct-device';
 
 export type AnalyserMessageFormat = 'hl7' | 'astm';
@@ -58,6 +61,24 @@ export async function ingestAnalyserMessage(input: AnalyserMessage, medplum: Med
   const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
   if (!isPoctServiceRequest(serviceRequest)) {
     throw new Error(`ServiceRequest/${serviceRequestId} is not a POCT order`);
+  }
+
+  const clinicId = getClinicIdentifierValue(serviceRequest);
+  if (!clinicId || !(await isModuleEnabledForClinic('poct', clinicId))) {
+    throw new ForbiddenError('POCT module is disabled for this clinic');
+  }
+  // Retransmission after a completed order returns its existing report. Corrections
+  // need a separate explicit workflow rather than creating another final report.
+  if (serviceRequest.status === 'completed') {
+    const existing = await medplum.searchOne('DiagnosticReport', {
+      'based-on': `ServiceRequest/${serviceRequestId}`,
+      identifier: `clinic|${clinicId}`,
+    }, { cache: 'no-cache' });
+    if (!existing?.id) throw new ConflictError('Completed POCT order has no report');
+    return { serviceRequestId, diagnosticReportId: existing.id };
+  }
+  if (serviceRequest.status !== 'active' && serviceRequest.status !== 'on-hold') {
+    throw new ConflictError('POCT order cannot receive results in its current status');
   }
 
   const diagnosticReportId = await receiveLabResults(serviceRequestId, results, undefined, medplum);
