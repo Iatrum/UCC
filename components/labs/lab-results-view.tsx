@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, CheckCircle2, Clock, TrendingDown, TrendingUp } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { LabReportSummary } from '@/lib/fhir/lab-constants';
+import { startLabResultUpdates } from '@/lib/poct/live-results';
 import type { PendingPoctOrder } from '@/lib/fhir/lab-service';
 
 interface LabResultsViewProps {
@@ -20,31 +21,16 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
   const [pending, setPending] = useState<PendingPoctOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadLabResults = useCallback(async () => {
-    try {
-      const endpoint = encounterId
-        ? `/api/labs/results?encounterId=${encounterId}`
-        : `/api/labs/results?patientId=${patientId}`;
-
-      const response = await fetch(endpoint);
-      const data = await response.json();
-
-      if (response.ok) {
-        setReports(data.reports || []);
-        setPending(data.pending || []);
-      }
-    } catch (error) {
-      console.error('Error loading lab results:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [encounterId, patientId]);
-
   useEffect(() => {
-    queueMicrotask(() => {
-      void loadLabResults();
+    setReports([]);
+    setPending([]);
+    setIsLoading(true);
+    return startLabResultUpdates({
+      patientId, encounterId,
+      onResults: (data) => { setReports(data.reports || []); setPending(data.pending || []); },
+      onLoaded: () => setIsLoading(false),
     });
-  }, [loadLabResults]);
+  }, [patientId, encounterId]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

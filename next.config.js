@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
+const medplumOrigin = new URL(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103').origin;
+const medplumSocketOrigin = medplumOrigin.replace(/^http/, 'ws');
+
 const nextConfig = {
   transpilePackages: [
     '@tiptap/react',
@@ -52,7 +55,7 @@ const nextConfig = {
             "img-src 'self' data: blob: https:",
             "font-src 'self' data: https://vercel.live https://assets.vercel.com",
             // Allow PDF viewer/yoga-wasm (data: and blob:) and Firebase HTTPS endpoints + Medplum localhost + Vercel Live pusher websocket
-            "connect-src 'self' http://localhost:8103 https: wss: data: blob:",
+            `connect-src 'self' http://localhost:8103 ${medplumOrigin} ${medplumSocketOrigin} https: wss: data: blob:`,
             // Allow embedding PDF viewer iframe, blob URLs, and Vercel Live feedback iframe
             "frame-src 'self' blob: data: https://vercel.live",
             "child-src 'self' blob: data: https://vercel.live",

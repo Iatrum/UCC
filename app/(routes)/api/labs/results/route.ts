@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPatientLabResults, getEncounterLabResults, getPatientPendingPoctOrders } from '@/lib/fhir/lab-service';
 import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
+import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { POCT_TAG_SYSTEM } from '@/lib/fhir/poct-device';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
     }, { cache: 'no-cache' });
     if (!target) throw new ForbiddenError('Lab results unavailable in current clinic');
 
-    let reports;
+    let reports: import('@/lib/fhir/lab-constants').LabReportSummary[] = [];
     let pending;
     if (encounterId) {
       reports = await getEncounterLabResults(encounterId, medplum);
@@ -40,11 +42,28 @@ export async function GET(request: NextRequest) {
       pending = await getPatientPendingPoctOrders(patientId, medplum, clinicId);
     }
 
+    const poctEnabled = await isModuleEnabledForClinic('poct', clinicId);
+    if (!poctEnabled && reports?.length) {
+      // Resolve only this page's linked orders; avoid truncating a patient's history.
+      const visible = await Promise.all(reports.map(async (report) => {
+        const raw = await medplum.readResource('DiagnosticReport', report.id, { cache: 'no-cache' });
+        for (const ref of raw.basedOn || []) {
+          if (!ref.reference?.startsWith('ServiceRequest/')) continue;
+          const order = await medplum.searchOne('ServiceRequest', {
+            _id: ref.reference.split('/')[1], identifier: `clinic|${clinicId}`,
+          }, { cache: 'no-cache' });
+          if (!order || order.meta?.tag?.some((tag) => tag.system === POCT_TAG_SYSTEM && tag.code === 'poct')) return false;
+        }
+        return true;
+      }));
+      reports = reports.filter((_, index) => visible[index]);
+    }
     return NextResponse.json({
       success: true,
+      poctEnabled,
       reports,
       pending: pending || [],
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
 
   } catch (error: any) {
     return handleRouteError(error, 'GET /api/labs/results');

@@ -1,0 +1,11 @@
+# Task 11 research
+- https://github.com/medplum/medplum/blob/main/packages/docs/docs/react/use-subscription.mdx — in-memory WebSocket subscriptions; project websocket-subscriptions flag, fallback necessary when disabled.
+- Pinned @medplum/core source map: src/subscriptions/index.ts rebindCriteriaEntry creates active channel:websocket Subscription, GET Subscription/id/$get-ws-binding-token returns token, websocket-url, expiration. Frames: bind-with-token/unbind-from-token payload.token, ping; Bundle first entry SubscriptionStatus handshake/event-notification with subscription reference. Verified locally, no guessed endpoints.
+- https://www.hl7.org/fhir/R4/subscription.html — criteria are FHIR searches, end bounds subscription life; notifications may carry clinical data so criteria require clinic+patient.
+- https://react.dev/reference/react/useEffect — teardown external connections on dependency change/unmount; abort stale fetches.
+- https://nextjs.org/docs/app/api-reference/directives/use-client — LabResultsView remains browser effect boundary.
+Implementation: authenticated toggle-gated POST /api/labs/subscription issues 90s leases. Native browser WebSocket speaks verified SDK binding protocol; reconnect/renew gets a new gated lease. 30s poll covers unavailable socket/project flag and rechecks module kill switch. All displayed values refetched through clinic-authenticated API; notifications never rendered directly. Firebase unchanged; no composer/sidebar code.
+
+Running server verified through /proc/6676/root/usr/src/medplum/packages/server/dist/index.js.map (read-only): getwsbindingtoken.ts enforces project websocket-subscriptions; Subscription GET is staff authorized; binding token lifetime is 1h. ws/subscriptions.ts uses JSON bind-with-token/unbind-from-token and sends handshake Bundle. A 90s expiresAt in our response is a client renewal deadline, not a claim that the server JWT expires at90s. Client polls gated results every30s and unbinds when disabled; vanished sockets use Medplum cleanup/expiry. No server configuration mutation.
+
+CSP verification: https://www.w3.org/TR/CSP/ connect-src governs WebSocket fetches. Existing config allowed wss but only http localhost8103; add exact origins from NEXT_PUBLIC_MEDPLUM_BASE_URL for local HTTP/WS without allowing all insecure sockets.
