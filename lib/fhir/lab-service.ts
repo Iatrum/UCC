@@ -27,6 +27,7 @@ import {
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
+  getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
 
@@ -174,6 +175,9 @@ export async function receiveLabResults(
   // Get the original service request
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
   const accountRefs = getResourceAccountReferences(serviceRequest);
+  const clinicId = getClinicIdentifierValue(serviceRequest);
+  if (!clinicId) throw new ForbiddenError('Lab order has no clinic identifier');
+  const clinicIdentifier = [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }];
   
   if (!serviceRequest.subject?.reference) {
     throw new Error('ServiceRequest has no patient reference');
@@ -185,6 +189,7 @@ export async function receiveLabResults(
   for (const result of results) {
     observationResources.push({
       resourceType: 'Observation',
+      identifier: clinicIdentifier,
       status: result.status as any,
       code: {
         coding: [{
@@ -224,6 +229,7 @@ export async function receiveLabResults(
   // Note: We'll need to update result references after Observations are created
   const diagnosticReportResource: DiagnosticReport = {
     resourceType: 'DiagnosticReport',
+    identifier: clinicIdentifier,
     status: results.every(r => r.status === 'final') ? 'final' : 'partial',
     code: serviceRequest.code || { text: 'Laboratory Report' },
     subject: {
@@ -418,6 +424,42 @@ function mapReportsToSummaries(
   });
 }
 
+export interface PendingPoctOrder {
+  id: string;
+  testCode: string;
+  testName: string;
+  status: NonNullable<ServiceRequest['status']>;
+  priority?: ServiceRequest['priority'];
+  authoredOn?: string;
+  analyserId?: string;
+}
+
+/**
+ * Get POCT orders (ServiceRequest tagged `poct`) for a patient that are still
+ * waiting on a result (not completed/revoked/cancelled). Used by the Lab tab
+ * so a doctor can see a test is in progress, not just the final result.
+ */
+export async function getPatientPendingPoctOrders(patientId: string, medplum: MedplumClient, clinicId: string): Promise<PendingPoctOrder[]> {
+  if (!(await isModuleEnabledForClinic('poct', clinicId))) return [];
+  const orders = await medplum.searchResources('ServiceRequest', {
+    identifier: `clinic|${clinicId}`,
+    subject: `Patient/${patientId}`,
+    _tag: `${POCT_TAG_SYSTEM}|poct`,
+    status: 'active,on-hold',
+    _sort: '-authored',
+  }, { cache: 'no-cache' });
+
+  return orders.map((order) => ({
+    id: order.id!,
+    testCode: order.code?.coding?.[0]?.code || '',
+    testName: order.code?.text || order.code?.coding?.[0]?.display || 'POCT test',
+    status: order.status || 'active',
+    priority: order.priority,
+    authoredOn: order.authoredOn,
+    analyserId: order.performer?.[0]?.reference?.split('/')[1],
+  }));
+}
+
 /**
  * Get all lab results for a patient
  */
@@ -436,7 +478,7 @@ export async function getPatientLabResults(patientId: string, medplum: MedplumCl
   );
 
   const allObservations = allObsIds.length > 0
-    ? await client.searchResources('Observation', { _id: allObsIds.join(',') })
+    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: String(allObsIds.length) })
     : [];
 
   const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
@@ -502,7 +544,7 @@ export async function getLabReport(reportId: string, medplum: MedplumClient): Pr
       .filter((id): id is string => Boolean(id));
 
     const observations = obsIds.length > 0
-      ? await client.searchResources('Observation', { _id: obsIds.join(',') })
+      ? await client.searchResources('Observation', { _id: obsIds.join(','), _count: String(obsIds.length) })
       : [];
 
     const obsMap = new Map(observations.map((obs) => [obs.id!, obs]));
@@ -532,7 +574,7 @@ export async function getEncounterLabResults(encounterId: string, medplum: Medpl
   );
 
   const allObservations = allObsIds.length > 0
-    ? await client.searchResources('Observation', { _id: allObsIds.join(',') })
+    ? await client.searchResources('Observation', { _id: allObsIds.join(','), _count: String(allObsIds.length) })
     : [];
 
   const obsMap = new Map(allObservations.map((obs) => [obs.id!, obs]));
