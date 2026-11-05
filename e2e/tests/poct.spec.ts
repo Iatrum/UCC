@@ -362,3 +362,110 @@ test('POCT module disabled after an order exists blocks PATCH/DELETE of that ord
     await f.restorePoctModule();
   }
 });
+
+test('Lab subscription notifications refresh results without navigation; dropped sockets poll and unmount cleans up', async ({ request, page }) => {
+  test.setTimeout(180_000);
+  const f = await fixture(request, page, true);
+  try {
+    const sr = await f.m.createResource<ServiceRequest>({
+      resourceType: 'ServiceRequest', status: 'active', intent: 'order',
+      subject: { reference: `Patient/${f.patientId}` },
+      code: { text: 'Glucose (capillary)' }, identifier: [{ system: 'clinic', value: f.clinicId }],
+      meta: { tag: [{ system: tagSystem, code: 'poct' }] },
+    });
+    let socket: import('@playwright/test').WebSocketRoute | undefined;
+    let closed = false;
+    let leaseCalls = 0;
+    let labReads = 0;
+    page.on('request', (req) => { if (req.url().includes('/api/labs/results?')) labReads++; });
+    await page.route('**/api/labs/subscription', async (route) => {
+      leaseCalls++;
+      // Mock only transport availability; all clinical reads and ingestion remain real.
+      if (closed) { await route.fulfill({ status: 503, json: { error: 'Unavailable' } }); return; }
+      await route.fulfill({ json: { token: 'fake-binding-token', url: 'ws://localhost:8113/ws/task11-test', subscriptionId: 'task11-test', expiresAt: Date.now() + 90_000 } });
+    });
+    await page.routeWebSocket('ws://localhost:8113/ws/task11-test', (ws) => {
+      socket = ws;
+      ws.onMessage((message) => {
+        const frame = JSON.parse(String(message));
+        if (frame.type === 'bind-with-token') {
+          expect(frame.payload.token).toBe('fake-binding-token');
+          ws.send(JSON.stringify({ resourceType: 'Bundle', entry: [{ resource: {
+            resourceType: 'SubscriptionStatus', type: 'handshake', subscription: { reference: 'Subscription/task11-test' },
+          } }] }));
+        }
+      });
+      ws.onClose(() => { closed = true; });
+    });
+    await page.goto(`/patients/${f.patientId}/labs-imaging`);
+    await expect(page.getByText('Pending POCT Tests', { exact: true })).toBeVisible();
+    await expect.poll(() => Boolean(socket)).toBe(true);
+    const ingested = await request.post('/api/labs/receive/message', {
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 7.1, 'H'), apiKey: POCT_API_KEY },
+    });
+    expect(ingested.ok()).toBeTruthy();
+    const notify = (id: string) => socket!.send(JSON.stringify({ resourceType: 'Bundle', entry: [{ resource: {
+      resourceType: 'SubscriptionStatus', type: 'event-notification', subscription: { reference: `Subscription/${id}` },
+    } }] }));
+    // Unrelated subscriptions cannot invalidate the current tab.
+    const readsBefore = labReads;
+    notify('another-subscription');
+    await page.waitForTimeout(250);
+    expect(labReads).toBe(readsBefore);
+    notify('task11-test');
+    await expect(page.getByText('7.1 mmol/L', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Pending POCT Tests', { exact: true })).toHaveCount(0);
+
+    const reportId = (await ingested.json()).diagnosticReportId;
+    const report = await f.m.readResource('DiagnosticReport', reportId);
+    const observation = await f.m.readResource('Observation', report.result![0].reference!.split('/')[1]);
+    await f.m.updateResource({ ...observation, valueQuantity: { ...observation.valueQuantity, value: 8.2 } });
+    closed = true;
+    socket!.close();
+    // The real 30-second polling interval catches a result while WebSocket is unavailable.
+    await expect(page.getByText('8.2 mmol/L', { exact: true })).toBeVisible({ timeout: 40_000 });
+    const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
+    try {
+      await expect(page.getByText('No lab results available', { exact: true })).toBeVisible({ timeout: 40_000 });
+      await expect(page.getByText('8.2 mmol/L', { exact: true })).toHaveCount(0);
+      const requestsAfterOff = leaseCalls;
+      await page.waitForTimeout(1000);
+      expect(leaseCalls).toBe(requestsAfterOff);
+    } finally { await disable(); }
+    await page.goto('/patients');
+    const readsAfterUnmount = labReads;
+    await page.waitForTimeout(1500);
+    expect(labReads).toBe(readsAfterUnmount);
+  } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
+});
+
+test('Lab subscription API enforces login, clinic patient/encounter scope and POCT toggle', async ({ request, page, playwright, baseURL }) => {
+  test.setTimeout(120_000);
+  const f = await fixture(request, page, true);
+  const anonymous = await playwright.request.newContext({ baseURL });
+  try {
+    const body = { patientId: f.patientId, encounterId: f.consultationId };
+    expect((await anonymous.post('/api/labs/subscription', { data: body })).status()).toBe(401);
+    expect((await request.post('/api/labs/subscription', { data: { patientId: 'not-a-patient' } })).status()).toBe(403);
+    const otherPatient = await f.m.createResource({ resourceType: 'Patient', identifier: [{ system: 'clinic', value: 'another-fake-clinic' }] });
+    try {
+      expect((await request.post('/api/labs/subscription', { data: { patientId: otherPatient.id } })).status()).toBe(403);
+    } finally { await f.m.deleteResource('Patient', otherPatient.id!); }
+    expect((await request.post('/api/labs/subscription', { data: { ...body, encounterId: 'not-an-encounter' } })).status()).toBe(403);
+    const response = await request.post('/api/labs/subscription', { data: body });
+    // Real local Medplum may lack websocket-subscriptions project capability. Both
+    // states are supported; deterministic transport coverage is in the test above.
+    expect([200, 503]).toContain(response.status());
+    if (response.ok()) {
+      const binding = await response.json();
+      expect(typeof binding.token).toBe('string');
+      expect(binding.url).toMatch(/^wss?:\/\//);
+      expect(binding.expiresAt).toBeGreaterThan(Date.now());
+      expect(binding.expiresAt).toBeLessThanOrEqual(Date.now() + 90_000);
+      expect(response.headers()['cache-control']).toBe('no-store');
+    }
+    const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
+    try { expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403); }
+    finally { await disable(); }
+  } finally { await anonymous.dispose(); await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
+});
