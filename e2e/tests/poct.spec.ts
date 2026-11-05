@@ -5,6 +5,9 @@ import { fhir, byPatient } from '../lib/fhir';
 import { POCT_API_KEY } from '../lib/env';
 import { randomUUID } from 'node:crypto';
 
+// Analyser requests contain a runtime secret; exclude them from trace artifacts.
+test.use({ trace: 'off' });
+
 const typeSystem = 'https://ucc.emr/poct/analyser-type';
 const propertySystem = 'https://ucc.emr/poct/device-property';
 const tagSystem = 'https://ucc.emr/poct';

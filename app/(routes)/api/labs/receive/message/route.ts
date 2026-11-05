@@ -20,16 +20,19 @@ export const runtime = 'nodejs';
 interface ReceiveAnalyserMessageRequest {
   format: AnalyserMessageFormat;
   message: string;
-  apiKey?: string; // Same auth contract as /api/labs/receive.
+  apiKey?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: ReceiveAnalyserMessageRequest = await request.json();
 
-    // Same contract as /api/labs/receive: optional key, only enforced when POCT_API_KEY is set.
+    // Device ingress must fail closed when its key has not been configured.
     const expectedApiKey = process.env.POCT_API_KEY;
-    if (expectedApiKey && body.apiKey !== expectedApiKey) {
+    if (!expectedApiKey) {
+      return NextResponse.json({ error: 'Analyser ingestion is not configured' }, { status: 503 });
+    }
+    if (body.apiKey !== expectedApiKey) {
       return NextResponse.json({ error: 'Unauthorized: Invalid API key' }, { status: 401 });
     }
 
