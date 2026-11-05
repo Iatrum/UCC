@@ -304,3 +304,31 @@ Ran 3 times to separate real signal from infra noise (`/workspace/ai-logs/10`, `
   transient dev-server OOM-restarts from real signal; `10-final3` on a fresh server: 25/30, only the
   pre-existing Task-4 gap + baseline-expected probe summary not passing. Done — PR #227 stays open,
   draft, MERGEABLE. Not merging, not starting Task 11.
+- 2026-11-06 (this resume): found 3 more commits from overlapping/concurrent sessions already on
+  `ai/task-10` and pushed (`0da4d5b`'s own follow-ups): `b76af94` (new ingestion route now fails
+  closed 503 when `POCT_API_KEY` is unset instead of matching the old route's fail-open contract;
+  `workflow.spec.ts`'s pre-existing test 07 now sends the real key proactively — a forward-compatible,
+  zero-risk fix since it doesn't touch `/api/labs/receive/route.ts` itself and works whether or not
+  that route ever enforces the key; both `poct.spec.ts` and `workflow.spec.ts` set `trace: 'off'`
+  since they now carry the raw key in request bodies and traces would capture it in plaintext),
+  `8d5f9a7`/`a594d50`/`4027cbd`/`fc40c08` (docs + two more test-robustness fixes: wait for the Lab
+  tab to hydrate before asserting on it in `workflow.spec.ts`, and isolate the analyser fixture from
+  other simulated devices other local runs may have left online, via a `page.route` filter on
+  `/api/poct/analysers` — both close real flake sources this round's own gate runs had hit).
+  Verified `bun run lint` clean, re-ran `poct.spec.ts` standalone (hit one transient "Session expired"
+  — a sandbox-suspension wall-clock artifact, not a code issue; immediate retry: **5/5 pass**, 51.2s).
+  Ran the full gate 3 more times chasing a clean confirmation: `10-latest` hit a severe cascade
+  (session-expiry cluster + a 48s single-page warmup anomaly) traced to colliding with an in-progress
+  internal dev-server respawn, not a real regression; confirmed the server was healthy and uncontested
+  (`ss`/`ps`/`curl`, no competing Playwright process) before the final attempt — `10-decisive`:
+  **29/30, lint 0, build 0, clinics 0, OVERALL: PASS** (only the baseline-expected "known-bug probes
+  summary" not passing). This is the cleanest gate result the whole round achieved; the Task-4 gap
+  (`07`-`10`) is **gone** too, closed by the `workflow.spec.ts` key fix above.
+- **PR #227 was merged by the project owner (`HidayatS`, human, not an agent) at 2026-11-05T13:53:34Z**
+  (merge commit `668becd`), independent of (and overlapping in time with) this session's continued
+  work — confirmed via `gh pr view --json state,mergedBy`. `dev` has since also absorbed Task 11
+  (PR #228, merged on top of this task's work: WebSocket/CSP + Lab-panel-unmount cleanup, consistent
+  with the original POCT plan's "live via Subscription" piece). The one commit made after the merge
+  point (`fc40c08`) was confirmed already pushed to `origin/ai/task-10` (`git ls-remote` — a stale
+  local remote-tracking ref had made it look unpushed). **Task 10 is done.** Not merging anything
+  (already merged, by the user). Not touching Task 11 (already merged, not this round's job).
