@@ -199,8 +199,38 @@ Ran 3 times to separate real signal from infra noise (`/workspace/ai-logs/10`, `
   tracing to the single pre-existing, already-documented `dev`-vs-`ai-work` Task 4 gap. **No failure
   traces to this task's actual diff** (`lib/poct/*`, the new route, `lab-service.ts`'s `_count` fix,
   the Lab tab pending list, or `poct.spec.ts`) — `poct.spec.ts` itself is 4/4 pass on the clean run.
-- Next: commit progress file, open draft PR into `dev` noting the Task-4 gap explicitly (same as PR
-  #223 did), verify `gh pr view --json mergeable`, write summary to `/workspace/ai-logs/ucc-task10.md`.
+- Draft PR opened: https://github.com/Iatrum/UCC/pull/227 — but `origin/dev` had moved (PRs #225
+  `ai/fix-poct-billing` and #226 `ai/task-poct-toggle` merged while this round was in progress),
+  making the PR `CONFLICTING`. Merged `origin/dev` into `ai/task-10` (`ab3a180`): 2 real conflicts —
+  `lib/fhir/lab-service.ts` (origin/dev's `ai/task-poct-toggle` independently fixed the exact same
+  `_count` truncation bug I found, in `getClinicPoctOrders`, with a more precise
+  `_count: String(patientIds.length)` instead of my flat `_count: '200'`; kept theirs there and
+  updated my other 3 fixes in the same file to match that style for consistency) and
+  `e2e/tests/poct.spec.ts` (pure addition conflict — both sides appended a new test at the end of the
+  file; kept both). `bun run lint` clean, unit tests 10/10 pass (my 7 + their 3 new
+  `module-settings.test.ts`), `poct.spec.ts` 5/5 pass (my 4 + their 1 new PATCH/DELETE-toggle test)
+  after the merge. Pushed `ab3a180`.
+- Full gate rerun after the merge (`check-all.sh 10-r4`) got killed mid-run (exit 137, unrelated to
+  the app — a session/connection stall killed the whole process tree; confirmed via orphan-process
+  check that nothing of this run was still alive). It had gotten 24+ tests in cleanly before the kill,
+  with one single-run failure (the new merged PATCH/DELETE test, 1.7m then failed) that didn't
+  reproduce standalone (5/5 pass twice after restarting the dev server) — treated as more collateral
+  from the same box-load conditions, not a real issue, consistent with the pattern throughout this
+  round.
+- Reran the full gate again (`check-all.sh 10-r5`) on a freshly restarted dev server: lint/build/clinics
+  all 0, 24/30 e2e. One genuinely new finding: my own consolidated `poct.spec.ts` test failed
+  *only* in the full-suite context (never standalone) — screenshot showed the Glucose analyser as
+  "Offline" immediately after `signGlucoseOrder`'s own `beat(true)` call, meaning the composer's
+  periodic analyser-status poll lagged behind the heartbeat under the accumulated box load of running
+  25+ prior tests. The pre-existing "online + Sign" test avoids exactly this by re-beating right
+  before each UI action; `signGlucoseOrder` only beat once at the top. Fixed by adding a bounded
+  retry (fresh beat + page reload) if the Add button isn't enabled within 10s — same spirit as the
+  existing test's pattern, not a new behavior. `bun run lint` clean; pushed (`ab64598`).
+  `07`-`10` and `11 known-bug probes summary` remain the only other non-passes, both already
+  accounted for (Task 4 gap, baseline-expected respectively) — unchanged from the prior analysis.
+- Next: rerun the full gate once more to confirm the retry fix holds, then write the summary to
+  `/workspace/ai-logs/ucc-task10.md` and leave the PR as-is (already open, just needs the branch to
+  keep passing checks once GitHub re-evaluates `ab64598`).
 
 ## Step log
 - 2026-11-04 ~18:20–20:20: built hl7.ts/astm.ts/analyser-bot.ts/receive route/lab-service
