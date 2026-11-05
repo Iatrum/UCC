@@ -435,9 +435,21 @@ test('Lab subscription notifications refresh results without navigation; dropped
       await page.waitForTimeout(1000);
       expect(leaseCalls).toBe(requestsAfterOff);
     } finally { await disable(); }
-    await page.goto('/patients');
+    // Reopen with an active socket, then unmount only the Lab panel (SPA tab
+    // switch). A full-page navigation would hide leaked intervals by destroying JS.
+    closed = false;
+    await page.goto(`/patients/${f.patientId}`);
+    const labTab = page.getByRole('tab', { name: 'Labs & Imaging', exact: true });
+    await expect(async () => {
+      await labTab.click();
+      await expect(labTab).toHaveAttribute('aria-selected', 'true', { timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
+    await expect(page.getByText('8.2 mmol/L', { exact: true })).toBeVisible();
+    await expect.poll(() => leaseCalls).toBeGreaterThan(1);
+    await page.getByRole('tab', { name: 'Consultation History', exact: true }).click();
+    await expect.poll(() => closed).toBe(true);
     const readsAfterUnmount = labReads;
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(31_000);
     expect(labReads).toBe(readsAfterUnmount);
   } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
 });
