@@ -49,7 +49,7 @@ export async function ingestXrayStudy(input: XrayStudyMessage, medplum: MedplumC
   // need a separate explicit workflow rather than creating a duplicate study.
   if (serviceRequest.status === 'completed') {
     const existing = await medplum.searchOne('ImagingStudy', {
-      'based-on': `ServiceRequest/${input.serviceRequestId}`,
+      basedon: `ServiceRequest/${input.serviceRequestId}`,
     }, { cache: 'no-cache' });
     if (!existing?.id) throw new ConflictError('Completed X-ray order has no study');
     return { serviceRequestId: input.serviceRequestId, imagingStudyId: existing.id };
