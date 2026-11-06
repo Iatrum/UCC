@@ -10,8 +10,15 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(request);
-    if (!(await isModuleEnabledForClinic('poct', clinicId))) {
-      throw new ForbiddenError('POCT module is disabled for this clinic');
+    // Criteria below is DiagnosticReport + clinic identifier, generic by resource type --
+    // shared by POCT lab results and (since createImagingReport now stamps the same
+    // identifier) X-ray device reports, so either module being on is enough to open it.
+    const [poctEnabled, pacsEnabled] = await Promise.all([
+      isModuleEnabledForClinic('poct', clinicId),
+      isModuleEnabledForClinic('pacs', clinicId),
+    ]);
+    if (!poctEnabled && !pacsEnabled) {
+      throw new ForbiddenError('POCT and PACS modules are both disabled for this clinic');
     }
     const { patientId, encounterId } = await request.json();
     if (typeof patientId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(patientId) ||

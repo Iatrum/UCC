@@ -10,6 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { LabReportSummary } from '@/lib/fhir/lab-constants';
 import { startLabResultUpdates } from '@/lib/poct/live-results';
 import type { PendingPoctOrder } from '@/lib/fhir/lab-service';
+import type { PendingXrayOrder } from '@/lib/fhir/imaging-service';
 
 interface LabResultsViewProps {
   patientId: string;
@@ -19,15 +20,17 @@ interface LabResultsViewProps {
 export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) {
   const [reports, setReports] = useState<LabReportSummary[]>([]);
   const [pending, setPending] = useState<PendingPoctOrder[]>([]);
+  const [xrayPending, setXrayPending] = useState<PendingXrayOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setReports([]);
     setPending([]);
+    setXrayPending([]);
     setIsLoading(true);
     return startLabResultUpdates({
       patientId, encounterId,
-      onResults: (data) => { setReports(data.reports || []); setPending(data.pending || []); },
+      onResults: (data) => { setReports(data.reports || []); setPending(data.pending || []); setXrayPending(data.xrayPending || []); },
       onLoaded: () => setIsLoading(false),
     });
   }, [patientId, encounterId]);
@@ -71,7 +74,7 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
     );
   }
 
-  if (reports.length === 0 && pending.length === 0) {
+  if (reports.length === 0 && pending.length === 0 && xrayPending.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -111,6 +114,41 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
                 {pending.map((order) => (
                   <TableRow key={order.id}>
                     <TableCell className="font-medium">{order.testName}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {order.authoredOn ? new Date(order.authoredOn).toLocaleString() : 'N/A'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs capitalize">{order.status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+      {xrayPending.length > 0 && (
+        <Card aria-label="Pending X-ray studies">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-500" />
+              Pending X-ray
+            </CardTitle>
+            <CardDescription>Waiting on the device — the study will appear in Imaging once received.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Study</TableHead>
+                  <TableHead>Ordered</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {xrayPending.map((order) => (
+                  <TableRow key={order.id}>
+                    <TableCell className="font-medium">{order.display}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {order.authoredOn ? new Date(order.authoredOn).toLocaleString() : 'N/A'}
                     </TableCell>
