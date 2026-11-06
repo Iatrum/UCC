@@ -409,7 +409,7 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
   for (const study of studies) {
     // Get associated diagnostic report if exists
     const reports = await client.searchResources('DiagnosticReport', {
-      'imaging-study': `ImagingStudy/${study.id}`,
+      study: `ImagingStudy/${study.id}`,
     });
 
     const report = reports[0];
@@ -472,7 +472,7 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
 
   for (const study of studies) {
     const reports = await client.searchResources('DiagnosticReport', {
-      'imaging-study': `ImagingStudy/${study.id}`,
+      study: `ImagingStudy/${study.id}`,
     });
 
     const report = reports[0];
@@ -530,7 +530,7 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
     const study = await client.readResource('ImagingStudy', studyId);
     
     const reports = await client.searchResources('DiagnosticReport', {
-      'imaging-study': `ImagingStudy/${studyId}`,
+      study: `ImagingStudy/${studyId}`,
     });
 
     const report = reports[0];
