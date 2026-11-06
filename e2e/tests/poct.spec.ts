@@ -457,7 +457,7 @@ test('Lab subscription notifications refresh results without navigation; dropped
 test('Lab subscription API enforces login, clinic patient/encounter scope and POCT toggle', async ({ request, page, playwright, baseURL }) => {
   test.setTimeout(120_000);
   const f = await fixture(request, page, true);
-  const anonymous = await playwright.request.newContext({ baseURL });
+  const anonymous = await playwright.request.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
   try {
     const body = { patientId: f.patientId, encounterId: f.consultationId };
     expect((await anonymous.post('/api/labs/subscription', { data: body })).status()).toBe(401);

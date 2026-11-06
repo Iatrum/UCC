@@ -1,6 +1,6 @@
 # progress-task12
 
-Updated: 2026-11-06 (Claude build round, resumed again after a stall)
+Updated: 2026-11-06 (Claude build round, resumed a third time)
 
 ## Done
 - Plan written (`.ai/PLAN-task12.md`)
@@ -10,42 +10,52 @@ Updated: 2026-11-06 (Claude build round, resumed again after a stall)
   createImagingOrder, PATCH/DELETE module-gated from day one, DX filter bug fixed)
 - Phase 3 (commit 98f4a35, pushed): device bridge (lib/pacs/xray-device-bot.ts, POST /api/imaging/receive/message),
   Lab tab "Pending X-ray" card, /api/labs/subscription widened to poct OR pacs, scripts/pacs/sim-xray.ts
-- Bugfix (about to commit): ImagingStudy's FHIR search parameter is `basedon` (no hyphen), not `based-on` like
-  ServiceRequest/DiagnosticReport use -- confirmed via `GET /fhir/R4/metadata` on the local Medplum. Fixed in
-  `lib/pacs/xray-device-bot.ts`'s duplicate-ingestion guard.
-- `e2e/tests/xray.spec.ts` written (5 tests, mirrors poct.spec.ts): offline device blocks ordering + 409 on
-  direct API call with online or offline device id + clinic isolation on foreign device; online+Sign creates
-  active un-completed tagged ServiceRequest (tag/category/identifier/performer asserted), preserves bill, no
-  completed Procedure, idempotent retry; module disabled hides the composer section + 404s /api/pacs/devices +
-  403s the order API; simulated device study reaches the Lab tab pending card and clears it after ingestion,
-  duplicate-ingestion guard returns the same ImagingStudy on retransmit, bad key 401s, non-xray-tagged order 400s;
-  module disabled after an order exists blocks PATCH/DELETE of that order while a generic (non-device) imaging
-  order stays mutable.
-  - All 5 passing as of this update except the "Simulated X-ray device study..." test, which was failing on a
-    test-only bug (not app code): `/patients/<id>/labs-imaging` is a SEPARATE standalone page (own route,
-    `app/(routes)/patients/[id]/labs-imaging/page.tsx`) with its own "Laboratory Tests"/"Imaging Studies" tabs
-    (distinct from the SPA tab of the same name inside `patient-profile-workspace.tsx`). `LabResultsView` is on
-    the default "Laboratory Tests" tab (so the pending-card assertions work with no extra click, matching
-    poct.spec.ts's precedent), but `ImagingResultsView` is under "Imaging Studies" and needs an explicit tab click
-    first -- test now clicks `page.getByRole('tab', { name: 'Imaging Studies', exact: true })` before asserting
-    the study card is visible. Rerunning now to confirm.
+- Phase 4 WIP (commit 31da9a3, pushed): e2e/tests/xray.spec.ts (5 tests)
+- Bugfix (commit 4afac89, pushed): DiagnosticReport's search param for ImagingStudy is `study`, not `imaging-study`
+  -- confirmed via `/fhir/R4/metadata`. This was silently 500ing `GET /api/imaging/results` for ALL imaging
+  (pre-existing, predates this task), which is why the device-ingested X-ray study never showed up in
+  `ImagingResultsView` during testing. All 5 `xray.spec.ts` tests pass together after this fix + the
+  `basedon` fix (also in 4afac89's predecessor commit) + clicking the "Imaging Studies" sub-tab in the test
+  (standalone `/patients/[id]/labs-imaging` route has separate "Laboratory Tests"/"Imaging Studies" tabs,
+  distinct from the SPA tab of the same name in `patient-profile-workspace.tsx`).
+- Full-suite gate run (lint 0, build 0, warmup 0) surfaced two apparent "NEW FAIL"s vs the `10-decisive` baseline:
+  1. `api.spec.ts: read endpoints respond without 5xx (smoke)` -- `ECONNRESET` on `GET /api/queue`. Re-ran in
+     isolation: passes cleanly. Transient dev-server hiccup, same documented pattern as D10; not a regression.
+  2. `poct.spec.ts: Lab subscription API enforces login, clinic patient/encounter scope and POCT toggle` --
+     expected 401, got 503 on the test's first `anonymous.post('/api/labs/subscription', ...)` call. Root-caused
+     by debugging (temporary `console.log` in the route, since removed): this test's `anonymous` context was
+     created via `playwright.request.newContext({ baseURL })` WITHOUT the `storageState: { cookies: [], origins:
+     [] }` override every *other* anonymous context in this same file correctly uses (confirmed by grep -- only
+     one of two call sites had it). Without the override, it inherits the project's default
+     `storageState: '.secrets/state.json'` (a real, valid, clinic=`demo` session) -- so the "anonymous" call is
+     actually fully authenticated. Combined with the test's own fixture enabling `poct` for its dynamically
+     created patient's clinic (which this shared test session always assigns to `demo`, since patient creation
+     goes through the same default-session `request` fixture), the module check passes, the patient is found,
+     and the call proceeds into the real Subscription-creation attempt, which 503s because this local Medplum
+     project doesn't support WebSocket subscriptions (a pre-existing, already-documented environment limitation --
+     see the *other* passing assertion two lines later in the same test: `expect([200, 503]).toContain(...)`).
+     **Proved this is pre-existing, not caused by this task's subscription-widen change**: reverted
+     `/api/labs/subscription/route.ts` to the exact pre-Task-12 single-`poct`-check code in a scratch copy,
+     re-ran the same test against it with a freshly cleaned `demo` clinic -- identical 503 failure. Restored the
+     widened route (verified byte-identical to the committed version via `git diff`, clean). Fixed the actual bug:
+     added the missing `storageState: { cookies: [], origins: [] }` override to this one `anonymous` context in
+     `e2e/tests/poct.spec.ts` (mirroring the correct pattern already used earlier in the same file). Verified the
+     test now passes with a clean `demo` clinic. `bun run lint` clean after this fix.
 - Worktree `/workspace/ucc-pr-12` set up for lint/test: `bun install` run, `e2e/node_modules` symlinked to
   `/workspace/ucc-e2e-suite/node_modules`, `.env.local` and `e2e/.secrets/{pacs_key,poct_key,pw}` copied from
   `/workspace/iatrum-ucc` (none staged/committed -- all gitignored). Added `PACS_API_KEY` export to `e2e/lib/env.ts`.
-  Dev server running on :3210 from this worktree (`NODE_OPTIONS=--max-old-space-size=3072 next dev --webpack -p 3210`,
-  log `/workspace/ai-logs/devserver-task12.log`). Medplum already up on :8113.
-- `bun run lint` (tsc --noEmit + clinic-admin-medplum check) clean after phase 1+2+3.
+  Dev server running on :3210 from this worktree (`NODE_OPTIONS=--max-old-space-size=3072 next dev --webpack -p
+  3210`, log `/workspace/ai-logs/devserver-task12.log`, restarted once mid-round to clear stale module-toggle
+  pollution from earlier debugging). Medplum already up on :8113. All 4 fake clinics (`demo`/`clinicb`/`clinicc`/
+  `clinicd`) confirmed back to default module state (no leftover `poct`/`pacs` toggles) before every gate run.
 
 ## In progress
-- Rerunning `tests/xray.spec.ts -g "Simulated X-ray device study"` after the Imaging-Studies-tab-click fix, in the
-  foreground, before committing the spec file.
+- About to commit the `poct.spec.ts` storageState fix and push, then run ONE MORE full-suite gate in the
+  foreground to get a clean official result with zero unexplained NEW FAILs.
 
 ## Remaining
-- Confirm all 5 xray.spec.ts tests pass together (not just individually -- check for cross-test pollution since
-  they share the same `demo`/`clinicb`/etc. fake clinics).
-- Commit + push e2e/tests/xray.spec.ts + the basedon fix.
-- Full `check-all.sh task12` in the foreground (baseline ~29/30, known-bug-probes-summary only expected failure;
-  do not regress) -- not run yet this round.
+- Full clean `check-all.sh`-equivalent gate run (lint/build/warmup already done this round; e2e full run + compare
+  + clinic-check still needed after this commit).
 - Open/update one draft PR `ai/task-12` -> `dev`, verify `gh pr view --json mergeable`, write summary to
   `/workspace/ai-logs/ucc-task12.md`.
 
@@ -54,16 +64,27 @@ Updated: 2026-11-06 (Claude build round, resumed again after a stall)
   function as-is) -- it does NOT fabricate a `DiagnosticReport`/interpretation, consistent with D28 point 3
   (`/api/imaging/report` stays the human-typed radiologist path, unchanged). The "Pending X-ray" card clears once
   `receiveImagingStudy` marks the ServiceRequest completed, picked up by the Lab tab's existing 30s poll fallback.
-- ImagingStudy FHIR search parameter is `basedon`, not `based-on` (differs from ServiceRequest/DiagnosticReport).
+- ImagingStudy FHIR search parameter is `basedon`, not `based-on`; DiagnosticReport's imagingStudy-link search
+  parameter is `study`, not `imaging-study` (both differ from the `based-on` ServiceRequest/DiagnosticReport
+  normally use elsewhere in this codebase). Both confirmed against this Medplum instance's `/fhir/R4/metadata`,
+  both pre-existing bugs in `lib/fhir/imaging-service.ts` predating this task, both fixed as part of this task
+  since they directly blocked verifying the new X-ray results path (same precedent as Task 10's `_count` fix).
 - `modality` field computed in `createImagingOrder` but never written onto the resource is pre-existing dead code
   (present before this task); left as-is, out of scope.
+- `e2e/tests/poct.spec.ts`'s last test had a missing `storageState` override on one of its two "anonymous" API
+  contexts (pre-existing test-authoring bug, not app code); fixed as part of this task's gate since it directly
+  blocked a clean gate and the root cause required tracing through the new subscription-widen code to rule out.
 
 ## Notes
 - Time Chit deferred to `070-time-chit` (after Task 12) -- user priority is POCT X-ray first
 - Codex remains user-paused; do not unpause
 - Baseline ~29/30 (known-bug probes summary only)
-- Branch `ai/task-12`, worktree `/workspace/ucc-pr-12`, pushed through 98f4a35 so far.
+- Branch `ai/task-12`, worktree `/workspace/ucc-pr-12`, pushed through 4afac89 so far.
 - IMPORTANT for future resumes: do not background e2e/playwright test runs or sleep-then-check loops; run them
-  directly in the foreground with Bash (the harness's own background-task tracking has been unreliable this round
-  -- a previous `run_in_background` run completed with 0-byte output and no completion notification survived a
-  session stall). Prefer plain foreground `Bash` calls even if they take a few minutes.
+  directly in the foreground with Bash. Before any full gate run, confirm `demo`/`clinicb`/`clinicc`/`clinicd`
+  Organizations have no leftover module-toggle extensions from prior debugging (query with `{cache: 'no-cache'}`
+  via a `bun -e` one-liner using `getAdminMedplum()`) -- the admin Medplum client is a process-level singleton
+  that caches reads, so toggles written via a *separate* short-lived script invocation won't be visible to the
+  long-running dev server's cached view until it re-queries without cache, but the Organization resource itself
+  really did change, so always verify with an explicit no-cache read against the SAME running dev server process
+  if something looks stale.
