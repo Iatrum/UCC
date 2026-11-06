@@ -6,6 +6,14 @@ export interface PoctEntryMeta extends Record<string, string> {
   analyserName: string;
 }
 
+/** POCT X-ray stays in the services tab, same reason as PoctEntryMeta. */
+export interface XrayEntryMeta extends Record<string, string> {
+  kind: "xray";
+  code: string;
+  deviceId: string;
+  deviceName: string;
+}
+
 export type TreatmentPlanTab = "items" | "services" | "packages" | "documents";
 
 export interface TreatmentPlanEntryInput {

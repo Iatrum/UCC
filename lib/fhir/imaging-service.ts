@@ -16,15 +16,20 @@ import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
 import {
   IMAGING_PROCEDURES,
+  XRAY_STUDIES,
   type ImagingProcedureCode,
   type ImagingReportSummary,
   type ImagingStudyData,
   type DICOMSeries,
 } from './imaging-constants';
+import { XRAY_TAG_SYSTEM, requireOnlineXrayDevice } from './xray-device';
+import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import {
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
+  getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
 
@@ -67,6 +72,7 @@ export interface ImagingOrderRequest {
   clinicalIndication?: string;
   clinicalQuestion?: string;
   orderedBy?: string;
+  xray?: { code: string; deviceId: string; entryId: string };
 }
 
 function resolveImagingProcedure(procedure: ImagingOrderProcedure): {
@@ -98,18 +104,32 @@ export async function createImagingOrder(
 ): Promise<string> {
   const client = medplum;
   const clinicTenant = await resolveClinicTenant(client, clinicId);
-  
+
   console.log(`🏥 Creating imaging order for patient ${order.patientId}`);
 
+  const xrayStudy = order.xray && XRAY_STUDIES.find((s) => s.code === order.xray!.code);
+  if (order.xray) {
+    if (!(await isModuleEnabledForClinic('pacs', clinicId))) {
+      throw new ForbiddenError('PACS module is disabled for this clinic');
+    }
+    if (!xrayStudy || !order.encounterId || !/^[a-zA-Z0-9-]{1,64}$/.test(order.xray.entryId || '') || !/^[a-zA-Z0-9-]{1,64}$/.test(order.xray.deviceId || '')) {
+      throw new ConflictError('Invalid X-ray order');
+    }
+    await requireOnlineXrayDevice(client, clinicId, order.xray.deviceId);
+    order = { ...order, procedures: [{ code: xrayStudy.code, display: xrayStudy.name, system: xrayStudy.system, modality: xrayStudy.modality }] };
+  }
+
   const serviceRequests: ServiceRequest[] = [];
-  
+
   for (const procedureCode of order.procedures) {
     const procedure = resolveImagingProcedure(procedureCode);
     const modality = IMAGING_MODALITIES[procedure.modality as ModalityCode];
-    
-    const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
+
+    const resource: ServiceRequest = {
       resourceType: 'ServiceRequest',
-      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
+      identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId },
+        ...(order.xray ? [{ system: 'https://ucc.emr/xray/order-entry', value: `${clinicId}:${order.encounterId}:${order.xray.entryId}` }] : [])],
+      meta: order.xray ? { tag: [{ system: XRAY_TAG_SYSTEM, code: 'xray' }] } : undefined,
       status: 'active',
       intent: 'order',
       priority: order.priority || 'routine',
@@ -134,6 +154,7 @@ export async function createImagingOrder(
       encounter: order.encounterId ? {
         reference: `Encounter/${order.encounterId}`,
       } : undefined,
+      performer: order.xray ? [{ reference: `Device/${order.xray.deviceId}` }] : undefined,
       authoredOn: new Date().toISOString(),
       requester: order.orderedBy
         ? order.orderedBy.startsWith('Practitioner/')
@@ -147,12 +168,15 @@ export async function createImagingOrder(
         ...(order.clinicalIndication ? [{ text: `Clinical Indication: ${order.clinicalIndication}` }] : []),
         ...(order.clinicalQuestion ? [{ text: `Clinical Question: ${order.clinicalQuestion}` }] : []),
       ],
-    });
+    };
+    const serviceRequest = order.xray
+      ? await client.createResourceIfNoneExist(resource, new URLSearchParams({ identifier: `https://ucc.emr/xray/order-entry|${clinicId}:${order.encounterId}:${order.xray.entryId}` }).toString())
+      : await validateAndCreate<ServiceRequest>(client, resource);
     await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
-    
+
     serviceRequests.push(serviceRequest);
     console.log(`✅ Created imaging ServiceRequest: ${serviceRequest.id} for ${procedure.display}`);
-    
+
     // Create Provenance for audit trail (non-blocking)
     if (serviceRequest.id) {
       try {
@@ -289,10 +313,18 @@ export async function createImagingReport(
   // Get the imaging study
   const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId);
   const accountRefs = getResourceAccountReferences(imagingStudy);
+  // Clinic identifier is on the originating ServiceRequest, not the ImagingStudy itself;
+  // needed so the Lab tab's live-update subscription (criteria includes identifier=clinic|<id>)
+  // can match this report.
+  const basedOnServiceRequestId = imagingStudy.basedOn?.[0]?.reference?.split('/')[1];
+  const clinicId = basedOnServiceRequestId
+    ? getClinicIdentifierValue(await client.readResource('ServiceRequest', basedOnServiceRequestId))
+    : undefined;
 
   // Create DiagnosticReport
   const report = await validateAndCreate<DiagnosticReport>(client, {
     resourceType: 'DiagnosticReport',
+    identifier: clinicId ? [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }] : undefined,
     status,
     category: [{
       coding: [{
@@ -547,15 +579,68 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
   }
 }
 
+export interface PendingXrayOrder {
+  id: string;
+  code: string;
+  display: string;
+  status: NonNullable<ServiceRequest['status']>;
+  priority?: ServiceRequest['priority'];
+  authoredOn?: string;
+  deviceId?: string;
+}
+
+/**
+ * Get X-ray orders (ServiceRequest tagged `xray`) for a patient that are still
+ * waiting on a result (not completed/revoked/cancelled). Used by the Lab tab
+ * so staff can see a study is in progress, not just the final result.
+ */
+export async function getPatientPendingXrayOrders(patientId: string, medplum: MedplumClient, clinicId: string): Promise<PendingXrayOrder[]> {
+  if (!(await isModuleEnabledForClinic('pacs', clinicId))) return [];
+  const orders = await medplum.searchResources('ServiceRequest', {
+    identifier: `clinic|${clinicId}`,
+    subject: `Patient/${patientId}`,
+    _tag: `${XRAY_TAG_SYSTEM}|xray`,
+    status: 'active,on-hold',
+    _sort: '-authored',
+  }, { cache: 'no-cache' });
+
+  return orders.map((order) => ({
+    id: order.id!,
+    code: order.code?.coding?.[0]?.code || '',
+    display: order.code?.text || order.code?.coding?.[0]?.display || 'X-ray study',
+    status: order.status || 'active',
+    priority: order.priority,
+    authoredOn: order.authoredOn,
+    deviceId: order.performer?.[0]?.reference?.split('/')[1],
+  }));
+}
+
+function isXrayTaggedOrder(serviceRequest: ServiceRequest): boolean {
+  return Boolean(serviceRequest.meta?.tag?.some((tag) => tag.system === XRAY_TAG_SYSTEM && tag.code === 'xray'));
+}
+
+/**
+ * A disabled pacs module must block mutation of its own X-ray orders, same as it blocks
+ * creating new ones -- but a generic (non-device) imaging order must stay mutable
+ * regardless of the toggle, since it's a separate, always-on feature.
+ */
+async function assertXrayOrderMutable(serviceRequest: ServiceRequest, clinicId: string): Promise<void> {
+  if (isXrayTaggedOrder(serviceRequest) && !(await isModuleEnabledForClinic('pacs', clinicId))) {
+    throw new ForbiddenError('PACS module is disabled for this clinic');
+  }
+}
+
 /**
  * Update an imaging order (e.g. cancel or change priority)
  */
 export async function updateImagingOrder(
   serviceRequestId: string,
   updates: { status?: 'active' | 'on-hold' | 'revoked' | 'completed'; priority?: 'routine' | 'urgent' | 'asap' | 'stat'; clinicalIndication?: string },
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  clinicId: string
 ): Promise<void> {
   const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  await assertXrayOrderMutable(serviceRequest, clinicId);
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;
   if (updates.priority) updated.priority = updates.priority;
@@ -569,7 +654,9 @@ export async function updateImagingOrder(
 /**
  * Delete an imaging order
  */
-export async function deleteImagingOrder(serviceRequestId: string, medplum: MedplumClient): Promise<void> {
+export async function deleteImagingOrder(serviceRequestId: string, medplum: MedplumClient, clinicId: string): Promise<void> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  await assertXrayOrderMutable(serviceRequest, clinicId);
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ImagingOrder ServiceRequest ${serviceRequestId}`);
 }

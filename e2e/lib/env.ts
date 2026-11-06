@@ -7,6 +7,7 @@ function readSecret(name: string): string | undefined {
   try { return fs.readFileSync(path.join(import.meta.dirname, '../.secrets', name), 'utf8').trim(); } catch { return undefined; }
 }
 export const POCT_API_KEY = process.env.POCT_API_KEY || readSecret('poct_key');
+export const PACS_API_KEY = process.env.PACS_API_KEY || readSecret('pacs_key');
 export const MEDPLUM_ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL || 'admin@example.com', password: process.env.MEDPLUM_ADMIN_PASSWORD || 'medplum_admin' };
 export const EVIDENCE = process.env.UCC_EVIDENCE || '/workspace/iatrum-ucc-evidence/e2e';
 export const RUN = process.env.UCC_RUN_ID || new Date().toISOString().replace(/[-:T.Z]/g, '').slice(4, 12);

@@ -1,6 +1,7 @@
 "use client";
 
 import { PoctSection } from "./poct-section";
+import { XraySection } from "./xray-section";
 
 import * as React from "react";
 import { Search, Trash2 } from "lucide-react";
@@ -59,6 +60,7 @@ interface OrderComposerProps {
   submitting?: boolean;
   patient?: { id: string; fullName: string; nric: string } | null;
   poctEnabled?: boolean;
+  pacsEnabled?: boolean;
 }
 
 function calcMcEndDate(startDate: string, numDays: number): string {
@@ -366,6 +368,7 @@ export function OrderComposer({
   submitting = false,
   patient = null,
   poctEnabled = false,
+  pacsEnabled = false,
 }: OrderComposerProps) {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -840,6 +843,9 @@ export function OrderComposer({
           {poctEnabled && (
             <PoctSection entries={entries} query={searchQuery} onAdd={(item) => addCatalogItem("services", item)} />
           )}
+          {pacsEnabled && (
+            <XraySection entries={entries} query={searchQuery} onAdd={(item) => addCatalogItem("services", item)} />
+          )}
           <div className="space-y-2">
             <p className="text-sm font-medium">Order</p>
             {sortedEntries.length === 0 ? (
@@ -847,7 +853,7 @@ export function OrderComposer({
             ) : (
               sortedEntries.map((entry) => {
                 const openEntry = () => {
-                  if (entry.meta?.kind === "poct") return;
+                  if (entry.meta?.kind === "poct" || entry.meta?.kind === "xray") return;
                   const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
                   if (entry.tab === "documents" && kind !== null) {
                     setMcDays(Number(entry.meta?.mcDays || 1));
@@ -879,9 +885,9 @@ export function OrderComposer({
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-                        {entry.meta?.kind === "poct" ? "POCT" : kindLabelForTab(entry.tab)}
+                        {entry.meta?.kind === "poct" ? "POCT" : entry.meta?.kind === "xray" ? "X-RAY" : kindLabelForTab(entry.tab)}
                       </Badge>
-                      <span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.meta?.kind === "poct" && <span className="block truncate text-xs text-muted-foreground">Will run on {entry.meta.analyserName}</span>}</span>
+                      <span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.meta?.kind === "poct" && <span className="block truncate text-xs text-muted-foreground">Will run on {entry.meta.analyserName}</span>}{entry.meta?.kind === "xray" && <span className="block truncate text-xs text-muted-foreground">Will run on {entry.meta.deviceName}</span>}</span>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {entry.quantity} × RM {entry.unitPrice.toFixed(2)}
