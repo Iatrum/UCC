@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createImagingOrder, updateImagingOrder, deleteImagingOrder, type ImagingOrderRequest } from '@/lib/fhir/imaging-service';
-import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
+import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
 
@@ -37,6 +38,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (body.xray) {
+      const profile = await getCurrentProfile(request);
+      if (profile.resourceType !== 'Practitioner' || !profile.id) {
+        return NextResponse.json({ error: 'Practitioner required for X-ray orders' }, { status: 403 });
+      }
+      body.orderedBy = `Practitioner/${profile.id}`;
+    }
+
     // Create the imaging order
     const serviceRequestId = await createImagingOrder(body, medplum, clinicId);
 
@@ -46,22 +55,14 @@ export async function POST(request: NextRequest) {
       message: `Imaging order created for ${body.procedures.length} procedures`,
     });
 
-  } catch (error: any) {
-    console.error('Error creating imaging order:', error);
-    
-    return NextResponse.json(
-      {
-        error: 'Failed to create imaging order',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleRouteError(error, 'POST /api/imaging/order');
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { serviceRequestId, ...updates } = body;
 
@@ -69,16 +70,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
     }
 
-    await updateImagingOrder(serviceRequestId, updates, medplum);
+    await updateImagingOrder(serviceRequestId, updates, medplum, clinicId);
     return NextResponse.json({ success: true, message: 'Imaging order updated' });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to update imaging order', details: error.message }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'PATCH /api/imaging/order');
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { medplum } = await requireClinicAuth(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
     const { serviceRequestId } = body;
 
@@ -86,10 +87,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
     }
 
-    await deleteImagingOrder(serviceRequestId, medplum);
+    await deleteImagingOrder(serviceRequestId, medplum, clinicId);
     return NextResponse.json({ success: true, message: 'Imaging order deleted' });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to delete imaging order', details: error.message }, { status: 500 });
+  } catch (error) {
+    return handleRouteError(error, 'DELETE /api/imaging/order');
   }
 }
 

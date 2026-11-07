@@ -20,6 +20,15 @@ export const IMAGING_PROCEDURES = {
 
 export type ImagingProcedureCode = keyof typeof IMAGING_PROCEDURES;
 
+/** V1 POCT X-ray studies; LOINC codes reused from IMAGING_PROCEDURES where they match. */
+export const XRAY_STUDIES = [
+  { code: '36643-5', name: 'Chest X-ray (PA)', modality: 'DX', unitPrice: 45 },
+  { code: '30746-2', name: 'Chest X-ray (PA + lateral)', modality: 'DX', unitPrice: 65 },
+  { code: '36558-5', name: 'Abdomen X-ray', modality: 'DX', unitPrice: 50 },
+  { code: '37362-1', name: 'Knee X-ray', modality: 'DX', unitPrice: 50 },
+].map((study) => ({ ...study, system: 'http://loinc.org', deviceType: 'xray',
+  confirmation: 'LOINC/CPT and pricing to confirm per device vendor' }));
+
 export interface DICOMSeries {
   uid: string;
   number: number;

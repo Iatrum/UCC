@@ -62,6 +62,7 @@ interface PatientProfileWorkspaceProps {
   patientAge: number | null;
   medicalHistory: MedicalHistory;
   poctEnabled: boolean;
+  pacsEnabled: boolean;
 }
 
 const emptyTreatmentSummary: TreatmentPlanSummary = {
@@ -162,6 +163,7 @@ export default function PatientProfileWorkspace({
   patientAge,
   medicalHistory,
   poctEnabled,
+  pacsEnabled,
 }: PatientProfileWorkspaceProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -294,7 +296,6 @@ export default function PatientProfileWorkspace({
         },
       }));
       const imagingServices = imagingCatalog
-        .filter((item) => !item.modality || item.modality === "DX")
         .map((item) => ({
           id: `imaging-${item.id}`,
           name: `Imaging: ${item.display || item.name}${item.modality ? ` (${item.modality})` : ""}`,
@@ -491,9 +492,10 @@ export default function PatientProfileWorkspace({
       category: "items",
       price: entry.unitPrice,
     }));
-    const investigationEntries = serviceEntries.filter((entry) => entry.meta?.kind === "poct" || entry.meta?.kind === "lab");
+    const investigationEntries = serviceEntries.filter((entry) => entry.meta?.kind === "poct" || entry.meta?.kind === "lab" || entry.meta?.kind === "xray");
     const poctEntries = investigationEntries.filter((entry) => entry.meta?.kind === "poct");
-    const billableProcedureEntries = [...serviceEntries.filter((entry) => entry.meta?.kind !== "poct" && entry.meta?.kind !== "lab"), ...documentEntries];
+    const xrayEntries = investigationEntries.filter((entry) => entry.meta?.kind === "xray");
+    const billableProcedureEntries = [...serviceEntries.filter((entry) => entry.meta?.kind !== "poct" && entry.meta?.kind !== "lab" && entry.meta?.kind !== "xray"), ...documentEntries];
     const procedures: ProcedureRecord[] = billableProcedureEntries.map((entry) => ({
       name: entry.name,
       quantity: entry.quantity,
@@ -524,10 +526,14 @@ export default function PatientProfileWorkspace({
       toast({ title: "POCT is disabled for this clinic", variant: "destructive" });
       return;
     }
+    if (xrayEntries.length > 0 && !pacsEnabled) {
+      toast({ title: "PACS is disabled for this clinic", variant: "destructive" });
+      return;
+    }
 
     try {
       setTreatmentSubmitting(true);
-      // Place POCT first: failed/offline orders leave the composer intact for retry.
+      // Place POCT/X-ray first: failed/offline orders leave the composer intact for retry.
       // The server uses each draft entry id as a conditional-create key.
       for (const entry of poctEntries) {
         const poctResponse = await fetch("/api/labs/order", {
@@ -540,6 +546,20 @@ export default function PatientProfileWorkspace({
         if (!poctResponse.ok) {
           const failure = await poctResponse.json().catch(() => ({}));
           throw new Error(failure.error || "POCT order failed. Please check the analyser.");
+        }
+      }
+      for (const entry of xrayEntries) {
+        const xrayResponse = await fetch("/api/imaging/order", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patientId, encounterId: treatmentConsultation.id,
+            procedures: [{ code: entry.meta?.code, display: entry.name }],
+            clinicalIndication: treatmentConsultation.diagnosis || treatmentConsultation.chiefComplaint || entry.name,
+            xray: { code: entry.meta?.code, deviceId: entry.meta?.deviceId, entryId: entry.id },
+          }),
+        });
+        if (!xrayResponse.ok) {
+          const failure = await xrayResponse.json().catch(() => ({}));
+          throw new Error(failure.error || "X-ray order failed. Please check the device.");
         }
       }
       const response = await fetch("/api/orders", {
@@ -990,6 +1010,7 @@ export default function PatientProfileWorkspace({
                         submitting={treatmentSubmitting}
                         patient={patient}
                         poctEnabled={poctEnabled}
+                        pacsEnabled={pacsEnabled}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>

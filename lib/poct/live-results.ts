@@ -1,7 +1,8 @@
 import type { LabReportSummary } from '@/lib/fhir/lab-constants';
 import type { PendingPoctOrder } from '@/lib/fhir/lab-service';
+import type { PendingXrayOrder } from '@/lib/fhir/imaging-service';
 
-type Results = { reports: LabReportSummary[]; pending: PendingPoctOrder[]; poctEnabled: boolean };
+type Results = { reports: LabReportSummary[]; pending: PendingPoctOrder[]; xrayPending: PendingXrayOrder[]; poctEnabled: boolean; pacsEnabled: boolean };
 type Options = { patientId: string; encounterId?: string; onResults: (data: Results) => void; onLoaded: () => void };
 
 /** Mounted only by the Lab tab. Notifications invalidate data; the gated API is authoritative. */
@@ -43,13 +44,13 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onLoa
           allowed = false;
           disconnect();
           clearInterval(poll);
-          onResults({ reports: [], pending: [], poctEnabled: false });
+          onResults({ reports: [], pending: [], xrayPending: [], poctEnabled: false, pacsEnabled: false });
         }
         return;
       }
       const data: Results = await response.json();
       if (abort.signal.aborted) return;
-      allowed = data.poctEnabled === true;
+      allowed = data.poctEnabled === true || data.pacsEnabled === true;
       onResults(data);
       if (!allowed) { disconnect(); clearInterval(poll); }
     } catch { /* Keep the last successful results during a transient outage. */ }

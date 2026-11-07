@@ -7,9 +7,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPatientLabResults, getEncounterLabResults, getPatientPendingPoctOrders } from '@/lib/fhir/lab-service';
+import { getPatientPendingXrayOrders } from '@/lib/fhir/imaging-service';
 import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { POCT_TAG_SYSTEM } from '@/lib/fhir/poct-device';
+import { XRAY_TAG_SYSTEM } from '@/lib/fhir/xray-device';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
@@ -35,15 +37,20 @@ export async function GET(request: NextRequest) {
 
     let reports: import('@/lib/fhir/lab-constants').LabReportSummary[] = [];
     let pending;
+    let xrayPending;
     if (encounterId) {
       reports = await getEncounterLabResults(encounterId, medplum);
     } else if (patientId) {
       reports = await getPatientLabResults(patientId, medplum);
       pending = await getPatientPendingPoctOrders(patientId, medplum, clinicId);
+      xrayPending = await getPatientPendingXrayOrders(patientId, medplum, clinicId);
     }
 
-    const poctEnabled = await isModuleEnabledForClinic('poct', clinicId);
-    if (!poctEnabled && reports?.length) {
+    const [poctEnabled, pacsEnabled] = await Promise.all([
+      isModuleEnabledForClinic('poct', clinicId),
+      isModuleEnabledForClinic('pacs', clinicId),
+    ]);
+    if ((!poctEnabled || !pacsEnabled) && reports?.length) {
       // Resolve only this page's linked orders; avoid truncating a patient's history.
       const visible = await Promise.all(reports.map(async (report) => {
         const raw = await medplum.readResource('DiagnosticReport', report.id, { cache: 'no-cache' });
@@ -52,7 +59,18 @@ export async function GET(request: NextRequest) {
           const order = await medplum.searchOne('ServiceRequest', {
             _id: ref.reference.split('/')[1], identifier: `clinic|${clinicId}`,
           }, { cache: 'no-cache' });
-          if (!order || order.meta?.tag?.some((tag) => tag.system === POCT_TAG_SYSTEM && tag.code === 'poct')) return false;
+          if (!poctEnabled && (!order || order.meta?.tag?.some((tag) => tag.system === POCT_TAG_SYSTEM && tag.code === 'poct'))) return false;
+        }
+        // Imaging reports link via imagingStudy -> ImagingStudy.basedOn -> ServiceRequest, not report.basedOn.
+        for (const ref of raw.imagingStudy || []) {
+          const studyId = ref.reference?.split('/')[1];
+          if (!studyId) continue;
+          const study = await medplum.readResource('ImagingStudy', studyId).catch(() => undefined);
+          const srId = study?.basedOn?.[0]?.reference?.split('/')[1];
+          const order = srId ? await medplum.searchOne('ServiceRequest', {
+            _id: srId, identifier: `clinic|${clinicId}`,
+          }, { cache: 'no-cache' }) : undefined;
+          if (!pacsEnabled && order?.meta?.tag?.some((tag) => tag.system === XRAY_TAG_SYSTEM && tag.code === 'xray')) return false;
         }
         return true;
       }));
@@ -61,8 +79,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       poctEnabled,
+      pacsEnabled,
       reports,
       pending: pending || [],
+      xrayPending: xrayPending || [],
     }, { headers: { 'Cache-Control': 'no-store' } });
 
   } catch (error: any) {
