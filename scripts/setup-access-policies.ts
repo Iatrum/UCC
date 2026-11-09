@@ -117,6 +117,21 @@ async function setupAccessPolicies() {
       clinicCompartmentRule("Schedule"),
       clinicCompartmentRule("Slot"),
       {
+        // Provenance (audit trail) is created by the acting user's own client
+        // on nearly every clinical write, non-blocking try/catch -- gate
+        // create unconditionally (not compartment-filtered) because the
+        // clinic account reference is only stamped onto the Provenance
+        // *after* it's created (mirrors every other resource's $set-accounts
+        // call). Read/search stay compartment-scoped below once stamped.
+        resourceType: "Provenance",
+        interaction: ["create"],
+      },
+      {
+        resourceType: "Provenance",
+        criteria: "Provenance?_compartment=%clinicAccount",
+        interaction: READ_INTERACTIONS,
+      },
+      {
         resourceType: "Practitioner",
         interaction: READ_INTERACTIONS,
       },
