@@ -9,7 +9,7 @@ import type { DocumentReference } from '@medplum/fhirtypes';
 import { STORAGE_PATH_EXTENSION_URL } from './structure-definitions';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
-import { withClinicIdentifier } from './clinic-tenancy';
+import { resolveClinicTenant, withClinicIdentifier } from './clinic-tenancy';
 
 export interface DocumentRegistration {
   patientId: string; // FHIR Patient ID
@@ -92,13 +92,15 @@ export async function createPatientDocument(medplum: MedplumClient, doc: Documen
   if (doc.practitionerId || doc.organizationId) {
     // Create Provenance for audit trail (non-blocking)
     try {
+      const clinicTenant = await resolveClinicTenant(medplum, doc.clinicId).catch(() => null);
       await createProvenanceForResource(
         medplum,
         'DocumentReference',
         created.id,
         doc.practitionerId,
         doc.organizationId,
-        'CREATE'
+        'CREATE',
+        clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
       );
       console.log(`✅ Created Provenance for DocumentReference/${created.id}`);
     } catch (error) {

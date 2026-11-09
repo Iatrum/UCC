@@ -404,7 +404,8 @@ export async function savePatientToMedplum(
         savedPatient.id,
         undefined,
         clinicId,
-        'CREATE'
+        'CREATE',
+        clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
       );
       console.log(`✅ Created Provenance for Patient/${savedPatient.id}`);
     } catch (error) {
@@ -438,7 +439,8 @@ export async function savePatientToMedplum(
             allergyResource.id,
             undefined,
             clinicId,
-            'CREATE'
+            'CREATE',
+            clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
           );
         } catch (error) {
           console.warn(`⚠️  Failed to create Provenance for AllergyIntolerance (non-blocking):`, error);
@@ -471,7 +473,8 @@ export async function savePatientToMedplum(
             conditionResource.id,
             undefined,
             clinicId,
-            'CREATE'
+            'CREATE',
+            clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
           );
         } catch (error) {
           console.warn(`⚠️  Failed to create Provenance for Condition (non-blocking):`, error);
@@ -502,7 +505,8 @@ export async function savePatientToMedplum(
             medicationResource.id,
             undefined,
             clinicId,
-            'CREATE'
+            'CREATE',
+            clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
           );
         } catch (error) {
           console.warn(`⚠️  Failed to create Provenance for MedicationStatement (non-blocking):`, error);

@@ -6,6 +6,7 @@
  */
 
 import { MedplumClient } from '@medplum/core';
+import type { Reference } from '@medplum/fhirtypes';
 import { validateFhirResource, logValidation } from './validation';
 import { applyMyCoreProfile } from './mycore';
 import { createProvenanceForResource } from './provenance-service';
@@ -22,7 +23,8 @@ export async function validateAndCreateWithProvenance<T extends { resourceType: 
   medplum: MedplumClient,
   resource: T,
   practitionerId?: string,
-  organizationId?: string
+  organizationId?: string,
+  accounts?: Reference[]
 ): Promise<T & { id: string }> {
   const profiledResource = applyMyCoreProfile(resource as any) as T;
 
@@ -49,7 +51,8 @@ export async function validateAndCreateWithProvenance<T extends { resourceType: 
       created.id,
       practitionerId,
       organizationId,
-      'CREATE'
+      'CREATE',
+      accounts
     );
     console.log(`✅ Created Provenance for ${resource.resourceType}/${created.id}`);
   } catch (error) {
@@ -96,7 +99,8 @@ export async function addProvenanceToResource(
   resourceId: string,
   practitionerId?: string,
   organizationId?: string,
-  activity: 'CREATE' | 'UPDATE' | 'DELETE' = 'CREATE'
+  activity: 'CREATE' | 'UPDATE' | 'DELETE' = 'CREATE',
+  accounts?: Reference[]
 ): Promise<void> {
   try {
     await createProvenanceForResource(
@@ -105,7 +109,8 @@ export async function addProvenanceToResource(
       resourceId,
       practitionerId,
       organizationId,
-      activity
+      activity,
+      accounts
     );
     console.log(`✅ Created Provenance for ${resourceType}/${resourceId}`);
   } catch (error) {

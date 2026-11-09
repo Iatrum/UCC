@@ -491,7 +491,8 @@ export async function saveConsultationToMedplum(
       encounter.id!,
       consultation.practitionerId,
       consultation.organizationId || clinicId,
-      'CREATE'
+      'CREATE',
+      clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
     );
     console.log(`✅ Created Provenance for consultation audit trail`);
   } catch (error) {
