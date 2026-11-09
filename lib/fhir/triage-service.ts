@@ -453,6 +453,7 @@ export async function saveTriageEncounter(
       },
       clinicId
     ));
+    await assignResourceToClinicTenant(client, 'Encounter', updatedEncounter, clinicTenant);
     encounterId = updatedEncounter.id!;
   } else {
     const encounter = await validateAndCreate(client, {
@@ -602,13 +603,14 @@ export async function updateTriageEncounter(
 
   const otherExtensions = (encounter as any).extension?.filter((ext: any) => ext.url !== TRIAGE_ENCOUNTER_EXTENSION_URL) || [];
 
-  await client.updateResource(withClinicIdentifier(
+  const updatedEncounter = await client.updateResource(withClinicIdentifier(
     {
       ...(encounter as any),
       extension: [...otherExtensions, triageExt],
     },
     clinicId
   ));
+  await assignResourceToClinicTenant(client, 'Encounter', updatedEncounter, clinicTenant);
 }
 
 export async function updateQueueStatusForPatient(
@@ -683,13 +685,14 @@ export async function updateQueueStatusForPatient(
     newExtensions.push(triageExt);
   }
 
-  await client.updateResource(withClinicIdentifier(
+  const updatedEncounter = await client.updateResource(withClinicIdentifier(
     {
       ...encounter,
       extension: newExtensions,
     },
     clinicId
   ));
+  await assignResourceToClinicTenant(client, 'Encounter', updatedEncounter, clinicTenant);
 }
 
 export async function getActiveTriageEncounter(
