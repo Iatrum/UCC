@@ -162,7 +162,8 @@ export async function createImagingOrder(
           serviceRequest.id,
           order.orderedBy?.startsWith('Practitioner/') ? order.orderedBy.split('/')[1] : undefined,
           clinicId,
-          'CREATE'
+          'CREATE',
+          clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
         );
         console.log(`✅ Created Provenance for ServiceRequest/${serviceRequest.id}`);
       } catch (error) {
@@ -254,7 +255,8 @@ export async function receiveImagingStudy(
         imagingStudy.id,
         undefined, // Could extract from serviceRequest.requester if needed
         undefined,
-        'CREATE'
+        'CREATE',
+        accountRefs
       );
       console.log(`✅ Created Provenance for ImagingStudy/${imagingStudy.id}`);
     } catch (error) {
@@ -335,7 +337,8 @@ export async function createImagingReport(
         report.id,
         radiologist ? undefined : undefined, // Could parse radiologist ID if provided
         undefined,
-        'CREATE'
+        'CREATE',
+        accountRefs
       );
       console.log(`✅ Created Provenance for DiagnosticReport/${report.id}`);
     } catch (error) {
