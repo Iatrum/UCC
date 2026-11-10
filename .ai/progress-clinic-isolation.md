@@ -36,3 +36,5 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - Dev-based worktree created at `/workspace/ucc-pr-isolation-1`, branch `ai/task-isolation-1`; cherry-picked Task 080 documentation prerequisite and Task 090 milestones only. Shared-note conflicts resolved by preserving dev notes and appending task entries. Integration lint PASS.
 
 - Publication complete: normal push, one draft PR #230, base dev; live MERGEABLE / UNSTABLE at 2026-11-10T15:39:40+08:00. No merge. Unrelated root working-tree files left untouched.
+
+- 2026-11-11T00:19+08:00 Task 091 independent review done (separate agent, read-only): **APPROVE**, no new MAJOR/MINOR beyond the two already-disclosed deferred MAJOR findings (both independently re-confirmed accurate and correctly out-of-scope for Phase 1). Full findings in `.ai/REVIEW-task-isolation-1.md` "Independent review" section. PR #230 re-confirmed live MERGEABLE/CLEAN; unchanged, no cherry-pick/push needed this round. Phase 2 (actual membership migration) remains the next step and is still blocked on treating the two deferred MAJORs as required prerequisites, not this review.
