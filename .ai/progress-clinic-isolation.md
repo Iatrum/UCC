@@ -14,7 +14,7 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - [x] Phase 1.5: actual function updatePractitionerInMedplum re-derives full multi-clinic access[], atomic with roles; explicit empty policy for zero clinics; admin and unrelated grants preserved. Lint PASS; live disposable e2e passed assignment union/revocation, custom grants, zero clinics and reassigning after zero clinics.
 - [x] e2e: clinic-check.ts extended (433 historical missing / 0 invalid); clinic-isolation.spec.ts PASS (four disposable clinics, multi-clinic union/revocation/zero, Provenance, all three Encounter updates).
 - [ ] Gate task-isolation-1 (baseline 22/23+)
-- [ ] REVIEW-task-isolation-1.md (self security review)
+- [x] REVIEW-task-isolation-1.md drafted (two deferred MAJOR findings, Phase 2 limitations; final gate pending).
 - [ ] CHANGELOG + STATE + commit on ai-work
 - [ ] worktree /workspace/ucc-pr-isolation-1, draft PR ai/task-isolation-1 -> dev
 
@@ -29,3 +29,5 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - Codex takeover: Phase 1.4 was already committed (f1d95b6), preserved. Phase 1.5 implemented and lint passed. Focused test reached Encounter checks after passing clinic access and Provenance; corrected legacy fixture to include the triage extension so save reuses the original Encounter rather than creating a new visit. No app stamping defect found. Full gate not yet run.
 
 - Focused run PASS (1/1, 5.7s). Empty deny policy is validated before use so a same-name policy with grants fails closed. Historical inventory remains report-only until Phase 2; strict mode available.
+
+- Milestones committed: 36a9f88 (Phase 1.5, including fail-closed validation of empty policy), 532b46b (focused isolation e2e and extended inventory). Final gate `task-isolation-1` started in the foreground, no background command and no second dev server.
