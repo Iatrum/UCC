@@ -146,7 +146,8 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
           serviceRequest.id,
           order.orderedBy?.startsWith('Practitioner/') ? order.orderedBy.split('/')[1] : undefined,
           clinicId,
-          'CREATE'
+          'CREATE',
+          clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
         );
         console.log(`✅ Created Provenance for ServiceRequest/${serviceRequest.id}`);
       } catch (error) {
@@ -256,7 +257,7 @@ export async function receiveLabResults(
   for (const obs of observations) {
     if (obs.id) {
       try {
-        await createProvenanceForResource(client, 'Observation', obs.id, undefined, undefined, 'CREATE');
+        await createProvenanceForResource(client, 'Observation', obs.id, undefined, undefined, 'CREATE', accountRefs);
       } catch (error) {
         console.warn(`⚠️  Failed to create Provenance for Observation/${obs.id} (non-blocking):`, error);
       }
@@ -283,7 +284,8 @@ export async function receiveLabResults(
         diagnosticReport.id,
         undefined,
         undefined,
-        'CREATE'
+        'CREATE',
+        accountRefs
       );
       console.log(`✅ Created Provenance for DiagnosticReport/${diagnosticReport.id}`);
     } catch (error) {
