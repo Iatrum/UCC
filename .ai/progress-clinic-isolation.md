@@ -1,6 +1,6 @@
 # Progress — Task 090 clinic clinical isolation (Phase 0 + Phase 1)
 
-Status: Phase 0 + Phase 1 implemented and verified 2026-11-10; draft PR publication pending. Phase 2 not started.
+Status: Phase 0 + Phase 1 implemented and verified 2026-11-10; draft PR #230 published; independent Claude review pending. Phase 2 not started.
 
 ## Plan
 See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md`, DECISIONS D33-D35.
@@ -16,7 +16,7 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - [x] Gate task-isolation-1 ran once in foreground: initial OVERALL FAIL (cold composer compile / serial skips); unchanged-code workflow replay 10/11; composite 23/24, no new failures, comparator exit 0. Original gate evidence preserved.
 - [x] REVIEW-task-isolation-1.md drafted (two deferred MAJOR findings, Phase 2 limitations; gate + focused recovery evidence recorded).
 - [x] CHANGELOG + STATE updated with validation and task status.
-- [ ] worktree /workspace/ucc-pr-isolation-1, draft PR ai/task-isolation-1 -> dev
+- [x] worktree /workspace/ucc-pr-isolation-1, draft PR ai/task-isolation-1 -> dev: https://github.com/Iatrum/UCC/pull/230 (DRAFT, OPEN, live MERGEABLE; mergeStateStatus UNSTABLE at 15:39 MYT).
 
 ## Notes / findings log
 - 2026-11-10: Resumed after two dead sessions (API connection errors, almost nothing committed). Confirmed env: Medplum :8113 up, dev :3210 up, only uncommitted WIP was a partial `lib/fhir/provenance-service.ts` edit — committed as part of Phase 1.2.
@@ -24,7 +24,7 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - Phase 0 PASSED both questions (full writeup in research doc + D36). Bonus finding: write-side cross-clinic containment gap (staffA could POST an Observation onto another clinic's patient, 201 not 403) — documented, NOT fixed here (out of phase-1 scope), logged in BACKLOG + will go in REVIEW-task-isolation-1.md as a MAJOR.
 - Phases 1.1-1.3 done and committed individually (one commit each, per AGENTS.md "small tasks, one commit each"). Lint clean after each (`bun run lint`).
 - Phase 1.4: wrote + dry-ran `scripts/access-policy/backfill-clinic-accounts.mjs`. Discovered and worked around the extended-mode read gap (see checklist above) within the script itself (adds `X-Medplum: extended` header on every request). Decided NOT to also fix the app's own `getResourceAccountReferences` call sites in this task — that's a second, independent, SDK-level fix beyond phase 1's plumbing scope; documented instead.
-- Remaining: publish the prepared dev-based draft PR and record its URL/live mergeability. All implementation milestones committed; no backfill applied.
+- Complete: draft PR #230 published and live mergeability recorded. Independent Claude review pending; no backfill applied.
 
 - Codex takeover: Phase 1.4 was already committed (f1d95b6), preserved. Phase 1.5 implemented and lint passed. Focused test reached Encounter checks after passing clinic access and Provenance; corrected legacy fixture to include the triage extension so save reuses the original Encounter rather than creating a new visit. No app stamping defect found. Full gate not yet run.
 
@@ -34,3 +34,5 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 
 - Final verification: single full gate failed at a fixed 15s composer wait while dev was still compiling; focused serial workflow replay without code changes passed all functional tests (10/11, baseline summary only). Composite original API/isolation + replay = 23/24, comparator exit 0. See REVIEW and `/workspace/ai-logs/task-isolation-1/RECOVERY.md`; do not claim a clean full-gate PASS.
 - Dev-based worktree created at `/workspace/ucc-pr-isolation-1`, branch `ai/task-isolation-1`; cherry-picked Task 080 documentation prerequisite and Task 090 milestones only. Shared-note conflicts resolved by preserving dev notes and appending task entries. Integration lint PASS.
+
+- Publication complete: normal push, one draft PR #230, base dev; live MERGEABLE / UNSTABLE at 2026-11-10T15:39:40+08:00. No merge. Unrelated root working-tree files left untouched.
