@@ -3,7 +3,7 @@
  * Uses Medplum client credentials to access all organisations.
  */
 import type { MedplumClient } from "@medplum/core";
-import type { AccessPolicy, HealthcareService, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
+import type { AccessPolicy, BundleEntry, HealthcareService, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
 import { ConflictError } from "@/lib/server/route-helpers";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
@@ -80,9 +80,15 @@ async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<st
 function withClinicMembershipAccess(
   membership: ProjectMembership,
   policyReference: string,
-  parameters: NonNullable<ProjectMembership["access"]>[number]["parameter"]
+  parameters: NonNullable<ProjectMembership["access"]>[number]["parameter"][]
 ): ProjectMembership {
-  const otherAccess = (membership.access || []).filter(
+  // Preserve explicit grants unrelated to the clinic staff policy, including
+  // the legacy singular policy. Never silently discard a custom policy.
+  const previousAccess = [...(membership.access || [])];
+  if (membership.accessPolicy && !previousAccess.some(
+    (entry) => entry.policy.reference === membership.accessPolicy?.reference
+  )) previousAccess.push({ policy: membership.accessPolicy });
+  const otherAccess = previousAccess.filter(
     (entry) => entry.policy.reference !== policyReference
   );
 
@@ -91,10 +97,10 @@ function withClinicMembershipAccess(
     accessPolicy: undefined,
     access: [
       ...otherAccess,
-      {
+      ...parameters.map((parameter) => ({
         policy: { reference: policyReference },
-        parameter: parameters,
-      },
+        parameter,
+      })),
     ],
   };
 }
@@ -612,45 +618,70 @@ export async function updatePractitionerInMedplum(
     ],
   };
 
-  await medplum.updateResource(updated);
-
-  // Sync PractitionerRole assignments to match input.organizationIds.
-  const currentRoles = await medplum.searchResources("PractitionerRole", {
-    practitioner: `Practitioner/${id}`,
-    _count: "100",
-  });
-
-  const currentOrgIds = new Set<string>();
-  const rolesByOrgId = new Map<string, string>();
-  for (const role of currentRoles ?? []) {
-    const orgId = getIdFromReference(role.organization?.reference);
-    if (orgId && role.id) {
-      currentOrgIds.add(orgId);
-      rolesByOrgId.set(orgId, role.id);
-    }
-  }
-
+  // Prepare everything before writing; roles and login access must change together.
+  const currentRoles = [];
+  for await (const page of medplum.searchResourcePages("PractitionerRole", {
+    practitioner: `Practitioner/${id}`, _count: "100",
+  })) currentRoles.push(...page);
   const targetOrgIds = new Set(input.organizationIds);
+  const membership = (await getMembershipsByProfileRef(medplum)).get(`Practitioner/${id}`);
+  const entries: BundleEntry[] = [{
+    resource: updated,
+    request: {
+      method: "PUT", url: `Practitioner/${id}`,
+      ifMatch: existing.meta?.versionId ? `W/"${existing.meta.versionId}"` : undefined,
+    },
+  }];
 
-  for (const orgId of Array.from(currentOrgIds)) {
-    if (!targetOrgIds.has(orgId)) {
-      const roleId = rolesByOrgId.get(orgId);
-      if (roleId) {
-        await medplum.deleteResource("PractitionerRole", roleId);
+  if (membership?.id && !membership.admin) {
+    const policyReference = await getClinicStaffPolicyReference(medplum);
+    const parameters = await Promise.all(
+      [...targetOrgIds].map((orgId) => getClinicPolicyParameters(medplum, orgId))
+    );
+    const nextMembership = withClinicMembershipAccess(membership, policyReference, parameters);
+    if (!nextMembership.access?.length) {
+      // No policy at all invokes Medplum's legacy full-access fallback. An
+      // explicit empty policy denies access when the final clinic is removed.
+      const denyPolicy = await medplum.createResourceIfNoneExist<AccessPolicy>({
+        resourceType: "AccessPolicy", name: "UCC No Clinic Access Policy", resource: [],
+      }, new URLSearchParams({ name: "UCC No Clinic Access Policy" }).toString());
+      if (!denyPolicy.id || denyPolicy.resource?.length) {
+        throw new ConflictError("The no-clinic policy must exist and grant no resources.");
       }
+      nextMembership.access = [{ policy: { reference: `AccessPolicy/${denyPolicy.id}` } }];
     }
+    entries.push({
+      resource: nextMembership,
+      request: {
+        method: "PUT", url: `ProjectMembership/${membership.id}`,
+        ifMatch: membership.meta?.versionId ? `W/"${membership.meta.versionId}"` : undefined,
+      },
+    });
   }
 
-  for (const orgId of Array.from(targetOrgIds)) {
-    if (!currentOrgIds.has(orgId)) {
-      await medplum.createResource({
-        resourceType: "PractitionerRole",
-        active: true,
+  const retainedOrgIds = new Set<string>();
+  for (const role of currentRoles) {
+    const orgId = getIdFromReference(role.organization?.reference);
+    if (orgId && targetOrgIds.has(orgId) && role.active !== false && !retainedOrgIds.has(orgId)) {
+      retainedOrgIds.add(orgId);
+    } else if (role.id) {
+      entries.push({ request: {
+        method: "DELETE", url: `PractitionerRole/${role.id}`,
+        ifMatch: role.meta?.versionId ? `W/"${role.meta.versionId}"` : undefined,
+      } });
+    }
+  }
+  for (const orgId of targetOrgIds) {
+    if (!retainedOrgIds.has(orgId)) entries.push({
+      resource: {
+        resourceType: "PractitionerRole", active: true,
         practitioner: { reference: `Practitioner/${id}` },
         organization: { reference: `Organization/${orgId}` },
-      });
-    }
+      },
+      request: { method: "POST", url: "PractitionerRole" },
+    });
   }
+  await medplum.executeBatch({ resourceType: "Bundle", type: "transaction", entry: entries });
 
   const detail = await getPractitionerFromMedplum(id);
   if (!detail) {
@@ -900,7 +931,7 @@ export async function invitePractitionerToMedplum(
   if (existingMembershipId) {
     const membership = await medplum.readResource("ProjectMembership", existingMembershipId) as ProjectMembership;
     await medplum.updateResource(
-      withClinicMembershipAccess(membership, clinicPolicyReference, clinicPolicyParameters)
+      withClinicMembershipAccess(membership, clinicPolicyReference, [clinicPolicyParameters])
     );
   } else if (membershipUserRef) {
     await medplum.createResource<ProjectMembership>({
