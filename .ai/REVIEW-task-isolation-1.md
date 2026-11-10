@@ -4,7 +4,7 @@ Scope: Phase 0 verification and Phase 1 plumbing only. Single-author Codex self-
 
 ## Verdict
 
-Phase 1 implementation is suitable for a draft review, subject to the final gate recorded below. This does **not** establish complete clinical isolation for existing staff/data: Phase 2 remains necessary and the two MAJOR findings below remain open.
+Phase 1 implementation is suitable for a draft review, with the validation limitation recorded below. This does **not** establish complete clinical isolation for existing staff/data: Phase 2 remains necessary and the two MAJOR findings below remain open.
 
 ## Open findings, explicitly deferred by task scope
 
@@ -31,4 +31,7 @@ Phase 1 implementation is suitable for a draft review, subject to the final gate
 
 - Focused isolation e2e: PASS (1/1).
 - Extended local clinic inventory: 433 historical missing accounts, 0 invalid stamped accounts before the full gate.
-- Final foreground `e2e/scripts/check-all.sh task-isolation-1`: pending; append measured result after completion.
+- Final foreground `e2e/scripts/check-all.sh task-isolation-1` ran **once**: lint/build/clinics 0, isolation e2e PASS, initial full e2e 18/24; command returned OVERALL FAIL. Composer test 06 was still Saving/Compiling after its fixed 15-second wait, then serial tests 07-11 skipped. Captured lab-order request was incomplete at teardown.
+- Without code changes, replayed only `workflow.spec.ts`: **10/11**, with only the existing known-bug summary failing. Composer, lab ingest, documents, checkout and page smoke all pass. This supports a cold compilation timing failure rather than a Phase 1 regression.
+- Composite verification (original API/isolation results plus workflow replay): **23/24**, baseline comparator exit 0, no new failures. Original failed gate evidence retained unchanged; this is **not** a clean full-gate PASS. Evidence: `/workspace/ai-logs/task-isolation-1/{summary.txt,results.json,reconciled-results.json,RECOVERY.md}` and `/workspace/ai-logs/task-isolation-1-workflow-rerun/results.json`.
+- PR worktree on current origin/dev: `bun run lint` PASS after cherry-pick integration. No second dev server or full-gate replay.
