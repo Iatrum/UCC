@@ -6,11 +6,11 @@ Status: started 2026-11-09. Resume from here if interrupted.
 See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md`, DECISIONS D33-D35.
 
 ## Checklist
-- [x] Phase 0: disposable-identity script answering both questions (e2e evidence + research doc + decision) — PASS both, verdict D36: proceed to Phase 1. New write-side containment finding logged (BACKLOG, out of scope for Phase 1).
-- [ ] Phase 1.1: Provenance added to UCC Clinic Staff Policy (setup-access-policies.ts)
-- [ ] Phase 1.2: createProvenanceForResource optional clinicTenant param + ~9 call sites
-- [ ] Phase 1.3: triage-service.ts 3 update paths stamp meta.accounts
-- [ ] Phase 1.4: backfill-clinic-accounts.mjs (dry-run only, not applied)
+- [x] Phase 0: disposable-identity script answering both questions (e2e evidence + research doc + decision) — PASS both, verdict D36: proceed to Phase 1. New write-side containment finding logged (BACKLOG, out of scope for Phase 1). Commit 73f9395.
+- [x] Phase 1.1: Provenance added to UCC Clinic Staff Policy (setup-access-policies.ts). Commit 212a639.
+- [x] Phase 1.2: createProvenanceForResource optional accounts param + all call sites. Commit a1e89b9.
+- [x] Phase 1.3: triage-service.ts 3 update paths stamp meta.accounts. Commit c328809.
+- [x] Phase 1.4: backfill-clinic-accounts.mjs (dry-run only, not applied) — written, dry-run verified against live local Medplum (checked=3955, alreadyStamped=3522, updated=433 would-stamp, unresolved=0). Found + fixed-in-script-only a real discovery: server strips meta.accounts/meta.account from every non-extended read (`X-Medplum: extended` header required) — without it the script saw alreadyStamped=0 (false). New BACKLOG/REVIEW finding: the APP's own `getResourceAccountReferences()` read-then-reuse call sites (imaging-service.ts receiveImagingStudy/createImagingReport, lab-service.ts's `accountRefs` for Observation/DiagnosticReport) read resources via the plain (non-extended) admin MedplumClient, so `accountRefs` is always empty in practice today -- those specific propagation calls (and my own Phase 1.2 Provenance-account-stamping at those same sites) are currently no-ops. NOT fixed here (requires SDK-level header support investigation, out of phase-1 scope) -- documented as a MAJOR in BACKLOG + will go in REVIEW-task-isolation-1.md. Committing script next.
 - [ ] Phase 1.5: updatePractitionerFromMedplum re-derives access[]
 - [ ] e2e: clinic-check.ts extended + clinic-isolation.spec.ts (phase-1-applicable parts)
 - [ ] Gate task-isolation-1 (baseline 22/23+)
@@ -19,7 +19,9 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - [ ] worktree /workspace/ucc-pr-isolation-1, draft PR ai/task-isolation-1 -> dev
 
 ## Notes / findings log
-- 2026-11-10: Resumed after two dead sessions (API connection errors, almost nothing committed). Confirmed env: Medplum :8113 up, dev :3210 up, only uncommitted WIP was a partial `lib/fhir/provenance-service.ts` edit (optional `accounts` param on `createProvenance`/`createProvenanceForResource`, not yet wired to any call site or policy entry — safe, inert, additive).
+- 2026-11-10: Resumed after two dead sessions (API connection errors, almost nothing committed). Confirmed env: Medplum :8113 up, dev :3210 up, only uncommitted WIP was a partial `lib/fhir/provenance-service.ts` edit — committed as part of Phase 1.2.
 - Phase 0 script written: `scripts/access-policy/test-clinic-policy-superadmin.mjs`. Had to run `bun scripts/setup-access-policies.ts` first — the real "UCC Clinic Staff Policy" was missing from this project (local Medplum restore on 8 Nov predates/lost it); idempotent upsert, same as every environment's setup, not a data change.
 - Phase 0 PASSED both questions (full writeup in research doc + D36). Bonus finding: write-side cross-clinic containment gap (staffA could POST an Observation onto another clinic's patient, 201 not 403) — documented, NOT fixed here (out of phase-1 scope), logged in BACKLOG + will go in REVIEW-task-isolation-1.md as a MAJOR.
-- Next: finish Phase 1.2 (provenance-service.ts call sites — lab/imaging/consultation/patient-service.ts have clinicTenant/accountRefs in scope already; fhir-helpers.ts's two helpers are dead code, no callers, just thread the param through), then 1.1 (policy entry), 1.3 (triage-service.ts), 1.4 (backfill script, dry-run), 1.5 (admin-service.ts access[] re-derive). Commit after each phase-1 sub-step, not one giant commit.
+- Phases 1.1-1.3 done and committed individually (one commit each, per AGENTS.md "small tasks, one commit each"). Lint clean after each (`bun run lint`).
+- Phase 1.4: wrote + dry-ran `scripts/access-policy/backfill-clinic-accounts.mjs`. Discovered and worked around the extended-mode read gap (see checklist above) within the script itself (adds `X-Medplum: extended` header on every request). Decided NOT to also fix the app's own `getResourceAccountReferences` call sites in this task — that's a second, independent, SDK-level fix beyond phase 1's plumbing scope; documented instead.
+- Next: commit Phase 1.4, then 1.5 (admin-service.ts access[] re-derive), e2e additions, gate, REVIEW doc, CHANGELOG/STATE, final commit, worktree+PR. Moving quickly, no more side-investigations — stay inside phase-1 scope for the rest of this task.
