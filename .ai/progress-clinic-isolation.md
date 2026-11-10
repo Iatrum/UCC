@@ -12,7 +12,7 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - [x] Phase 1.3: triage-service.ts 3 update paths stamp meta.accounts. Commit c328809.
 - [x] Phase 1.4: backfill-clinic-accounts.mjs (dry-run only, not applied) — written, dry-run verified against live local Medplum (checked=3955, alreadyStamped=3522, updated=433 would-stamp, unresolved=0). Found + fixed-in-script-only a real discovery: server strips meta.accounts/meta.account from every non-extended read (`X-Medplum: extended` header required) — without it the script saw alreadyStamped=0 (false). New BACKLOG/REVIEW finding: the APP's own `getResourceAccountReferences()` read-then-reuse call sites (imaging-service.ts receiveImagingStudy/createImagingReport, lab-service.ts's `accountRefs` for Observation/DiagnosticReport) read resources via the plain (non-extended) admin MedplumClient, so `accountRefs` is always empty in practice today -- those specific propagation calls (and my own Phase 1.2 Provenance-account-stamping at those same sites) are currently no-ops. NOT fixed here (requires SDK-level header support investigation, out of phase-1 scope) -- documented as a MAJOR in BACKLOG + will go in REVIEW-task-isolation-1.md. Committed f1d95b6 (already present at takeover).
 - [x] Phase 1.5: actual function updatePractitionerInMedplum re-derives full multi-clinic access[], atomic with roles; explicit empty policy for zero clinics; admin and unrelated grants preserved. Lint PASS; live disposable e2e passed assignment union/revocation, custom grants, zero clinics and reassigning after zero clinics.
-- [ ] e2e: clinic-check.ts extended + clinic-isolation.spec.ts (phase-1-applicable parts)
+- [x] e2e: clinic-check.ts extended (433 historical missing / 0 invalid); clinic-isolation.spec.ts PASS (four disposable clinics, multi-clinic union/revocation/zero, Provenance, all three Encounter updates).
 - [ ] Gate task-isolation-1 (baseline 22/23+)
 - [ ] REVIEW-task-isolation-1.md (self security review)
 - [ ] CHANGELOG + STATE + commit on ai-work
@@ -27,3 +27,5 @@ See `.ai/PLAN-clinic-isolation.md` phases 0-1, `.ai/research/clinic-isolation.md
 - Next: commit Phase 1.4, then 1.5 (admin-service.ts access[] re-derive), e2e additions, gate, REVIEW doc, CHANGELOG/STATE, final commit, worktree+PR. Moving quickly, no more side-investigations — stay inside phase-1 scope for the rest of this task.
 
 - Codex takeover: Phase 1.4 was already committed (f1d95b6), preserved. Phase 1.5 implemented and lint passed. Focused test reached Encounter checks after passing clinic access and Provenance; corrected legacy fixture to include the triage extension so save reuses the original Encounter rather than creating a new visit. No app stamping defect found. Full gate not yet run.
+
+- Focused run PASS (1/1, 5.7s). Empty deny policy is validated before use so a same-name policy with grants fails closed. Historical inventory remains report-only until Phase 2; strict mode available.
