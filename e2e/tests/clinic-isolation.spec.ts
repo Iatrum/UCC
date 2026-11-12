@@ -16,7 +16,7 @@ const { saveTriageEncounter, updateTriageEncounter, updateQueueStatusForPatient 
 
 // Disposable fake clinics and identity only. Never record credentials or bodies.
 test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot: 'off' });
-test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter stamping', async () => {
+test('clinic write containment, reassignment, Provenance and Encounter stamping', async () => {
   expect(BASE).toBe('http://localhost:3210');
   expect(MEDPLUM.replace(/\/$/, '')).toBe('http://localhost:8113');
   // Direct service calls need the same local service credentials as Next.
@@ -85,6 +85,8 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       return rule.criteria?.includes('_compartment=') ? clinicCompartmentRules(rule.resourceType) : [rule];
     });
     const policy = await create({ resourceType: 'AccessPolicy', name: `Fake write isolation ${suffix}`, resource });
+    // Legacy single-clinic grants must work before parameter refresh.
+    membership!.access![0].parameter = membership!.access![0].parameter?.filter(p => p.name !== 'clinicWriteAccounts');
     membership!.access![0].policy = { reference: `AccessPolicy/${policy.id}` };
     // Add a harmless custom legacy grant, proving reassignment preserves it.
     const custom = await create({ resourceType: 'AccessPolicy', name: `Fake custom ${suffix}`, resource: [{ resourceType: 'ValueSet', readonly: true }] });
@@ -145,15 +147,30 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
         headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', ...(extendedMode ? { 'X-Medplum': 'extended' } : {}) },
         body: JSON.stringify(resource),
       });
+      let created: any;
       // Track unexpected successes too, so negative tests cannot leave fixtures.
       if (response.ok) {
-        const created = await response.json();
+        created = await response.json();
         owned.push({ resourceType: created.resourceType, id: created.id });
       }
       expect(response.status, `${resource.resourceType} create authorization`).toBe(expected);
+      return created;
     };
     const observationFor = (index: number) => ({ resourceType: 'Observation', status: 'final', code: { text: 'Fake authorization probe' }, subject: { reference: `Patient/${clinics[index].patient.id}` } });
-    await postAsStaff(observationFor(0), 201);
+    const ownObservation = await postAsStaff(observationFor(0), 201);
+    const putAsStaff = async (resource: any, expected: number) => {
+      const response = await fetch(`${MEDPLUM.replace(/\/$/, '')}/fhir/R4/${resource.resourceType}/${resource.id}`, {
+        method: 'PUT', redirect: 'error',
+        headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', 'X-Medplum': 'extended' },
+        body: JSON.stringify(resource),
+      });
+      expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
+    };
+    await putAsStaff({ ...ownObservation, status: 'amended' }, 200);
+    await putAsStaff({ ...ownObservation, subject: observationFor(1).subject }, 403);
+    await putAsStaff({ ...clinics[1].observation, subject: observationFor(0).subject }, 403);
+    await postAsStaff({ ...observationFor(0), performer: [{ reference: `Patient/${clinics[1].patient.id}` }] }, 403);
+    await postAsStaff({ resourceType: 'Observation', status: 'final', code: { text: 'Fake unattached' }, meta: { accounts: [{reference:`HealthcareService/${clinics[0].account.id}`}] } }, 403);
     // Reproduces Phase 0 exactly. Forged app identifiers and protected metadata
     // must not turn a foreign patient into an authorized write.
     await postAsStaff(observationFor(1), 403);
@@ -177,12 +194,20 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     await postAsStaff(observationFor(2), 403);
     // The app validates its selected clinic even when this identity has both.
     await expect(createLabOrder({ patientId: clinics[1].patient.id, tests: ['Fake'] }, staff, clinics[0].slug)).rejects.toThrow();
-    await postAsStaff({ resourceType: 'ServiceRequest', status: 'active', intent: 'order', subject: { reference: `Patient/${clinics[1].patient.id}` } }, 201);
     await postAsStaff({ resourceType: 'ServiceRequest', status: 'active', intent: 'order', subject: { reference: `Patient/${clinics[1].patient.id}` } }, 201, false);
-    await postAsStaff({ resourceType: 'ServiceRequest', meta: {profile:['http://fhir.hie.moh.gov.my/StructureDefinition/ServiceRequest-my-core']}, status: 'active', intent: 'order', subject: { reference: `Patient/${clinics[1].patient.id}` } }, 201, false);
-    const sameLab = await createLabOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, tests: ['Fake'] }, staff, clinics[1].slug);
+    // Full application order shape must also pass direct policy enforcement.
+    await postAsStaff({ resourceType: 'ServiceRequest',
+      identifier: [{ system: 'clinic', value: clinics[1].slug }],
+      status: 'active', intent: 'order', priority: 'routine',
+      code: {coding:[{system:'http://loinc.org', code:'Fake', display:'Fake'}], text:'Fake'},
+      subject: {reference:`Patient/${clinics[1].patient.id}`},
+      encounter: {reference:`Encounter/${clinics[1].encounter.id}`},
+      authoredOn: new Date().toISOString(),
+      meta:{profile:['http://fhir.hie.moh.gov.my/StructureDefinition/ServiceRequest-my-core']},
+    }, 201);
+    const sameLab = await createLabOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, tests: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
     owned.push({ resourceType: 'ServiceRequest', id: sameLab });
-    const sameImaging = await createImagingOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, procedures: ['Fake'] }, staff, clinics[1].slug);
+    const sameImaging = await createImagingOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, procedures: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
     owned.push({ resourceType: 'ServiceRequest', id: sameImaging });
     await assign([1]);
     await visible([1]);
