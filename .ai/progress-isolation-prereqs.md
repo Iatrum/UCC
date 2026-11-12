@@ -1,6 +1,6 @@
 # Task 100 — Phase 2 prerequisites
 
-Current status: fixes committed; single full gate failed during local backend outage; focused recovery composite 37/38 (baseline summary only), comparator 0. Draft publication in progress.
+Current status: fixes committed; single full gate failed during local backend outage; focused recovery composite 37/38 (baseline summary only), comparator 0. Draft PR #231 published, live MERGEABLE; independent review and clean single full-gate evidence remain before leaving draft.
 
 2026-11-11: In progress on ai-work. Read AGENTS, STATE, plan, prior self/independent review, progress, research, D33-D36 and backlog. Pre-existing STATE addition, bun.lockb edit, deleted gitlink and untracked notes retained. No migration/backfill or production access.
 
@@ -32,3 +32,5 @@ Without application changes, running focused api+isolation+workflow recovery aga
 2026-11-12 recovery milestone: core API 12/12 and isolation 1/1 PASS, then registration hit local auth 429; separate workflow replay 10/11 (baseline summary only), including both composers, lab ingest, docs, checkout and full page smoke. X-ray fresh replay 5/5; recovered clinic inventory exit 0. No application changes since the single failed full gate. Last notification replay is running with PACS-off test precondition and automatic EXIT restore of fake module settings. Draft publication follows; do not claim the failed full gate itself passed.
 
 2026-11-12 final recovery complete: notification replay PASS 1/1 (1.8m) with PACS-off precondition; EXIT trap restored original fake demo PACS=true/POCT=false, verified by read. Separate focused evidence assembled as /workspace/ai-logs/task-isolation-2/recovery-composite-results.json: 37/38, zero skipped, ONLY baseline known-bug summary fails; baseline comparator exit 0. This is explicitly COMPOSITE recovery, not a clean full-gate PASS. No code changes during recovery; no second check-all. Ready for draft publication with this limitation disclosed.
+
+Publication complete: https://github.com/Iatrum/UCC/pull/231 (OPEN DRAFT, ai/task-isolation-2 -> dev). Live GitHub mergeable=MERGEABLE, mergeStateStatus=UNSTABLE. Task-only dev-based worktree, normal push; never merged or force-pushed. STATE records the URL and live result. No Phase 2 migration/backfill/policy deployment.
