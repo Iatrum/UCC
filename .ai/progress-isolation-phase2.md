@@ -32,9 +32,11 @@ includes merged PR #230, Phase 0+1).
       before it lands). `node --check` syntax-validated only — never executed, no server reachable
       from this plan-only task.
 - [x] This progress file.
-- [ ] `.ai/DECISIONS.md` entry (D37) recording the Task-100-dependency finding.
-- [ ] `.ai/STATE.md` round-log line.
-- [ ] `.ai/CHANGELOG.md` entry (docs/script-only, no user-facing behavior change).
+- [x] `.ai/DECISIONS.md` D37 recording the Task-100-dependency finding.
+- [x] `.ai/STATE.md` round-log line.
+- [x] `.ai/CHANGELOG.md`: no entry added, matching precedent — Task 080 (the earlier plan-only
+      isolation task) also added no CHANGELOG entry, since nothing user-facing changed; Task 090
+      (the implementation) got one. This task is plan+draft-script only, same category as 080.
 - [ ] Final commit + push to `origin/ai/plan-isolation-phase2` (no PR, no merge, per task brief).
 
 ## Notes
