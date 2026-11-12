@@ -16,7 +16,7 @@ import type {
   Patient as FHIRPatient,
 } from '@medplum/fhirtypes';
 import { createProvenanceForResource } from './provenance-service';
-import { validateAndCreate } from './fhir-helpers';
+import { validateAndCreate, validateAndCreateClinicOrder } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
 import { POCT_TESTS } from './lab-constants';
 import { POCT_TAG_SYSTEM, requireOnlineAnalyser } from './poct-device';
@@ -132,8 +132,8 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
       }] : undefined,
     };
     const serviceRequest = order.poct
-      ? await client.createResourceIfNoneExist(resource, new URLSearchParams({ identifier: `https://ucc.emr/poct/order-entry|${clinicId}:${order.encounterId}:${order.poct.entryId}` }).toString())
-      : await validateAndCreate<ServiceRequest>(client, resource);
+      ? await validateAndCreateClinicOrder(client, resource, new URLSearchParams({ identifier: `https://ucc.emr/poct/order-entry|${clinicId}:${order.encounterId}:${order.poct.entryId}` }).toString())
+      : await validateAndCreateClinicOrder(client, resource);
     await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
     
     serviceRequests.push(serviceRequest);
