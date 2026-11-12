@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createLabOrder, updateLabOrder, deleteLabOrder, type LabOrderRequest } from '@/lib/fhir/lab-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
+import { handleRouteError } from '@/lib/server/route-helpers';
+
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
@@ -39,16 +41,8 @@ export async function POST(request: NextRequest) {
       message: `Lab order created for ${body.tests.length} tests`,
     });
 
-  } catch (error: any) {
-    console.error('Error creating lab order:', error);
-    
-    return NextResponse.json(
-      {
-        error: 'Failed to create lab order',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return handleRouteError(error);
   }
 }
 

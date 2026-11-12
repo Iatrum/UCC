@@ -1,0 +1,29 @@
+# Task 100 — isolation prerequisites research (2026-11-11)
+
+## Versions and evidence
+
+package.json requests @medplum/core and fhirtypes ^5.1.13; installed package.json files and binary bun.lockb resolve 5.1.13. Server package.json copied read-only from the local container confirms 5.2.15. AGENTS' 5.2.8 is not the installed SDK. No dependency upgrade is included.
+
+Official versioned sources (downloaded to /workspace/ai-logs/task-isolation-2-research):
+- [5.1.13 access-policy guide](https://github.com/medplum/medplum/blob/v5.1.13/packages/docs/docs/access/access-policies.md): criteria, compartments and writeConstraint FHIRPath/%before/%after.
+- [5.1.13 SDK client](https://github.com/medplum/medplum/blob/v5.1.13/packages/core/src/client.ts): readResource accepts MedplumRequestOptions extending RequestInit. Use `{cache:'no-cache', headers:{'X-Medplum':'extended'}}` per read; no global client/header mutation. no-cache prevents an earlier plain read satisfying an extended read from the SDK cache.
+- [5.2.15 authorization matcher](https://github.com/medplum/medplum/blob/v5.2.15/packages/core/src/access.ts), also checked in 5.1.13: first matching resource rule wins. Resource-level compartment compares server-generated meta.compartment explicitly; criteria is evaluated separately. The legacy resource compartment field is deprecated but present and operational in BOTH installed versions. Do not use a global/top-level compartment: compound policies retain only one top-level compartment, unsafe for multi-clinic users.
+- [5.2.15 repository](https://github.com/medplum/medplum/blob/v5.2.15/packages/server/src/fhir/repo.ts), checked against local bundled server: writeResource computes accounts/compartments from referenced patients before isResourceWriteable; writeConstraint is then evaluated against that server-computed resource. Ordinary staff cannot supply protected meta.accounts, even with extended mode. The FHIRPath evaluator has no repository reference resolver here: do not invent a resolve()-based ownership constraint.
+- [Extended mode / set-accounts](https://www.medplum.com/docs/api/fhir/operations/set-accounts) and [CLI extended option](https://www.medplum.com/docs/cli): X-Medplum extended exposes private fields; confirmed in local removeHiddenFields source. It is a response-format option, not an authorization bypass.
+- [FHIR R4 security](https://hl7.org/fhir/R4/security.html) and [Patient compartment](https://hl7.org/fhir/R4/compartmentdefinition-patient.html): FHIR does not itself enforce tenant authorization. Account inheritance follows patient-compartment references; Provenance target references do not inherit target accounts.
+- [OWASP A01](https://owasp.org/Top10/A01_2021-Broken_Access_Control/) and [Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html): authorize object relationships server-side on each request, deny by default, test direct API and application paths.
+- [Next.js route handlers](https://nextjs.org/docs/app/api-reference/file-conventions/route), [React reference](https://react.dev/reference/react): existing server services/route error mapping retained; no UI changes.
+
+## Decision
+
+Use BOTH policy and application checks. Keep criteria for reads. For patient-linked creates use a writeConstraint requiring nonempty server-computed accounts and every account to match the server-derived assigned-clinic union. Update/delete additionally use the installed resource-level compartment field to select an existing authorized record. All access entries carry the same anchored, escaped clinicWriteAccounts regex; single-clinic grants without that new parameter retain an exact clinicAccount fallback. This avoids the first-rule problem of adding writeConstraint to criteria-only compound policy entries. Deny unattached patient-related creates; Patients themselves retain create permission because patient creation precedes server-side account stamping. Standalone clinic configuration types keep their existing behavior. No real membership migration is needed to deploy a policy definition change.
+
+Provenance cannot validate target ownership with the installed synchronous FHIRPath evaluator. Remove direct staff create permission; the existing server-only helper reads each local target with the acting client's permissions before using the admin client to create/stamp its audit record. Never fall back to privileged target reads on denial. This addresses the independent review's unscoped Provenance finding too.
+
+App order services additionally validate the Patient and optional Encounter against the selected clinic and each other before the first create, including for an unrestricted/admin client. Existing consultation/triage paths already check their patient clinic. No device-key redesign, migration, backfill apply, module or navigation work is included.
+
+Validation and limitations will be appended after live disposable tests. Deprecated resource-level compartments are deliberate version-specific compatibility; re-verify before any Medplum upgrade. Policies only protect memberships using them; missing-policy migration is still Phase 2.
+
+## Resume verification (12 Nov)
+
+The unfinished contains-based union expression evaluated in the wrong FHIRPath focus and rejected second-clinic writes. Verified with installed evalFhirPath and changed to reference.matches with an anchored union generated only from server-resolved HealthcareService IDs (dots escaped). The first live focused run caught this; the next passed single/multi-clinic Observation creates and foreign/forged-metadata denial, but found a same-clinic ServiceRequest service-path failure still under investigation. A rapid rerun hit the documented local login rate limit; tests remain sequential. No existing policy or membership has been changed: e2e substitutes a disposable policy on its disposable identity only.

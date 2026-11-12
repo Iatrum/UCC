@@ -20,6 +20,7 @@ import { validateAndCreate } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 import {
+  assertOrderClinic,
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
@@ -67,6 +68,7 @@ function resolveLabTest(test: LabOrderTest): { code: string; display: string; sy
  */
 export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient, clinicId: string): Promise<string> {
   const client = medplum;
+  await assertOrderClinic(client, clinicId, order.patientId, order.encounterId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   
   console.log(`📋 Creating lab order for patient ${order.patientId}`);

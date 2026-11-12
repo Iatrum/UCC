@@ -5,9 +5,10 @@
  * This provides an audit trail for compliance and accountability.
  */
 
-import { MedplumClient } from '@medplum/core';
-import type { Provenance, Reference } from '@medplum/fhirtypes';
-import { assignResourceToAccountReferences } from './clinic-tenancy';
+import { MedplumClient, OperationOutcomeError, forbidden } from '@medplum/core';
+import type { Provenance, Reference, ResourceType } from '@medplum/fhirtypes';
+import { assignResourceToAccountReferences, getResourceAccountReferences } from './clinic-tenancy';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
 export interface ProvenanceData {
   target: Array<{ reference: string }>;
@@ -35,6 +36,26 @@ export interface ProvenanceData {
  * Create a Provenance resource to track resource creation/update
  */
 export async function createProvenance(medplum: MedplumClient, data: ProvenanceData): Promise<string> {
+  // Do not let the privileged writer become a confused deputy. Check every
+  // target with the acting client, bypassing its cache, before obtaining admin.
+  if (!data.target.length) throw new OperationOutcomeError(forbidden);
+  const targetAccounts = new Map<string, Reference>();
+  for (const target of data.target) {
+    const match = /^([A-Z][A-Za-z]+)\/([A-Za-z0-9.-]+)$/.exec(target.reference);
+    if (!match) throw new OperationOutcomeError(forbidden);
+    const resource = await medplum.readResource(match[1] as ResourceType, match[2], {
+      cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+    });
+    for (const account of getResourceAccountReferences(resource)) {
+      if (account.reference) targetAccounts.set(account.reference, account);
+    }
+  }
+  // Supplied accounts may never redirect an audit away from a stamped target.
+  if (targetAccounts.size && data.accounts?.some(a => !a.reference || !targetAccounts.has(a.reference))) {
+    throw new OperationOutcomeError(forbidden);
+  }
+  const accounts = [...targetAccounts.values()];
+  const writer = await getAdminMedplum();
   const provenance: Provenance = {
     resourceType: 'Provenance',
     target: data.target,
@@ -46,14 +67,14 @@ export async function createProvenance(medplum: MedplumClient, data: ProvenanceD
     activity: data.activity,
   };
 
-  const created = await medplum.createResource<Provenance>(provenance);
+  const created = await writer.createResource<Provenance>(provenance);
   if (!created.id) {
     throw new Error('Failed to create Provenance (missing id)');
   }
 
-  if (data.accounts?.length) {
+  if (accounts.length) {
     try {
-      await assignResourceToAccountReferences(medplum, 'Provenance', created, data.accounts);
+      await assignResourceToAccountReferences(writer, 'Provenance', created, accounts);
     } catch (error) {
       console.warn(`⚠️  Failed to stamp meta.accounts on Provenance/${created.id} (non-blocking):`, error);
     }

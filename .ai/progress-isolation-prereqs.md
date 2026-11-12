@@ -1,0 +1,12 @@
+# Task 100 — Phase 2 prerequisites
+
+2026-11-11: In progress on ai-work. Read AGENTS, STATE, plan, prior self/independent review, progress, research, D33-D36 and backlog. Pre-existing STATE addition, bun.lockb edit, deleted gitlink and untracked notes retained. No migration/backfill or production access.
+
+- Research: SDK/fhirtypes 5.1.13; local server 5.2.15. Official tagged docs/source inspected. Per-request headers supported via MedplumRequestOptions (RequestInit).
+- Fix (a): implement policy write containment plus order-service ownership validation; verify with disposable fixtures only. Provenance target authorization must also be covered.
+- Fix (b): scoped extended reads and propagation regression.
+- Pending: focused e2e, self-review, final single full gate, two fix commits, dev-based worktree/cherry-pick, draft PR and live mergeability.
+
+2026-11-12 resume: preserved WIP and unrelated files. Confirmed sole dev server serves this checkout, heap cap 3072 MB. Reviewed independent review and saved versioned sources. Fixed WIP FHIRPath union evaluation; focused regression still being completed before fix-(a) commit. Only disposable fixtures changed.
+
+2026-11-12 user-requested checkpoint after box pause: removed temporary fetch/console diagnostic code. Committing Task 100 WIP before continuing. Fix (a) is NOT yet passing: Observation foreign-create denial and multi-clinic positive probes pass; same-clinic createLabOrder still returns 403. Fix (b) extended receive reads still pending. Focused attempts and local login-throttle failures preserved under /workspace/ai-logs/task-isolation-2-write-focused*. No full gate run yet.

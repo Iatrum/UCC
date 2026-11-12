@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createImagingOrder, updateImagingOrder, deleteImagingOrder, type ImagingOrderRequest } from '@/lib/fhir/imaging-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 
+import { handleRouteError } from '@/lib/server/route-helpers';
+
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
@@ -46,16 +48,8 @@ export async function POST(request: NextRequest) {
       message: `Imaging order created for ${body.procedures.length} procedures`,
     });
 
-  } catch (error: any) {
-    console.error('Error creating imaging order:', error);
-    
-    return NextResponse.json(
-      {
-        error: 'Failed to create imaging order',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return handleRouteError(error);
   }
 }
 

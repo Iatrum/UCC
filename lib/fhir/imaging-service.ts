@@ -22,6 +22,7 @@ import {
   type DICOMSeries,
 } from './imaging-constants';
 import {
+  assertOrderClinic,
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
@@ -97,6 +98,7 @@ export async function createImagingOrder(
   clinicId: string
 ): Promise<string> {
   const client = medplum;
+  await assertOrderClinic(client, clinicId, order.patientId, order.encounterId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   
   console.log(`🏥 Creating imaging order for patient ${order.patientId}`);
