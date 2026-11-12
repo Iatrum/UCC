@@ -25,9 +25,21 @@ which Codex is using concurrently — untouched).
   self-critique pass (2 MAJOR findings fixed in-document: catalog-fallback visibility leak, and a
   missing edit/delete-path server gate mirroring a real POCT regression documented in
   `.ai/progress-poct-toggle.md`).
-- [ ] UX design note + `.ai/mockups/time-chit.html` static mockup (composer sub-form + preview +
-  printable slip).
-- [ ] Final review pass of both docs against this progress file; last commit + push.
+- [x] `.ai/mockups/time-chit.html` static mockup built (no scripts/build step): (1) default
+  module-off state in the composer Documents tab, (2) module-on state with the date/time-in/
+  time-out/doctor sub-form plus a live preview matching MC's `McDocumentPreview` pattern, (3) the
+  final printable slip matching MC's letterhead/rule-line/patient-box/signature-and-stamp layout
+  plus a 3-cell time-in/time-out/duration row and an explicit "not a Medical Certificate"
+  disclaimer. Div tag count verified balanced (91/91); all sample data hardcoded, not wired to
+  the app.
+- [x] Final review pass of both docs against this progress file; committed and pushed to
+  `ai/plan-time-chit` (no PR opened, no merge, per task brief).
+
+## Status: done
+
+Task 110 deliverables complete: `.ai/research/time-chit.md`, `.ai/PLAN-time-chit.md`,
+`.ai/mockups/time-chit.html`, this progress file. No app/lib/sidebar/nav code touched. Everything
+pushed to `origin/ai/plan-time-chit`; no PR opened per the task brief (plan + design only).
 
 ## Key decisions made while researching (not yet in DECISIONS.md — this task doesn't touch shared
 round-log files per its brief, scope is the 4 named deliverables only)

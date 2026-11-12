@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Time Chit — UX mockup (Task 110, static, non-interactive)</title>
+<style>
+  :root {
+    --primary: #1e3a5f;
+    --muted: #6b7280;
+    --body: #111827;
+    --border: #d1d5db;
+    --bg-soft: #f9fafb;
+    --card: #ffffff;
+    --page-bg: #eef1f5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    background: var(--page-bg);
+    color: var(--body);
+    padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; color: var(--primary); }
+  .intro {
+    max-width: 920px;
+    margin: 0 auto 28px;
+  }
+  .intro p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 4px 0; }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .badge-mock { background: #fef3c7; color: #92400e; }
+
+  .section-label {
+    max-width: 920px;
+    margin: 0 auto 10px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  .grid {
+    max-width: 920px;
+    margin: 0 auto 36px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* ---- Panel 1: module OFF state (default) ---- */
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .panel-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+  .panel-sub { font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+  .tab {
+    font-size: 12.5px;
+    padding: 7px 14px;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+  }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  .doc-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .doc-row .name { font-weight: 600; }
+  .doc-row .price { color: var(--muted); font-size: 12px; }
+  .off-note {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: var(--bg-soft);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+  .off-note .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; margin-top: 4px; flex-shrink: 0;
+  }
+
+  /* ---- Panel 2: module ON, composer sub-form + live preview ---- */
+  .composer-split {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 760px) { .composer-split { grid-template-columns: 1fr; } }
+
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--body);
+    margin-bottom: 4px;
+  }
+  .field .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .input {
+    width: 100%;
+    font-size: 13px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--body);
+  }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .readonly-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: #eef2f7;
+    color: var(--primary);
+    border-radius: 6px;
+    padding: 6px 10px;
+  }
+
+  .preview-frame {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fafafa;
+  }
+  .preview-frame .preview-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: #f3f4f6;
+  }
+
+  /* ---- Printable document (shared look with MC's print template) ---- */
+  .doc-page {
+    background: #fff;
+    width: 100%;
+    max-width: 620px;
+    margin: 14px auto;
+    padding: 28px 30px;
+    font-size: 11px;
+    color: var(--body);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .doc-letterhead { display: flex; align-items: flex-start; margin-bottom: 8px; }
+  .doc-logo {
+    width: 40px; height: 40px; border-radius: 4px; margin-right: 10px; flex-shrink: 0;
+    background: var(--primary);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .doc-clinic-name { font-size: 13px; font-weight: 700; color: var(--primary); margin: 0 0 2px; }
+  .doc-clinic-meta { font-size: 9px; color: var(--muted); line-height: 1.4; margin: 0; }
+  .rule-thick { border: none; border-top: 2px solid var(--primary); margin: 0; }
+  .rule-thin { border: none; border-top: 0.5px solid var(--primary); margin: 0; }
+  .doc-title-band { text-align: center; padding: 7px 0; }
+  .doc-title { font-size: 14px; font-weight: 700; letter-spacing: 2px; color: var(--primary); }
+  .doc-title-sub { font-size: 9px; color: var(--muted); letter-spacing: 1px; margin-top: 1px; }
+  .doc-date-row { text-align: right; margin: 12px 0 14px; font-size: 9.5px; color: var(--muted); }
+  .doc-date-row strong { color: var(--body); }
+  .doc-patient-box {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 9px 12px;
+    margin-bottom: 16px;
+    background: var(--bg-soft);
+  }
+  .doc-patient-row { display: flex; margin-bottom: 5px; font-size: 10.5px; }
+  .doc-patient-row:last-child { margin-bottom: 0; }
+  .doc-patient-label { width: 95px; color: var(--muted); font-weight: 700; flex-shrink: 0; }
+  .doc-cert-box {
+    border: 1px solid #e3e8ef;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    background: #fbfdff;
+  }
+  .doc-cert-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .doc-cert-grid .cell { text-align: center; }
+  .doc-cert-grid .cell .k { font-size: 8.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .doc-cert-grid .cell .v { font-size: 12px; font-weight: 700; color: var(--body); margin-top: 2px; }
+  .doc-cert-para { font-size: 10.5px; line-height: 1.55; color: var(--body); margin: 0 0 14px; }
+  .doc-sig-block { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; }
+  .doc-sig-line { border-bottom: 1px solid var(--body); width: 140px; margin-bottom: 5px; }
+  .doc-sig-name { font-size: 10.5px; font-weight: 700; margin: 0 0 1px; }
+  .doc-sig-sub { font-size: 9px; color: var(--muted); margin: 0; }
+  .doc-stamp-box {
+    width: 64px; height: 64px;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 7px; color: #9ca3af; text-align: center;
+  }
+
+  .footnote {
+    max-width: 920px;
+    margin: 0 auto 40px;
+    font-size: 11.5px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    line-height: 1.6;
+  }
+  .footnote code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>Time Chit <span class="badge badge-mock">UX mockup — not wired to the app</span></h1>
+  <p>Static HTML/CSS only, for Task 110's design review. Mirrors the existing MC composer
+  sub-form / live preview / printable-document pattern described in
+  <code>.ai/PLAN-time-chit.md</code> §5-§6. No scripts, no data binding — every value below is
+  hardcoded sample data.</p>
+</div>
+
+<div class="section-label">1. Default state — module off (every clinic, until an admin opts in)</div>
+<div class="grid">
+  <div class="panel">
+    <p class="panel-title">Consultation composer — Documents tab</p>
+    <p class="panel-sub">Patient: Aisyah Rahman · NRIC 900101-14-5566</p>
+    <div class="tabs">
+      <div class="tab">Items</div>
+      <div class="tab">Services</div>
+      <div class="tab">Packages</div>
+      <div class="tab active">Documents</div>
+    </div>
+    <div class="doc-row">
+      <span class="name">Medical certificate (MC)</span>
+      <span class="price">RM 0.00</span>
+    </div>
+    <div class="doc-row">
+      <span class="name">Referral letter</span>
+      <span class="price">RM 0.00</span>
+    </div>
+    <div class="off-note">
+      <span class="dot"></span>
+      <span>No "Time Chit" row here — the <code>time-chit</code> module is off by default for
+      this clinic, so the composer never renders it (plan §3/§4). Turning it on is an
+      admin-only action in <code>/admin/clinics/[id]</code> → Branch Modules, same switch already
+      used for POCT/PACS/Tasks.</span>
+    </div>
+  </div>
+</div>
+
+<div class="section-label">2. After an admin enables "Time Chit" for this clinic</div>
+<div class="grid">
+  <div class="panel">
+    <p class="panel-title">Consultation composer — Documents tab, Time Chit sub-form + live preview</p>
+    <p class="panel-sub">Patient: Aisyah Rahman · NRIC 900101-14-5566</p>
+    <div class="tabs">
+      <div class="tab">Items</div>
+      <div class="tab">Services</div>
+      <div class="tab">Packages</div>
+      <div class="tab active">Documents</div>
+    </div>
+    <div class="doc-row">
+      <span class="name">Medical certificate (MC)</span>
+      <span class="price">RM 0.00</span>
+    </div>
+    <div class="doc-row">
+      <span class="name">Referral letter</span>
+      <span class="price">RM 0.00</span>
+    </div>
+    <div class="doc-row" style="border-color:#1e3a5f;">
+      <span class="name">Time Chit <span style="color:#1e3a5f;font-weight:400;">— selected</span></span>
+      <span class="price">RM 0.00</span>
+    </div>
+
+    <div class="composer-split" style="margin-top:14px;">
+      <div>
+        <div class="field">
+          <label for="tc-date">Date</label>
+          <input class="input" id="tc-date" type="text" value="12 Nov 2026" readonly />
+          <p class="hint">Defaults to today, same as MC's issue date.</p>
+        </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="tc-in">Time in</label>
+            <input class="input" id="tc-in" type="text" value="09:15" readonly />
+          </div>
+          <div class="field">
+            <label for="tc-out">Time out</label>
+            <input class="input" id="tc-out" type="text" value="11:45" readonly />
+          </div>
+        </div>
+        <div class="field">
+          <label>Hours (auto-calculated)</label>
+          <span class="readonly-pill">⏱ 2 hours 30 minutes</span>
+          <p class="hint">Derived from time in/out; stored alongside the raw times so the
+          record doesn't change later if the calculation logic does.</p>
+        </div>
+        <div class="field">
+          <label for="tc-doctor">Doctor's name</label>
+          <input class="input" id="tc-doctor" type="text" value="Dr. Lim Wei Jian" readonly />
+          <p class="hint">Free text, same as MC — no session auto-fill.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="preview-frame">
+          <div class="preview-label">Live preview (composer-only, matches McDocumentPreview pattern)</div>
+          <div style="padding:10px;">
+            <div class="doc-page" style="margin:0; max-width:none; box-shadow:none; padding:20px 22px;">
+              <div class="doc-letterhead">
+                <div class="doc-logo">UC</div>
+                <div>
+                  <p class="doc-clinic-name">Union Clinic &amp; Surgery</p>
+                  <p class="doc-clinic-meta">12, Jalan Aman, 50450 Kuala Lumpur</p>
+                  <p class="doc-clinic-meta">Tel: 03-2201 5566</p>
+                </div>
+              </div>
+              <hr class="rule-thick" />
+              <div class="doc-title-band">
+                <div class="doc-title">TIME CHIT</div>
+                <div class="doc-title-sub">SURAT WAKTU KLINIK</div>
+              </div>
+              <hr class="rule-thin" />
+              <div class="doc-date-row">Date Issued: <strong>12 Nov 2026</strong></div>
+              <div class="doc-patient-box">
+                <div class="doc-patient-row"><span class="doc-patient-label">Patient Name</span><span>Aisyah Rahman</span></div>
+                <div class="doc-patient-row"><span class="doc-patient-label">NRIC / ID</span><span>900101-14-5566</span></div>
+              </div>
+              <div class="doc-cert-box">
+                <div class="doc-cert-grid">
+                  <div class="cell"><div class="k">Time In</div><div class="v">09:15</div></div>
+                  <div class="cell"><div class="k">Time Out</div><div class="v">11:45</div></div>
+                  <div class="cell"><div class="k">Duration</div><div class="v">2h 30m</div></div>
+                </div>
+                <p class="doc-cert-para" style="margin:0;">
+                  This is to certify that the above-named patient attended this clinic on
+                  <strong>12 Nov 2026</strong> from <strong>09:15</strong> to <strong>11:45</strong>
+                  (2 hours 30 minutes), for medical attendance.
+                </p>
+              </div>
+              <div class="doc-sig-block">
+                <div>
+                  <div class="doc-sig-line"></div>
+                  <p class="doc-sig-name">Dr. Lim Wei Jian</p>
+                  <p class="doc-sig-sub">Medical Practitioner</p>
+                  <p class="doc-sig-sub">Date: 12 Nov 2026</p>
+                </div>
+                <div class="doc-stamp-box">Clinic<br/>Stamp</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-label">3. Final printable slip (checkout sign-off / reprint from patient's Generated Documents)</div>
+<div class="grid">
+  <div class="panel" style="display:flex; justify-content:center;">
+    <div class="doc-page">
+      <div class="doc-letterhead">
+        <div class="doc-logo">UC</div>
+        <div>
+          <p class="doc-clinic-name">Union Clinic &amp; Surgery</p>
+          <p class="doc-clinic-meta">12, Jalan Aman, 50450 Kuala Lumpur, Malaysia</p>
+          <p class="doc-clinic-meta">Tel: 03-2201 5566</p>
+        </div>
+      </div>
+      <hr class="rule-thick" />
+      <div class="doc-title-band">
+        <div class="doc-title">TIME CHIT</div>
+        <div class="doc-title-sub">SURAT WAKTU KLINIK</div>
+      </div>
+      <hr class="rule-thin" />
+      <div class="doc-date-row">Date Issued: <strong>12 November 2026</strong></div>
+      <div class="doc-patient-box">
+        <div class="doc-patient-row"><span class="doc-patient-label">Patient Name</span><span>Aisyah Rahman</span></div>
+        <div class="doc-patient-row"><span class="doc-patient-label">NRIC / ID</span><span>900101-14-5566</span></div>
+      </div>
+      <div class="doc-cert-box">
+        <div class="doc-cert-grid">
+          <div class="cell"><div class="k">Time In</div><div class="v">09:15</div></div>
+          <div class="cell"><div class="k">Time Out</div><div class="v">11:45</div></div>
+          <div class="cell"><div class="k">Duration</div><div class="v">2h 30m</div></div>
+        </div>
+      </div>
+      <p class="doc-cert-para">
+        This is to certify that the above-named patient attended Union Clinic &amp; Surgery on
+        <strong>12 November 2026</strong> from <strong>09:15</strong> to <strong>11:45</strong>
+        (2 hours 30 minutes), for medical attendance.
+      </p>
+      <p class="doc-cert-para" style="color:#6b7280; font-style:italic;">
+        This slip confirms clinic attendance only. It is not a Medical Certificate and does not
+        certify the patient as unfit for work.
+      </p>
+      <div class="doc-sig-block">
+        <div>
+          <div class="doc-sig-line"></div>
+          <p class="doc-sig-name">Dr. Lim Wei Jian</p>
+          <p class="doc-sig-sub">Medical Practitioner</p>
+          <p class="doc-sig-sub">Date: 12 November 2026</p>
+        </div>
+        <div class="doc-stamp-box">Clinic<br/>Stamp</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footnote">
+  <strong>Design notes:</strong> layout, letterhead treatment, rule lines, patient box and
+  signature/stamp block are deliberately identical to the existing MC template
+  (<code>lib/document-templates.ts</code> / <code>components/mc/mc-document.tsx</code>) so staff
+  already familiar with issuing an MC recognise the Time Chit flow immediately. The only
+  structural addition is the three-cell time-in/time-out/duration row, and the explicit
+  "not a Medical Certificate" disclaimer — both called for in
+  <code>.ai/research/time-chit.md</code> §2 so the document can't be mistaken for, or misused as,
+  a certification of unfitness for work. Colours/typography (<code>#1e3a5f</code> primary,
+  Helvetica/Arial) match the clinic letterhead variables already in
+  <code>lib/document-templates.ts</code>.
+</div>
+
+</body>
+</html>
