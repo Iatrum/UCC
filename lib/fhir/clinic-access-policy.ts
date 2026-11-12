@@ -34,7 +34,7 @@ export function clinicCompartmentRules(resourceType: string): AccessPolicyResour
   const readonlyFields = ['meta'];
   const patients = (version: string) => `(${paths.map(path => `${version}.${path}`).join(' | ')})` +
     ".where(reference.startsWith('Patient/')).reference";
-  const updateConstraint = [...writeConstraint, {
+  const updateConstraint: NonNullable<AccessPolicyResource['writeConstraint']> = [...writeConstraint, {
     language: 'text/fhirpath',
     // Preserved metadata must not authorize reparenting to a foreign patient.
     expression: `${patients('%before')} ~ ${patients('%after')}`,

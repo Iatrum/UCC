@@ -37,3 +37,11 @@ In this privileged project, CREATE readonlyFields:[meta] strips user-supplied pr
 ### Fix (a) validation
 
 Focused e2e PASS (1/1, 5.2s), /workspace/ai-logs/task-isolation-2-write-final. Tests cover legacy single-clinic fallback; same-clinic plain and extended Observation/ServiceRequest creates; full profiled application orders; foreign and forged-account/compartment creates; mixed Patient compartments and unattached forged creates; valid update and foreign reparent/adoption denial; multi-clinic union, revocation and zero-clinic denial; server-order patient/encounter checks; authorized Provenance and denial of foreign targets; original Encounter stamping regressions. Disposable policy/identity only, cleanup passes. Prior failed/throttled attempts retained, no full gate yet.
+
+### Automated Provenance actor
+
+[FHIR R4 Provenance.agent.who](https://hl7.org/fhir/R4/provenance-definitions.html#Provenance.agent.who) is required, and [Reference.identifier](https://hl7.org/fhir/R4/references.html#Reference) supports a logical identity. Existing receive calls provide neither practitioner nor organization, while order calls sometimes supply only onBehalfOf; those forms cannot persist valid audit resources. The helper now fills missing who from the authenticated SDK getProfileAsync identity (verified in the same official/installed client source), using a logical `urn:medplum:profile` identifier so Medplum service profiles need not pretend to be R4 practitioners/devices. Explicit agents remain. This is required for the receive-account/Provenance regression to exercise actual persisted audits. Target authorization still occurs before privileged writes.
+
+### Fix (b) validation
+
+Focused propagation regression PASS 1/1; lint PASS. Evidence /workspace/ai-logs/task-isolation-2-propagation-focused-r2 and task-isolation-2-propagation-lint.log. An earlier attempt hit local auth 429; no functional failure. Results and all four receive audits carry the expected clinic account, same-clinic staff can read them, orders complete, and the deliberately unstamped Patient remains unchanged. SDK default extended-mode correction does not weaken this test: the injected client explicitly disables extended mode and starts from cached non-extended reads.

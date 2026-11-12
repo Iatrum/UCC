@@ -8,15 +8,15 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 require('tsx/cjs');
 const { clinicCompartmentRules, clinicProvenanceRules } = require('../../lib/fhir/clinic-access-policy.ts');
-const { createLabOrder } = require('../../lib/fhir/lab-service.ts');
-const { createImagingOrder } = require('../../lib/fhir/imaging-service.ts');
+const { createLabOrder, receiveLabResults } = require('../../lib/fhir/lab-service.ts');
+const { createImagingOrder, receiveImagingStudy, createImagingReport } = require('../../lib/fhir/imaging-service.ts');
 const { getAdminMedplum } = require('../../lib/server/medplum-admin.ts');
 const { createProvenanceForResource } = require('../../lib/fhir/provenance-service.ts');
 const { saveTriageEncounter, updateTriageEncounter, updateQueueStatusForPatient } = require('../../lib/fhir/triage-service.ts');
 
 // Disposable fake clinics and identity only. Never record credentials or bodies.
 test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot: 'off' });
-test('clinic write containment, reassignment, Provenance and Encounter stamping', async () => {
+test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter stamping', async () => {
   expect(BASE).toBe('http://localhost:3210');
   expect(MEDPLUM.replace(/\/$/, '')).toBe('http://localhost:8113');
   // Direct service calls need the same local service credentials as Next.
@@ -209,6 +209,59 @@ test('clinic write containment, reassignment, Provenance and Encounter stamping'
     owned.push({ resourceType: 'ServiceRequest', id: sameLab });
     const sameImaging = await createImagingOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, procedures: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
     owned.push({ resourceType: 'ServiceRequest', id: sameImaging });
+    // Regression for account reuse: these orders are stamped, while their
+    // legacy patient is intentionally unstamped. Automatic inheritance cannot
+    // hide a failed account-propagation read. Prime the SDK's plain-read cache.
+    const legacyPatient = await create({ resourceType: 'Patient', name: [{family:'Fake receive account propagation'}],
+      identifier: [{system:'clinic', value:clinics[1].slug}] });
+    const plain = new MedplumClient({ baseUrl: MEDPLUM, extendedMode: false, fetch: globalThis.fetch.bind(globalThis) });
+    plain.setAccessToken(m.getAccessToken()!);
+    const expectedAccount = `HealthcareService/${clinics[1].account.id}`;
+    const receiveOrder = async () => {
+      const order = await create({ resourceType:'ServiceRequest', status:'active', intent:'order',
+        subject:{reference:`Patient/${legacyPatient.id}`}, code:{text:'Fake receive test'} });
+      await stamp(order, clinics[1].account);
+      const cached: any = await plain.readResource('ServiceRequest', order.id, { cache: 'force-cache' });
+      expect(cached.meta?.accounts ?? []).toEqual([]);
+      return order;
+    };
+    const verifyResult = async (resource: any) => {
+      expect(await accounts(resource), `${resource.resourceType} propagated accounts`).toEqual([expectedAccount]);
+      const audits = await m.searchResources('Provenance', {target:`${resource.resourceType}/${resource.id}`}, extended);
+      expect(audits.length, `${resource.resourceType} has receive Provenance`).toBe(1);
+      owned.push({resourceType:'Provenance', id:audits[0].id!});
+      expect(await accounts(audits[0])).toEqual([expectedAccount]);
+      expect(Boolean(audits[0].agent[0]?.who)).toBe(true);
+      expect((await staff!.readResource(resource.resourceType, resource.id, {cache:'no-cache'})).id).toBe(resource.id);
+    };
+    const labReceiveOrder = await receiveOrder();
+    const labReportId = await receiveLabResults(labReceiveOrder.id, [{testCode:'2345-7', testName:'Fake glucose', value:5, unit:'mmol/L'}], undefined, plain);
+    const labReport = await m.readResource('DiagnosticReport', labReportId, extended);
+    owned.push({resourceType:'DiagnosticReport', id:labReportId});
+    await verifyResult(labReport);
+    expect(labReport.status).toBe('final');
+    expect(labReport.result?.length).toBe(1);
+    const observationId = labReport.result![0].reference!.split('/')[1];
+    const receivedObservation = await m.readResource('Observation', observationId, extended);
+    owned.push({resourceType:'Observation', id:observationId});
+    await verifyResult(receivedObservation);
+    const imagingReceiveOrder = await receiveOrder();
+    const studyId = await receiveImagingStudy(imagingReceiveOrder.id, {
+      studyUid:`2.25.${BigInt('0x' + randomUUID().replace(/-/g, ''))}`, modality:'DX',
+      numberOfSeries:0, numberOfInstances:0, series:[],
+    }, plain);
+    const study = await m.readResource('ImagingStudy', studyId, extended);
+    owned.push({resourceType:'ImagingStudy', id:studyId});
+    await verifyResult(study);
+    const cachedStudy: any = await plain.readResource('ImagingStudy', studyId, {cache:'no-cache'});
+    expect(cachedStudy.meta?.accounts ?? []).toEqual([]);
+    const imagingReportId = await createImagingReport(studyId, 'Fake findings', 'Fake impression', 'final', undefined, plain);
+    const imagingReport = await m.readResource('DiagnosticReport', imagingReportId, extended);
+    owned.push({resourceType:'DiagnosticReport', id:imagingReportId});
+    await verifyResult(imagingReport);
+    expect((await plain.readResource('ServiceRequest', labReceiveOrder.id, {cache:'no-cache'})).status).toBe('completed');
+    expect((await plain.readResource('ServiceRequest', imagingReceiveOrder.id, {cache:'no-cache'})).status).toBe('completed');
+    expect(await accounts(legacyPatient)).toEqual([]); // proves no implicit patient backfill
     await assign([1]);
     await visible([1]);
     await postAsStaff(observationFor(0), 403);

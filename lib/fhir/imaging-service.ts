@@ -214,7 +214,9 @@ export async function receiveImagingStudy(
   console.log(`📸 Receiving imaging study ${studyData.studyUid} for ServiceRequest ${serviceRequestId}`);
 
   // Get the original service request
-  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
   const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
@@ -315,7 +317,9 @@ export async function createImagingReport(
   console.log(`📝 Creating imaging report for study ${imagingStudyId}`);
 
   // Get the imaging study
-  const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId);
+  const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
   const accountRefs = getResourceAccountReferences(imagingStudy);
   // Clinic identifier is on the originating ServiceRequest, not the ImagingStudy itself;
   // needed so the Lab tab's live-update subscription (criteria includes identifier=clinic|<id>)

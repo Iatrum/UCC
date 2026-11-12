@@ -176,7 +176,9 @@ export async function receiveLabResults(
   console.log(`📊 Receiving lab results for ServiceRequest ${serviceRequestId}`);
 
   // Get the original service request
-  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
   const accountRefs = getResourceAccountReferences(serviceRequest);
   const clinicId = getClinicIdentifierValue(serviceRequest);
   if (!clinicId) throw new ForbiddenError('Lab order has no clinic identifier');
