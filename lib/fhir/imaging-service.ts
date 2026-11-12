@@ -13,7 +13,7 @@ import type {
   Patient as FHIRPatient,
 } from '@medplum/fhirtypes';
 import { createProvenanceForResource } from './provenance-service';
-import { validateAndCreate } from './fhir-helpers';
+import { validateAndCreate, validateAndCreateClinicOrder } from './fhir-helpers';
 import {
   IMAGING_PROCEDURES,
   XRAY_STUDIES,
@@ -26,6 +26,7 @@ import { XRAY_TAG_SYSTEM, requireOnlineXrayDevice } from './xray-device';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import {
+  assertOrderClinic,
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
@@ -103,6 +104,7 @@ export async function createImagingOrder(
   clinicId: string
 ): Promise<string> {
   const client = medplum;
+  await assertOrderClinic(client, clinicId, order.patientId, order.encounterId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
 
   console.log(`🏥 Creating imaging order for patient ${order.patientId}`);
@@ -170,8 +172,8 @@ export async function createImagingOrder(
       ],
     };
     const serviceRequest = order.xray
-      ? await client.createResourceIfNoneExist(resource, new URLSearchParams({ identifier: `https://ucc.emr/xray/order-entry|${clinicId}:${order.encounterId}:${order.xray.entryId}` }).toString())
-      : await validateAndCreate<ServiceRequest>(client, resource);
+      ? await validateAndCreateClinicOrder(client, resource, new URLSearchParams({ identifier: `https://ucc.emr/xray/order-entry|${clinicId}:${order.encounterId}:${order.xray.entryId}` }).toString())
+      : await validateAndCreateClinicOrder(client, resource);
     await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
 
     serviceRequests.push(serviceRequest);
@@ -212,7 +214,9 @@ export async function receiveImagingStudy(
   console.log(`📸 Receiving imaging study ${studyData.studyUid} for ServiceRequest ${serviceRequestId}`);
 
   // Get the original service request
-  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
   const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
@@ -313,7 +317,9 @@ export async function createImagingReport(
   console.log(`📝 Creating imaging report for study ${imagingStudyId}`);
 
   // Get the imaging study
-  const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId);
+  const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
   const accountRefs = getResourceAccountReferences(imagingStudy);
   // Clinic identifier is on the originating ServiceRequest, not the ImagingStudy itself;
   // needed so the Lab tab's live-update subscription (criteria includes identifier=clinic|<id>)

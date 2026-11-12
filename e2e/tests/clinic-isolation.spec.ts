@@ -7,6 +7,10 @@ import { createRequire } from 'node:module';
 // App sources are CommonJS-scoped; register TypeScript loading explicitly.
 const require = createRequire(import.meta.url);
 require('tsx/cjs');
+const { clinicCompartmentRules, clinicProvenanceRules } = require('../../lib/fhir/clinic-access-policy.ts');
+const { createLabOrder, receiveLabResults } = require('../../lib/fhir/lab-service.ts');
+const { createImagingOrder, receiveImagingStudy, createImagingReport } = require('../../lib/fhir/imaging-service.ts');
+const { validateAndCreateClinicOrder } = require('../../lib/fhir/fhir-helpers.ts');
 const { getAdminMedplum } = require('../../lib/server/medplum-admin.ts');
 const { createProvenanceForResource } = require('../../lib/fhir/provenance-service.ts');
 const { saveTriageEncounter, updateTriageEncounter, updateQueueStatusForPatient } = require('../../lib/fhir/triage-service.ts');
@@ -55,7 +59,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       const account = await create({ resourceType: 'HealthcareService', active: true, identifier: [{ system: 'clinic', value: slug }], providedBy: { reference: `Organization/${organization.id}` } });
       const patient = await create({ resourceType: 'Patient', name: [{ family: 'Fake isolation patient' }], identifier: [{ system: 'clinic', value: slug }] });
       await stamp(patient, account);
-      const encounter = await create({ resourceType: 'Encounter', status: 'in-progress', class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: 'AMB' }, subject: { reference: `Patient/${patient.id}` } });
+      const encounter = await create({ resourceType: 'Encounter', identifier: [{system:'clinic',value:slug}], status: 'in-progress', class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: 'AMB' }, subject: { reference: `Patient/${patient.id}` } });
       await stamp(encounter, account);
       const observation = await create({ resourceType: 'Observation', status: 'final', code: { text: 'Fake isolation result' }, subject: { reference: `Patient/${patient.id}` } });
       await stamp(observation, account);
@@ -69,6 +73,22 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     practitionerId = practitioner!.id;
     const membership = await m.searchOne('ProjectMembership', { profile: `Practitioner/${practitionerId}` }, { cache: 'no-cache' });
     expect(Boolean(membership?.id)).toBe(true);
+    // Exercise the shipped rules on a disposable policy, never update the real
+    // clinic policy or any seeded membership during this prerequisite test.
+    const originalPolicy = await m.readReference(membership!.access![0].policy);
+    const seen = new Set<string>();
+    const resource = originalPolicy.resource!.flatMap(rule => {
+      if (rule.resourceType === 'Provenance') {
+        if (seen.has('Provenance')) return [];
+        seen.add('Provenance');
+        return clinicProvenanceRules();
+      }
+      return rule.criteria?.includes('_compartment=') ? clinicCompartmentRules(rule.resourceType) : [rule];
+    });
+    const policy = await create({ resourceType: 'AccessPolicy', name: `Fake write isolation ${suffix}`, resource });
+    // Legacy single-clinic grants must work before parameter refresh.
+    membership!.access![0].parameter = membership!.access![0].parameter?.filter(p => p.name !== 'clinicWriteAccounts');
+    membership!.access![0].policy = { reference: `AccessPolicy/${policy.id}` };
     // Add a harmless custom legacy grant, proving reassignment preserves it.
     const custom = await create({ resourceType: 'AccessPolicy', name: `Fake custom ${suffix}`, resource: [{ resourceType: 'ValueSet', readonly: true }] });
     await m.updateResource({ ...membership!, accessPolicy: { reference: `AccessPolicy/${custom.id}` } });
@@ -96,12 +116,25 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     };
     let preserveCustom = true;
     const assign = async (indices: number[]) => {
+      const before = await m.readResource('ProjectMembership', membership!.id!, { cache: 'no-cache' });
+      await m.updateResource({ ...before, access: before.access?.map(a =>
+        a.policy.reference === `AccessPolicy/${policy.id}`
+          ? { ...a, policy: { reference: `AccessPolicy/${originalPolicy.id}` } } : a) });
       expect((await api.patch(`/api/admin/users/${practitionerId}`, { data: {
         firstName: 'Fake', lastName: 'Isolation', organizationIds: indices.map(i => clinics[i].organization.id),
       } })).status()).toBe(200);
-      const current = await m.readResource('ProjectMembership', membership!.id!, { cache: 'no-cache' });
-      const clinicAccess = current.access?.filter(a => a.policy.reference === membership!.access![0].policy.reference) || [];
+      let current = await m.readResource('ProjectMembership', membership!.id!, { cache: 'no-cache' });
+      const originalRef = membership!.access![0].policy.reference;
+      // Reassignment resolves the real policy; substitute only this fixture's
+      // grant to test the revised definition without deploying it globally.
+      current = await m.updateResource({ ...current, access: current.access?.map(a =>
+        a.parameter?.some(p => p.name === 'clinicAccount') ? { ...a, policy: { reference: originalRef } } : a) });
+      const clinicAccess = current.access?.filter(a => a.policy.reference === originalRef) || [];
       expect(clinicAccess.length).toBe(new Set(indices).size);
+      for (const access of clinicAccess) {
+        expect(access.parameter?.find(p => p.name === 'clinicWriteAccounts')?.valueString).toBe(
+          '^(' + [...new Set(indices)].map(i => `HealthcareService/${clinics[i].account.id}`).sort().join('|') + ')$');
+      }
       if (preserveCustom) expect(current.access?.some(a => a.policy.reference === `AccessPolicy/${custom.id}`)).toBe(true);
       const refs = clinicAccess.map(a => a.parameter?.find(p => p.name === 'clinicOrganization')?.valueReference?.reference).sort();
       expect(refs).toEqual([...new Set(indices)].map(i => `Organization/${clinics[i].organization.id}`).sort());
@@ -109,10 +142,145 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       expect(roles.map(r => r.organization?.reference).sort()).toEqual(refs);
     };
     await visible([0]);
+    const postAsStaff = async (resource: any, expected: number, extendedMode = true) => {
+      const response = await fetch(`${MEDPLUM.replace(/\/$/, '')}/fhir/R4/${resource.resourceType}`, {
+        method: 'POST', redirect: 'error',
+        headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', ...(extendedMode ? { 'X-Medplum': 'extended' } : {}) },
+        body: JSON.stringify(resource),
+      });
+      let created: any;
+      // Track unexpected successes too, so negative tests cannot leave fixtures.
+      if (response.ok) {
+        created = await response.json();
+        owned.push({ resourceType: created.resourceType, id: created.id });
+      }
+      expect(response.status, `${resource.resourceType} create authorization`).toBe(expected);
+      return created;
+    };
+    const observationFor = (index: number) => ({ resourceType: 'Observation', status: 'final', code: { text: 'Fake authorization probe' }, subject: { reference: `Patient/${clinics[index].patient.id}` } });
+    const ownObservation = await postAsStaff(observationFor(0), 201);
+    const putAsStaff = async (resource: any, expected: number) => {
+      const response = await fetch(`${MEDPLUM.replace(/\/$/, '')}/fhir/R4/${resource.resourceType}/${resource.id}`, {
+        method: 'PUT', redirect: 'error',
+        headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', 'X-Medplum': 'extended' },
+        body: JSON.stringify(resource),
+      });
+      expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
+    };
+    await putAsStaff({ ...ownObservation, status: 'amended' }, 200);
+    await putAsStaff({ ...ownObservation, subject: observationFor(1).subject }, 403);
+    await putAsStaff({ ...clinics[1].observation, subject: observationFor(0).subject }, 403);
+    await postAsStaff({ ...observationFor(0), performer: [{ reference: `Patient/${clinics[1].patient.id}` }] }, 403);
+    await postAsStaff({ resourceType: 'Observation', status: 'final', code: { text: 'Fake unattached' }, meta: { accounts: [{reference:`HealthcareService/${clinics[0].account.id}`}] } }, 403);
+    // Reproduces Phase 0 exactly. Forged app identifiers and protected metadata
+    // must not turn a foreign patient into an authorized write.
+    await postAsStaff(observationFor(1), 403);
+    await postAsStaff({ ...observationFor(1), identifier: [{ system: 'clinic', value: clinics[0].slug }], meta: { accounts: [{ reference: `HealthcareService/${clinics[0].account.id}` }], compartment: [{ reference: `HealthcareService/${clinics[0].account.id}` }] } }, 403);
+    await postAsStaff({ ...observationFor(1), meta: { accounts: [{ reference: `HealthcareService/${clinics[0].account.id}` }], compartment: [{ reference: `HealthcareService/${clinics[1].account.id}` }] } }, 403);
+    await postAsStaff({ resourceType: 'Provenance', target: [{ reference: `Observation/${clinics[1].observation.id}` }], recorded: new Date().toISOString(), agent: [{ who: { reference: `Practitioner/${practitionerId}` } }] }, 403);
+    await expect(createProvenanceForResource(staff, 'Observation', clinics[1].observation.id, practitionerId, undefined, 'CREATE')).rejects.toThrow();
+
+    // Even an unrestricted service client must validate the selected clinic.
+    for (const order of [
+      (patientId: string, encounterId?: string) => createLabOrder({ patientId, encounterId, tests: ['Fake lab'] }, m, clinics[0].slug),
+      (patientId: string, encounterId?: string) => createImagingOrder({ patientId, encounterId, procedures: ['Fake imaging'] }, m, clinics[0].slug),
+    ]) {
+      await expect(order(clinics[1].patient.id)).rejects.toThrow();
+      await expect(order(clinics[0].patient.id, clinics[1].encounter.id)).rejects.toThrow();
+    }
     await assign([0, 1, 1]);
     await visible([0, 1]);
+    await postAsStaff(observationFor(0), 201);
+    await postAsStaff(observationFor(1), 201); // second access[] rule must work
+    await postAsStaff(observationFor(2), 403);
+    // The app validates its selected clinic even when this identity has both.
+    await expect(createLabOrder({ patientId: clinics[1].patient.id, tests: ['Fake'] }, staff, clinics[0].slug)).rejects.toThrow();
+    await postAsStaff({ resourceType: 'ServiceRequest', status: 'active', intent: 'order', subject: { reference: `Patient/${clinics[1].patient.id}` } }, 201, false);
+    // Full application order shape must also pass direct policy enforcement.
+    await postAsStaff({ resourceType: 'ServiceRequest',
+      identifier: [{ system: 'clinic', value: clinics[1].slug }],
+      status: 'active', intent: 'order', priority: 'routine',
+      code: {coding:[{system:'http://loinc.org', code:'Fake', display:'Fake'}], text:'Fake'},
+      subject: {reference:`Patient/${clinics[1].patient.id}`},
+      encounter: {reference:`Encounter/${clinics[1].encounter.id}`},
+      authoredOn: new Date().toISOString(),
+      meta:{profile:['http://fhir.hie.moh.gov.my/StructureDefinition/ServiceRequest-my-core']},
+    }, 201);
+    const taggedOrderInput = {
+      resourceType:'ServiceRequest', status:'active', intent:'order',
+      subject:{reference:`Patient/${clinics[1].patient.id}`},
+      identifier:[{system:'urn:ucc:fake-order', value:suffix}],
+      meta:{tag:[{system:'urn:ucc:fake-routing', code:'poct'}]},
+    };
+    const taggedQuery = new URLSearchParams({identifier:`urn:ucc:fake-order|${suffix}`}).toString();
+    const taggedOrder = await validateAndCreateClinicOrder(staff, taggedOrderInput, taggedQuery);
+    owned.push({resourceType:'ServiceRequest', id:taggedOrder.id});
+    expect(taggedOrder.meta?.tag).toEqual([{system:'urn:ucc:fake-routing', code:'poct'}]);
+    expect(taggedOrder.meta?.profile).toContain('http://fhir.hie.moh.gov.my/StructureDefinition/ServiceRequest-my-core');
+    expect(await accounts(taggedOrder)).toEqual([`HealthcareService/${clinics[1].account.id}`]);
+    expect((await validateAndCreateClinicOrder(staff, taggedOrderInput, taggedQuery)).id).toBe(taggedOrder.id);
+    const sameLab = await createLabOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, tests: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
+    owned.push({ resourceType: 'ServiceRequest', id: sameLab });
+    const sameImaging = await createImagingOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, procedures: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
+    owned.push({ resourceType: 'ServiceRequest', id: sameImaging });
+    // Regression for account reuse: these orders are stamped, while their
+    // legacy patient is intentionally unstamped. Automatic inheritance cannot
+    // hide a failed account-propagation read. Prime the SDK's plain-read cache.
+    const legacyPatient = await create({ resourceType: 'Patient', name: [{family:'Fake receive account propagation'}],
+      identifier: [{system:'clinic', value:clinics[1].slug}] });
+    const plain = new MedplumClient({ baseUrl: MEDPLUM, extendedMode: false, fetch: globalThis.fetch.bind(globalThis) });
+    plain.setAccessToken(m.getAccessToken()!);
+    const expectedAccount = `HealthcareService/${clinics[1].account.id}`;
+    const receiveOrder = async () => {
+      const order = await create({ resourceType:'ServiceRequest', status:'active', intent:'order',
+        identifier:[{system:'clinic',value:clinics[1].slug}],
+        subject:{reference:`Patient/${legacyPatient.id}`}, code:{text:'Fake receive test'} });
+      await stamp(order, clinics[1].account);
+      const cached: any = await plain.readResource('ServiceRequest', order.id, { cache: 'force-cache' });
+      expect(cached.meta?.accounts ?? []).toEqual([]);
+      return order;
+    };
+    const verifyResult = async (resource: any) => {
+      expect(await accounts(resource), `${resource.resourceType} propagated accounts`).toEqual([expectedAccount]);
+      const audits = await m.searchResources('Provenance', {target:`${resource.resourceType}/${resource.id}`}, extended);
+      expect(audits.length, `${resource.resourceType} has receive Provenance`).toBe(1);
+      owned.push({resourceType:'Provenance', id:audits[0].id!});
+      expect(await accounts(audits[0])).toEqual([expectedAccount]);
+      expect(Boolean(audits[0].agent[0]?.who)).toBe(true);
+      expect((await staff!.readResource(resource.resourceType, resource.id, {cache:'no-cache'})).id).toBe(resource.id);
+    };
+    const labReceiveOrder = await receiveOrder();
+    const labReportId = await receiveLabResults(labReceiveOrder.id, [{testCode:'2345-7', testName:'Fake glucose', value:5, unit:'mmol/L', status:'final'}], undefined, plain);
+    const labReport = await m.readResource('DiagnosticReport', labReportId, extended);
+    owned.push({resourceType:'DiagnosticReport', id:labReportId});
+    await verifyResult(labReport);
+    expect(labReport.status).toBe('final');
+    expect(labReport.result?.length).toBe(1);
+    const observationId = labReport.result![0].reference!.split('/')[1];
+    const receivedObservation = await m.readResource('Observation', observationId, extended);
+    owned.push({resourceType:'Observation', id:observationId});
+    await verifyResult(receivedObservation);
+    const imagingReceiveOrder = await receiveOrder();
+    const studyId = await receiveImagingStudy(imagingReceiveOrder.id, {
+      studyUid:`2.25.${BigInt('0x' + randomUUID().replace(/-/g, ''))}`, modality:'DX',
+      numberOfSeries:0, numberOfInstances:0, series:[],
+    }, plain);
+    const study = await m.readResource('ImagingStudy', studyId, extended);
+    owned.push({resourceType:'ImagingStudy', id:studyId});
+    await verifyResult(study);
+    const cachedStudy: any = await plain.readResource('ImagingStudy', studyId, {cache:'no-cache'});
+    expect(cachedStudy.meta?.accounts ?? []).toEqual([]);
+    const imagingReportId = await createImagingReport(studyId, 'Fake findings', 'Fake impression', 'final', undefined, plain);
+    const imagingReport = await m.readResource('DiagnosticReport', imagingReportId, extended);
+    owned.push({resourceType:'DiagnosticReport', id:imagingReportId});
+    await verifyResult(imagingReport);
+    expect((await plain.readResource('ServiceRequest', labReceiveOrder.id, {cache:'no-cache'})).status).toBe('completed');
+    expect((await plain.readResource('ServiceRequest', imagingReceiveOrder.id, {cache:'no-cache'})).status).toBe('completed');
+    expect(await accounts(legacyPatient)).toEqual([]); // proves no implicit patient backfill
     await assign([1]);
     await visible([1]);
+    await postAsStaff(observationFor(0), 403);
+    await postAsStaff(observationFor(1), 201);
     // Invalid clinic must leave both roles and access unchanged.
     expect((await api.patch(`/api/admin/users/${practitionerId}`, { data: {
       firstName: 'Fake', lastName: 'Isolation', organizationIds: ['does-not-exist'],
@@ -169,10 +337,16 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     if (practitionerId) expect((await api.delete(`/api/admin/users/${practitionerId}`)).ok()).toBe(true);
     const failed: string[] = [];
     for (const patient of owned.filter(r => r.resourceType === 'Patient')) {
-      for (const type of ['Observation', 'Encounter'] as const) {
+      for (const type of ['Observation', 'Encounter', 'ServiceRequest', 'DiagnosticReport', 'ImagingStudy'] as const) {
         for (const resource of await m.searchResources(type, { subject: `Patient/${patient.id}`, _count: '100' }, { cache: 'no-cache' })) {
           if (!owned.some(r => r.resourceType === type && r.id === resource.id)) owned.push({ resourceType: type, id: resource.id! });
         }
+      }
+    }
+    for (const target of [...owned]) {
+      if (target.resourceType === 'Provenance') continue;
+      for (const audit of await m.searchResources('Provenance', { target: `${target.resourceType}/${target.id}`, _count: '100' }, { cache: 'no-cache' })) {
+        if (!owned.some(r => r.resourceType === 'Provenance' && r.id === audit.id)) owned.push({ resourceType: 'Provenance', id: audit.id! });
       }
     }
     for (const resource of owned.reverse()) {

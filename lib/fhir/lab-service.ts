@@ -16,7 +16,7 @@ import type {
   Patient as FHIRPatient,
 } from '@medplum/fhirtypes';
 import { createProvenanceForResource } from './provenance-service';
-import { validateAndCreate } from './fhir-helpers';
+import { validateAndCreate, validateAndCreateClinicOrder } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
 import { POCT_TESTS } from './lab-constants';
 import { POCT_TAG_SYSTEM, requireOnlineAnalyser } from './poct-device';
@@ -24,6 +24,7 @@ import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 import {
+  assertOrderClinic,
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
@@ -69,6 +70,7 @@ function resolveLabTest(test: LabOrderTest): { code: string; display: string; sy
  */
 export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient, clinicId: string): Promise<string> {
   const client = medplum;
+  await assertOrderClinic(client, clinicId, order.patientId, order.encounterId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   const clinicQuery = { identifier: `clinic|${clinicId}` };
   const patient = await client.searchOne('Patient', { ...clinicQuery, _id: order.patientId });
@@ -130,8 +132,8 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
       }] : undefined,
     };
     const serviceRequest = order.poct
-      ? await client.createResourceIfNoneExist(resource, new URLSearchParams({ identifier: `https://ucc.emr/poct/order-entry|${clinicId}:${order.encounterId}:${order.poct.entryId}` }).toString())
-      : await validateAndCreate<ServiceRequest>(client, resource);
+      ? await validateAndCreateClinicOrder(client, resource, new URLSearchParams({ identifier: `https://ucc.emr/poct/order-entry|${clinicId}:${order.encounterId}:${order.poct.entryId}` }).toString())
+      : await validateAndCreateClinicOrder(client, resource);
     await assignResourceToClinicTenant(client, 'ServiceRequest', serviceRequest, clinicTenant);
     
     serviceRequests.push(serviceRequest);
@@ -174,7 +176,9 @@ export async function receiveLabResults(
   console.log(`📊 Receiving lab results for ServiceRequest ${serviceRequestId}`);
 
   // Get the original service request
-  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
   const accountRefs = getResourceAccountReferences(serviceRequest);
   const clinicId = getClinicIdentifierValue(serviceRequest);
   if (!clinicId) throw new ForbiddenError('Lab order has no clinic identifier');

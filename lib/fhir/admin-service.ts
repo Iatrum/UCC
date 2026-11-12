@@ -56,6 +56,7 @@ async function getClinicPolicyParameters(
 
   return [
     { name: "clinicAccount", valueReference: { reference: `HealthcareService/${account.id}` } },
+    { name: "clinicWriteAccounts", valueString: `^HealthcareService/${account.id!.replace(/\./g, "[.]")}$` },
     { name: "clinicOrganization", valueReference: { reference: `Organization/${clinicOrganizationId}` } },
   ];
 }
@@ -92,6 +93,9 @@ function withClinicMembershipAccess(
     (entry) => entry.policy.reference !== policyReference
   );
 
+  const writeAccounts = '^(' + [...new Set(parameters.flatMap(params =>
+    (params ?? []).filter(p => p.name === 'clinicAccount').map(p => p.valueReference?.reference).filter(Boolean)
+  ))].sort().map(ref => ref!.replace(/\./g, '[.]')).join('|') + ')$';
   return {
     ...membership,
     accessPolicy: undefined,
@@ -99,7 +103,10 @@ function withClinicMembershipAccess(
       ...otherAccess,
       ...parameters.map((parameter) => ({
         policy: { reference: policyReference },
-        parameter,
+        parameter: [
+          ...(parameter ?? []).filter(p => p.name !== 'clinicWriteAccounts'),
+          { name: 'clinicWriteAccounts', valueString: writeAccounts },
+        ],
       })),
     ],
   };

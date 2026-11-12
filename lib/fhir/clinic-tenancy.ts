@@ -1,5 +1,6 @@
-import type { MedplumClient } from "@medplum/core";
+import { OperationOutcomeError, forbidden, isNotFound, isGone } from "@medplum/core";
 import type { HealthcareService, Organization, Parameters, Patient, Reference } from "@medplum/fhirtypes";
+import type { MedplumClient } from "@medplum/core";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 
 export const CLINIC_IDENTIFIER_SYSTEM = "clinic";
@@ -229,5 +230,44 @@ export async function assignResourceToAccountReferences(
 
     const adminMedplum = await getAdminMedplum();
     await adminMedplum.post(`fhir/R4/${resourceType}/${resource.id}/$set-accounts`, parameters);
+  }
+}
+
+/** Authorize an order's patient and visit before creating any resources. */
+export async function assertOrderClinic(
+  medplum: MedplumClient,
+  clinicId: string,
+  patientId: string,
+  encounterId?: string
+): Promise<void> {
+  if (!clinicId || !/^[A-Za-z0-9.-]+$/.test(patientId) ||
+      (encounterId && !/^[A-Za-z0-9.-]+$/.test(encounterId))) {
+    throw new OperationOutcomeError(forbidden);
+  }
+  const tenant = await resolveClinicTenant(medplum, clinicId);
+  const options = { cache: 'no-cache' as const, headers: { 'X-Medplum': 'extended' } };
+  const belongs = (resource: { identifier?: Patient["identifier"]; meta?: Patient["meta"] }) => {
+    const accounts = getResourceAccountReferences(resource);
+    return accounts.length
+      ? accounts.every(account => account.reference === tenant?.accountReference)
+      : resourceMatchesClinicTenant(resource, clinicId);
+  };
+  const read = async (type: 'Patient' | 'Encounter', id: string) => {
+    try { return await medplum.readResource(type, id, options); }
+    catch (error) {
+      if (error instanceof OperationOutcomeError &&
+          (isNotFound(error.outcome) || isGone(error.outcome) || error.outcome.id === 'forbidden')) {
+        throw new OperationOutcomeError(forbidden);
+      }
+      throw error;
+    }
+  };
+  const patient = await read('Patient', patientId);
+  if (!belongs(patient)) throw new OperationOutcomeError(forbidden);
+  if (encounterId) {
+    const encounter = await read('Encounter', encounterId) as import('@medplum/fhirtypes').Encounter;
+    if (!belongs(encounter) || encounter.subject?.reference !== `Patient/${patientId}`) {
+      throw new OperationOutcomeError(forbidden);
+    }
   }
 }

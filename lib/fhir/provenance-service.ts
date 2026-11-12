@@ -5,9 +5,10 @@
  * This provides an audit trail for compliance and accountability.
  */
 
-import { MedplumClient } from '@medplum/core';
-import type { Provenance, Reference } from '@medplum/fhirtypes';
-import { assignResourceToAccountReferences } from './clinic-tenancy';
+import { MedplumClient, OperationOutcomeError, forbidden } from '@medplum/core';
+import type { Provenance, Reference, ResourceType } from '@medplum/fhirtypes';
+import { assignResourceToAccountReferences, getResourceAccountReferences } from './clinic-tenancy';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
 export interface ProvenanceData {
   target: Array<{ reference: string }>;
@@ -35,25 +36,58 @@ export interface ProvenanceData {
  * Create a Provenance resource to track resource creation/update
  */
 export async function createProvenance(medplum: MedplumClient, data: ProvenanceData): Promise<string> {
+  // Do not let the privileged writer become a confused deputy. Check every
+  // target with the acting client, bypassing its cache, before obtaining admin.
+  if (!data.target.length) throw new OperationOutcomeError(forbidden);
+  const targetAccounts = new Map<string, Reference>();
+  for (const target of data.target) {
+    const match = /^([A-Z][A-Za-z]+)\/([A-Za-z0-9.-]+)$/.exec(target.reference);
+    if (!match) throw new OperationOutcomeError(forbidden);
+    const resource = await medplum.readResource(match[1] as ResourceType, match[2], {
+      cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+    });
+    for (const account of getResourceAccountReferences(resource)) {
+      if (account.reference) targetAccounts.set(account.reference, account);
+    }
+  }
+  // Supplied accounts may never redirect an audit away from a stamped target.
+  if (targetAccounts.size && data.accounts?.some(a => !a.reference || !targetAccounts.has(a.reference))) {
+    throw new OperationOutcomeError(forbidden);
+  }
+  const accounts = [...targetAccounts.values()];
+  const writer = await getAdminMedplum();
+  // Automated receive paths have no supplied practitioner. FHIR R4 requires
+  // agent.who; identify the authenticated service profile rather than emit an
+  // empty/invalid agent. ClientApplication is not an R4 who target, so represent
+  // that Medplum identity as a logical Reference identifier.
+  let agents: Array<Partial<Pick<Provenance['agent'][number], 'who' | 'onBehalfOf'>>> = data.agent.filter(agent => agent.who || agent.onBehalfOf);
+  if (!agents.length || agents.some(agent => !agent.who)) {
+    const profile = await medplum.getProfileAsync();
+    if (!profile?.id) throw new Error('Provenance requires an authenticated actor');
+    const who: Provenance['agent'][number]['who'] = {
+      identifier: { system: 'urn:medplum:profile', value: `${profile.resourceType}/${profile.id}` },
+    };
+    agents = agents.length ? agents.map(agent => ({ ...agent, who: agent.who ?? who })) : [{ who }];
+  }
   const provenance: Provenance = {
     resourceType: 'Provenance',
     target: data.target,
     recorded: data.recorded,
-    agent: data.agent.filter(agent => agent.who || agent.onBehalfOf).map(agent => ({
+    agent: agents.map(agent => ({
       who: agent.who!,
       onBehalfOf: agent.onBehalfOf,
     })),
     activity: data.activity,
   };
 
-  const created = await medplum.createResource<Provenance>(provenance);
+  const created = await writer.createResource<Provenance>(provenance);
   if (!created.id) {
     throw new Error('Failed to create Provenance (missing id)');
   }
 
-  if (data.accounts?.length) {
+  if (accounts.length) {
     try {
-      await assignResourceToAccountReferences(medplum, 'Provenance', created, data.accounts);
+      await assignResourceToAccountReferences(writer, 'Provenance', created, accounts);
     } catch (error) {
       console.warn(`⚠️  Failed to stamp meta.accounts on Provenance/${created.id} (non-blocking):`, error);
     }
