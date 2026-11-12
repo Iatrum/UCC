@@ -13,6 +13,7 @@
 
 import { MedplumClient } from "@medplum/core";
 import type { AccessPolicy, AccessPolicyResource } from "@medplum/fhirtypes";
+import { clinicCompartmentRules, clinicProvenanceRules } from "../lib/fhir/clinic-access-policy";
 
 const MEDPLUM_BASE_URL = process.env.MEDPLUM_BASE_URL || "http://localhost:8103";
 const MEDPLUM_CLIENT_ID = process.env.MEDPLUM_CLIENT_ID;
@@ -39,13 +40,6 @@ const READ_INTERACTIONS: AccessPolicyResource["interaction"] = [
   "vread",
 ];
 
-function clinicCompartmentRule(resourceType: string, interactions = ALL_INTERACTIONS): AccessPolicyResource {
-  return {
-    resourceType,
-    criteria: `${resourceType}?_compartment=%clinicAccount`,
-    interaction: interactions,
-  };
-}
 
 function patientOwnedRule(resourceType: string): AccessPolicyResource {
   return {
@@ -94,43 +88,29 @@ async function setupAccessPolicies() {
     resourceType: "AccessPolicy",
     name: CLINIC_POLICY_NAME,
     resource: [
-      clinicCompartmentRule("Patient"),
-      clinicCompartmentRule("Encounter"),
-      clinicCompartmentRule("Observation"),
-      clinicCompartmentRule("Condition"),
-      clinicCompartmentRule("Procedure"),
-      clinicCompartmentRule("MedicationRequest"),
-      clinicCompartmentRule("MedicationStatement"),
-      clinicCompartmentRule("AllergyIntolerance"),
-      clinicCompartmentRule("ServiceRequest"),
-      clinicCompartmentRule("DiagnosticReport"),
-      clinicCompartmentRule("ImagingStudy"),
-      clinicCompartmentRule("DocumentReference"),
-      clinicCompartmentRule("Appointment"),
-      clinicCompartmentRule("Invoice"),
-      clinicCompartmentRule("Task"),
-      clinicCompartmentRule("Basic"),
-      clinicCompartmentRule("ChargeItemDefinition"),
-      clinicCompartmentRule("Medication"),
-      clinicCompartmentRule("Communication"),
-      clinicCompartmentRule("QuestionnaireResponse"),
-      clinicCompartmentRule("Schedule"),
-      clinicCompartmentRule("Slot"),
-      {
-        // Provenance (audit trail) is created by the acting user's own client
-        // on nearly every clinical write, non-blocking try/catch -- gate
-        // create unconditionally (not compartment-filtered) because the
-        // clinic account reference is only stamped onto the Provenance
-        // *after* it's created (mirrors every other resource's $set-accounts
-        // call). Read/search stay compartment-scoped below once stamped.
-        resourceType: "Provenance",
-        interaction: ["create"],
-      },
-      {
-        resourceType: "Provenance",
-        criteria: "Provenance?_compartment=%clinicAccount",
-        interaction: READ_INTERACTIONS,
-      },
+      ...clinicCompartmentRules("Patient"),
+      ...clinicCompartmentRules("Encounter"),
+      ...clinicCompartmentRules("Observation"),
+      ...clinicCompartmentRules("Condition"),
+      ...clinicCompartmentRules("Procedure"),
+      ...clinicCompartmentRules("MedicationRequest"),
+      ...clinicCompartmentRules("MedicationStatement"),
+      ...clinicCompartmentRules("AllergyIntolerance"),
+      ...clinicCompartmentRules("ServiceRequest"),
+      ...clinicCompartmentRules("DiagnosticReport"),
+      ...clinicCompartmentRules("ImagingStudy"),
+      ...clinicCompartmentRules("DocumentReference"),
+      ...clinicCompartmentRules("Appointment"),
+      ...clinicCompartmentRules("Invoice"),
+      ...clinicCompartmentRules("Task"),
+      ...clinicCompartmentRules("Basic"),
+      ...clinicCompartmentRules("ChargeItemDefinition"),
+      ...clinicCompartmentRules("Medication"),
+      ...clinicCompartmentRules("Communication"),
+      ...clinicCompartmentRules("QuestionnaireResponse"),
+      ...clinicCompartmentRules("Schedule"),
+      ...clinicCompartmentRules("Slot"),
+      ...clinicProvenanceRules(),
       {
         resourceType: "Practitioner",
         interaction: READ_INTERACTIONS,

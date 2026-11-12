@@ -24,6 +24,7 @@ import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 import {
+  assertOrderClinic,
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
@@ -69,6 +70,7 @@ function resolveLabTest(test: LabOrderTest): { code: string; display: string; sy
  */
 export async function createLabOrder(order: LabOrderRequest, medplum: MedplumClient, clinicId: string): Promise<string> {
   const client = medplum;
+  await assertOrderClinic(client, clinicId, order.patientId, order.encounterId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   const clinicQuery = { identifier: `clinic|${clinicId}` };
   const patient = await client.searchOne('Patient', { ...clinicQuery, _id: order.patientId });
