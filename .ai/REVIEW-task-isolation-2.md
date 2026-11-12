@@ -35,3 +35,20 @@ Scope: the two MAJOR findings deferred by Task 090 and independently confirmed i
 - Additional relevant device/module e2e and the single final check-all gate: results will be appended below.
 
 Verdict: the two prerequisite fixes are ready for draft review, subject to final gate evidence below and the explicit rollout limitations above. Independent review remains the next separate task.
+
+### Single final gate and recovery
+
+`check-all.sh task-isolation-2` ran once on the dev-based worktree: **OVERALL FAIL** (lint/build 0, e2e 11/38 with 10 skipped, clinics 1). Local Medplum exited during the run (exit 1, OOMKilled false, ECONNRESET in crash tail); :8113 was absent and later tests/clinic inventory could not connect. Next also restarted. This does not establish a clean no-new-failures gate. Evidence remains under /workspace/ai-logs/task-isolation-2 and task-isolation-2-e2e.
+
+Earlier relevant run was 10/15: the POCT notification test assumed PACS off but the fake clinic had PACS on; later X-ray failures reported Unauthorized/expired sessions. Fresh X-ray-only replay passed 5/5. A targeted notification replay with PACS temporarily off was externally interrupted (143), not counted as passing. Original fake clinic module settings were restored after the gate. Local Medplum recovered in the foreground; an unchanged-code core recovery replay is in progress. Never overwrite original gate evidence with replay/composite results.
+
+### Confirmed unchanged-code recovery results
+
+- All 12 API tests and the expanded isolation test pass in core-recovery. That combined replay then hit the local 5/min login limit in workflow registration; no app fix was made.
+- Separate workflow-recovery: **10/11**; only the expected known-bug summary fails. Registration, triage, consultation signing, both composer paths, lab ingest, documents, billing and all smoke pages pass.
+- Fresh X-ray replay **5/5**. Recovered clinic inventory exit 0.
+- Notification replay with its assumed PACS-off fixture precondition is running last, with an EXIT trap to restore the original module extension. Original gate and all replays remain separate; no second full gate.
+
+### Final recovery verdict
+
+Notification replay PASS 1/1 (1.8m), including live refresh, dropped-socket polling and unmount cleanup, with the pre-existing test's PACS-off precondition. Automatic restore confirmed original fake demo PACS=true/POCT=false. Combined focused evidence: **37/38**, zero skipped, only baseline known-bug summary fails; comparator exit 0. `/workspace/ai-logs/task-isolation-2/recovery-composite-results.json` is clearly marked COMPOSITE and does not replace the original failed gate. No application changes were made during recovery. The draft is ready for independent review; a clean single full gate remains unproven and should be captured before leaving draft.
