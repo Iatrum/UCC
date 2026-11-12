@@ -1,5 +1,12 @@
 # CHANGELOG (plain language)
 
+## 2026-11-12 — Task 100: clinic isolation prerequisites
+Clinic staff policies now deny new results attached to another clinic's patient. Lab and imaging orders also check that the patient and visit belong to the selected clinic before saving. Normal and multi-clinic orders keep working, including POCT/X-ray routing tags and repeat-order protection.
+
+Lab and imaging receives explicitly load the clinic accounts they must copy to results and audit records, even after a cached plain read. Automated audit records now include a valid responsible actor. These are prerequisites for the later membership rollout; no migration, backfill or policy deployment was performed.
+
+Validation: focused isolation, metadata and receive-account tests pass; final dev-based full-gate results will be appended. Self security review: `.ai/REVIEW-task-isolation-2.md`.
+
 ## 2026-11-07 — Task 12: POCT X-ray in the treatment composer
 Doctors can order common X-ray studies (chest / limb) from the treatment composer when a clinic X-ray device is online and the clinic's PACS module is turned on. Signing creates a pending imaging request assigned to that device, keeps the charge on the bill, and does not record a completed procedure. Offline devices cannot be ordered. A simulated device bridge (`scripts/pacs/sim-xray.ts` + `POST /api/imaging/receive/message`) can ingest a study so the Lab tab's new "Pending X-ray" card clears once the study arrives; results stay on Labs & Imaging (no fabricated radiologist report). The Lab live-subscription path now opens when either POCT or PACS is enabled for the clinic. Also fixed two pre-existing ImagingStudy/DiagnosticReport FHIR search-parameter bugs (`basedon` and `study`) that were silently breaking imaging result lookups, and a pre-existing e2e anonymous-context bug in `poct.spec.ts` that inherited the logged-in storageState.
 **Why:** reuses the existing `pacs` module toggle (same on/off switch as other modules); ImagingStudy FHIR R4 for device-ingested studies; DiagnosticReport search param confirmed against this Medplum `/fhir/R4/metadata`.

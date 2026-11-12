@@ -1,5 +1,7 @@
 # Task 100 — Phase 2 prerequisites
 
+Current status: both fixes and order-routing preservation committed; dev integration isolation/lint pass. Relevant device/module suite, single full gate and publication in progress.
+
 2026-11-11: In progress on ai-work. Read AGENTS, STATE, plan, prior self/independent review, progress, research, D33-D36 and backlog. Pre-existing STATE addition, bun.lockb edit, deleted gitlink and untracked notes retained. No migration/backfill or production access.
 
 - Research: SDK/fhirtypes 5.1.13; local server 5.2.15. Official tagged docs/source inspected. Per-request headers supported via MedplumRequestOptions (RequestInit).
