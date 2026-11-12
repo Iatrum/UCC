@@ -56,11 +56,24 @@ export async function createProvenance(medplum: MedplumClient, data: ProvenanceD
   }
   const accounts = [...targetAccounts.values()];
   const writer = await getAdminMedplum();
+  // Automated receive paths have no supplied practitioner. FHIR R4 requires
+  // agent.who; identify the authenticated service profile rather than emit an
+  // empty/invalid agent. ClientApplication is not an R4 who target, so represent
+  // that Medplum identity as a logical Reference identifier.
+  let agents: Array<Partial<Pick<Provenance['agent'][number], 'who' | 'onBehalfOf'>>> = data.agent.filter(agent => agent.who || agent.onBehalfOf);
+  if (!agents.length || agents.some(agent => !agent.who)) {
+    const profile = await medplum.getProfileAsync();
+    if (!profile?.id) throw new Error('Provenance requires an authenticated actor');
+    const who: Provenance['agent'][number]['who'] = {
+      identifier: { system: 'urn:medplum:profile', value: `${profile.resourceType}/${profile.id}` },
+    };
+    agents = agents.length ? agents.map(agent => ({ ...agent, who: agent.who ?? who })) : [{ who }];
+  }
   const provenance: Provenance = {
     resourceType: 'Provenance',
     target: data.target,
     recorded: data.recorded,
-    agent: data.agent.filter(agent => agent.who || agent.onBehalfOf).map(agent => ({
+    agent: agents.map(agent => ({
       who: agent.who!,
       onBehalfOf: agent.onBehalfOf,
     })),
