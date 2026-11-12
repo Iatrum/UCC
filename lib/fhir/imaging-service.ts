@@ -13,7 +13,7 @@ import type {
   Patient as FHIRPatient,
 } from '@medplum/fhirtypes';
 import { createProvenanceForResource } from './provenance-service';
-import { validateAndCreate } from './fhir-helpers';
+import { validateAndCreate, validateAndCreateClinicOrder } from './fhir-helpers';
 import {
   IMAGING_PROCEDURES,
   type ImagingProcedureCode,
@@ -109,7 +109,7 @@ export async function createImagingOrder(
     const procedure = resolveImagingProcedure(procedureCode);
     const modality = IMAGING_MODALITIES[procedure.modality as ModalityCode];
     
-    const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
+    const serviceRequest = await validateAndCreateClinicOrder(client, {
       resourceType: 'ServiceRequest',
       identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
       status: 'active',

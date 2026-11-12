@@ -10,6 +10,7 @@ require('tsx/cjs');
 const { clinicCompartmentRules, clinicProvenanceRules } = require('../../lib/fhir/clinic-access-policy.ts');
 const { createLabOrder, receiveLabResults } = require('../../lib/fhir/lab-service.ts');
 const { createImagingOrder, receiveImagingStudy, createImagingReport } = require('../../lib/fhir/imaging-service.ts');
+const { validateAndCreateClinicOrder } = require('../../lib/fhir/fhir-helpers.ts');
 const { getAdminMedplum } = require('../../lib/server/medplum-admin.ts');
 const { createProvenanceForResource } = require('../../lib/fhir/provenance-service.ts');
 const { saveTriageEncounter, updateTriageEncounter, updateQueueStatusForPatient } = require('../../lib/fhir/triage-service.ts');
@@ -58,7 +59,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       const account = await create({ resourceType: 'HealthcareService', active: true, identifier: [{ system: 'clinic', value: slug }], providedBy: { reference: `Organization/${organization.id}` } });
       const patient = await create({ resourceType: 'Patient', name: [{ family: 'Fake isolation patient' }], identifier: [{ system: 'clinic', value: slug }] });
       await stamp(patient, account);
-      const encounter = await create({ resourceType: 'Encounter', status: 'in-progress', class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: 'AMB' }, subject: { reference: `Patient/${patient.id}` } });
+      const encounter = await create({ resourceType: 'Encounter', identifier: [{system:'clinic',value:slug}], status: 'in-progress', class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: 'AMB' }, subject: { reference: `Patient/${patient.id}` } });
       await stamp(encounter, account);
       const observation = await create({ resourceType: 'Observation', status: 'final', code: { text: 'Fake isolation result' }, subject: { reference: `Patient/${patient.id}` } });
       await stamp(observation, account);
@@ -205,6 +206,19 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       authoredOn: new Date().toISOString(),
       meta:{profile:['http://fhir.hie.moh.gov.my/StructureDefinition/ServiceRequest-my-core']},
     }, 201);
+    const taggedOrderInput = {
+      resourceType:'ServiceRequest', status:'active', intent:'order',
+      subject:{reference:`Patient/${clinics[1].patient.id}`},
+      identifier:[{system:'urn:ucc:fake-order', value:suffix}],
+      meta:{tag:[{system:'urn:ucc:fake-routing', code:'poct'}]},
+    };
+    const taggedQuery = new URLSearchParams({identifier:`urn:ucc:fake-order|${suffix}`}).toString();
+    const taggedOrder = await validateAndCreateClinicOrder(staff, taggedOrderInput, taggedQuery);
+    owned.push({resourceType:'ServiceRequest', id:taggedOrder.id});
+    expect(taggedOrder.meta?.tag).toEqual([{system:'urn:ucc:fake-routing', code:'poct'}]);
+    expect(taggedOrder.meta?.profile).toContain('http://fhir.hie.moh.gov.my/StructureDefinition/ServiceRequest-my-core');
+    expect(await accounts(taggedOrder)).toEqual([`HealthcareService/${clinics[1].account.id}`]);
+    expect((await validateAndCreateClinicOrder(staff, taggedOrderInput, taggedQuery)).id).toBe(taggedOrder.id);
     const sameLab = await createLabOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, tests: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
     owned.push({ resourceType: 'ServiceRequest', id: sameLab });
     const sameImaging = await createImagingOrder({ patientId: clinics[1].patient.id, encounterId: clinics[1].encounter.id, procedures: ['Fake'], orderedBy: `Practitioner/${practitionerId}` }, staff, clinics[1].slug);
@@ -219,6 +233,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     const expectedAccount = `HealthcareService/${clinics[1].account.id}`;
     const receiveOrder = async () => {
       const order = await create({ resourceType:'ServiceRequest', status:'active', intent:'order',
+        identifier:[{system:'clinic',value:clinics[1].slug}],
         subject:{reference:`Patient/${legacyPatient.id}`}, code:{text:'Fake receive test'} });
       await stamp(order, clinics[1].account);
       const cached: any = await plain.readResource('ServiceRequest', order.id, { cache: 'force-cache' });
@@ -235,7 +250,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       expect((await staff!.readResource(resource.resourceType, resource.id, {cache:'no-cache'})).id).toBe(resource.id);
     };
     const labReceiveOrder = await receiveOrder();
-    const labReportId = await receiveLabResults(labReceiveOrder.id, [{testCode:'2345-7', testName:'Fake glucose', value:5, unit:'mmol/L'}], undefined, plain);
+    const labReportId = await receiveLabResults(labReceiveOrder.id, [{testCode:'2345-7', testName:'Fake glucose', value:5, unit:'mmol/L', status:'final'}], undefined, plain);
     const labReport = await m.readResource('DiagnosticReport', labReportId, extended);
     owned.push({resourceType:'DiagnosticReport', id:labReportId});
     await verifyResult(labReport);

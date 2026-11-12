@@ -16,7 +16,7 @@ import type {
   Patient as FHIRPatient,
 } from '@medplum/fhirtypes';
 import { createProvenanceForResource } from './provenance-service';
-import { validateAndCreate } from './fhir-helpers';
+import { validateAndCreate, validateAndCreateClinicOrder } from './fhir-helpers';
 import { createResourcesInBundle } from './bundle-helpers';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 import {
@@ -79,7 +79,7 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
   for (const testCode of order.tests) {
     const test = resolveLabTest(testCode);
     
-    const serviceRequest = await validateAndCreate<ServiceRequest>(client, {
+    const serviceRequest = await validateAndCreateClinicOrder(client, {
       resourceType: 'ServiceRequest',
       identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }],
       status: 'active',
