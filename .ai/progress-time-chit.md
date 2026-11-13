@@ -39,3 +39,36 @@ Local Next port: 3214, heap cap 2560 MB. Medplum: localhost:8113, fake fixtures 
 - Existing workflow has serial prerequisites and an early draft read before its document step.
   Added opt-in UCC_LOCAL_DOCUMENTS_ONLY=1 to stub draft storage from page creation. Will run only
   steps 01–04 (setup), 06 (MC/referral composer) and 08 (documents), not the full workflow/suite.
+
+## Milestone 3 — local validation complete
+
+All requested focused checks passed; no full suite or check-all.sh was run, per the task's explicit scope.
+
+- `NODE_OPTIONS=--max-old-space-size=2560 bun run lint` — PASS (TypeScript lint + admin-client guard).
+- `NODE_OPTIONS=--max-old-space-size=2560 npx tsc --noEmit` — PASS.
+- `bun test tests/unit/module-settings.test.ts tests/unit/time-chit.test.ts` — 8 PASS, 27 assertions.
+- From e2e, UCC_BASE_URL=http://localhost:3214, NODE_OPTIONS capped at 2560:
+  `timeout 20m npx playwright test tests/time-chit.spec.ts --workers=1` — 1 PASS (28.1s).
+  Covers default off/client hiding, POST/PATCH/DELETE rejection, module on form and validation,
+  custom-catalog pricing, checkout PDF bytes, both creation/replacement account metadata,
+  invalid data rejected without removing existing records, disabled-module historical print,
+  re-enabled edits, admin switch save/reload, fresh clinic default off, second-clinic app/FHIR denial.
+  MC/referral forms also exercised with toggle off and on.
+- From e2e, UCC_LOCAL_DOCUMENTS_ONLY=1 and the same local URL/heap cap:
+  `timeout 20m npx playwright test tests/workflow.spec.ts --workers=1 --grep '(01 login|02 register|03 check-in|04 start|06 composer|08 documents)'`
+  — 6 PASS (3.0m). Only document-related serial workflow and its setup; no full workflow/suite.
+- Test-development corrections were selector/flow/headless-browser assumptions, documented above;
+  no failed attempt was blindly looped. An initial anchored grep matched no tests; corrected the
+  grep to match Playwright's full test titles before running the six selected steps.
+- Logs: `/workspace/ai-logs/task-time-chit/{lint.log,typecheck.log,unit.log,e2e-time-chit.log,e2e-mc-regression.log}`.
+- Reports: `/workspace/ai-logs/task-time-chit/{reports,mc-reports}`.
+- Screenshots/PDF: `/workspace/iatrum-ucc-evidence/task-time-chit/`:
+  `time-chit-toggle-off.png`, `time-chit-admin-toggle.png`, `time-chit-composer-preview.png`,
+  `time-chit-historical-print.png`, `time-chit-checkout-pdf.png`, `time-chit-checkout.pdf`,
+  `time-chit-printed-slip.png`; MC/referral images in `mc-regression/`.
+  Headless embedded PDF viewer appears blank; exported PDF was rasterized and visually reviewed,
+  and its attendance/date/time/duration/doctor/disclaimer content checked with pdftotext.
+- Self-review: `.ai/REVIEW-time-chit.md`. Plain-language changelog, D38 decision and STATE updated.
+- No sidebar/nav, POCT/X-ray, Firebase Storage, production or real-patient-data changes.
+- Stopped only this task's detached process group (Next --port 3214). Post-shutdown curl returned
+  HTTP 000; reserved worktree/server were not touched.
