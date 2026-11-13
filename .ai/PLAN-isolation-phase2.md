@@ -162,8 +162,7 @@ job is a one-time, hard-to-reverse write to login-determining resources.
   instruction would.
 - **Per-membership JSON backup** written before any write, outside the repo
   (`/workspace/ai-logs/task-isolation-phase2/backup/<projectId>-<membershipId>.json`, `0600`),
-  exactly the shape `apply-local-staff-policy.mjs` already uses (`{projectId, memberId, policyId,
-  membership}`) so `--rollback --apply` can restore the exact original `accessPolicy`/`access`
+  exactly the shape `apply-local-staff-policy.mjs` already uses (`{projectId, membershipId, membership, writtenAccess}`) so `--rollback --apply` can restore the exact original `accessPolicy`/`access`
   fields, verified byte-for-byte (`isDeepStrictEqual`) before restoring, same drift protection the
   existing script has.
 - **Exclusive lock file** for the duration of any `--apply` run (`apply.lock` in the same backup
@@ -185,9 +184,7 @@ job is a one-time, hard-to-reverse write to login-determining resources.
 
 ## 5. e2e verification list
 
-To run after each individual `--apply`, not written as new automated tests in this plan-only task
-— Task 100 and any Phase 2 build task should add these to `e2e/tests/clinic-isolation.spec.ts`
-using the same four-disposable-clinic fixture pattern already there:
+Task 130 adds `e2e/tests/staff-membership.spec.ts` for the actual CLI, disposable password logins, four-clinic direct FHIR probes, multi-clinic union and rollback. Existing clinic-isolation service probes and the full workflow/Lab/POCT/X-ray suites provide the positive-path checks after the seeded fake doctor migration:
 
 1. The migrated account can still log in (no regression from the write).
 2. The migrated account can read/search its own clinic's Patient/Encounter/Observation/
@@ -229,7 +226,7 @@ Phase 3 admin-client defense-in-depth remains separate. Production migration is 
    must be mirrored exactly by whatever builds `access[]` at migration time. §3's discovery check
    converts "silently writes an incomplete entry" into "refuses to run", but someone still has to
    update the script's builder map when a genuinely new parameter ships — not automatic.
-3. **Backup/rollback correctness must be exercised against disposable fixtures in Task 130.** The script in §8 must first be exercised against a disposable fake membership before any seeded fake staff account, same caution Task 090's Phase 0 used for the read-side mechanism.
+3. **Backup/rollback correctness must be exercised against disposable fixtures in Task 130.** The script in §4 must first be exercised against a disposable fake membership before any seeded fake staff account, same caution Task 090's Phase 0 used for the read-side mechanism.
 4. **Break-glass accounts.** Per `REVIEW-task-isolation-1.md` finding 3, a no-policy membership
    might be intentional (not just a stale test account). Step 3's manual review is the only control
    for this — the script deliberately does not auto-apply to every eligible membership in one run.

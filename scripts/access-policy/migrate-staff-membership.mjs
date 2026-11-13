@@ -250,7 +250,10 @@ async function main() {
       const { clinics, unresolved } = await resolveClinicsForPractitioner(practitionerId);
       if (unresolved.length || !clinics.length) unresolvedCount += 1;
       console.log(`ProjectMembership/${member.id} (${member.profile.reference})`);
-      if (clinics.length) console.log(`  would migrate to policy ${policyReference}, clinics: ${clinics.map((c) => c.clinicId).join(', ')}`);
+      if (clinics.length) {
+        console.log(`  would migrate to policy ${policyReference}, clinics: ${clinics.map((c) => c.clinicId).join(', ')}`);
+        console.log(JSON.stringify({ access: clinics.map(clinic => ({ policy: { reference: policyReference }, parameter: buildParametersForClinic(clinic, clinics.map(c => c.accountRef)) })) }));
+      }
       if (unresolved.length) console.log(`  UNRESOLVED (will refuse --apply until fixed): ${unresolved.join('; ')}`);
       if (!clinics.length && !unresolved.length) console.log('  no active PractitionerRole found -- nothing to migrate, needs operator decision');
     }

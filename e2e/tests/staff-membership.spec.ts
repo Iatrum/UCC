@@ -96,6 +96,15 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
       const legacy = { ...member! }; delete legacy.access; delete legacy.accessPolicy;
       member = await m.updateResource(legacy);
       const original = JSON.stringify([member.accessPolicy ?? null, member.access ?? null]);
+      if (indices.length === 1) {
+        const role = await m.searchOne('PractitionerRole', { practitioner: `Practitioner/${practitioner!.id}`, active: 'true' }, { cache: 'no-cache' });
+        expect(Boolean(role?.id)).toBe(true);
+        await m.updateResource({ ...role!, active: false });
+        expect(await cli(['--membership', member.id!], 1)).toContain('Unresolved clinic assignments');
+        expect(await cli(['--apply', '--membership', member.id!], 1)).toContain('No active PractitionerRole');
+        expect((await m.readResource('ProjectMembership', member.id!, { cache: 'no-cache' })).access).toBeUndefined();
+        await m.updateResource({ ...role!, active: true });
+      }
       expect(await cli(['--membership', member.id!])).toContain('Dry run only');
       expect(JSON.stringify((await m.readResource('ProjectMembership', member.id!, { cache: 'no-cache' })).access ?? null)).toBe('null');
       expect(await cli(['--apply', '--membership', member.id!])).toContain('Applied clinic staff policy');
