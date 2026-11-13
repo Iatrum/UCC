@@ -197,7 +197,8 @@ async function main() {
   // --- Resolve a Practitioner's active clinics: PractitionerRole -> Organization -> clinic identifier -> HealthcareService account.
   async function resolveClinicsForPractitioner(practitionerId) {
     const roles = await searchAll(`fhir/R4/PractitionerRole?practitioner=Practitioner/${practitionerId}&active=true&_count=100`);
-    const organizationIds = [...new Set(roles.map((r) => refId(r.organization?.reference)).filter(Boolean))];
+    if (roles.some(r => !/^Organization\/[A-Za-z0-9.-]{1,64}$/.test(r.organization?.reference ?? ''))) fail('Active role has no valid clinic organization reference');
+    const organizationIds = [...new Set(roles.map((r) => refId(r.organization.reference)))];
     const clinics = [];
     const unresolved = [];
     for (const orgId of organizationIds.sort()) {
@@ -228,6 +229,7 @@ async function main() {
     const { policyReference } = await discoverRequiredTokens();
     const memberships = await searchAll(`fhir/R4/ProjectMembership?project=Project/${projectId}&_count=500`);
     let eligibleCount = 0;
+    let unresolvedCount = 0;
     for (const member of memberships) {
       if (onlyMembershipId && member.id !== onlyMembershipId) continue;
       if (member.project?.reference !== `Project/${projectId}` || member.admin) continue;
@@ -246,12 +248,14 @@ async function main() {
       const practitionerId = refId(member.profile.reference);
 
       const { clinics, unresolved } = await resolveClinicsForPractitioner(practitionerId);
+      if (unresolved.length || !clinics.length) unresolvedCount += 1;
       console.log(`ProjectMembership/${member.id} (${member.profile.reference})`);
       if (clinics.length) console.log(`  would migrate to policy ${policyReference}, clinics: ${clinics.map((c) => c.clinicId).join(', ')}`);
       if (unresolved.length) console.log(`  UNRESOLVED (will refuse --apply until fixed): ${unresolved.join('; ')}`);
       if (!clinics.length && !unresolved.length) console.log('  no active PractitionerRole found -- nothing to migrate, needs operator decision');
     }
     console.log(`Eligible (non-admin, no existing accessPolicy/access) memberships found: ${eligibleCount}`);
+    if (unresolvedCount) fail(`Unresolved clinic assignments for ${unresolvedCount} membership(s); operator review required`);
     if (eligibleCount === 0 && onlyMembershipId) fail('Membership not eligible: missing, admin, non-Practitioner profile, or already has grants');
   }
 

@@ -16,3 +16,8 @@ Pending: baseline diagnosis; cherry-pick plan/script; harden migration; local pe
 Plan/script commits e5921a0, 2a6ed05, 2b4cf89 imported. Preserved Task 130 progress and current shared history during cherry-pick conflicts; planning decision renumbered D38 because merged Task 100 already uses D37.
 
 Milestone 1: fixture WIP a815000 pushed. Focused POCT 7/7 PASS; workflow now passes catalog selection but hit Unauthorized at post-sign FHIR verification (previous task also noted session expiry). Workflow-only replay running, no second full gate. Imported plan commits preserving shared history (planning D38 vs merged Task 100 D37). Script adaptation in progress; no membership writes yet.
+
+## Resume — 2026-11-14
+Continued existing worktree/branch at `2f6e05e`, retaining the single completed baseline. Local Medplum healthy; restarted the sole real :3210 webpack dev server in a foreground tool session, capped at 3072 MB. Live local policy already matches merged rules (57 entries); previous private policy/database backups retained.
+
+Migration regression was untracked on takeover. Found Fetch `Response.ok` used as a method and cleanup using an expired password-admin cookie; switched fixtures/cleanup to the existing client-credentials admin helpers, kept actual password logins for migrated staff, added bounded raw requests. The initial resumed replay used the old fixture because an edit ran from the wrong directory; its failed cleanup is not migration evidence. Corrected replay `migration-resume-r2` now running. Hardened dry-run to exit nonzero for unresolved clinics and reject malformed active role organization references. No second full gate has run; seeded staff migration remains pending.
