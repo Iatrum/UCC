@@ -40,3 +40,10 @@ Dry-run is the default. The base URL must be localhost:8113 (no credentials, pat
 - Cross-clinic create MAJOR: **closed on dev.** Policy `writeConstraint` and `readonlyFields: ['meta']` are on dev (`lib/fhir/clinic-access-policy.ts`). In the gate, `staff-membership.spec` confirms with a real migrated login that a foreign-clinic Encounter/Observation/ServiceRequest create returns 403, a forged foreign Patient create returns 403, and foreign update/delete returns 403/404. `clinic-isolation.spec` passes.
 - Receive-account MAJOR: **closed on dev.** Extended/no-cache reads in lab-service, imaging-service, fhir-helpers and provenance-service are on dev. With the migrated doctor, HL7 and ASTM POCT results and X-ray studies show up on the Lab tab (they are only visible if the account propagated), and the receive spec passes.
 - Verdict for #231: **APPROVE (post-merge)**. No further action is needed beyond D40 in this PR.
+
+## Independent Claude second review (read-only, 2026-11-14 02:52 MYT)
+Full text: `/workspace/ai-logs/claude-review-isolation-3.md`. Verdict **APPROVE (draft)**, no new MAJOR. MINORs:
+- Add a clinicId allowlist where it is produced (`lib/server/clinic.ts`) as defense in depth. Today `deviceForClinic`'s exact-match recheck already blocks any widening.
+- The PR body wrongly said `setup-access-policies.ts` refuses without guards. It is the migration script that refuses. PR body corrected.
+- `BACKUP_ROOT` has no env override. PR body corrected; adding an override is a follow-up.
+It also re-verified that the test changes do not weaken any assertion, that the parameters match exactly, and that clinicId cannot be set from the request.
