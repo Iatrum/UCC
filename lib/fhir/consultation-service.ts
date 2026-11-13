@@ -313,6 +313,7 @@ export async function saveConsultationToMedplum(
 
   // 1. Verify patient exists in Medplum
   const clinicTenant = await resolveClinicTenant(client, clinicId);
+  if ((consultation.procedures || []).some(isTimeChitProcedure) && !clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
   const patient = await getOrCreatePatient(client, patientData, clinicId);
   const patientReference = `Patient/${patient.id}`;
 
@@ -757,6 +758,7 @@ export async function updateConsultationInMedplum(
     await assertTimeChitMutationAllowed(updates.procedures, procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
   }
   const clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);
+  if ((updates.procedures || []).some(isTimeChitProcedure) && !clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
 
   // 2. Update Chief Complaint Observation
   if (updates.chiefComplaint !== undefined) {
