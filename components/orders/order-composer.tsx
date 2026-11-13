@@ -27,7 +27,8 @@ import {
   type TreatmentPlanTab,
 } from "@/lib/treatment-plan";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
-import { DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
+import { timeChitHours, timeChitError, fillTimeChitTemplate } from "@/lib/time-chit";
+import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import { formatDisplayDate } from "@/lib/utils";
 
 type CatalogItem = {
@@ -59,6 +60,7 @@ interface OrderComposerProps {
   submitLabel?: string;
   submitting?: boolean;
   patient?: { id: string; fullName: string; nric: string } | null;
+  timeChitEnabled?: boolean;
   poctEnabled?: boolean;
   pacsEnabled?: boolean;
 }
@@ -224,7 +226,8 @@ function kindLabelForTab(tab: TreatmentPlanTab): string {
   }
 }
 
-function documentKind(item: CatalogItem): "mc" | "referral" | null {
+function documentKind(item: CatalogItem): "mc" | "referral" | "time-chit" | null {
+  if (item.meta?.kind === "time-chit" || item.id === "letter-time-chit") return "time-chit";
   if (item.meta?.kind === "mc" || item.id === "letter-mc") return "mc";
   if (item.meta?.kind === "referral" || item.id === "letter-referral") return "referral";
   return null;
@@ -232,6 +235,7 @@ function documentKind(item: CatalogItem): "mc" | "referral" | null {
 
 function documentDisplayName(item: CatalogItem): string {
   const kind = documentKind(item);
+  if (kind === "time-chit") return "TIME CHIT";
   if (kind === "mc") return "MEDICAL CERTIFICATE (MC)";
   if (kind === "referral") return "REFERRAL LETTER";
   return item.name;
@@ -328,6 +332,8 @@ export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | und
     status: entry.meta?.documentStatus || "completed",
     title: entry.name,
     instruction: entry.instruction || "",
+    tcDate: entry.meta?.tcDate || "", tcTimeIn: entry.meta?.tcTimeIn || "",
+    tcTimeOut: entry.meta?.tcTimeOut || "", tcHours: entry.meta?.tcHours || "", tcDoctorName: entry.meta?.tcDoctorName || "",
     mcDays: entry.meta?.mcDays || "",
     mcDiagnosis: entry.meta?.mcDiagnosis || "",
     mcStartDate: entry.meta?.mcStartDate || "",
@@ -367,6 +373,7 @@ export function OrderComposer({
   submitLabel = "Sign Order",
   submitting = false,
   patient = null,
+  timeChitEnabled = false,
   poctEnabled = false,
   pacsEnabled = false,
 }: OrderComposerProps) {
@@ -385,6 +392,12 @@ export function OrderComposer({
   }, []);
   const [detailEntryId, setDetailEntryId] = React.useState<string | null>(null);
   const [editingDocumentEntryId, setEditingDocumentEntryId] = React.useState<string | null>(null);
+  const [tcDetails, setTcDetails] = React.useState({ tcDate: new Date().toLocaleDateString("en-CA"), tcTimeIn: "", tcTimeOut: "", tcDoctorName: "" });
+  const [tcTemplate, setTcTemplate] = React.useState(DEFAULT_TIME_CHIT_TEMPLATE);
+  React.useEffect(() => {
+    if (timeChitEnabled) fetch("/api/document-templates?type=time-chit")
+      .then(r => r.ok ? r.json() : null).then(data => { if (data?.html) setTcTemplate(data.html); }).catch(() => {});
+  }, [timeChitEnabled]);
   const [mcDays, setMcDays] = React.useState(1);
   const [mcDiagnosis, setMcDiagnosis] = React.useState("");
   const [mcStartDate, setMcStartDate] = React.useState(() => new Date().toISOString().split("T")[0]);
@@ -409,9 +422,9 @@ export function OrderComposer({
       items,
       services,
       packages,
-      documents,
+      documents: documents.filter(item => timeChitEnabled || documentKind(item) !== "time-chit"),
     }),
-    [items, services, packages, documents]
+    [items, services, packages, documents, timeChitEnabled]
   );
 
   const unifiedCatalogRows = React.useMemo(
@@ -445,7 +458,9 @@ export function OrderComposer({
     ? entries.find((e) => e.id === editingDocumentEntryId)
     : undefined;
   const editingDocumentKind =
-    editingDocumentEntry?.catalogRef === "letter-mc" || editingDocumentEntry?.meta?.kind === "mc"
+    editingDocumentEntry?.catalogRef === "letter-time-chit" || editingDocumentEntry?.meta?.kind === "time-chit"
+      ? "time-chit"
+      : editingDocumentEntry?.catalogRef === "letter-mc" || editingDocumentEntry?.meta?.kind === "mc"
       ? "mc"
       : editingDocumentEntry?.catalogRef === "letter-referral" || editingDocumentEntry?.meta?.kind === "referral"
       ? "referral"
@@ -742,10 +757,18 @@ export function OrderComposer({
 
   async function handleCompleteDocumentDialog(status: "draft" | "completed") {
     if (!editingDocumentEntry) return;
+    if (editingDocumentKind === "time-chit") {
+      const error = timeChitError(tcDetails);
+      if (!timeChitEnabled || error) {
+        toast({ title: error || "Time Chit is disabled for this clinic", variant: "destructive" });
+        return;
+      }
+    }
     await updateEntryField(editingDocumentEntry, {
       meta: {
         ...(editingDocumentEntry.meta || {}),
         documentStatus: status,
+        ...(editingDocumentKind === "time-chit" ? { ...tcDetails, kind: "time-chit", tcHours: timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut)! } : {}),
         ...(editingDocumentKind === "mc"
           ? { mcDays: String(mcDays), mcDiagnosis, mcStartDate, mcDoctorName }
           : {}),
@@ -856,6 +879,9 @@ export function OrderComposer({
                   if (entry.meta?.kind === "poct" || entry.meta?.kind === "xray") return;
                   const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
                   if (entry.tab === "documents" && kind !== null) {
+                    if (kind === "time-chit" && !timeChitEnabled) return;
+                    setTcDetails({ tcDate: entry.meta?.tcDate || new Date().toLocaleDateString("en-CA"),
+                      tcTimeIn: entry.meta?.tcTimeIn || "", tcTimeOut: entry.meta?.tcTimeOut || "", tcDoctorName: entry.meta?.tcDoctorName || "" });
                     setMcDays(Number(entry.meta?.mcDays || 1));
                     setMcDiagnosis(entry.meta?.mcDiagnosis || "");
                     setMcStartDate(entry.meta?.mcStartDate || new Date().toISOString().split("T")[0]);
@@ -946,6 +972,28 @@ export function OrderComposer({
               Fill out information below to complete document.
             </DialogDescription>
           </DialogHeader>
+          {editingDocumentKind === "time-chit" && timeChitEnabled && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                {([ ["tcDate", "Attendance date", "date"], ["tcTimeIn", "Time in", "time"], ["tcTimeOut", "Time out", "time"], ["tcDoctorName", "Doctor's name", "text"] ] as const).map(([field, label, type]) => (
+                  <div key={field}>
+                    <Label htmlFor={`tc-${field}`}>{label}</Label>
+                    <Input id={`tc-${field}`} type={type} value={tcDetails[field]}
+                      onChange={e => setTcDetails(prev => ({ ...prev, [field]: e.target.value }))} />
+                  </div>
+                ))}
+                <p className="text-sm">Duration: {timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut) || "—"} hour(s)</p>
+                {timeChitError(tcDetails) && <p className="text-xs text-muted-foreground">{timeChitError(tcDetails)}</p>}
+              </div>
+              <iframe title="Time Chit preview" sandbox="" className="h-[420px] w-full rounded-lg border bg-white"
+                srcDoc={fillTimeChitTemplate(tcTemplate, { ...tcDetails,
+                  tcDate: tcDetails.tcDate ? formatDisplayDate(new Date(tcDetails.tcDate)) : "",
+                  tcHours: timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut) || "—",
+                  doctorName: tcDetails.tcDoctorName, date: formatDisplayDate(new Date()),
+                  patientName: patient?.fullName || "", patientNric: patient?.nric || "",
+                  clinicName: organization?.name || "", clinicAddress: organization?.address || "", clinicPhone: organization?.phone || "" })} />
+            </div>
+          )}
           {editingDocumentKind === "mc" ? (
             <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
               <div className="space-y-3">

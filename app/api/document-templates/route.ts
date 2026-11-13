@@ -6,8 +6,8 @@ import { getTemplate, saveTemplate } from '@/lib/fhir/document-template-service'
 
 export const runtime = 'nodejs';
 
-function isValidType(value: unknown): value is 'mc' | 'referral' {
-  return value === 'mc' || value === 'referral';
+function isValidType(value: unknown): value is 'mc' | 'referral' | 'time-chit' {
+  return value === 'mc' || value === 'referral' || value === 'time-chit';
 }
 
 export async function GET(req: NextRequest) {
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const medplum = await getAdminMedplum();
     const type = req.nextUrl.searchParams.get('type');
     if (!isValidType(type)) {
-      return NextResponse.json({ error: 'type must be mc or referral' }, { status: 400 });
+      return NextResponse.json({ error: 'type must be mc, referral or time-chit' }, { status: 400 });
     }
     const html = await getTemplate(type, clinicId, medplum);
     return NextResponse.json({ html });
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const medplum = await getAdminMedplum();
     const body = await req.json().catch(() => null);
     if (!body || !isValidType(body.type) || typeof body.html !== 'string' || !body.html.trim()) {
-      return NextResponse.json({ error: 'type (mc|referral) and html are required' }, { status: 400 });
+      return NextResponse.json({ error: 'type (mc|referral|time-chit) and html are required' }, { status: 400 });
     }
     await saveTemplate(body.type, body.html, clinicId, medplum);
     return NextResponse.json({ success: true });

@@ -1,11 +1,11 @@
 import type { MedplumClient } from '@medplum/core';
 import type { Organization } from '@medplum/fhirtypes';
-import { DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from '@/lib/document-templates';
+import { DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE, DEFAULT_TIME_CHIT_TEMPLATE } from '@/lib/document-templates';
 
 const TEMPLATE_EXTENSION_BASE_URL = 'https://ucc.emr/document-template';
 
-export function getDefaultTemplate(type: 'mc' | 'referral'): string {
-  return type === 'mc' ? DEFAULT_MC_TEMPLATE : DEFAULT_REFERRAL_TEMPLATE;
+export function getDefaultTemplate(type: 'mc' | 'referral' | 'time-chit'): string {
+  return type === 'time-chit' ? DEFAULT_TIME_CHIT_TEMPLATE : type === 'mc' ? DEFAULT_MC_TEMPLATE : DEFAULT_REFERRAL_TEMPLATE;
 }
 
 async function findClinicOrganization(clinicId: string, medplum: MedplumClient): Promise<Organization | null> {
@@ -16,7 +16,7 @@ async function findClinicOrganization(clinicId: string, medplum: MedplumClient):
   return results[0] ?? null;
 }
 
-export async function getTemplate(type: 'mc' | 'referral', clinicId: string, medplum: MedplumClient): Promise<string> {
+export async function getTemplate(type: 'mc' | 'referral' | 'time-chit', clinicId: string, medplum: MedplumClient): Promise<string> {
   const extensionUrl = `${TEMPLATE_EXTENSION_BASE_URL}/${type}`;
   try {
     const org = await findClinicOrganization(clinicId, medplum);
@@ -29,7 +29,7 @@ export async function getTemplate(type: 'mc' | 'referral', clinicId: string, med
   }
 }
 
-export async function saveTemplate(type: 'mc' | 'referral', html: string, clinicId: string, medplum: MedplumClient): Promise<void> {
+export async function saveTemplate(type: 'mc' | 'referral' | 'time-chit', html: string, clinicId: string, medplum: MedplumClient): Promise<void> {
   const extensionUrl = `${TEMPLATE_EXTENSION_BASE_URL}/${type}`;
   const org = await findClinicOrganization(clinicId, medplum);
   if (!org) {

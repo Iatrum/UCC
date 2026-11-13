@@ -193,3 +193,21 @@ Sources (general background, not used for any code decision):
 - New `Procedure` records for Time Chit should be stamped with `meta.accounts` **at creation**
   (the `clinicAccountMeta()` pattern already used in `catalog-service.ts`), not copy forward the
   known MC/Procedure gap of identifier-only stamping — cheap to do correctly since it's new code.
+
+## Task 140 implementation verification (2026-11-14)
+
+Re-read the actual MC composer, generated-document editor, checkout renderer, consultation
+service, orders endpoint and generic admin module listing before implementation.
+Official references checked:
+- https://www.medplum.com/docs/api/fhir/resources/procedure — Procedure API, create/update/read.
+- https://hl7.org/fhir/R4/procedure.html — subject, encounter, note and identifiers in FHIR R4.
+- https://nextjs.org/docs/app/getting-started/route-handlers — App Router handlers and request methods.
+- https://react.dev/reference/react/useState — controlled form state and immutable updates.
+
+Implementation findings: patient-profile-workspace adapts the catalog and passes composer props;
+/orders POST calls updateConsultationInMedplum (and writes investigation billing before that call).
+Gate there before billing, and in the shared service before any clinical write. PATCH replaces
+all Procedures, so existing Time Chits must be checked as well as incoming ones, including deletion.
+ModuleDefinition requires routePath/pages: use an empty path and empty pages, preserving its type
+contract and keeping navigation unchanged. Seeded clinics already have custom catalogs: append
+the zero-price Time Chit fallback when absent, then filter by the toggle in the composer.
