@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
 import { MedplumClient } from '@medplum/core';
 import { fhir } from '../lib/fhir';
 import { BASE, MEDPLUM, MEDPLUM_ADMIN, EVIDENCE } from '../lib/env';
@@ -36,6 +37,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     const ids = (original?.valueString ? JSON.parse(original.valueString) : defaults).filter((id: string) => id !== 'time-chit');
     await m.updateResource({ ...latest, extension: [...(latest.extension || []).filter(e => e.url !== moduleUrl), { url: moduleUrl, valueString: JSON.stringify(enabled ? [...ids, 'time-chit'] : ids) }] });
   };
+  let catalogId: string | undefined;
   let foreignOrg: any, foreignAccount: any, foreignContext: any, staff: MedplumClient | undefined, practitionerId: string | undefined;
   try {
     await toggle(false);
@@ -50,6 +52,8 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     expect((await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake', diagnosis: 'Fake', procedures: [line()], clinicId: 'spoofed' } })).status()).toBe(403);
     expect((await request.post('/api/orders', { data: { consultationId, procedures: [line()], clinicId: 'spoofed' } })).status()).toBe(403);
     expect((await request.patch('/api/consultations', { data: { consultationId, procedures: [line()] } })).status()).toBe(403);
+    const catalog = await request.post('/api/catalogs', { data: { type: 'document', name: `Time Chit Fake ${suffix}`, code: 'letter-time-chit', defaultPrice: 7 } });
+    expect(catalog.status()).toBe(200); catalogId = (await catalog.json()).id;
     for (const enabled of [false, true]) {
       await toggle(enabled); await openTreatment(page, patientId);
       for (const [query, title] of [['medical', /MEDICAL CERTIFICATE/], ['referral', /REFERRAL LETTER/]] as const) {
@@ -76,6 +80,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     await dialog.getByLabel('Time in', { exact: true }).fill('09:00');
     await expect(dialog.getByText('Duration: 1.5 hour(s)')).toBeVisible();
     await expect(page.frameLocator('iframe[title="Time Chit preview"]').getByText('TIME CHIT / SURAT MASA')).toBeVisible();
+    await expect(page.getByText('Time out must be after time in on the same day.', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: `${EVIDENCE}/time-chit-composer-preview.png`, fullPage: true });
     await dialog.getByRole('button', { name: 'Complete document' }).click();
     const signResponse = page.waitForResponse(r => r.url().endsWith('/api/orders') && r.request().method() === 'POST');
@@ -86,16 +91,30 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     const savedProcedures = (await saved.json()).consultation.procedures;
     const timeChit = savedProcedures.find((p: any) => JSON.parse(p.notes || '{}').kind === 'time-chit');
     expect(JSON.parse(timeChit.notes)).toMatchObject({ ...details, tcHours: '1.5' });
-    expect((await request.patch('/api/consultations', { data: { consultationId, procedures: savedProcedures.map((p: any) => p === timeChit ? { ...p, price: 7 } : p) } })).status()).toBe(200);
+    expect(timeChit.price).toBe(7);
     await page.goto(`/orders/checkout/${consultationId}?patientId=${patientId}`); await page.getByRole('tab', { name: 'Documents', exact: true }).click();
     await expect(page.getByText('TIME CHIT', { exact: true })).toBeVisible();
     await expect(page.getByText(/7\.00/).first()).toBeVisible();
-    await page.getByRole('button', { name: /Preview/i }).last().click();
+    await page.getByRole('button', { name: 'Preview', exact: true }).last().click();
     await expect(page.getByRole('button', { name: 'Print document' })).toBeVisible();
+    // Headless Chromium downloads PDF navigations and leaves the popup at about:blank.
+    // Capture the actual renderer output instead of asserting that browser-specific URL.
+    await page.evaluate(() => {
+      const original = URL.createObjectURL.bind(URL);
+      (window as any).__timeChitPdfs = [];
+      URL.createObjectURL = (blob: Blob | MediaSource) => {
+        if (blob instanceof Blob && blob.type === 'application/pdf') (window as any).__timeChitPdfs.push(blob);
+        return original(blob);
+      };
+    });
     const popupPromise = page.waitForEvent('popup');
     await page.getByRole('button', { name: 'Print document' }).click();
     const pdfPopup = await popupPromise;
-    await expect.poll(() => pdfPopup.url()).toMatch(/^blob:/);
+    await expect.poll(() => page.evaluate(() => (window as any).__timeChitPdfs.length)).toBeGreaterThan(0);
+    const pdfBytes = await page.evaluate(async () => Array.from(new Uint8Array(await (window as any).__timeChitPdfs.at(-1).arrayBuffer())));
+    expect(Buffer.from(pdfBytes).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdfBytes.length).toBeGreaterThan(1000);
+    writeFileSync(`${EVIDENCE}/time-chit-checkout.pdf`, Buffer.from(pdfBytes));
     await page.screenshot({ path: `${EVIDENCE}/time-chit-checkout-pdf.png`, fullPage: true });
     await pdfPopup.close();
     const resources = await m.searchResources('Procedure', { encounter: `Encounter/${consultationId}` }, { cache: 'no-cache' });
@@ -125,6 +144,14 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     const print = await printPromise; await expect(print.getByText('TIME CHIT / SURAT MASA')).toBeVisible(); await print.close();
     await toggle(true);
     expect((await request.patch('/api/consultations', { data: { consultationId, procedures: [line()] } })).status()).toBe(200);
+
+    const directCreate = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake direct Time Chit visit', diagnosis: 'Fake attendance', procedures: [line()] } });
+    expect(directCreate.status()).toBe(200);
+    const directId = (await directCreate.json()).consultationId;
+    const directProcedures = await m.searchResources('Procedure', { encounter: `Encounter/${directId}` }, { cache: 'no-cache' });
+    expect(JSON.parse(directProcedures[0].note![0].text!)).toMatchObject({ ...details, tcHours: '1.5' });
+    const directExtended: any = await m.readResource('Procedure', directProcedures[0].id!, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } });
+    expect(directExtended.meta?.accounts?.map((a: any) => a.reference)).toContain(`HealthcareService/${account!.id}`);
 
     foreignOrg = await m.createResource({ resourceType: 'Organization', name: 'Time Chit Fake foreign clinic', identifier: [{ system: 'clinic', value: `tc-${suffix}` }] });
     foreignAccount = await m.createResource({ resourceType: 'HealthcareService', active: true, identifier: [{ system: 'clinic', value: `tc-${suffix}` }], providedBy: { reference: `Organization/${foreignOrg.id}` } });
@@ -163,6 +190,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     expect([200, 403]).toContain(rawSearch.status);
     if (rawSearch.ok) expect((await rawSearch.json()).entry || []).toHaveLength(0);
   } finally {
+    if (catalogId) expect((await request.delete(`/api/catalogs?id=${catalogId}&type=document`)).ok()).toBe(true);
     await foreignContext?.dispose(); await staff?.signOut();
     if (practitionerId) {
       for (const membership of await m.searchResources('ProjectMembership', { profile: `Practitioner/${practitionerId}` })) await m.deleteResource('ProjectMembership', membership.id!);

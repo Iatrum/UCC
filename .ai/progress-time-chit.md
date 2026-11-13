@@ -26,3 +26,16 @@ Local Next port: 3214, heap cap 2560 MB. Medplum: localhost:8113, fake fixtures 
   save, then explicitly opens the existing checkout route as staff would from Orders.
 - Added boundary tests: 5 pass, 17 assertions (date/time/doctor validation, default off, escaping).
 - Time Chit creation now fails before writes if clinic tenancy/account cannot be resolved.
+- Focused run confirmed clinical persistence and charge override at checkout; narrowed the print
+  selector to exact "Preview" (the previous regex clicked the separate bill preview).
+- Print action generated a PDF but headless Chromium left the popup at about:blank (PDF download
+  behavior). Replaced that browser-specific URL assertion with capture of the actual PDF Blob,
+  `%PDF-` header/size assertions and an exported `time-chit-checkout.pdf` evidence artifact.
+- Focused spec PASS (28.1s): custom catalog price flows through composer to checkout; direct
+  consultation creation and later replacement both have account stamps; all API gates, invalid
+  fields, historical print, admin switch persistence/default-off and cross-clinic reads verified.
+- Actual checkout PDF captured, extracted text checked and rasterized for visual review; it has
+  attendance wording/times/duration, patient details, signature/stamp and no diagnosis/unfitness text.
+- Existing workflow has serial prerequisites and an early draft read before its document step.
+  Added opt-in UCC_LOCAL_DOCUMENTS_ONLY=1 to stub draft storage from page creation. Will run only
+  steps 01–04 (setup), 06 (MC/referral composer) and 08 (documents), not the full workflow/suite.

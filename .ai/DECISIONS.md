@@ -59,3 +59,14 @@ Decided by Dev after running the disposable-identity script `scripts/access-poli
 Use policy enforcement AND server ownership checks. Installed SDK is 5.1.13, local server 5.2.15. Create constraints require nonempty server-inherited accounts within a server-derived assigned-clinic union; all access entries share an anchored escaped clinicWriteAccounts pattern. Existing single-clinic grants have an exact fallback; old multi-clinic grants need parameter refresh before policy rollout (not performed here). Update/delete select existing resources by the version-verified resource-level compartment. In this superAdmin project, strip all supplied create metadata to force inheritance; restore existing update metadata and reject Patient-reference changes. Provenance is a trusted server write only after acting-client target authorization; direct staff create is removed. Lab/imaging orders validate patient/encounter ownership before writes. Scoped extended/no-cache reads make account reuse explicit. Correction: official/installed SDK 5.1.13 actually supports extendedMode, default true; Phase 1's contrary SDK assertion was inaccurate. Evidence, tradeoffs and official links: `.ai/research/isolation-prereqs.md`. No policy deployment, membership migration or backfill apply.
 
 D37 integration clarification: preserve app-generated ServiceRequest profile/routing tags through an order-only wrapper AFTER acting-client create/conditional-create and fresh read authorization, using a version-conditional admin metadata update. Do not grant admin creates or copy caller account/clinical fields. This is necessary to keep POCT/X-ray routing working under the strengthened metadata policy.
+
+## D38 — Time Chit has its own default-off clinic module (2026-11-14, Task 140)
+
+Time Chit (`time-chit`, catalog `letter-time-chit`) follows the MC document pipeline without a
+routed module or navigation entry. Admins enable it per clinic using the generic module switch.
+Store attendance date, same-day time in/out, server-derived hours and doctor in Procedure notes;
+include clinic identifiers and account metadata on creation and replacement. Reject all Time Chit
+mutations when disabled; retain historical viewing/printing. Use attendance-only wording and
+escaped HTML values. Keep the zero-price fallback for clinics whose custom catalog omits the new
+item, while preserving custom prices. The module config uses empty route/pages because the current
+registry type requires those fields. No Firebase Storage, Lab, POCT or X-ray changes.
