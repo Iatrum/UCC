@@ -5,7 +5,9 @@ export default defineConfig({
   testDir: './tests',
   // Admin audit is opt-in (UCC_ADMIN_E2E=1): it adds a login + heavy pages that push Next dev over its heap cap mid-suite.
   testIgnore: process.env.UCC_ADMIN_E2E ? [] : ['**/admin.spec.ts'], globalSetup: './global-setup.ts', workers: 1, fullyParallel: false, retries: 0,
-  timeout: 15 * 60_000, expect: { timeout: 30_000 },
+  // Hard caps so a stuck test or run fails on its own instead of blocking the caller for hours.
+  timeout: Number(process.env.UCC_TEST_TIMEOUT_MS || 15 * 60_000), expect: { timeout: 30_000 },
+  globalTimeout: Number(process.env.UCC_GLOBAL_TIMEOUT_MS || 120 * 60_000),
   outputDir: R + '/artifacts',
   reporter: [['list'], ['json', { outputFile: R + '/results.json' }], ['html', { outputFolder: R + '/html', open: 'never' }]],
   use: {
