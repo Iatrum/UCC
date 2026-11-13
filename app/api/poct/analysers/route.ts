@@ -11,11 +11,11 @@ export async function GET(request: NextRequest) {
   try {
     // This endpoint requires a session even when the development auth bypass is enabled.
     await getCurrentProfile(request);
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     if (!(await isModuleEnabledForClinic('poct', clinicId))) {
       return NextResponse.json({ error: 'POCT module is disabled' }, { status: 404 });
     }
-    return NextResponse.json({ analysers: await listPoctAnalysers(medplum, clinicId) }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ analysers: await listPoctAnalysers(clinicId) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return handleRouteError(error, 'POCT analysers');
   }

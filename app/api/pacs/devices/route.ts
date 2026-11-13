@@ -11,11 +11,11 @@ export async function GET(request: NextRequest) {
   try {
     // This endpoint requires a session even when the development auth bypass is enabled.
     await getCurrentProfile(request);
-    const { medplum, clinicId } = await requireClinicAuth(request);
+    const { clinicId } = await requireClinicAuth(request);
     if (!(await isModuleEnabledForClinic('pacs', clinicId))) {
       return NextResponse.json({ error: 'PACS module is disabled' }, { status: 404 });
     }
-    return NextResponse.json({ devices: await listXrayDevices(medplum, clinicId) }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ devices: await listXrayDevices(clinicId) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return handleRouteError(error, 'PACS X-ray devices');
   }

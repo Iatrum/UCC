@@ -89,7 +89,9 @@ async function pick(q: string, re: RegExp) {
   const s = page.locator('input:visible').last();
   await s.fill(q);
   const btn = page.locator('button', { hasText: re }).filter({ hasText: 'RM' }).first();
-  const n = await btn.count(); if (n) await btn.click(); await page.waitForTimeout(1200); return n;
+  // Catalog search is debounced; wait for the seeded match before counting it.
+  await expect(btn).toBeVisible({ timeout: 30_000 });
+  const n = await btn.count(); await btn.click(); await page.waitForTimeout(1200); return n;
 }
 
 test('05 composer without Firebase (real autosave path)', async () => {

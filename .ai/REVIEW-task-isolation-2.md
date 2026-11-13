@@ -52,3 +52,6 @@ Earlier relevant run was 10/15: the POCT notification test assumed PACS off but 
 ### Final recovery verdict
 
 Notification replay PASS 1/1 (1.8m), including live refresh, dropped-socket polling and unmount cleanup, with the pre-existing test's PACS-off precondition. Automatic restore confirmed original fake demo PACS=true/POCT=false. Combined focused evidence: **37/38**, zero skipped, only baseline known-bug summary fails; comparator exit 0. `/workspace/ai-logs/task-isolation-2/recovery-composite-results.json` is clearly marked COMPOSITE and does not replace the original failed gate. No application changes were made during recovery. The draft is ready for independent review; a clean single full gate remains unproven and should be captured before leaving draft.
+
+### Post-merge note (Task 131, Dev, 2026-11-14)
+#231 was merged before Task 101 wrote a verdict. Post-merge check on dev 9d781c5 with a migrated fake staff login (PR #232 gate): the cross-clinic create containment and the receive-account propagation MAJORs are both closed. Verdict: **APPROVE (post-merge)**. A new, separate finding (the clinic staff policy has no Device rule, so policy-bearing staff lose POCT/X-ray device lists) is fixed in PR #232 (D40). See `.ai/REVIEW-task-isolation-3.md`.

@@ -1,5 +1,12 @@
 # CHANGELOG (plain language)
 
+## 2026-11-14 — Task 130: clinic isolation Phase 2 (staff membership migration, local-validated)
+Added a one-membership-at-a-time migration script (`scripts/access-policy/migrate-staff-membership.mjs`) that moves an existing staff login with no access policy onto the clinic staff policy, for exactly the clinics that staff member is assigned to. It is dry-run by default, only talks to local Medplum on :8113, writes a private backup before every change, and can roll back exactly. It refuses anything ambiguous (no clinic role, unknown clinic, already-customised grants) instead of guessing.
+
+Testing the migration locally (fake data only) found that migrated staff could not see the clinic's POCT analysers or X-ray devices, because the clinic staff policy never gave staff access to Device records. Fixed: the analyser/device list and the "is the device online" check now look the device up on the server, limited to the user's own clinic, and only return name/type/online status. Two POCT tests were also fixed to stamp their admin-created test orders with the clinic, as the app itself does.
+
+Validation: the single final full gate (`task-isolation-3`, run with the fake demo doctor already migrated) passed lint/build/clinic check and 29/39 e2e; the 9 POCT/X-ray failures were the Device finding above and the only other failure is the known-bug summary. After the fix: POCT + X-ray specs 11/12 then the remaining test 1/1 (12/12), lint/typecheck clean. Production migration is a manual step for the user, not done.
+
 ## 2026-11-12 — Task 100: clinic isolation prerequisites
 Clinic staff policies now deny new results attached to another clinic's patient. Lab and imaging orders also check that the patient and visit belong to the selected clinic before saving. Normal and multi-clinic orders keep working, including POCT/X-ray routing tags and repeat-order protection.
 
