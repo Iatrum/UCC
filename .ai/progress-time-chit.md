@@ -72,3 +72,13 @@ All requested focused checks passed; no full suite or check-all.sh was run, per 
 - No sidebar/nav, POCT/X-ray, Firebase Storage, production or real-patient-data changes.
 - Stopped only this task's detached process group (Next --port 3214). Post-shutdown curl returned
   HTTP 000; reserved worktree/server were not touched.
+
+## Delivery
+
+- Draft PR: https://github.com/Iatrum/UCC/pull/233 (`ai/task-time-chit` → `dev`).
+- Final notes push initially rejected because remote commit 1c7f645 had added the same validation
+  notes. Rebased only the unpushed documentation commit onto that remote tip, preserving its notes.
+  No application code changed; no merge or force-push performed.
+- `gh pr view 233 -R Iatrum/UCC --json mergeable,mergeStateStatus` returned:
+  `{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING"}`. PR remains draft; no merge attempted.
+- Task server :3214 confirmed stopped (no listening socket). Local validation complete.
