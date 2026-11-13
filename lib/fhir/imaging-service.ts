@@ -117,7 +117,7 @@ export async function createImagingOrder(
     if (!xrayStudy || !order.encounterId || !/^[a-zA-Z0-9-]{1,64}$/.test(order.xray.entryId || '') || !/^[a-zA-Z0-9-]{1,64}$/.test(order.xray.deviceId || '')) {
       throw new ConflictError('Invalid X-ray order');
     }
-    await requireOnlineXrayDevice(client, clinicId, order.xray.deviceId);
+    await requireOnlineXrayDevice(clinicId, order.xray.deviceId);
     order = { ...order, procedures: [{ code: xrayStudy.code, display: xrayStudy.name, system: xrayStudy.system, modality: xrayStudy.modality }] };
   }
 

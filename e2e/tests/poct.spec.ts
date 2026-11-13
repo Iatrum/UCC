@@ -301,7 +301,9 @@ test('Simulated analyser HL7/ASTM results reach the Lab tab, clear pending, and 
       subject: { reference: `Patient/${f.patientId}` },
       code: { coding: [{ system: 'http://loinc.org', code: '1988-5', display: 'CRP' }], text: 'CRP' },
       identifier: [{ system: 'clinic', value: f.clinicId! }],
-      meta: { tag: [{ system: tagSystem, code: 'poct' }] },
+      // Admin-created with its own meta: stamp the clinic account explicitly so the results it
+      // produces are visible to clinic-policy (migrated) staff.
+      meta: { tag: [{ system: tagSystem, code: 'poct' }], accounts: [{ reference: `HealthcareService/${(await f.m.searchOne('HealthcareService', { identifier: `clinic|${f.clinicId}` }, { cache: 'no-cache' }))!.id}` }] },
       performer: [{ reference: `Device/${f.device.id}` }],
     });
     const astmIngested = await request.post('/api/labs/receive/message', {
@@ -373,11 +375,15 @@ test('Lab subscription notifications refresh results without navigation; dropped
   try {
     // The shared Lab subscription remains enabled when PACS alone is on.
     restorePacs = await setClinicModuleEnabled(f.m, f.clinicId!, false, 'pacs');
+    // An admin-created order with its own meta does not inherit the Patient's clinic account,
+    // so stamp it explicitly: clinic-policy staff (migrated memberships) only see stamped records.
+    const account = await f.m.searchOne('HealthcareService', { identifier: `clinic|${f.clinicId}` }, { cache: 'no-cache' });
+    expect(account?.id).toBeTruthy();
     const sr = await f.m.createResource<ServiceRequest>({
       resourceType: 'ServiceRequest', status: 'active', intent: 'order',
       subject: { reference: `Patient/${f.patientId}` },
       code: { text: 'Glucose (capillary)' }, identifier: [{ system: 'clinic', value: f.clinicId }],
-      meta: { tag: [{ system: tagSystem, code: 'poct' }] },
+      meta: { tag: [{ system: tagSystem, code: 'poct' }], accounts: [{ reference: `HealthcareService/${account!.id}` }] },
     });
     let socket: import('@playwright/test').WebSocketRoute | undefined;
     let closed = false;
