@@ -1,56 +1,16 @@
 # PLAN — Clinic isolation Phase 2 (migrate existing staff onto the AccessPolicy membership model)
 
-Status: **plan + draft script only, nothing applied.** No command in this document has been run
-against any Medplum instance by this task. Builds on `.ai/PLAN-clinic-isolation.md` phase 2,
-`.ai/research/clinic-isolation.md`, DECISIONS D33-D36, and the Phase 0/1 self-review
-`.ai/REVIEW-task-isolation-1.md` (PR #230, merged into `dev`). Read those first — this document
-does not repeat the data model (`Organization`/`HealthcareService`/`meta.accounts`/
-`ProjectMembership.access[]`) already confirmed there.
+Status: **Task 130 implementation and LOCAL fake-data validation in progress.** Plan/script commits from `ai/plan-isolation-phase2` are imported. Evidence and resume instructions: `.ai/progress-isolation-phase2.md`; version-specific sources: `.ai/research/task-isolation-3.md` and `isolation-prereqs.md`.
 
-## 0. Hard prerequisite found while planning this task — read before doing anything else
+## 0. Prerequisites after Task 100 merged
 
-While reading the shared notes for this plan, a **separate, concurrent, unfinished** piece of work
-was found on the local `ai-work` branch (not on `dev`, not on this branch, not reviewed, not
-gated): a WIP checkpoint commit `666bb21` ("Task 100 — isolation prerequisites", notes in
-`.ai/research/isolation-prereqs.md` / `.ai/progress-isolation-prereqs.md` *on that branch only*)
-that is attempting to close exactly the two MAJOR findings `REVIEW-task-isolation-1.md` deferred:
+PR #230 (Phase 0/1) and PR #231 (Task 100 write containment and receive-account propagation) are merged into `dev` at `9d781c5`. The original dependency decision (D38 here; originally numbered D37 on the planning branch) remains valid; its unmerged-WIP description is historical.
 
-1. **Write-side cross-clinic create containment** (D36's bonus finding: a policied staff member
-   could `POST Observation {subject: <other clinic's patient>}` and get `201`, not `403`). Task
-   100's approach: a `writeConstraint` FHIRPath expression on patient-linked resource rules plus a
-   new `clinicWriteAccounts` access-policy parameter (an anchored, regex-escaped union of every
-   `HealthcareService` reference the membership is allowed to write to), **plus** explicit
-   patient/clinic ownership checks added to the lab/imaging order-creation service functions.
-2. **Extended-mode `meta.accounts` reads** (the gap where `getResourceAccountReferences()` reads
-   resources without `X-Medplum: extended` and so always sees an empty `meta.accounts`, making
-   several propagation call sites silent no-ops).
+Task 100's original full gate failed during a local backend outage; its recovery evidence was composite, not a clean gate. Task 130 ran ONE fresh postmerge baseline `dev-postmerge-231`: lint/build/clinic inventory pass, Playwright 31/38. The subscription test assumed PACS off when disabling POCT; the shared subscription correctly stays enabled for PACS. The composer test counted search results before debounce and caused serial skips. Fix the fixtures and validate again, without changing shared Lab behavior.
 
-As of this plan (checked by reading `.ai/progress-isolation-prereqs.md` on `ai-work`, not by
-running anything): **fix (a) is not yet passing** ("same-clinic `createLabOrder` still returns
-403" — a regression the writeConstraint/order-check change itself introduced), fix (b) is "still
-pending", there is no commit beyond the WIP checkpoint, no full gate run, no independent review, no
-PR. It also changes `lib/fhir/admin-service.ts`'s `getClinicPolicyParameters`/
-`withClinicMembershipAccess` to add the new `clinicWriteAccounts` parameter to every `access[]`
-entry — i.e. it changes the exact shape of the data this Phase 2 migration script writes.
+Before migration: back up the LOCAL fake database; refresh only the local clinic policy from the merged rules (backing up its previous definition); dry-run/review the account backfill before applying it to the seeded fake clinics. Then exercise the migration on disposable identities before the seeded fake staff. The script refuses remote origins and older policies without Task 100 write guards, recognizes repository runtime `%before`/`%after` separately from membership parameters, and mirrors the merged `clinicWriteAccounts` union exactly. It does not deploy policies or backfill data itself.
 
-**Consequence for this plan, stated as a hard gate, not a formality (same pattern D35 used for
-Phase 0):**
-
-- **Phase 2 must not run `--apply` until Task 100 has landed on `dev`** — committed, fixed (no
-  known-failing probe), independently reviewed, and gated clean, same bar every other phase here
-  already met. Running Phase 2's migration against the *pre*-Task-100 policy would move every
-  remaining staff member from "unprotected" straight to "protected-for-read, still vulnerable to
-  the write-side cross-clinic create gap D36 already found live for the 4/10 memberships that
-  already carry the real policy" — i.e. it would *widen* a known, already-logged OWASP A01 defect
-  from 4 memberships to all of them, exactly the outcome D36/`REVIEW-task-isolation-1.md` told the
-  next task to avoid.
-- This plan and its draft script are written to be **agnostic to which exact parameter set Task
-  100 ships** (see §3 "parameter discovery", below) specifically so this document does not go
-  stale if Task 100's shape changes again before it lands — but the *script still refuses to
-  `--apply`* until an operator has confirmed Task 100 is merged (see §4, `--phase2-prereq-confirmed`
-  gate, mirroring the Phase-0-gate pattern `REVIEW-task-isolation-1.md` finding 1 asked for).
-- Do not touch `ai-work`, `/workspace/iatrum-ucc`, or Task 100's files from this task — this plan
-  only documents the dependency; resolving it is Task 100's own job.
+No production action is authorized or performed. Production migration remains a separate manual user step after reviewing local evidence, backups and the production project boundary.
 
 ## 1. Scope
 
@@ -70,8 +30,7 @@ themselves (Task 100's job), production/Hostinger (D20, user's call), the shared
 
 ### Step 0 — Preconditions (all must be true before `--apply` is ever used)
 
-1. Task 100 (§0) is merged to `dev`, gate-clean, independently reviewed — confirmed by the operator
-   reading its PR/merge commit, not inferred.
+1. Task 100 (§0) is merged to `dev`; review the actual postmerge baseline and final Task 130 gate evidence rather than claiming its earlier interrupted full gate passed.
 2. Phase 0's disposable-identity verdict (D36: "proceed to Phase 1") still holds — it does, nothing
    in Phase 1 or this plan revisits it, but re-run
    `scripts/access-policy/test-clinic-policy-superadmin.mjs` once against the *post*-Task-100
@@ -79,7 +38,7 @@ themselves (Task 100's job), production/Hostinger (D20, user's call), the shared
    rules, so this is a cheap confirmation, not a full re-investigation).
 3. Phase 1 is already merged (PR #230) — Provenance policy entry, provenance stamping, triage
    update-path stamping, `access[]` re-derive on reassignment. Confirmed already true.
-4. `scripts/access-policy/backfill-clinic-accounts.mjs --apply` (Phase 1.4's script) has been run
+4. `APPLY=true bun scripts/access-policy/backfill-clinic-accounts.mjs` (Phase 1.4's script) has been run
    **once, successfully, with its own dry-run reviewed first** — so newly-restricted staff don't
    lose access to pre-existing resources that predate `meta.accounts` stamping. Per
    `.ai/PLAN-clinic-isolation.md` Phase 2 step 2, this runs *before* any membership is touched.
@@ -94,7 +53,7 @@ bun scripts/access-policy/migrate-staff-membership.mjs
 ```
 
 Logs, for every non-admin `ProjectMembership` with no `accessPolicy` and no `access[]`:
-`Practitioner.name` (for operator review — `REVIEW-task-isolation-1.md` finding 3: never migrate a
+`ProjectMembership`/`Practitioner` reference (for operator review — `REVIEW-task-isolation-1.md` finding 3: never migrate a
 no-policy membership blind, it might be an intentional break-glass account, not just a test/seed
 leftover), the clinic `Organization`/`HealthcareService` pairs its `PractitionerRole[]` resolve to,
 and the exact `access[]` it *would* write. Makes no writes. Exits 0 on a clean dry run, non-zero if
@@ -111,7 +70,7 @@ document needing to be rewritten first.
 
 ### Step 3 — Operator review
 
-Read the dry-run output. Confirm every listed `Practitioner.name` is actually a
+Read the dry-run output. Confirm every listed `ProjectMembership`/`Practitioner` reference is actually a
 test/seed/legitimate-staff account expected to get clinic-scoped access (not a break-glass admin
 left deliberately unpolicied for a documented reason). This is a manual gate, not automatable —
 matches `REVIEW-task-isolation-1.md` finding 3's explicit ask.
@@ -173,9 +132,9 @@ each eligible membership:
 5. Read that policy's `resource[]` and collect every `%tokenName` referenced in any `criteria` or
    `writeConstraint.expression`. For each token the script recognizes
    (`clinicAccount` → `HealthcareService/<id>`, `clinicOrganization` → `Organization/<id>`,
-   `clinicWriteAccounts` → anchored regex union of every clinic's `HealthcareService` reference
-   across *all* of this membership's `access[]` entries, matching `withClinicMembershipAccess`'s own
-   union logic observed in Task 100's WIP diff), build the parameter. For any token it does not
+   `clinicWriteAccounts` → anchored regex union (dots escaped as `[.]`, matching the merged helper) of every clinic's `HealthcareService` reference
+   across *all* of this membership's clinic `access[]` entries, matching `withClinicMembershipAccess`'s own
+   union logic implemented in merged Task 100), build the parameter. Runtime variables `%before`, `%after`, `%profile`, `%patient` are supplied by Medplum and are not membership parameters. For any other token it does not
    recognize, **fail closed** (§2's discovery check) rather than write an incomplete entry.
 6. Build one `access[].parameter` list per clinic, all sharing `policy: {reference: AccessPolicy/<realPolicyId>}`.
 7. Write `access: [...one entry per clinic]`, clearing any (absent, by precondition) `accessPolicy`.
@@ -257,37 +216,20 @@ using the same four-disposable-clinic fixture pattern already there:
    migration together close the historical gap (433 missing as of the last recorded inventory run,
    `.ai/progress-isolation-prereqs.md`/`progress-clinic-isolation.md`).
 
-## 6. Ordering summary (explicit, since this was the task's own ask)
+## 6. Ordering summary
 
-```
-Phase 0 (done, D36)  ->  Phase 1 (done, PR #230, merged)  ->  Task 100 write/extended-read fixes
-  (REQUIRED, currently WIP/broken on ai-work, not merged)  ->  Phase 1.4 backfill --apply (once,
-  reviewed)  ->  Phase 2 migration, this plan, one membership at a time with per-step verification
-  (this task's script, not yet run)  ->  Phase 3 defense-in-depth admin-client filters (separate,
-  optional per the original plan, can land before or after Phase 2 since it touches different
-  files).
-```
+Phase 0/1 (merged #230) → Task 100 (merged #231) → Task 130 fresh postmerge baseline and fixture corrections → local database/policy backups → local merged-policy refresh → local account-backfill dry-run/review/apply → disposable migration CLI tests and rollback → individually reviewed seeded fake memberships → own-clinic composer/Lab/POCT/X-ray/billing regression → ONE final `check-all.sh task-isolation-3` → normal push and draft PR to `dev`.
 
-Phase 2 cannot safely move ahead of Task 100 landing; it can be written and reviewed (this task) in
-parallel with Task 100's own build/review/gate cycle, since nothing here depends on Task 100's
-*code* — only on its *result* (a merged, correct, gated policy) being present before `--apply` is
-ever used for real.
+Phase 3 admin-client defense-in-depth remains separate. Production migration is a manual user step, not done. No script in this task can target a nonlocal Medplum endpoint.
 
 ## 7. Risk list
 
-1. **Task 100 is unfinished and currently has at least one known regression** (same-clinic
-   `createLabOrder` returning 403). If Phase 2 is run before that's fixed and gated, every migrated
-   staff member inherits that regression immediately on migration (their lab-order creation breaks
-   the moment they get the real policy). This is the single biggest risk to this plan's safe
-   execution and is why §0's gate exists.
+1. **Deployment drift.** Merged code does not automatically refresh the live Medplum policy or historical accounts. Migration must refuse a pre-Task-100 policy; back up and refresh the local definition before testing. A merged PR alone does not prove positive-path workflows pass after membership migration.
 2. **Parameter-shape drift.** Task 100's `clinicWriteAccounts` parameter (or any future addition)
    must be mirrored exactly by whatever builds `access[]` at migration time. §3's discovery check
    converts "silently writes an incomplete entry" into "refuses to run", but someone still has to
    update the script's builder map when a genuinely new parameter ships — not automatic.
-3. **Backup/rollback correctness is exercised against disposable fixtures only in this plan-only
-   task** (no server access was used to write this document). The script in §8 has not been run
-   even once; its first real exercise should be against a disposable membership before any real
-   staff account, same caution Task 090's Phase 0 used for the read-side mechanism.
+3. **Backup/rollback correctness must be exercised against disposable fixtures in Task 130.** The script in §8 must first be exercised against a disposable fake membership before any seeded fake staff account, same caution Task 090's Phase 0 used for the read-side mechanism.
 4. **Break-glass accounts.** Per `REVIEW-task-isolation-1.md` finding 3, a no-policy membership
    might be intentional (not just a stale test account). Step 3's manual review is the only control
    for this — the script deliberately does not auto-apply to every eligible membership in one run.

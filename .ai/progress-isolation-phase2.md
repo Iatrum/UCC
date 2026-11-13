@@ -14,3 +14,5 @@ Pending: baseline diagnosis; cherry-pick plan/script; harden migration; local pe
 `dev-postmerge-231`: lint 0, build 0, clinics 0, Playwright 31/38. Subscription expected 403/got 503 with PACS on; fixture mismatch, no #231 application regression. Composer test counted results before debounce (para/full-blood counts 0), then five serial skips. No backend crash. Fixing fixture module isolation and waiting for seeded search matches; focused replay before commit. Original baseline retained. Local database dump saved privately outside repo (90 MB).
 
 Plan/script commits e5921a0, 2a6ed05, 2b4cf89 imported. Preserved Task 130 progress and current shared history during cherry-pick conflicts; planning decision renumbered D38 because merged Task 100 already uses D37.
+
+Milestone 1: fixture WIP a815000 pushed. Focused POCT 7/7 PASS; workflow now passes catalog selection but hit Unauthorized at post-sign FHIR verification (previous task also noted session expiry). Workflow-only replay running, no second full gate. Imported plan commits preserving shared history (planning D38 vs merged Task 100 D37). Script adaptation in progress; no membership writes yet.

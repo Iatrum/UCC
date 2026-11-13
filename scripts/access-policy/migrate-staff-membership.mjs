@@ -1,17 +1,15 @@
 #!/usr/bin/env bun
-// Task 120 / isolation-phase2 (DRAFT, never run against any server by this
-// task): migrate an existing non-admin ProjectMembership that has NO
+// Task 130 / isolation-phase2 (local fake-data validation only): migrate an existing non-admin ProjectMembership that has NO
 // accessPolicy and NO access[] (Medplum's legacy full-access fallback) onto
 // the real "UCC Clinic Staff Policy", with one access[] entry per clinic the
 // corresponding Practitioner has an active PractitionerRole for.
 //
-// Full plan, ordering vs. Task 100's (unfinished, as of this draft) write-
-// containment fix, and rollout/rollback rationale: .ai/PLAN-isolation-phase2.md.
+// Full plan, merged Task 100 prerequisites, and rollout/rollback rationale: .ai/PLAN-isolation-phase2.md.
 // Do not run --apply before that plan's Step 0 preconditions are all true.
 //
 // Dry-run (default, no write, no credentials required beyond read access):
 //   bun scripts/access-policy/migrate-staff-membership.mjs
-//     -> surveys every eligible membership, prints Practitioner.name + the
+//     -> surveys every eligible membership, prints membership references + the
 //        clinic(s) it would be migrated to, and the live policy's parameter
 //        discovery check (fails closed on any %token this script can't build).
 //   bun scripts/access-policy/migrate-staff-membership.mjs --membership <id>
@@ -40,10 +38,8 @@
 // - Refuses to build access[] if the live policy references a %parameter
 //   this script has no builder for, rather than silently writing an
 //   incomplete entry (see KNOWN_PARAMETER_BUILDERS below).
-// - Never logs resource bodies, tokens, or passwords. Practitioner.name is
-//   printed deliberately for operator review (a no-policy membership may be
-//   an intentional break-glass account, not a stale test user -- this
-//   script must never auto-apply to one without a human looking first).
+// - Never logs resource bodies, names, tokens, or passwords. A membership may
+//   intentionally be unpolicied; operator review is required before each apply.
 import fs from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { randomBytes, createHash } from 'node:crypto';
@@ -69,11 +65,11 @@ const BACKUP_ROOT = '/workspace/ai-logs/task-isolation-phase2/backup';
 const KNOWN_PARAMETER_BUILDERS = new Set(['clinicAccount', 'clinicOrganization', 'clinicWriteAccounts']);
 
 function escapeForRegex(id) {
-  return id.replace(/\./g, '\\.');
+  return id.replace(/\./g, '[.]');
 }
 
 function buildParametersForClinic(clinic, allClinicAccountRefs) {
-  const writeAccounts = '^(' + [...allClinicAccountRefs].sort().map(escapeForRegex).join('|') + ')$';
+  const writeAccounts = '^(' + [...new Set(allClinicAccountRefs)].sort().map(escapeForRegex).join('|') + ')$';
   return [
     { name: 'clinicAccount', valueReference: { reference: clinic.accountRef } },
     { name: 'clinicOrganization', valueReference: { reference: clinic.organizationRef } },
@@ -84,8 +80,9 @@ function buildParametersForClinic(clinic, allClinicAccountRefs) {
 async function main() {
   const args = process.argv.slice(2);
   const known = new Set(['--apply', '--rollback', '--membership']);
+  if (args.filter(a => a === '--membership').length > 1) fail('Exactly one --membership is allowed');
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--membership') { i++; continue; }
+    if (args[i] === '--membership') { if (!validId(args[++i])) fail('Invalid --membership id'); continue; }
     if (!known.has(args[i])) fail(`Unknown argument: ${args[i]}`);
   }
   const apply = args.includes('--apply');
@@ -160,7 +157,7 @@ async function main() {
       if (status !== 200 || json?.resourceType !== 'Bundle') fail(`Search failed (${status})`);
       for (const entry of json.entry ?? []) if (entry.resource) results.push(entry.resource);
       next = json.link?.find((l) => l.relation === 'next')?.url;
-      if (next) next = next.replace(/^.*\/fhir\/R4\//, 'fhir/R4/');
+      if (next && new URL(next, base).origin !== base.origin) fail('Nonlocal pagination refused');
     }
     return results;
   }
@@ -181,8 +178,19 @@ async function main() {
     if (!validId(policy.id)) fail('Clinic policy id invalid');
     const tokens = new Set();
     for (const match of JSON.stringify(policy.resource ?? []).matchAll(/%([A-Za-z][A-Za-z0-9]*)/g)) tokens.add(match[1]);
-    const unknown = [...tokens].filter((t) => !KNOWN_PARAMETER_BUILDERS.has(t));
+    // The installed repository binds these variables during write evaluation.
+    const runtimeVariables = new Set(['before', 'after', 'profile', 'patient']);
+    const unknown = [...tokens].filter((t) => !KNOWN_PARAMETER_BUILDERS.has(t) && !runtimeVariables.has(t));
     if (unknown.length) fail(`Live policy references unsupported parameter(s): ${unknown.join(', ')} -- extend KNOWN_PARAMETER_BUILDERS and review before running`);
+    if (!tokens.has('clinicWriteAccounts')) fail('Live policy lacks merged Task 100 write containment; refresh the local clinic policy first');
+    for (const type of ['Encounter', 'Observation', 'ServiceRequest']) {
+      const rules = policy.resource?.filter(r => r.resourceType === type) ?? [];
+      if (!rules.some(r => r.interaction?.includes('create') && r.readonlyFields?.includes('meta') && r.writeConstraint?.some(c => c.expression?.includes('%clinicWriteAccounts'))) ||
+          !rules.some(r => r.interaction?.includes('update') && r.writeConstraint?.some(c => c.expression?.includes('%before') && c.expression?.includes('%after')))) {
+        fail(`Live ${type} rules lack merged write guards`);
+      }
+    }
+    console.log('Live policy parameters and Task 100 write guards verified');
     return { policyId: policy.id, policyReference: `AccessPolicy/${policy.id}`, tokens };
   }
 
@@ -192,7 +200,8 @@ async function main() {
     const organizationIds = [...new Set(roles.map((r) => refId(r.organization?.reference)).filter(Boolean))];
     const clinics = [];
     const unresolved = [];
-    for (const orgId of organizationIds) {
+    for (const orgId of organizationIds.sort()) {
+      if (!validId(orgId)) fail('Invalid clinic organization reference');
       const { status, json: organization } = await request(`fhir/R4/Organization/${orgId}`);
       const clinicId = status === 200 ? organization?.identifier?.find((i) => i.system === CLINIC_IDENTIFIER_SYSTEM)?.value : undefined;
       if (!clinicId) { unresolved.push(`Organization/${orgId} (no clinic identifier or not found)`); continue; }
@@ -200,7 +209,7 @@ async function main() {
         `fhir/R4/HealthcareService?identifier=${CLINIC_IDENTIFIER_SYSTEM}|${encodeURIComponent(clinicId)}&_count=2`
       );
       const accounts = hsStatus === 200 ? (hsBundle?.entry ?? []).map((e) => e.resource) : [];
-      if (accounts.length !== 1 || !accounts[0]?.id) { unresolved.push(`clinic '${clinicId}' (expected exactly one HealthcareService account, found ${accounts.length})`); continue; }
+      if (accounts.length !== 1 || !validId(accounts[0]?.id) || accounts[0].providedBy?.reference !== `Organization/${orgId}`) { unresolved.push(`clinic '${clinicId}' (expected exactly one HealthcareService account, found ${accounts.length})`); continue; }
       clinics.push({
         clinicId,
         organizationRef: `Organization/${orgId}`,
@@ -221,17 +230,23 @@ async function main() {
     let eligibleCount = 0;
     for (const member of memberships) {
       if (onlyMembershipId && member.id !== onlyMembershipId) continue;
-      if (member.admin) continue;
+      if (member.project?.reference !== `Project/${projectId}` || member.admin) continue;
       if (!member.profile?.reference?.startsWith('Practitioner/')) continue;
-      if (member.accessPolicy || member.access?.length) continue; // already has grants, out of scope
+      if (member.accessPolicy || member.access?.length) {
+        if (onlyMembershipId) {
+          const { clinics, unresolved } = await resolveClinicsForPractitioner(refId(member.profile.reference));
+          const expected = clinics.map(clinic => ({ policy: { reference: policyReference }, parameter: buildParametersForClinic(clinic, clinics.map(c => c.accountRef)) }));
+          if (unresolved.length || !clinics.length || member.accessPolicy || !isDeepStrictEqual(member.access, expected)) fail('Membership has different existing grants; review by hand');
+          console.log('Membership already has the expected policy');
+          return;
+        }
+        continue;
+      }
       eligibleCount += 1;
       const practitionerId = refId(member.profile.reference);
-      const { status, json: practitioner } = await request(`fhir/R4/Practitioner/${practitionerId}`);
-      const name = status === 200 ? (practitioner?.name?.[0]?.text
-        || [practitioner?.name?.[0]?.given?.join(' '), practitioner?.name?.[0]?.family].filter(Boolean).join(' ')
-        || 'Unknown') : 'Unknown (practitioner read failed)';
+
       const { clinics, unresolved } = await resolveClinicsForPractitioner(practitionerId);
-      console.log(`ProjectMembership/${member.id} -- Practitioner "${name}" (${member.profile.reference})`);
+      console.log(`ProjectMembership/${member.id} (${member.profile.reference})`);
       if (clinics.length) console.log(`  would migrate to policy ${policyReference}, clinics: ${clinics.map((c) => c.clinicId).join(', ')}`);
       if (unresolved.length) console.log(`  UNRESOLVED (will refuse --apply until fixed): ${unresolved.join('; ')}`);
       if (!clinics.length && !unresolved.length) console.log('  no active PractitionerRole found -- nothing to migrate, needs operator decision');
@@ -264,8 +279,7 @@ async function main() {
       const backup = fs.existsSync(backupFile) ? JSON.parse(fs.readFileSync(backupFile, 'utf8')) : undefined;
       if (backup && (backup.projectId !== projectId || backup.membershipId !== membershipId)) fail('Backup identity mismatch');
 
-      const { policyReference } = await discoverRequiredTokens();
-
+      // Rollback must remain available even if the policy was changed or removed.
       if (rollback) {
         if (!backup) fail('Backup required for rollback');
         const original = grants(backup.membership);
@@ -278,10 +292,13 @@ async function main() {
         if (!member.meta?.versionId) fail('Membership version required');
         const { status: restoreStatus } = await request(`fhir/R4/ProjectMembership/${membershipId}`, 'PUT', restored, { 'If-Match': `W/"${member.meta.versionId}"` });
         if (restoreStatus !== 200) fail(`Rollback write failed (${restoreStatus})`);
+        const verified = await request(`fhir/R4/ProjectMembership/${membershipId}`);
+        if (verified.status !== 200 || !isDeepStrictEqual(grants(verified.json), original)) fail('Rollback read-back mismatch');
         console.log('Restored original membership grants');
         return;
       }
 
+      const { policyReference } = await discoverRequiredTokens();
       if (member.accessPolicy || member.access?.length) fail('Membership already has grants -- out of scope for this script, review by hand');
       if (backup) fail('A backup already exists for this membership but it is not currently migrated -- investigate before re-running');
 
@@ -307,6 +324,8 @@ async function main() {
       if (!member.meta?.versionId) fail('Membership version required');
       const { status: writeStatus } = await request(`fhir/R4/ProjectMembership/${membershipId}`, 'PUT', updated, { 'If-Match': `W/"${member.meta.versionId}"` });
       if (writeStatus !== 200) fail(`Migration write failed (${writeStatus}); backup already recorded at ${backupFile}`);
+      const verified = await request(`fhir/R4/ProjectMembership/${membershipId}`);
+      if (verified.status !== 200 || !isDeepStrictEqual(grants(verified.json), { accessPolicy: null, access })) fail('Migration read-back mismatch; inspect backup before continuing');
       console.log('Applied clinic staff policy to membership');
     } finally {
       fs.closeSync(lock);
