@@ -68,7 +68,7 @@ All requested focused checks passed; no full suite or check-all.sh was run, per 
   `time-chit-printed-slip.png`; MC/referral images in `mc-regression/`.
   Headless embedded PDF viewer appears blank; exported PDF was rasterized and visually reviewed,
   and its attendance/date/time/duration/doctor/disclaimer content checked with pdftotext.
-- Self-review: `.ai/REVIEW-time-chit.md`. Plain-language changelog, D38 decision and STATE updated.
+- Self-review: `.ai/REVIEW-time-chit.md`. Plain-language changelog, D41 (renumbered from D38 on merge with dev) decision and STATE updated.
 - No sidebar/nav, POCT/X-ray, Firebase Storage, production or real-patient-data changes.
 - Stopped only this task's detached process group (Next --port 3214). Post-shutdown curl returned
   HTTP 000; reserved worktree/server were not touched.

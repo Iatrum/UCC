@@ -1,5 +1,5 @@
 import type { Device } from '@medplum/fhirtypes';
-import type { MedplumClient } from '@medplum/core';
+import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type { PoctAnalyser } from './lab-constants';
 import { ConflictError } from '@/lib/server/route-helpers';
 
@@ -20,8 +20,12 @@ export function deviceForClinic(device: Device, clinicId: string, now = Date.now
     lastHeartbeat, online: device.status === 'active' && Number.isFinite(age) && age >= 0 && age <= POCT_HEARTBEAT_MAX_AGE };
 }
 
-export async function listPoctAnalysers(client: MedplumClient, clinicId: string): Promise<PoctAnalyser[]> {
+// Device is clinic configuration, not patient data: the clinic staff AccessPolicy grants staff no
+// Device access, so look devices up with the server directory client, scoped by the caller's
+// authenticated clinicId, and return only the safe projection below (Task 130 finding).
+export async function listPoctAnalysers(clinicId: string): Promise<PoctAnalyser[]> {
   const result: PoctAnalyser[] = [];
+  const client = await getAdminMedplum();
   for await (const page of client.searchResourcePages('Device', { identifier: `clinic|${clinicId}`, _count: '100' }, { cache: 'no-cache' })) {
     for (const device of page) {
       const analyser = deviceForClinic(device, clinicId);
@@ -31,7 +35,8 @@ export async function listPoctAnalysers(client: MedplumClient, clinicId: string)
   return result;
 }
 
-export async function requireOnlineAnalyser(client: MedplumClient, clinicId: string, id: string, type: string) {
+export async function requireOnlineAnalyser(clinicId: string, id: string, type: string) {
+  const client = await getAdminMedplum();
   // Search with BOTH identifier and id: never read another clinic's Device by id.
   const device = await client.searchOne('Device', { identifier: `clinic|${clinicId}`, _id: id }, { cache: 'no-cache' });
   const analyser = device && deviceForClinic(device, clinicId);

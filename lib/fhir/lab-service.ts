@@ -87,7 +87,7 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
     if (!poctTest || !order.encounterId || !/^[a-zA-Z0-9-]{1,64}$/.test(order.poct.entryId || '') || !/^[a-zA-Z0-9-]{1,64}$/.test(order.poct.analyserId || '')) {
       throw new ConflictError('Invalid POCT order');
     }
-    await requireOnlineAnalyser(client, clinicId, order.poct.analyserId, poctTest.analyserType);
+    await requireOnlineAnalyser(clinicId, order.poct.analyserId, poctTest.analyserType);
     order = { ...order, tests: [{ code: poctTest.code, display: poctTest.name, system: poctTest.system }] };
   }
 

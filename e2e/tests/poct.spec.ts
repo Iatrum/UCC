@@ -15,18 +15,18 @@ const tagSystem = 'https://ucc.emr/poct';
 const moduleExtensionUrl = 'https://ucc.emr/organization-enabled-module-ids';
 const defaultBranchEnabledModuleIds = ['appointments', 'inventory', 'analytics', 'follow-up'];
 
-// Sets the "poct" module on/off for the clinic's Organization (same toggle an admin flips in /admin/clinics).
+// Sets the POCT or PACS module on/off for the clinic's Organization (same toggle an admin flips in /admin/clinics).
 // Returns a restore function so the test clinic's module config is left exactly as found.
-async function setPoctModuleEnabled(m: MedplumClient, clinicId: string, enabled: boolean) {
+async function setClinicModuleEnabled(m: MedplumClient, clinicId: string, enabled: boolean, moduleId: 'poct' | 'pacs' = 'poct') {
   const org = await m.searchOne('Organization', { identifier: `clinic|${clinicId}` });
   if (!org?.id) throw new Error(`Organization for clinic ${clinicId} not found`);
   const existingExtension = org.extension?.find((ext) => ext.url === moduleExtensionUrl);
   const currentIds: string[] = existingExtension?.valueString
     ? JSON.parse(existingExtension.valueString)
     : [...defaultBranchEnabledModuleIds];
-  if (currentIds.includes('poct') === enabled) return async () => {};
+  if (currentIds.includes(moduleId) === enabled) return async () => {};
 
-  const nextIds = enabled ? [...currentIds, 'poct'] : currentIds.filter((id) => id !== 'poct');
+  const nextIds = enabled ? [...currentIds, moduleId] : currentIds.filter((id) => id !== moduleId);
   const otherExtensions = org.extension?.filter((ext) => ext.url !== moduleExtensionUrl) ?? [];
   await m.updateResource<Organization>({
     ...org,
@@ -54,7 +54,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   const patient = await m.readResource('Patient', patientId);
   const clinicId = patient.identifier?.find((id) => id.system === 'clinic')?.value;
   expect(['demo', 'clinicb', 'clinicc', 'clinicd']).toContain(clinicId);
-  const restorePoctModule = await setPoctModuleEnabled(m, clinicId!, true);
+  const restorePoctModule = await setClinicModuleEnabled(m, clinicId!, true);
   const consult = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake POCT test visit', diagnosis: 'Fake test', procedures: [], prescriptions: [] } });
   expect(consult.ok()).toBeTruthy();
   const { consultationId } = await consult.json();
@@ -156,7 +156,7 @@ test('POCT module disabled for the clinic: composer hides the section and the AP
   const patient = await m.readResource('Patient', patientId);
   const clinicId = patient.identifier?.find((id) => id.system === 'clinic')?.value;
   expect(['demo', 'clinicb', 'clinicc', 'clinicd']).toContain(clinicId);
-  const restorePoctModule = await setPoctModuleEnabled(m, clinicId!, false);
+  const restorePoctModule = await setClinicModuleEnabled(m, clinicId!, false);
   try {
     const consult = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake POCT test visit', diagnosis: 'Fake test', procedures: [], prescriptions: [] } });
     expect(consult.ok()).toBeTruthy();
@@ -301,7 +301,9 @@ test('Simulated analyser HL7/ASTM results reach the Lab tab, clear pending, and 
       subject: { reference: `Patient/${f.patientId}` },
       code: { coding: [{ system: 'http://loinc.org', code: '1988-5', display: 'CRP' }], text: 'CRP' },
       identifier: [{ system: 'clinic', value: f.clinicId! }],
-      meta: { tag: [{ system: tagSystem, code: 'poct' }] },
+      // Admin-created with its own meta: stamp the clinic account explicitly so the results it
+      // produces are visible to clinic-policy (migrated) staff.
+      meta: { tag: [{ system: tagSystem, code: 'poct' }], accounts: [{ reference: `HealthcareService/${(await f.m.searchOne('HealthcareService', { identifier: `clinic|${f.clinicId}` }, { cache: 'no-cache' }))!.id}` }] },
       performer: [{ reference: `Device/${f.device.id}` }],
     });
     const astmIngested = await request.post('/api/labs/receive/message', {
@@ -327,7 +329,7 @@ test('POCT module disabled after an order exists blocks PATCH/DELETE of that ord
     expect(genericOrder.ok()).toBeTruthy();
     const { serviceRequestId: genericServiceRequestId } = await genericOrder.json();
 
-    const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
+    const disable = await setClinicModuleEnabled(f.m, f.clinicId, false);
     try {
       const blockedMessage = await request.post('/api/labs/receive/message', {
         data: { format: 'hl7', message: buildTestOruMessage(poctServiceRequestId, 6.8, 'H'), apiKey: POCT_API_KEY },
@@ -369,12 +371,19 @@ test('POCT module disabled after an order exists blocks PATCH/DELETE of that ord
 test('Lab subscription notifications refresh results without navigation; dropped sockets poll and unmount cleans up', async ({ request, page }) => {
   test.setTimeout(180_000);
   const f = await fixture(request, page, true);
+  let restorePacs = async () => {};
   try {
+    // The shared Lab subscription remains enabled when PACS alone is on.
+    restorePacs = await setClinicModuleEnabled(f.m, f.clinicId!, false, 'pacs');
+    // An admin-created order with its own meta does not inherit the Patient's clinic account,
+    // so stamp it explicitly: clinic-policy staff (migrated memberships) only see stamped records.
+    const account = await f.m.searchOne('HealthcareService', { identifier: `clinic|${f.clinicId}` }, { cache: 'no-cache' });
+    expect(account?.id).toBeTruthy();
     const sr = await f.m.createResource<ServiceRequest>({
       resourceType: 'ServiceRequest', status: 'active', intent: 'order',
       subject: { reference: `Patient/${f.patientId}` },
       code: { text: 'Glucose (capillary)' }, identifier: [{ system: 'clinic', value: f.clinicId }],
-      meta: { tag: [{ system: tagSystem, code: 'poct' }] },
+      meta: { tag: [{ system: tagSystem, code: 'poct' }], accounts: [{ reference: `HealthcareService/${account!.id}` }] },
     });
     let socket: import('@playwright/test').WebSocketRoute | undefined;
     let closed = false;
@@ -427,7 +436,7 @@ test('Lab subscription notifications refresh results without navigation; dropped
     socket!.close();
     // The real 30-second polling interval catches a result while WebSocket is unavailable.
     await expect(page.getByText('8.2 mmol/L', { exact: true })).toBeVisible({ timeout: 40_000 });
-    const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
+    const disable = await setClinicModuleEnabled(f.m, f.clinicId, false);
     try {
       await expect(page.getByText('No lab results available', { exact: true })).toBeVisible({ timeout: 40_000 });
       await expect(page.getByText('8.2 mmol/L', { exact: true })).toHaveCount(0);
@@ -451,14 +460,17 @@ test('Lab subscription notifications refresh results without navigation; dropped
     const readsAfterUnmount = labReads;
     await page.waitForTimeout(31_000);
     expect(labReads).toBe(readsAfterUnmount);
-  } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
+  } finally { await f.m.deleteResource('Device', f.device.id!); await restorePacs(); await f.restorePoctModule(); }
 });
 
 test('Lab subscription API enforces login, clinic patient/encounter scope and POCT toggle', async ({ request, page, playwright, baseURL }) => {
   test.setTimeout(120_000);
   const f = await fixture(request, page, true);
   const anonymous = await playwright.request.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+  let restorePacs = async () => {};
   try {
+    // The shared Lab subscription remains enabled when PACS alone is on.
+    restorePacs = await setClinicModuleEnabled(f.m, f.clinicId!, false, 'pacs');
     const body = { patientId: f.patientId, encounterId: f.consultationId };
     expect((await anonymous.post('/api/labs/subscription', { data: body })).status()).toBe(401);
     expect((await request.post('/api/labs/subscription', { data: { patientId: 'not-a-patient' } })).status()).toBe(403);
@@ -479,8 +491,15 @@ test('Lab subscription API enforces login, clinic patient/encounter scope and PO
       expect(binding.expiresAt).toBeLessThanOrEqual(Date.now() + 90_000);
       expect(response.headers()['cache-control']).toBe('no-store');
     }
-    const disable = await setPoctModuleEnabled(f.m, f.clinicId, false);
-    try { expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403); }
+    const disable = await setClinicModuleEnabled(f.m, f.clinicId, false);
+    try {
+      expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403);
+      const restorePacsOnly = await setClinicModuleEnabled(f.m, f.clinicId!, true, 'pacs');
+      try {
+        expect([200, 503]).toContain((await request.post('/api/labs/subscription', { data: body })).status());
+      } finally { await restorePacsOnly(); }
+      expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403);
+    }
     finally { await disable(); }
-  } finally { await anonymous.dispose(); await f.m.deleteResource('Device', f.device.id!); await f.restorePoctModule(); }
+  } finally { await anonymous.dispose(); await f.m.deleteResource('Device', f.device.id!); await restorePacs(); await f.restorePoctModule(); }
 });
