@@ -35,13 +35,14 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
   }
   const clinicId = await resolveClinicIdFromServerScope();
   // Fetch data in parallel from Medplum FHIR (source of truth)
-  const [patientData, consultationsData, triageData, appointmentsData, poctEnabled, pacsEnabled] = await Promise.all([
+  const [patientData, consultationsData, triageData, appointmentsData, poctEnabled, pacsEnabled, timeChitEnabled] = await Promise.all([
     getPatientFromMedplum(id, clinicId, medplum),
     getPatientConsultationsFromMedplum(id, clinicId, medplum),
     getTriageForPatient(id, medplum, clinicId),
     getPatientAppointmentsFromMedplum(medplum, id),
     isModuleEnabledForClinic("poct", clinicId),
     isModuleEnabledForClinic("pacs", clinicId),
+    isModuleEnabledForClinic("time-chit", clinicId),
   ]);
 
   if (!patientData) {
@@ -301,6 +302,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
             medicalHistory={medicalHistory}
             poctEnabled={poctEnabled}
             pacsEnabled={pacsEnabled}
+                        timeChitEnabled={timeChitEnabled}
           />
         </div>
       </div>

@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  DEFAULT_TIME_CHIT_TEMPLATE,
   DEFAULT_MC_TEMPLATE,
   DEFAULT_REFERRAL_TEMPLATE,
   fillPreviewData,
@@ -37,7 +38,7 @@ const REFERRAL_VARS = [
 ];
 
 interface TemplatePanelProps {
-  type: "mc" | "referral";
+  type: "mc" | "referral" | "time-chit";
   html: string;
   onChange: (html: string) => void;
   onSave: () => void;
@@ -46,7 +47,7 @@ interface TemplatePanelProps {
 }
 
 function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: TemplatePanelProps) {
-  const vars = type === "mc" ? MC_VARS : REFERRAL_VARS;
+  const vars = type === "time-chit" ? ["{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}", "{{patientName}}", "{{patientNric}}", "{{tcDate}}", "{{tcTimeIn}}", "{{tcTimeOut}}", "{{tcHours}}", "{{doctorName}}", "{{date}}"] : type === "mc" ? MC_VARS : REFERRAL_VARS;
   const [showVars, setShowVars] = React.useState(false);
   const editorId = React.useId();
   const previewHtml = fillPreviewData(html);
@@ -111,7 +112,7 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
             srcDoc={previewHtml}
             sandbox=""
             className="h-[600px] w-full rounded-md border bg-white"
-            title={type === "mc" ? "Medical certificate template preview" : "Referral letter template preview"}
+            title={type === "time-chit" ? "Time Chit template preview" : type === "mc" ? "Medical certificate template preview" : "Referral letter template preview"}
           />
         </div>
       </div>
@@ -123,18 +124,21 @@ export function DocumentTemplateEditor() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [tcHtml, setTcHtml] = React.useState(DEFAULT_TIME_CHIT_TEMPLATE);
   const [mcHtml, setMcHtml] = React.useState(DEFAULT_MC_TEMPLATE);
   const [referralHtml, setReferralHtml] = React.useState(DEFAULT_REFERRAL_TEMPLATE);
-  const [saveTarget, setSaveTarget] = React.useState<"mc" | "referral" | null>(null);
-  const [resetTarget, setResetTarget] = React.useState<"mc" | "referral" | null>(null);
+  const [saveTarget, setSaveTarget] = React.useState<"mc" | "referral" | "time-chit" | null>(null);
+  const [resetTarget, setResetTarget] = React.useState<"mc" | "referral" | "time-chit" | null>(null);
 
   React.useEffect(() => {
     (async () => {
       try {
-        const [mcRes, refRes] = await Promise.all([
+        const [mcRes, refRes, tcRes] = await Promise.all([
           fetch("/api/document-templates?type=mc"),
           fetch("/api/document-templates?type=referral"),
+          fetch("/api/document-templates?type=time-chit"),
         ]);
+        if (tcRes.ok) { const data = await tcRes.json(); if (data.html) setTcHtml(data.html); }
         if (mcRes.ok) {
           const data = await mcRes.json();
           if (data.html) setMcHtml(data.html);
@@ -151,10 +155,10 @@ export function DocumentTemplateEditor() {
     })();
   }, []);
 
-  const handleSave = async (type: "mc" | "referral") => {
+  const handleSave = async (type: "mc" | "referral" | "time-chit") => {
     setIsSaving(true);
     try {
-      const html = type === "mc" ? mcHtml : referralHtml;
+      const html = type === "time-chit" ? tcHtml : type === "mc" ? mcHtml : referralHtml;
       const res = await fetch("/api/document-templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -174,7 +178,8 @@ export function DocumentTemplateEditor() {
 
   const confirmReset = () => {
     if (!resetTarget) return;
-    if (resetTarget === "mc") setMcHtml(DEFAULT_MC_TEMPLATE);
+    if (resetTarget === "time-chit") setTcHtml(DEFAULT_TIME_CHIT_TEMPLATE);
+    else if (resetTarget === "mc") setMcHtml(DEFAULT_MC_TEMPLATE);
     else setReferralHtml(DEFAULT_REFERRAL_TEMPLATE);
     setResetTarget(null);
     toast({ title: "Template reset", description: "Default template restored. Save to persist." });
@@ -188,10 +193,15 @@ export function DocumentTemplateEditor() {
     <>
       <Tabs defaultValue="mc">
         <TabsList className="mb-4">
+          <TabsTrigger value="time-chit">Time Chit</TabsTrigger>
           <TabsTrigger value="mc">MC Template</TabsTrigger>
           <TabsTrigger value="referral">Referral Letter</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="time-chit">
+          <TemplatePanel type="time-chit" html={tcHtml} onChange={setTcHtml}
+            onSave={() => setSaveTarget("time-chit")} onReset={() => setResetTarget("time-chit")} isSaving={isSaving} />
+        </TabsContent>
         <TabsContent value="mc">
           <TemplatePanel
             type="mc"
@@ -220,7 +230,7 @@ export function DocumentTemplateEditor() {
           <AlertDialogHeader>
             <AlertDialogTitle>Save template changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              {saveTarget === "mc"
+              {saveTarget === "time-chit" ? "Saving this template changes future Time Chit printouts. Review the preview before saving." : saveTarget === "mc"
                 ? "Saving this template changes all future MCs. Review the preview before saving."
                 : "Saving this template changes all future referrals. Review the preview before saving."}
             </AlertDialogDescription>

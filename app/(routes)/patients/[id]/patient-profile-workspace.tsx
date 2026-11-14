@@ -63,6 +63,7 @@ interface PatientProfileWorkspaceProps {
   medicalHistory: MedicalHistory;
   poctEnabled: boolean;
   pacsEnabled: boolean;
+  timeChitEnabled: boolean;
 }
 
 const emptyTreatmentSummary: TreatmentPlanSummary = {
@@ -164,6 +165,7 @@ export default function PatientProfileWorkspace({
   medicalHistory,
   poctEnabled,
   pacsEnabled,
+  timeChitEnabled,
 }: PatientProfileWorkspaceProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -318,16 +320,18 @@ export default function PatientProfileWorkspace({
 
   const treatmentDocumentsCatalog = useMemo(
     () => [
+      ...(!documentCatalog.some(item => /time[- ]chit/i.test(`${item.code} ${item.name}`))
+        ? [{ id: "letter-time-chit", name: "Time Chit", unitPrice: 0, meta: { kind: "time-chit" } }] : []),
       ...documentCatalog.flatMap((item) => {
         const key = `${item.code || item.id} ${item.name}`.toLowerCase();
-        const kind = key.includes("mc") || key.includes("medical certificate")
+        const kind = key.includes("time-chit") || key.includes("time chit") ? "time-chit" : key.includes("mc") || key.includes("medical certificate")
           ? "mc"
           : key.includes("referral")
             ? "referral"
             : null;
         if (!kind) return [];
         return [{
-          id: item.code === "letter-mc" || item.id === "letter-mc" ? "letter-mc" : item.code === "letter-referral" || item.id === "letter-referral" ? "letter-referral" : item.id,
+          id: kind === "time-chit" ? "letter-time-chit" : item.code === "letter-mc" || item.id === "letter-mc" ? "letter-mc" : item.code === "letter-referral" || item.id === "letter-referral" ? "letter-referral" : item.id,
           name: item.display || item.name,
           unitPrice: item.defaultPrice || 0,
           meta: { kind },
@@ -1011,6 +1015,7 @@ export default function PatientProfileWorkspace({
                         patient={patient}
                         poctEnabled={poctEnabled}
                         pacsEnabled={pacsEnabled}
+                        timeChitEnabled={timeChitEnabled}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>

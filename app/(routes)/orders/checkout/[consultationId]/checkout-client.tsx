@@ -45,6 +45,7 @@ import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
 import { formatMedicationNameWithStrength, formatPrescriptionDetails } from "@/lib/prescriptions";
 import type { TreatmentPlanEntry } from "@/lib/treatment-plan";
+import { TimeChitDocument } from "@/components/mc/time-chit-document";
 import { McDocument } from "@/components/mc/mc-document";
 import ReferralDocument from "@/components/referrals/referral-document";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
@@ -76,7 +77,8 @@ type CheckoutItem = {
 type PaymentMethod = "cash" | "card" | "qr" | "panel";
 
 type CheckoutDocumentDetails = {
-  kind: "mc" | "referral";
+  kind: "mc" | "referral" | "time-chit";
+  tcDate?: string; tcTimeIn?: string; tcTimeOut?: string; tcHours?: string; tcDoctorName?: string;
   title: string;
   status?: string;
   instruction?: string;
@@ -103,7 +105,7 @@ function patientFacingDescription(value: string | undefined, category?: string) 
   if (category === "documents" && text.startsWith("{")) {
     try {
       const parsed = JSON.parse(text) as { kind?: string };
-      if (parsed.kind === "referral" || parsed.kind === "mc") {
+      if (parsed.kind === "time-chit" || parsed.kind === "referral" || parsed.kind === "mc") {
         return "";
       }
     } catch {
@@ -120,13 +122,14 @@ function parseDocumentDetails(value: string | undefined, fallbackTitle: string):
 
   try {
     const parsed = JSON.parse(text) as Record<string, string>;
-    if (parsed.kind !== "mc" && parsed.kind !== "referral") return undefined;
+    if (parsed.kind !== "mc" && parsed.kind !== "referral" && parsed.kind !== "time-chit") return undefined;
 
     return {
       kind: parsed.kind,
       title: parsed.title || fallbackTitle || (parsed.kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER"),
       status: parsed.status,
       instruction: parsed.instruction,
+      tcDate: parsed.tcDate, tcTimeIn: parsed.tcTimeIn, tcTimeOut: parsed.tcTimeOut, tcHours: parsed.tcHours, tcDoctorName: parsed.tcDoctorName,
       mcDays: parsed.mcDays,
       mcDiagnosis: parsed.mcDiagnosis,
       mcStartDate: parsed.mcStartDate,
@@ -143,7 +146,7 @@ function parseDocumentDetails(value: string | undefined, fallbackTitle: string):
 function documentDetailsFromDraft(entry: TreatmentPlanEntry): CheckoutDocumentDetails | undefined {
   if (entry.tab !== "documents") return undefined;
   const kind =
-    entry.meta?.kind === "mc" || entry.catalogRef === "letter-mc"
+    entry.meta?.kind === "time-chit" || entry.catalogRef === "letter-time-chit" ? "time-chit" : entry.meta?.kind === "mc" || entry.catalogRef === "letter-mc"
       ? "mc"
       : entry.meta?.kind === "referral" || entry.catalogRef === "letter-referral"
         ? "referral"
@@ -156,6 +159,7 @@ function documentDetailsFromDraft(entry: TreatmentPlanEntry): CheckoutDocumentDe
     title: entry.name || (kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER"),
     status: entry.meta?.documentStatus || "completed",
     instruction: entry.instruction,
+    tcDate: entry.meta?.tcDate, tcTimeIn: entry.meta?.tcTimeIn, tcTimeOut: entry.meta?.tcTimeOut, tcHours: entry.meta?.tcHours, tcDoctorName: entry.meta?.tcDoctorName,
     mcDays: entry.meta?.mcDays,
     mcDiagnosis: entry.meta?.mcDiagnosis,
     mcStartDate: entry.meta?.mcStartDate,
@@ -399,6 +403,11 @@ function renderCheckoutDocument({
   const details = item.documentDetails;
   if (!details) return null;
 
+  if (details.kind === "time-chit") {
+    return <TimeChitDocument patient={patient} issuedDate={date} attendanceDate={displayDateOr(details.tcDate, date)}
+      timeIn={details.tcTimeIn || ""} timeOut={details.tcTimeOut || ""} hours={details.tcHours || ""}
+      doctorName={details.tcDoctorName || ""} organization={organization} />;
+  }
   if (details.kind === "mc") {
     const numDays = Math.max(1, Number(details.mcDays || 1) || 1);
     const startDate = displayDateOr(details.mcStartDate, date);

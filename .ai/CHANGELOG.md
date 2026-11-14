@@ -65,3 +65,13 @@ A new `scripts/poct/sim-analyser.ts` tool can stand in for a real POCT analyser 
 Completed disposable-identity verification and isolation plumbing: clinic-scoped Provenance reads with audit account stamping, account stamping on three Encounter updates, and full multi-clinic login-access recalculation when staff clinic assignments change. Assignment roles and policy parameters save atomically; removing the last clinic cannot fall back to an unrestricted login. Added a localhost-only, dry-run-default account backfill script (never applied), extended clinic account inventory and disposable four-clinic regression coverage. Existing staff/data migration remains Phase 2.
 
 Validation: focused isolation test passes; one foreground full gate had lint/build/clinic checks pass but composer cold compilation exceeded its fixed wait. Unchanged-code workflow replay passes 10/11 (baseline known-bug summary only); composite verification is 23/24 with no new failures. Original failed gate evidence retained. PR-worktree lint passes. Self-review `.ai/REVIEW-task-isolation-1.md` records two deferred MAJOR issues: cross-clinic Observation creation accepted, and app account propagation can see empty references on non-extended reads. Neither was fixed in this phase. No sidebar/nav, Firebase Storage or POCT/X-ray module-toggle changes.
+
+## 2026-11-14 — Task 140: Time Chit / Surat Masa
+Clinics can turn on Time Chit in Admin → Clinics → Module Settings. It starts off for every
+clinic. When enabled, staff can add a time slip in the existing treatment composer, enter the
+attendance date, time in/out and doctor's name, preview it, and print it at checkout or later from
+Generated Documents. The slip confirms attendance and clearly says it is not a Medical Certificate.
+Hours are calculated automatically, and invalid or overnight ranges are refused. Existing clinic
+document prices carry through to checkout. Turning the module off blocks new slips, edits and
+deletion while preserving past slips for viewing and printing. MCs and referrals keep their
+existing flow. Local fake-data evidence, screenshots and validation results: `.ai/progress-time-chit.md`.

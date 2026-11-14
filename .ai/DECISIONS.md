@@ -79,3 +79,29 @@ Dry-run must fail for unresolved clinic assignments; do not guess clinics for no
 
 ## D40 — Device (POCT analyser / X-ray device) lookups use the server directory client, clinic-scoped (2026-11-14, Task 130, Dev)
 The final gate with the migrated fake doctor showed `/api/poct/analysers` and `/api/pacs/devices` (and the sign-time online checks) returning 403: the clinic staff AccessPolicy has no Device rule, so any policy-bearing staff member (migrated or newly invited) loses POCT/X-ray. Device is clinic configuration, not patient data, and staff never write it. Decision: `listPoctAnalysers`, `requireOnlineAnalyser`, `listXrayDevices`, `requireOnlineXrayDevice` query Device with `getAdminMedplum()`, always filtered by `identifier=clinic|<authenticated clinicId>` (+ `_id` for the online check), re-checked by `deviceForClinic`, returning only id/name/type/heartbeat/online. clinicId comes from `requireClinicAuth`, never from the request body. Alternative considered (Codex's in-flight proposal): a new `clinicId` membership parameter and a read-only `Device?identifier=clinic|%clinicId` policy rule. Rejected for now because every existing policy-bearing membership in production would need a parameter refresh before rollout, and it adds a value that is substituted into the policy JSON. Revisit in Phase 3 defense-in-depth if staff ever need direct Device FHIR access.
+
+## D42 — `updateConsultationInMedplum` must not resolve clinic tenancy unconditionally (2026-11-14, Task 141, Claude independent review)
+
+Task 140 added `const clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);`
+unconditionally in `updateConsultationInMedplum`, to support Time Chit account stamping.
+`resolveClinicTenant` *throws* (not `null`) if the clinic's Organization or Account
+`HealthcareService` doesn't resolve — so this turned *every* consultation edit (chief complaint,
+notes, diagnosis, prescriptions — nothing to do with Time Chit) into a hard dependency on clinic
+tenant resolution, for every clinic, every time. This is the same collateral-failure shape D40
+found for Device lookups: a module-specific requirement leaking into a shared write path. Decision:
+only resolve/require `clinicTenant` inside that function when the update actually touches a Time
+Chit procedure (`updates.procedures !== undefined && (updates.procedures).some(isTimeChitProcedure)`),
+matching the narrower gate `assertTimeChitMutationAllowed` already used. The sibling create path
+(`saveConsultationToMedplum`) has the same unconditional call but predates this PR — left alone as
+out of scope; flagged here for awareness if it ever surfaces the same symptom on create.
+
+## D41 — Time Chit has its own default-off clinic module (2026-11-14, Task 140)
+
+Time Chit (`time-chit`, catalog `letter-time-chit`) follows the MC document pipeline without a
+routed module or navigation entry. Admins enable it per clinic using the generic module switch.
+Store attendance date, same-day time in/out, server-derived hours and doctor in Procedure notes;
+include clinic identifiers and account metadata on creation and replacement. Reject all Time Chit
+mutations when disabled; retain historical viewing/printing. Use attendance-only wording and
+escaped HTML values. Keep the zero-price fallback for clinics whose custom catalog omits the new
+item, while preserving custom prices. The module config uses empty route/pages because the current
+registry type requires those fields. No Firebase Storage, Lab, POCT or X-ray changes.

@@ -1,3 +1,5 @@
+import { assertTimeChitMutationAllowed } from './time-chit-guard';
+import { isTimeChitProcedure } from '@/lib/time-chit';
 import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
@@ -307,8 +309,11 @@ export async function saveConsultationToMedplum(
 
   console.log(`💾 Saving consultation to Medplum (source of truth)...`);
 
+  await assertTimeChitMutationAllowed(consultation.procedures || [], [], clinicId);
+
   // 1. Verify patient exists in Medplum
   const clinicTenant = await resolveClinicTenant(client, clinicId);
+  if ((consultation.procedures || []).some(isTimeChitProcedure) && !clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
   const patient = await getOrCreatePatient(client, patientData, clinicId);
   const patientReference = `Patient/${patient.id}`;
 
@@ -434,6 +439,7 @@ export async function saveConsultationToMedplum(
 
       await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
+        meta: isTimeChitProcedure(proc) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
         status: 'completed',
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
@@ -748,6 +754,15 @@ export async function updateConsultationInMedplum(
     client.searchResources('MedicationRequest', { encounter: encounterRef }),
   ]);
 
+  let clinicTenant: Awaited<ReturnType<typeof resolveClinicTenant>> = null;
+  if (updates.procedures !== undefined) {
+    await assertTimeChitMutationAllowed(updates.procedures, procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
+    if ((updates.procedures as any[]).some(isTimeChitProcedure)) {
+      clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);
+      if (!clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
+    }
+  }
+
   // 2. Update Chief Complaint Observation
   if (updates.chiefComplaint !== undefined) {
     const existing = observations.find((o) => (o as any).code?.text === 'Chief Complaint');
@@ -872,6 +887,7 @@ export async function updateConsultationInMedplum(
 
       await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
+        meta: isTimeChitProcedure(proc) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
         status: 'completed',
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
@@ -973,6 +989,8 @@ export async function deleteConsultationFromMedplum(
 ): Promise<void> {
   const client = medplum;
   const encounterRef = `Encounter/${encounterId}`;
+  const encounter = await client.readResource('Encounter', encounterId);
+  if (clinicId) assertMatchesClinic(encounter as any, clinicId, encounterRef);
 
   const [conditions, observations, procedures, medications] = await Promise.all([
     client.searchResources('Condition', { encounter: encounterRef }),
@@ -981,6 +999,7 @@ export async function deleteConsultationFromMedplum(
     client.searchResources('MedicationRequest', { encounter: encounterRef }),
   ]);
 
+  await assertTimeChitMutationAllowed([], procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
   await Promise.all([
     ...conditions.map((r) => client.deleteResource('Condition', r.id!)),
     ...observations.map((r) => client.deleteResource('Observation', r.id!)),

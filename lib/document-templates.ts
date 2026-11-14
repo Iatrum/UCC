@@ -203,6 +203,7 @@ export function fillPreviewData(html: string): string {
     '{{patientNric}}': '900101-14-5678',
     '{{patientDob}}': '1 January 1990',
     '{{patientAge}}': '36',
+    '{{tcDate}}': today, '{{tcTimeIn}}': '09:00', '{{tcTimeOut}}': '10:30', '{{tcHours}}': '1.5',
     '{{mcDays}}': '2',
     '{{mcStartDate}}': '23 May 2026',
     '{{mcEndDate}}': '24 May 2026',
@@ -219,3 +220,108 @@ export function fillPreviewData(html: string): string {
     html
   );
 }
+// Time Chit adds {{tcDate}} {{tcTimeIn}} {{tcTimeOut}} {{tcHours}} to the shared clinic/patient/doctor/date fields.
+export const DEFAULT_TIME_CHIT_TEMPLATE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11pt;
+    color: #111827;
+    padding: 48px;
+    max-width: 800px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .letterhead { margin-bottom: 10px; }
+  .clinic-name { font-size: 14pt; font-weight: bold; color: #1e3a5f; margin-bottom: 2px; }
+  .clinic-meta { font-size: 9pt; color: #6b7280; line-height: 1.4; }
+  .rule-thick { border: none; border-top: 2px solid #1e3a5f; margin: 0; }
+  .rule-thin { border: none; border-top: 0.5px solid #1e3a5f; margin: 0; }
+  .title-band { text-align: center; padding: 8px 0; }
+  .title { font-size: 15pt; font-weight: bold; letter-spacing: 2px; color: #1e3a5f; }
+  .date-row { text-align: right; margin: 14px 0 16px; font-size: 10pt; color: #6b7280; }
+  .patient-box {
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    background: #f9fafb;
+  }
+  .patient-row { display: flex; margin-bottom: 6px; }
+  .patient-row:last-child { margin-bottom: 0; }
+  .patient-label { width: 120px; font-size: 10pt; color: #6b7280; font-weight: bold; flex-shrink: 0; }
+  .patient-value { font-size: 11pt; }
+  .cert-para { font-size: 11pt; line-height: 1.6; color: #111827; margin-bottom: 16px; }
+  .content { flex: 1; }
+  .sig-block {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 48px;
+  }
+  .sig-line { border-bottom: 1px solid #111827; width: 160px; margin-bottom: 6px; }
+  .sig-name { font-weight: bold; font-size: 11pt; margin-bottom: 2px; }
+  .sig-subtitle { font-size: 10pt; color: #6b7280; margin-bottom: 2px; }
+  .stamp-box {
+    width: 80px;
+    height: 80px;
+    border: 1px dashed #d1d5db;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 8pt;
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+<div class="letterhead">
+  <div class="clinic-name">{{clinicName}}</div>
+  <div class="clinic-meta">{{clinicAddress}}</div>
+  <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+</div>
+<hr class="rule-thick" />
+<div class="title-band"><span class="title">TIME CHIT / SURAT MASA</span></div>
+<hr class="rule-thin" />
+<div class="date-row">Date Issued: <strong>{{date}}</strong></div>
+<div class="patient-box">
+  <div class="patient-row">
+    <span class="patient-label">Patient Name</span>
+    <span class="patient-value">{{patientName}}</span>
+  </div>
+  <div class="patient-row">
+    <span class="patient-label">NRIC / ID</span>
+    <span class="patient-value">{{patientNric}}</span>
+  </div>
+</div>
+<div class="content">
+  <p class="cert-para">This is to certify that the above-named patient attended this clinic on
+  <strong>{{tcDate}}</strong> from <strong>{{tcTimeIn}}</strong> to <strong>{{tcTimeOut}}</strong>
+  ({{tcHours}} hour(s)), for medical attendance.</p>
+  <div style="display:flex;border:1px solid #d1d5db;border-radius:4px;text-align:center;margin-bottom:24px">
+    <div style="flex:1;padding:14px">Time in<br><strong>{{tcTimeIn}}</strong></div>
+    <div style="flex:1;padding:14px;border-left:1px solid #d1d5db;border-right:1px solid #d1d5db">Time out<br><strong>{{tcTimeOut}}</strong></div>
+    <div style="flex:1;padding:14px">Duration<br><strong>{{tcHours}} hour(s)</strong></div>
+  </div>
+  <p style="font-size:9pt;color:#6b7280">This slip confirms clinic attendance only. It is not a Medical Certificate.</p>
+</div>
+<div class="sig-block">
+  <div>
+    <div class="sig-line"></div>
+    <div class="sig-name">{{doctorName}}</div>
+    <div class="sig-subtitle">Medical Practitioner</div>
+    <div class="sig-subtitle">Date: {{date}}</div>
+  </div>
+  <div class="stamp-box">Clinic<br>Stamp</div>
+</div>
+</body>
+</html>`;

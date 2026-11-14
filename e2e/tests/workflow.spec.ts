@@ -19,6 +19,8 @@ const stubPlan = (p: Page) => p.route('**/api/consultations/plan**', r => r.fulf
 test.beforeAll(async ({ browser }) => {
   const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   page = await ctx.newPage(); watch(page, issues, () => step);
+  // Local document-only runs must never contact the configured Firestore draft store.
+  if (process.env.UCC_LOCAL_DOCUMENTS_ONLY === "1") await stubPlan(page);
 });
 test.afterAll(async () => { saveJson('workflow-results.json', { facts, bugs, issues }); await page?.context().close(); });
 test.afterEach(async ({}, info) => { if (info.status !== info.expectedStatus) await shot(page, `FAIL-${step}`); });
