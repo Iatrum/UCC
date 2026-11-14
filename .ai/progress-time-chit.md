@@ -82,3 +82,24 @@ All requested focused checks passed; no full suite or check-all.sh was run, per 
 - `gh pr view 233 -R Iatrum/UCC --json mergeable,mergeStateStatus` returned:
   `{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING"}`. PR remains draft; no merge attempted.
 - Task server :3214 confirmed stopped (no listening socket). Local validation complete.
+
+## Task 141 — independent review (Claude)
+
+- Branch already merged with `origin/dev` 2f56211 (Phase 2 isolation) by Dev before this review
+  started; doc conflicts resolved, D38 renumbered D41.
+- Reviewed `git diff origin/dev...HEAD` for OWASP A01/A03, FHIR R4 Procedure usage, interaction
+  with the merged Phase 2 clinic AccessPolicy, and regressions in composer/MC/referral/Lab/POCT/X-ray.
+  Full findings: `.ai/REVIEW-time-chit.md` (Task 141 section).
+- **MAJOR found and fixed in this worktree**: `updateConsultationInMedplum` added an unconditional
+  `resolveClinicTenant` call affecting *every* consultation edit, not just Time Chit ones — a
+  Device-D40-style collateral regression. Scoped the call to only run when the update actually
+  touches a Time Chit procedure. Decision recorded as D42.
+- Re-ran after the fix: `tsc --noEmit -p tsconfig.lint.json` PASS, `check-clinic-admin-medplum.mjs`
+  PASS, unit tests 8 pass/27 assertions PASS, `tests/time-chit.spec.ts` 1 passed (36.2s, after
+  deleting an orphaned test catalog item left by an earlier interrupted session's failed teardown),
+  `tests/workflow.spec.ts` grep subset (01,02,03,04,06,08) 6 passed (1.2m, after a cold-dev-server
+  timing flake on the first attempt that was unrelated to any file this PR touches).
+- Verdict: **APPROVE** (one MAJOR found, fixed, and re-verified; no other findings).
+- Committed the fix as a new commit (not amended), pushed normally to `ai/task-time-chit`.
+- `gh pr view 233 --json mergeable,mergeStateStatus` after push: `{"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE"}`.
+- Dev server :3214 stopped at end of review.

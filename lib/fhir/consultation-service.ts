@@ -754,11 +754,14 @@ export async function updateConsultationInMedplum(
     client.searchResources('MedicationRequest', { encounter: encounterRef }),
   ]);
 
+  let clinicTenant: Awaited<ReturnType<typeof resolveClinicTenant>> = null;
   if (updates.procedures !== undefined) {
     await assertTimeChitMutationAllowed(updates.procedures, procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
+    if ((updates.procedures as any[]).some(isTimeChitProcedure)) {
+      clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);
+      if (!clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
+    }
   }
-  const clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);
-  if ((updates.procedures || []).some(isTimeChitProcedure) && !clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
 
   // 2. Update Chief Complaint Observation
   if (updates.chiefComplaint !== undefined) {
