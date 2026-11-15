@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { isAdminPath, safeNext } from "@/lib/login-redirect";
+import { decideLoginRedirect, isAdminPath, safeNext } from "@/lib/login-redirect";
 
 function resolveAdminOrigin(): string | null {
   if (typeof window === "undefined") {
@@ -72,21 +72,24 @@ function LoginForm() {
     if (authLoading || !isAuthenticated) {
       return;
     }
-    if (isClinicForbidden) {
-      return;
-    }
     if (didNavigateOnSubmitRef.current) {
       return;
     }
 
-    const requestedNext = safeNext(searchParams.get("next"));
-
-    if (!isAdmin && (isAdminRequired || (requestedNext && isAdminPath(requestedNext)))) {
+    const decision = decideLoginRedirect({
+      isAdmin,
+      isClinicForbidden,
+      isAdminRequired,
+      next: safeNext(searchParams.get("next")),
+    });
+    if (decision.action === "stay") {
+      return;
+    }
+    if (decision.action === "admin-notice") {
       setShowAdminNotice(true);
       return;
     }
-
-    const redirectUrl = requestedNext ?? (isAdmin ? "/admin" : "/dashboard");
+    const redirectUrl = decision.url;
 
     if (typeof window !== "undefined") {
       if (isAdmin) {
