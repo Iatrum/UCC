@@ -12,8 +12,12 @@
  * outside production, in the same fake demo clinics as the rest of POCT's
  * simulated-device support (demo/clinicb/clinicc/clinicd).
  *
+ * Ingress is authenticated per Device: issue a key for the Device, keep it OUTSIDE git (e.g. e2e/.secrets/),
+ * and pass it with --key-file <path> or the UCC_DEVICE_KEY env var when sending. The key is never printed.
+ *
  * Usage:
  *   bun scripts/poct/sim-analyser.ts device <clinicId> <analyserType> [--name "Fake Glucose"]
+ *   bun scripts/poct/sim-analyser.ts issue-key <deviceId> --key-file <path>   # per-device key; hash stored on the Device, plaintext only in <path> (0600)
  *   bun scripts/poct/sim-analyser.ts heartbeat <deviceId> [--once] [--offline] [--interval 30000]
  *   bun scripts/poct/sim-analyser.ts send-result <serviceRequestId> --code <loinc> --name <name> \
  *     --value <v> [--unit u] [--range text] [--interpretation normal|high|low|critical] \
@@ -24,6 +28,8 @@ import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { POCT_TYPE_SYSTEM, POCT_PROPERTY_SYSTEM, POCT_TAG_SYSTEM, POCT_HEARTBEAT_MAX_AGE } from '@/lib/fhir/poct-device';
 import { buildOruMessage, labResultsToOru } from '@/lib/poct/hl7';
 import { buildAstmResult, labResultsToAstm } from '@/lib/poct/astm';
+import { issueDeviceKey } from '@/lib/fhir/device-keys';
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { Device } from '@medplum/fhirtypes';
 import type { LabResult } from '@/lib/fhir/lab-constants';
 
@@ -126,12 +132,26 @@ async function cmdSendResult(serviceRequestId: string, flags: Record<string, str
   const url = `${baseUrl || process.env.UCC_BASE_URL || 'http://localhost:3210'}/api/labs/receive/message`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ format: msgFormat, message, apiKey: process.env.POCT_API_KEY }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${loadDeviceKey(flags['key-file'])}` },
+    body: JSON.stringify({ format: msgFormat, message }),
   });
   const body = await response.json();
   if (!response.ok) throw new Error(`send-result failed (${response.status}): ${JSON.stringify(body)}`);
   console.log(`Sent ${msgFormat.toUpperCase()} result for ServiceRequest/${serviceRequestId}:`, body);
+}
+
+async function cmdIssueKey(deviceId: string, flags: Record<string, string>) {
+  const keyFile = flags['key-file'];
+  if (!deviceId || !keyFile || keyFile === 'true') throw new Error('issue-key requires <deviceId> and --key-file <path> (the key is never printed)');
+  const key = await issueDeviceKey(deviceId);
+  writeFileSync(keyFile, `${key}\n`, { mode: 0o600 });
+  console.log(`Issued a new API key for Device/${deviceId}; written to ${keyFile} (previous key, if any, is now invalid)`);
+}
+
+function loadDeviceKey(keyFile?: string): string {
+  const key = keyFile ? readFileSync(keyFile, 'utf8').trim() : process.env.UCC_DEVICE_KEY;
+  if (!key) throw new Error('Device API key required: pass --key-file <path> or set UCC_DEVICE_KEY');
+  return key;
 }
 
 async function main() {
@@ -142,6 +162,9 @@ async function main() {
     case 'device':
       await cmdDevice(positional[0], positional[1], flags.name);
       break;
+    case 'issue-key':
+      await cmdIssueKey(positional[0], flags);
+      break;
     case 'heartbeat':
       await cmdHeartbeat(positional[0], flags);
       break;
@@ -149,7 +172,7 @@ async function main() {
       await cmdSendResult(positional[0], flags);
       break;
     default:
-      console.error('Usage: sim-analyser.ts <device|heartbeat|send-result> ...');
+      console.error('Usage: sim-analyser.ts <device|issue-key|heartbeat|send-result> ...');
       process.exit(1);
   }
 }

@@ -35,14 +35,16 @@ function isXrayServiceRequest(sr: ServiceRequest): boolean {
  * Only acts on ServiceRequests tagged `xray` (this is the POCT X-ray device
  * bridge, not a general imaging receiver -- that's /api/imaging/receive).
  */
-export async function ingestXrayStudy(input: XrayStudyMessage, medplum: MedplumClient): Promise<IngestResult> {
+export async function ingestXrayStudy(input: XrayStudyMessage, medplum: MedplumClient, deviceClinicId: string): Promise<IngestResult> {
   const serviceRequest = await medplum.readResource('ServiceRequest', input.serviceRequestId);
   if (!isXrayServiceRequest(serviceRequest)) {
     throw new Error(`ServiceRequest/${input.serviceRequestId} is not an X-ray device order`);
   }
 
   const clinicId = getClinicIdentifierValue(serviceRequest);
-  if (!clinicId || !(await isModuleEnabledForClinic('pacs', clinicId))) {
+  // The device's clinic (from its authenticated key) must own the order before anything is read or written.
+  if (!clinicId || clinicId !== deviceClinicId) throw new ForbiddenError("Order does not belong to this device's clinic");
+  if (!(await isModuleEnabledForClinic('pacs', clinicId))) {
     throw new ForbiddenError('PACS module is disabled for this clinic');
   }
   // Retransmission after a completed order returns its existing study. Corrections
@@ -58,6 +60,6 @@ export async function ingestXrayStudy(input: XrayStudyMessage, medplum: MedplumC
     throw new ConflictError('X-ray order cannot receive a study in its current status');
   }
 
-  const imagingStudyId = await receiveImagingStudy(input.serviceRequestId, input.study, medplum);
+  const imagingStudyId = await receiveImagingStudy(input.serviceRequestId, input.study, medplum, deviceClinicId);
   return { serviceRequestId: input.serviceRequestId, imagingStudyId };
 }

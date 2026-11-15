@@ -28,6 +28,7 @@ import {
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
+  assertOrderInDeviceClinic,
   getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
@@ -168,10 +169,11 @@ export async function createLabOrder(order: LabOrderRequest, medplum: MedplumCli
 export async function receiveLabResults(
   serviceRequestId: string,
   results: LabResult[],
-  conclusion?: string,
-  medplum?: MedplumClient
+  conclusion: string | undefined,
+  medplum: MedplumClient,
+  deviceClinicId: string
 ): Promise<string> {
-  const client = medplum ?? (await getAdminMedplum());
+  const client = medplum;
   
   console.log(`📊 Receiving lab results for ServiceRequest ${serviceRequestId}`);
 
@@ -179,9 +181,10 @@ export async function receiveLabResults(
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
     cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
   });
+  // Never write results into another clinic's order: the clinic comes from the authenticated Device.
+  await assertOrderInDeviceClinic(client, serviceRequest, deviceClinicId);
   const accountRefs = getResourceAccountReferences(serviceRequest);
-  const clinicId = getClinicIdentifierValue(serviceRequest);
-  if (!clinicId) throw new ForbiddenError('Lab order has no clinic identifier');
+  const clinicId = deviceClinicId;
   const clinicIdentifier = [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId }];
   
   if (!serviceRequest.subject?.reference) {
