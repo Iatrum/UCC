@@ -485,6 +485,10 @@ test('Lab subscription API enforces login, clinic patient/encounter scope and PO
     // Real local Medplum may lack websocket-subscriptions project capability. Both
     // states are supported; deterministic transport coverage is in the test above.
     expect([200, 503]).toContain(response.status());
+    // Shared channel: whichever transport state Medplum has, it must be the same
+    // for every module combination that keeps the channel open (never 403 here).
+    const transportStatus = response.status();
+    if (response.status() === 503) expect(await response.json()).toEqual({ error: 'Live updates unavailable' });
     if (response.ok()) {
       const binding = await response.json();
       expect(typeof binding.token).toBe('string');
@@ -498,7 +502,7 @@ test('Lab subscription API enforces login, clinic patient/encounter scope and PO
       expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403);
       const restorePacsOnly = await setClinicModuleEnabled(f.m, f.clinicId!, true, 'pacs');
       try {
-        expect([200, 503]).toContain((await request.post('/api/labs/subscription', { data: body })).status());
+        expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(transportStatus);
       } finally { await restorePacsOnly(); }
       expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403);
     }
