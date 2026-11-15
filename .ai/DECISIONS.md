@@ -105,3 +105,6 @@ mutations when disabled; retain historical viewing/printing. Use attendance-only
 escaped HTML values. Keep the zero-price fallback for clinics whose custom catalog omits the new
 item, while preserving custom prices. The module config uses empty route/pages because the current
 registry type requires those fields. No Firebase Storage, Lab, POCT or X-ray changes.
+
+## D43 — Honest composer and note save assurance (2026-11-15, Task 150)
+Draft hydration displays “Checking saved draft…” before any saved claim. Show server confirmation separately from pending writes, unavailable persistence and failures; Retry replays the failed action. Unavailable drafts remain current-screen only and explicitly warn of reload loss. Consult notes on this base save only on Sign, so unsigned notes say “Not saved — sign to save”. No backend storage redesign. Research: `.ai/research/u1b-save-state.md`. D42 is the next number after the task’s D41 boundary (this base ends at D40).

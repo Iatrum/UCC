@@ -123,3 +123,6 @@ User lifted hold ('Sambung UCC sekarang, start Task 9 POCT lab'). PRs #221/#211/
   and mutation guards. Local :3214/:8113 only; focused Time Chit e2e and boundary tests passed;
   MC/referral regression 6/6 passed; lint/typecheck and 8 focused unit tests passed.
   Draft PR and shutdown evidence tracked in `.ai/progress-time-chit.md`.
+
+- 2026-11-15 Task 150 (U1b fix #4): honest composer save states and Retry, consult sign-only status, Task 3b hydration protection; branch `ai/task-u1b-save-state`, worktree `/workspace/ucc-pr-u1b-save`. Lint/tsc PASS, unit 27/27, focused save-state 7/7; workflow 10/11 (existing summary only, four pre-existing issues), zero skipped. No full suite per task. Research D43, screenshots `.ai/ux-shots/u1b-save-state/`, progress `.ai/progress-u1b-save-state.md`. Draft PR publication next; no merge.
+- 2026-11-15 Task 150 publication: draft PR https://github.com/Iatrum/UCC/pull/234, normal pushes only. GitHub live status CONFLICTING / DIRTY because dev advanced to Time Chit PR #233 during the task; integration is outstanding, no merge/force-push. Own :3210 dev server stopped. Detailed results and base limitation in progress file.

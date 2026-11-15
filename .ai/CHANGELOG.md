@@ -75,3 +75,10 @@ Hours are calculated automatically, and invalid or overnight ranges are refused.
 document prices carry through to checkout. Turning the module off blocks new slips, edits and
 deletion while preserving past slips for viewing and printing. MCs and referrals keep their
 existing flow. Local fake-data evidence, screenshots and validation results: `.ai/progress-time-chit.md`.
+
+## 2026-11-15 — U1b: honest composer save status (Task 150)
+- The order composer says “Checking saved draft…” while loading, then distinguishes server-saved, saving, temporary device-only and failed saves. Temporary drafts explicitly warn that reload loses them. Failed requests have Retry, and successful saves of other items do not hide a failure.
+- Unsigned consult notes say they are not saved until signed. Signing shows Saving…; a failed sign keeps the note and offers Retry. Existing signing and storage remain in place.
+- Status changes are announced politely and use reserved space. Restored the earlier Task 3b protection so a late draft response cannot erase newly added items.
+- Local fake-data checks: lint and TypeScript pass; 27 unit tests pass; 7 focused save-state tests pass. Workflow: 10 pass, only the existing known-bug summary fails (four existing issues); no skipped tests. The full suite/check-all was excluded as requested. Next automatically restarted once under the 2560 MB cap during smoke; smoke recovered and passed.
+- Research: `.ai/research/u1b-save-state.md` (D43). Before/after screenshots: `.ai/ux-shots/u1b-save-state/`. Durable unsigned draft storage remains the separate U1b fix #1.

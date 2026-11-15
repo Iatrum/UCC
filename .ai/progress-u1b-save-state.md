@@ -1,0 +1,20 @@
+# Task 150 — U1b save state
+- Worktree: /workspace/ucc-pr-u1b-save; branch ai/task-u1b-save-state; base origin/dev 2f56211.
+- Research complete; see research/u1b-save-state.md. D43 reserved (next after D41, even though this base ends at D40).
+- Existing env copied without displaying values; both Medplum endpoints verified local. Shared ignored dependencies and copied ignored e2e credentials. No production access.
+- Dev server started detached from this worktree, port 3210, 2560 MB cap; pid/log outside repository.
+- Next: before screenshots, implementation, focused tests and workflow, lint/types/unit, draft PR.
+- Gate exception: explicit task says do NOT run full suite; check-all would run the full suite, so use targeted checks.
+- Implementation milestone: hydration-first live status, explicit current-screen fallback warning, POST/DELETE pending states, request replay on Retry, sticky independent failures; consult sign-only status and retry. Restored Task 3b merge-on-hydration guard from a852c1f.
+- Before screenshot captured. Lint and full tsc pass; unit tests 27/27 pass. Focused run exposed test assumptions: animated transform affected bounding-box measurement, React Strict Mode issues two mount GETs. Adjusting measurements to layout height and asserting no extra GET after hydration rather than exactly one mount GET.
+- Focused verified run: 7/7 PASS (`/workspace/ai-logs/task-u1b-save/focused-verified.log`). Added coverage for independent failure staying visible across another successful save and retry failure preserving later items. Counters keep overlapping writes pending until all settle.
+- Lint, full tsc and 27 unit tests pass after final app changes (logs lint-final.log, tsc-final.log, unit-final.log).
+- An intermediate run had 6/7 pass: fake patient fixture received a Next dev 500/SyntaxError while screenshots were written inside the watched tree. Moved runtime screenshots outside source, then copied evidence after completion; verified run passed without retry loops.
+- Evidence now captures the action/status region, avoiding offscreen content in the long sticky composer. Before screenshot is from base 2f56211 with GET held pending.
+- Workflow complete: 10 PASS / 1 FAIL (existing known-bug summary only), zero skipped, exit 1; `/workspace/ai-logs/task-u1b-save/workflow.log` and `workflow/results.json`. Summary issues: Procedure prematurely completed, MC/referral DocumentReference absent, omitted lab status yields 500, inventory not decremented. These are existing probes outside this change. No composer failures.
+- Next auto-restarted once approaching the 2560 MB heap limit during smoke; existing navigation recovery completed, smoke passed. No second server or workflow rerun.
+- Final before screenshot recaptured from base 2f56211 with the draft GET deliberately held pending, using the already-created fake workflow patient. Verified composer source restored byte-for-byte afterward. Before/after images now show action/status regions directly.
+- Self-review: `.ai/REVIEW-u1b-save-state.md`. Final app and focused test commits are pushed; validation/docs milestone next, then draft PR and server shutdown.
+- Published draft PR: https://github.com/Iatrum/UCC/pull/234 — `U1b: honest composer save status`, base dev, head ai/task-u1b-save-state.
+- Requested live check `gh pr view 234 -R Iatrum/UCC --json mergeable,mergeStateStatus` returned `{"mergeStateStatus":"DIRTY","mergeable":"CONFLICTING"}`. During this task dev advanced from tested base 2f56211 to 4ab4256 (Time Chit PR #233), touching the composer, patient workspace and shared docs. Validation applies to the original task base; integration with the newer dev is outstanding. Recorded rather than performing a merge or rewriting the pushed branch, per no-merge/no-force-push instructions.
+- Own detached dev process group stopped; `ss` confirms :3210 has no listener. Local Medplum :8113 was left running. Final task files only; ignored env/dependencies/e2e secrets remain untracked and uncommitted.
