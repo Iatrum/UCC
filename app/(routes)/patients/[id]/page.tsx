@@ -295,6 +295,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
         {/* Right: tabs workspace */}
         <div className="flex-1 min-w-0">
           <PatientProfileWorkspace
+            key={`${clinicId}:${id}`}
             patientId={id}
             patient={patient}
             consultations={consultations}

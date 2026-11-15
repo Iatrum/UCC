@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
+import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -173,8 +175,10 @@ export default function PatientProfileWorkspace({
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("consult");
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedConsultation, setSelectedConsultation] = useState<ProfileConsultation | null>(null);
-  const [clinicalNotes, setClinicalNotes] = useState("");
-  const [diagnosis, setDiagnosis] = useState("");
+  const consultDraft = useConsultationDraft(patientId);
+  const { clinicalNotes, diagnosis } = consultDraft;
+  const [treatmentUnsaved, setTreatmentUnsaved] = useState(false);
+  useUnsavedWork(consultDraft.unsaved || treatmentUnsaved);
   const [signedConsultationForTreatment, setSignedConsultationForTreatment] =
     useState<SignedConsultationForTreatment | null>(null);
   const [treatmentPanelAnimationVersion, setTreatmentPanelAnimationVersion] = useState(0);
@@ -351,7 +355,17 @@ export default function PatientProfileWorkspace({
     setActiveTab(value as ProfileTab);
   }
 
+  function canLeaveTreatment() {
+    return drawerMode !== "treatment" || !treatmentUnsaved || window.confirm("Treatment changes are not saved. Close and lose those changes?");
+  }
+
+  function closePanel() {
+    if (canLeaveTreatment()) { setTreatmentUnsaved(false); setPanelOpen(false); }
+  }
+
   function openConsultPanel() {
+    if (!canLeaveTreatment()) return;
+    setTreatmentUnsaved(false);
     if (drawerMode === "consult" && panelOpen) {
       setPanelOpen(false);
       return;
@@ -374,7 +388,7 @@ export default function PatientProfileWorkspace({
     }
 
     if (drawerMode === "treatment" && panelOpen) {
-      setPanelOpen(false);
+      closePanel();
       return;
     }
 
@@ -399,7 +413,9 @@ export default function PatientProfileWorkspace({
     const signedDiagnosis = diagnosis.trim();
 
     try {
+      consultDraft.setSigning(true);
       setConsultSubmitting(true);
+      await consultDraft.save();
       setConsultSaveFailed(false);
       const response = await fetch("/api/consultations", {
         method: "POST",
@@ -436,8 +452,10 @@ export default function PatientProfileWorkspace({
       if (queueStatus && queueStatus !== "completed") {
         setQueueStatus("meds_and_bills");
       }
-      setClinicalNotes("");
-      setDiagnosis("");
+      try { await consultDraft.clear(); } catch {
+        toast({ title: "Consult signed", description: "Saved draft cleanup failed. Do not sign this note again.", variant: "destructive" });
+      }
+      setTreatmentUnsaved(false);
       setTreatmentEntries([]);
       setTreatmentSummary(emptyTreatmentSummary);
       setTreatmentPanelAnimationVersion((current) => current + 1);
@@ -452,6 +470,7 @@ export default function PatientProfileWorkspace({
         variant: "destructive",
       });
     } finally {
+      consultDraft.setSigning(false);
       setConsultSubmitting(false);
     }
   }
@@ -639,7 +658,7 @@ export default function PatientProfileWorkspace({
         await fetch("/api/consultations/plan", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draftId: treatmentDraftId, clearAll: true }),
+          body: JSON.stringify({ draftId: treatmentDraftId, patientId, consultationId: treatmentConsultation.id, clearAll: true }),
         });
       } catch (error) {
         console.error("Treatment draft clear error:", error);
@@ -652,6 +671,7 @@ export default function PatientProfileWorkspace({
           : "Treatment visit was saved.",
         variant: orderErrors.length ? "destructive" : "default",
       });
+      setTreatmentUnsaved(false);
       setTreatmentEntries([]);
       setTreatmentSummary(emptyTreatmentSummary);
       setTreatmentPanelAnimationVersion((current) => current + 1);
@@ -968,7 +988,7 @@ export default function PatientProfileWorkspace({
                     <p className="text-sm font-medium capitalize">{drawerMode}</p>
                     <p className="text-xs text-muted-foreground">Patient profile workspace</p>
                   </div>
-                  <Button variant="ghost" size="sm" type="button" onClick={() => setPanelOpen(false)}>
+                  <Button variant="ghost" size="sm" type="button" onClick={closePanel}>
                     Close
                   </Button>
                 </div>
@@ -978,22 +998,24 @@ export default function PatientProfileWorkspace({
                     onSubmit={handleConsultSign}
                     className="patient-panel-enter-left flex flex-col"
                   >
-                    <div className="space-y-4 px-5 py-4">
+                    <fieldset inert={consultSubmitting || consultDraft.status === "cleanup-failed"} disabled={consultSubmitting || consultDraft.status === "cleanup-failed"} className="space-y-4 px-5 py-4">
                       <RichTextEditor
                         placeholder="Clinical notes"
                         minHeight="360px"
                         value={clinicalNotes}
-                        onChange={setClinicalNotes}
+                        onChange={(value) => consultDraft.change("clinicalNotes", value)}
                       />
-                      <DiagnosisSearch value={diagnosis} onChange={setDiagnosis} />
-                    </div>
+                      <DiagnosisSearch value={diagnosis} onChange={(value) => consultDraft.change("diagnosis", value)} />
+                    </fieldset>
                     <div className="border-t px-5 py-4">
-                      <Button type="submit" disabled={consultSubmitting} className="w-full">
+                      <Button type="submit" disabled={consultSubmitting || consultDraft.status === "checking" || consultDraft.status === "cleanup-failed"} className="w-full">
                         {consultSubmitting ? "Saving…" : consultSaveFailed ? "Retry" : "Sign"}
                       </Button>
                       <p role="status" aria-live="polite" aria-atomic="true" data-testid="consult-save-status" className="mt-2 min-h-8 text-[11px] leading-4 text-muted-foreground">
-                        {consultSubmitting ? "Saving…" : consultSaveFailed ? "Failed to save" : "Not saved — sign to save. This note is only on this screen until signed."}
+                        {consultSubmitting ? "Saving…" : consultSaveFailed ? "Failed to save" : consultDraft.status === "cleanup-failed" ? "Consult signed — saved draft cleanup failed" : consultDraft.status === "checking" ? "Checking saved draft…" : consultDraft.status === "failed" ? "Failed to save draft — current screen only" : consultDraft.status === "saving" || consultDraft.status === "pending" ? "Saving draft…" : "Draft saved (server) — unsigned"}
                       </p>
+                      {consultDraft.status === "cleanup-failed" && <Button type="button" size="sm" variant="outline" onClick={() => { void consultDraft.clear().catch(() => {}); }}>Retry draft cleanup</Button>}
+                      {consultDraft.status === "failed" && <div className="text-xs text-destructive"><p>{consultDraft.error}</p><Button type="button" size="sm" variant="outline" onClick={consultDraft.retry}>Retry draft save</Button></div>}
                     </div>
                   </form>
                 )}
@@ -1016,6 +1038,7 @@ export default function PatientProfileWorkspace({
                         packages={emptyPackages}
                         documents={treatmentDocumentsCatalog}
                         onPlanChange={handleTreatmentPlanChange}
+                        onUnsavedChange={setTreatmentUnsaved}
                         submitLabel="Sign"
                         submitting={treatmentSubmitting}
                         patient={patient}

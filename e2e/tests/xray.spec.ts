@@ -183,6 +183,7 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
     const ordered = page.waitForResponse((r) => r.url().includes('/api/imaging/order') && r.request().method() === 'POST');
     await page.getByRole('button', { name: 'Sign', exact: true }).click();
     expect((await ordered).ok()).toBeTruthy();
+    await expect(page.getByText('Treatment Signed', { exact: true })).toBeVisible();
     const [sr] = (await byPatient('ServiceRequest', f.patientId)).filter((r: ServiceRequest) => r.code?.coding?.some((c: any) => c.code === STUDY.code));
     expect(sr).toBeTruthy();
 
@@ -228,9 +229,13 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
 
     await page.goto(`/patients/${f.patientId}/labs-imaging`);
     await expect(page.getByText('Pending X-ray', { exact: true })).toHaveCount(0);
-    await page.getByRole('tab', { name: 'Imaging Studies', exact: true }).click();
-    await expect(page.getByText(STUDY.name, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('AVAILABLE', { exact: true }).first()).toBeVisible();
+    const imagingTab = page.getByRole('tab', { name: 'Imaging Studies', exact: true });
+    await expect(async () => {
+      await imagingTab.click();
+      await expect(imagingTab).toHaveAttribute('data-state', 'active', { timeout: 2000 });
+      await expect(page.getByText(STUDY.name, { exact: true }).first()).toBeVisible({ timeout: 2000 });
+      await expect(page.getByText('AVAILABLE', { exact: true }).first()).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
   } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePacsModule(); }
 });
 

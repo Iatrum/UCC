@@ -206,7 +206,7 @@ test('unsigned consult note is honest; failure preserves text and Retry resubmit
   await page.goto(`/patients/${patientId}`);
   await page.getByRole('tab', { name: 'Consult', exact: true }).click();
   const noteStatus = page.getByTestId('consult-save-status');
-  await expect(noteStatus).toContainText('Not saved — sign to save');
+  await expect(noteStatus).toContainText('Draft saved (server) — unsigned');
   await page.locator('[contenteditable=true]').first().fill('Fake note kept for retry');
   await page.locator('button', { hasText: 'Select or search diagnosis' }).click();
   await page.keyboard.type('Fake save diagnosis');
