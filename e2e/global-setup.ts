@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { request } from '@playwright/test';
 import { BASE, USER, PASSWORD } from './lib/env';
 // One API login per run (Medplum rate-limits auth ~5/min/IP and the app reports that as "Incorrect email or password").
@@ -31,5 +32,6 @@ export default async function () {
   for (const it of items) if (!have(it.name)) await ctx.post('/api/catalogs', { data: it });
   const procs = await (await ctx.get('/api/procedures')).json();
   if (!procs.procedures?.some((p: any) => p.name === 'Wound dressing')) await ctx.post('/api/procedures', { data: { name: 'Wound dressing', category: 'Minor procedure', defaultPrice: 30 } });
-  fs.mkdirSync(".secrets", { recursive: true }); await ctx.storageState({ path: '.secrets/state.json' }); await ctx.dispose();
+  const secrets = path.join(import.meta.dirname, ".secrets");
+  fs.mkdirSync(secrets, { recursive: true }); await ctx.storageState({ path: path.join(secrets, "state.json") }); await ctx.dispose();
 }

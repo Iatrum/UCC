@@ -1,5 +1,7 @@
 "use client";
 
+import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
+
 import { PoctSection } from "./poct-section";
 import { XraySection } from "./xray-section";
 
@@ -56,6 +58,7 @@ interface OrderComposerProps {
   packages?: CatalogItem[];
   documents?: CatalogItem[];
   loadingCatalog?: boolean;
+  onUnsavedChange?: (unsaved: boolean) => void;
   onPlanChange?: (entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => void;
   submitLabel?: string;
   submitting?: boolean;
@@ -367,6 +370,7 @@ export function OrderComposer({
   documents = [],
   loadingCatalog = false,
   onPlanChange,
+  onUnsavedChange,
   submitLabel = "Sign Order",
   submitting = false,
   patient = null,
@@ -394,6 +398,16 @@ export function OrderComposer({
   const disablePersistence = React.useCallback(() => {
     persistenceDisabledRef.current = true;
     setPersistenceDisabled(true);
+  }, []);
+  const unsaved = Object.keys(savingIds).length > 0 || Object.keys(failedSaves).length > 0 ||
+    !!saveErrorMessage || (persistenceDisabled && entries.length > 0);
+  useUnsavedWork(onUnsavedChange ? false : unsaved);
+  React.useEffect(() => { onUnsavedChange?.(unsaved); }, [onUnsavedChange, unsaved]);
+  const writeQueue = React.useRef<Promise<unknown>>(Promise.resolve());
+  const queuedFetch = React.useCallback((url: string, options: RequestInit) => {
+    const request = writeQueue.current.catch(() => {}).then(() => fetch(url, options));
+    writeQueue.current = request.then(async response => { await response.clone().text(); });
+    return request;
   }, []);
   const [detailEntryId, setDetailEntryId] = React.useState<string | null>(null);
   const [editingDocumentEntryId, setEditingDocumentEntryId] = React.useState<string | null>(null);
@@ -672,7 +686,7 @@ export function OrderComposer({
       const pendingKey = entry.id || `${entry.tab}:${entry.catalogRef || entry.name}`;
       setSavingIds((prev) => ({ ...prev, [pendingKey]: (prev[pendingKey] || 0) + 1 }));
       try {
-        const response = await fetch("/api/consultations/plan", {
+        const response = await queuedFetch("/api/consultations/plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ draftId, patientId, consultationId, entry }),
@@ -715,7 +729,7 @@ export function OrderComposer({
         });
       }
     },
-    [consultationId, draftId, patientId, persistenceDisabled, publishPlan, toast]
+    [consultationId, draftId, patientId, persistenceDisabled, publishPlan, toast, queuedFetch]
   );
 
   const addCatalogItem = React.useCallback(
@@ -767,10 +781,10 @@ export function OrderComposer({
       const pendingKey = `delete:${entry.id}`;
       setSavingIds((prev) => ({ ...prev, [pendingKey]: (prev[pendingKey] || 0) + 1 }));
       try {
-        const response = await fetch("/api/consultations/plan", {
+        const response = await queuedFetch("/api/consultations/plan", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draftId, entryId: entry.id }),
+          body: JSON.stringify({ draftId, patientId, consultationId, entryId: entry.id }),
         });
         const data = await response.json().catch(() => ({}));
         if (data?.persistenceAvailable === false) {
@@ -810,7 +824,7 @@ export function OrderComposer({
         });
       }
     },
-    [draftId, entries, persistenceDisabled, publishPlan, toast]
+    [draftId, patientId, consultationId, entries, persistenceDisabled, publishPlan, toast, queuedFetch]
   );
 
   function handlePickerRowClick(row: { tab: TreatmentPlanTab; item: CatalogItem; kindLabel: string }) {
@@ -1012,7 +1026,7 @@ export function OrderComposer({
             <span>Total</span>
             <span>RM {summary.total.toFixed(2)}</span>
           </div>
-          <Button type="submit" className="w-full" disabled={!hydrated || submitting}>
+          <Button type="submit" className="w-full" disabled={!hydrated || submitting || Object.keys(savingIds).length > 0 || Object.keys(failedSaves).length > 0 || !!saveErrorMessage}>
             {submitting ? "Saving…" : submitLabel}
           </Button>
           {persistDrafts ? (

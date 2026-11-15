@@ -1,283 +1,52 @@
-import { NextRequest, NextResponse } from "next/server";
-import { Timestamp } from "firebase-admin/firestore";
-import { adminDb } from "@/lib/firebase-admin";
-import { requireClinicAuth } from "@/lib/server/medplum-auth";
-import { handleRouteError } from "@/lib/server/route-helpers";
-import {
-  computeTreatmentPlanSummary,
-  normalizeTreatmentPlanEntry,
-  type TreatmentPlanEntry,
-  type TreatmentPlanEntryInput,
-  type TreatmentPlanSnapshot,
-} from "@/lib/treatment-plan";
+import { NextRequest, NextResponse } from 'next/server';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { handleRouteError } from '@/lib/server/route-helpers';
+import { draftScope, readDraft, writeDraft, draftValue, clearDraft } from '@/lib/fhir/consultation-draft';
+import { computeTreatmentPlanSummary, normalizeTreatmentPlanEntry, type TreatmentPlanEntry } from '@/lib/treatment-plan';
 
-const COLLECTION = "consultation_treatment_plans";
-let warnedPlanStoreUnavailable = false;
-
-type StoredPlan = {
-  draftId: string;
-  clinicId?: string;
-  patientId: string;
-  consultationId?: string;
-  entries: TreatmentPlanEntry[];
-  summary: ReturnType<typeof computeTreatmentPlanSummary>;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
-
-function buildEmptySnapshot(
-  draftId: string,
-  patientId: string,
-  consultationId?: string
-): TreatmentPlanSnapshot {
-  return {
-    draftId,
-    patientId,
-    consultationId,
-    entries: [],
-    summary: computeTreatmentPlanSummary([]),
-    updatedAt: new Date().toISOString(),
-  };
+async function scopeFor(request: NextRequest, body: Record<string, string>) {
+  const { medplum, clinicId } = await requireClinicAuth(request);
+  if (!body.patientId || !body.draftId) throw new Error('patientId and draftId are required');
+  return draftScope(medplum, clinicId, body.patientId, body.draftId, body.consultationId || undefined);
 }
-
-function isPlanStoreUnavailable(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("UNAUTHENTICATED") ||
-    message.includes("invalid authentication credentials") ||
-    message.includes("Could not load the default credentials") ||
-    message.includes("Unable to detect a Project Id") ||
-    message.includes("NOT_FOUND") ||
-    message.includes("service account") ||
-    message.includes("Firestore")
-  );
+function response(body: Record<string, string>, entries: TreatmentPlanEntry[]) {
+  return NextResponse.json({ success: true, persistenceAvailable: true, plan: {
+    draftId: body.draftId, patientId: body.patientId, consultationId: body.consultationId,
+    entries, summary: computeTreatmentPlanSummary(entries), updatedAt: new Date().toISOString(),
+  } }, { headers: { 'Cache-Control': 'no-store' } });
 }
-
-function logPlanStoreUnavailable(error: unknown): void {
-  if (warnedPlanStoreUnavailable) return;
-  warnedPlanStoreUnavailable = true;
-
-  const message = error instanceof Error ? error.message : String(error);
-  console.warn(
-    `[consultations/plan] Treatment plan draft persistence is unavailable; using local-only drafts. ${message}`
-  );
-}
-
-function unavailablePlanStoreResponse(
-  draftId: string,
-  patientId: string,
-  consultationId?: string
-) {
-  return NextResponse.json({
-    success: true,
-    persistenceAvailable: false,
-    plan: buildEmptySnapshot(draftId, patientId, consultationId),
-  });
-}
-
-function tsToIso(value?: Timestamp): string {
-  return value?.toDate().toISOString() || new Date().toISOString();
-}
-
-function toSnapshot(stored: StoredPlan): TreatmentPlanSnapshot {
-  return {
-    draftId: stored.draftId,
-    patientId: stored.patientId,
-    consultationId: stored.consultationId,
-    entries: stored.entries,
-    summary: stored.summary,
-    updatedAt: tsToIso(stored.updatedAt),
-  };
-}
-
-function deriveDraftId(params: URLSearchParams): string | null {
-  const direct = params.get("draftId");
-  if (direct) return direct;
-
-  const consultationId = params.get("consultationId");
-  if (consultationId) return `consultation-${consultationId}`;
-
-  const patientId = params.get("patientId");
-  if (patientId) return `patient-${patientId}`;
-
-  return null;
-}
-
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const draftId = deriveDraftId(searchParams);
-  const patientId = searchParams.get("patientId") || "";
-  const consultationId = searchParams.get("consultationId") || undefined;
-
   try {
-    const { clinicId } = await requireClinicAuth(request);
-
-    if (!draftId) {
-      return NextResponse.json({ success: false, error: "draftId or patientId is required" }, { status: 400 });
-    }
-
-    const docRef = adminDb.collection(COLLECTION).doc(draftId);
-    const snap = await docRef.get();
-
-    if (!snap.exists) {
-      return NextResponse.json({ success: true, plan: buildEmptySnapshot(draftId, patientId, consultationId) });
-    }
-
-    const data = snap.data() as StoredPlan;
-    if (data.clinicId && data.clinicId !== clinicId) {
-      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
-    }
-    return NextResponse.json({ success: true, plan: toSnapshot(data) });
-  } catch (error) {
-    if (draftId && isPlanStoreUnavailable(error)) {
-      logPlanStoreUnavailable(error);
-      return unavailablePlanStoreResponse(draftId, patientId, consultationId);
-    }
-    return handleRouteError(error, "GET /api/consultations/plan");
-  }
+    const body = Object.fromEntries(new URL(request.url).searchParams);
+    const scope = await scopeFor(request, body);
+    return response(body, draftValue(await readDraft(scope), []));
+  } catch (error) { return handleRouteError(error, 'GET consultation plan'); }
 }
-
 export async function POST(request: NextRequest) {
   try {
-    const { clinicId } = await requireClinicAuth(request);
     const body = await request.json();
-    const draftId: string = body.draftId;
-    const patientId: string = body.patientId;
-    const consultationId: string | undefined = body.consultationId;
-    const entryInput: TreatmentPlanEntryInput | undefined = body.entry;
-
-    if (!draftId || !patientId || !entryInput) {
-      return NextResponse.json(
-        { success: false, error: "draftId, patientId and entry are required" },
-        { status: 400 }
-      );
+    if (!body.entry || !['items', 'services', 'packages', 'documents'].includes(body.entry.tab)) {
+      return NextResponse.json({ error: 'Invalid entry' }, { status: 400 });
     }
-
-    if (!["items", "services", "packages", "documents"].includes(entryInput.tab)) {
-      return NextResponse.json({ success: false, error: "Invalid treatment plan tab" }, { status: 400 });
-    }
-
-    const docRef = adminDb.collection(COLLECTION).doc(draftId);
-    const now = Timestamp.now();
-    const nowIso = now.toDate().toISOString();
-    const existingSnap = await docRef.get();
-    const existingData = existingSnap.exists ? (existingSnap.data() as StoredPlan) : null;
-    if (existingData?.clinicId && existingData.clinicId !== clinicId) {
-      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
-    }
-    const existingEntries = existingData?.entries || [];
-    const match = entryInput.id ? existingEntries.find((item) => item.id === entryInput.id) : undefined;
-    const normalized = normalizeTreatmentPlanEntry(entryInput, nowIso, match);
-    const entries = (() => {
-      if (match) {
-        return existingEntries.map((item) => (item.id === normalized.id ? normalized : item));
-      }
-      return [...existingEntries, normalized];
-    })();
-    const summary = computeTreatmentPlanSummary(entries);
-
-    await docRef.set(
-      {
-        draftId,
-        clinicId,
-        patientId,
-        consultationId,
-        entries,
-        summary,
-        createdAt: existingData?.createdAt || now,
-        updatedAt: now,
-      } satisfies StoredPlan,
-      { merge: true }
-    );
-
-    return NextResponse.json({
-      success: true,
-      persistenceAvailable: true,
-      plan: {
-        draftId,
-        patientId,
-        consultationId,
-        entries,
-        summary,
-        updatedAt: nowIso,
-      } satisfies TreatmentPlanSnapshot,
-    });
-  } catch (error) {
-    if (isPlanStoreUnavailable(error)) {
-      logPlanStoreUnavailable(error);
-      return NextResponse.json(
-        {
-          success: false,
-          persistenceAvailable: false,
-          error: "Treatment plan draft persistence is unavailable.",
-        },
-        { status: 503 }
-      );
-    }
-    return handleRouteError(error, "POST /api/consultations/plan");
-  }
+    const scope = await scopeFor(request, body);
+    const doc = await readDraft(scope);
+    const entries = draftValue<TreatmentPlanEntry[]>(doc, []);
+    const match = entries.find(entry => entry.id === body.entry.id);
+    const entry = normalizeTreatmentPlanEntry(body.entry, new Date().toISOString(), match);
+    const next = match ? entries.map(e => e.id === entry.id ? entry : e) : [...entries, entry];
+    await writeDraft(scope, next, doc);
+    return response(body, next);
+  } catch (error) { return handleRouteError(error, 'POST consultation plan'); }
 }
-
 export async function DELETE(request: NextRequest) {
   try {
-    const { clinicId } = await requireClinicAuth(request);
     const body = await request.json();
-    const draftId: string = body.draftId;
-    const entryId: string | undefined = body.entryId;
-    const clearAll: boolean = body.clearAll === true;
-
-    if (!draftId || (!entryId && !clearAll)) {
-      return NextResponse.json({ success: false, error: "draftId and entryId or clearAll are required" }, { status: 400 });
-    }
-
-    const docRef = adminDb.collection(COLLECTION).doc(draftId);
-    const existingSnap = await docRef.get();
-    if (!existingSnap.exists) {
-      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
-    }
-
-    const existing = existingSnap.data() as StoredPlan;
-    if (existing.clinicId && existing.clinicId !== clinicId) {
-      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
-    }
-    const entries = clearAll ? [] : existing.entries.filter((entry) => entry.id !== entryId);
-    const summary = computeTreatmentPlanSummary(entries);
-    const now = Timestamp.now();
-
-    await docRef.set(
-      {
-        ...existing,
-        entries,
-        summary,
-        updatedAt: now,
-      } satisfies StoredPlan,
-      { merge: true }
-    );
-
-    return NextResponse.json({
-      success: true,
-      persistenceAvailable: true,
-      plan: {
-        draftId: existing.draftId,
-        patientId: existing.patientId,
-        consultationId: existing.consultationId,
-        entries,
-        summary,
-        updatedAt: now.toDate().toISOString(),
-      } satisfies TreatmentPlanSnapshot,
-    });
-  } catch (error) {
-    if (isPlanStoreUnavailable(error)) {
-      logPlanStoreUnavailable(error);
-      return NextResponse.json(
-        {
-          success: false,
-          persistenceAvailable: false,
-          error: "Treatment plan draft persistence is unavailable.",
-        },
-        { status: 503 }
-      );
-    }
-    return handleRouteError(error, "DELETE /api/consultations/plan");
-  }
+    if (!body.entryId && !body.clearAll) return NextResponse.json({ error: 'entryId or clearAll required' }, { status: 400 });
+    const scope = await scopeFor(request, body);
+    const doc = await readDraft(scope);
+    const next = body.clearAll ? [] : draftValue<TreatmentPlanEntry[]>(doc, []).filter(e => e.id !== body.entryId);
+    if (body.clearAll) await clearDraft(scope);
+    else if (doc) await writeDraft(scope, next, doc);
+    return response(body, next);
+  } catch (error) { return handleRouteError(error, 'DELETE consultation plan'); }
 }
