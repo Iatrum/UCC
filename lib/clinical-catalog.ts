@@ -3,6 +3,8 @@ import type { ClinicalCatalogItem, ClinicalCatalogType } from '@/lib/fhir/catalo
 export type { ClinicalCatalogItem, ClinicalCatalogType };
 
 export const DEFAULT_DOCUMENT_CATALOG: ClinicalCatalogItem[] = [
+  { id: 'letter-time-chit', type: 'document', name: 'Time Chit', code: 'letter-time-chit',
+    display: 'Time Chit', category: 'Letter', defaultPrice: 0, active: true },
   {
     id: 'letter-mc',
     type: 'document',

@@ -66,9 +66,19 @@ Completed disposable-identity verification and isolation plumbing: clinic-scoped
 
 Validation: focused isolation test passes; one foreground full gate had lint/build/clinic checks pass but composer cold compilation exceeded its fixed wait. Unchanged-code workflow replay passes 10/11 (baseline known-bug summary only); composite verification is 23/24 with no new failures. Original failed gate evidence retained. PR-worktree lint passes. Self-review `.ai/REVIEW-task-isolation-1.md` records two deferred MAJOR issues: cross-clinic Observation creation accepted, and app account propagation can see empty references on non-extended reads. Neither was fixed in this phase. No sidebar/nav, Firebase Storage or POCT/X-ray module-toggle changes.
 
+## 2026-11-14 — Task 140: Time Chit / Surat Masa
+Clinics can turn on Time Chit in Admin → Clinics → Module Settings. It starts off for every
+clinic. When enabled, staff can add a time slip in the existing treatment composer, enter the
+attendance date, time in/out and doctor's name, preview it, and print it at checkout or later from
+Generated Documents. The slip confirms attendance and clearly says it is not a Medical Certificate.
+Hours are calculated automatically, and invalid or overnight ranges are refused. Existing clinic
+document prices carry through to checkout. Turning the module off blocks new slips, edits and
+deletion while preserving past slips for viewing and printing. MCs and referrals keep their
+existing flow. Local fake-data evidence, screenshots and validation results: `.ai/progress-time-chit.md`.
+
 ## 2026-11-15 — U1b: honest composer save status (Task 150)
 - The order composer says “Checking saved draft…” while loading, then distinguishes server-saved, saving, temporary device-only and failed saves. Temporary drafts explicitly warn that reload loses them. Failed requests have Retry, and successful saves of other items do not hide a failure.
 - Unsigned consult notes say they are not saved until signed. Signing shows Saving…; a failed sign keeps the note and offers Retry. Existing signing and storage remain in place.
 - Status changes are announced politely and use reserved space. Restored the earlier Task 3b protection so a late draft response cannot erase newly added items.
 - Local fake-data checks: lint and TypeScript pass; 27 unit tests pass; 7 focused save-state tests pass. Workflow: 10 pass, only the existing known-bug summary fails (four existing issues); no skipped tests. The full suite/check-all was excluded as requested. Next automatically restarted once under the 2560 MB cap during smoke; smoke recovered and passed.
-- Research: `.ai/research/u1b-save-state.md` (D42). Before/after screenshots: `.ai/ux-shots/u1b-save-state/`. Durable unsigned draft storage remains the separate U1b fix #1.
+- Research: `.ai/research/u1b-save-state.md` (D43). Before/after screenshots: `.ai/ux-shots/u1b-save-state/`. Durable unsigned draft storage remains the separate U1b fix #1.

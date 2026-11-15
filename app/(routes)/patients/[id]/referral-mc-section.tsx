@@ -29,7 +29,8 @@ import { getPatientReferrals, deleteReferral, type Referral } from "@/lib/fhir/r
 // import ReferralDocument from "@/components/referrals/referral-document"; // replaced with HTML template approach
 // import { McDocument } from "@/components/mc/mc-document"; // kept as fallback
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
-import { DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
+import { timeChitError, timeChitHours, fillTimeChitTemplate } from "@/lib/time-chit";
+import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import type { ProcedureRecord } from "@/lib/models";
 
 function formatDateLabel(value: Date | string | null | undefined): string | null {
@@ -72,7 +73,7 @@ interface ReferralMCSectionProps {
 
 type SignedDocument = {
   id: string;
-  kind: "mc" | "referral";
+  kind: "mc" | "referral" | "time-chit";
   title: string;
   date: string | Date | null | undefined;
   status?: string;
@@ -95,8 +96,9 @@ function parseSignedDocumentNote(value?: string): Record<string, string> {
   return {};
 }
 
-function signedDocumentKind(procedure: ProcedureRecord): "mc" | "referral" | null {
+function signedDocumentKind(procedure: ProcedureRecord): "mc" | "referral" | "time-chit" | null {
   const details = parseSignedDocumentNote(procedure.notes);
+  if (details.kind === "time-chit") return "time-chit";
   if (details.kind === "mc" || details.kind === "referral") return details.kind;
 
   const key = `${procedure.procedureId || ""} ${procedure.name || ""}`.toLowerCase();
@@ -121,7 +123,7 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
           title:
             details.title ||
             procedure.name ||
-            (kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"),
+            (kind === "time-chit" ? "Time Chit" : kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"),
           date: consultation.date,
           status: details.status || undefined,
           details,
@@ -245,6 +247,10 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   async function handleSaveSignedDocument() {
     if (!editingSigned) return;
 
+    if (editingSigned.kind === "time-chit") {
+      const error = timeChitError(editForm);
+      if (error) { toast({ title: error, variant: "destructive" }); return; }
+    }
     const currentProcedures = getConsultationProcedures(editingSigned);
     if (!currentProcedures[editingSigned.procedureIndex]) {
       toast({
@@ -255,10 +261,11 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       return;
     }
 
-    const title = editingSigned.kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER";
+    const title = editingSigned.kind === "time-chit" ? "TIME CHIT" : editingSigned.kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER";
     const details = {
       ...editingSigned.details,
       ...editForm,
+      ...(editingSigned.kind === "time-chit" ? { tcHours: timeChitHours(editForm.tcTimeIn, editForm.tcTimeOut)! } : {}),
       kind: editingSigned.kind,
       title,
       status: editingSigned.status || editingSigned.details.status || "completed",
@@ -329,8 +336,14 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
     } else {
       const body = await res.json().catch(() => null);
       console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
-      html = doc.kind === "mc" ? DEFAULT_MC_TEMPLATE : DEFAULT_REFERRAL_TEMPLATE;
+      html = doc.kind === "time-chit" ? DEFAULT_TIME_CHIT_TEMPLATE : doc.kind === "mc" ? DEFAULT_MC_TEMPLATE : DEFAULT_REFERRAL_TEMPLATE;
     }
+    if (doc.kind === "time-chit") return fillTimeChitTemplate(html, {
+      clinicName: organization?.name || "", clinicAddress: organization?.address || "", clinicPhone: organization?.phone || "",
+      patientName: patient.fullName || "", patientNric: patient.nric || "",
+      tcDate: formatDateLabel(doc.details.tcDate) || "", tcTimeIn: doc.details.tcTimeIn || "", tcTimeOut: doc.details.tcTimeOut || "",
+      tcHours: doc.details.tcHours || "", doctorName: doc.details.tcDoctorName || "", date: formatDateLabel(doc.date) || "",
+    });
     const today = new Date().toLocaleDateString("en-GB", {
       day: "numeric",
       month: "long",
@@ -460,7 +473,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       <Card>
         <CardHeader>
           <CardTitle>Generated Documents</CardTitle>
-          <CardDescription>Saved MCs and referral letters.</CardDescription>
+          <CardDescription>Saved MCs, time chits and referral letters.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading && (
@@ -488,7 +501,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
             <div className="rounded-lg border border-dashed p-4">
               <p className="text-sm font-medium">No generated documents yet.</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Signed MCs and referral letters will appear here after a consult is completed.
+                Signed MCs, time chits and referral letters will appear here after a consult is completed.
               </p>
             </div>
           )}
@@ -507,11 +520,11 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                 </div>
                 <div className="min-w-0">
                   <p className="font-medium">
-                    {doc.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
+                    {doc.kind === "time-chit" ? "Time Chit" : doc.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {[
-                      doc.kind === "mc"
+                      doc.kind === "time-chit" ? `${doc.details.tcTimeIn}–${doc.details.tcTimeOut} (${doc.details.tcHours} hour(s))` : doc.kind === "mc"
                         ? [
                             doc.details.mcDays
                               ? `${doc.details.mcDays} day${doc.details.mcDays === "1" ? "" : "s"}`
@@ -611,13 +624,24 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Edit {editingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
+              Edit {editingSigned?.kind === "time-chit" ? "Time Chit" : editingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
             </DialogTitle>
             <DialogDescription>
               Update the saved generated document. The PDF preview will use these values.
             </DialogDescription>
           </DialogHeader>
 
+          {editingSigned?.kind === "time-chit" && (
+            <div className="grid gap-4">
+              {([ ["tcDate", "Attendance date", "date"], ["tcTimeIn", "Time in", "time"], ["tcTimeOut", "Time out", "time"], ["tcDoctorName", "Doctor's name", "text"] ] as const).map(([field, label, type]) => (
+                <div key={field} className="grid gap-2"><Label htmlFor={`edit-${field}`}>{label}</Label>
+                  <Input id={`edit-${field}`} type={type} value={editForm[field] || ""}
+                    onChange={e => setEditForm(prev => ({ ...prev, [field]: e.target.value }))} />
+                </div>
+              ))}
+              <p>Duration: {timeChitHours(editForm.tcTimeIn || "", editForm.tcTimeOut || "") || "—"} hour(s)</p>
+            </div>
+          )}
           {editingSigned?.kind === "mc" && (
             <div className="grid gap-4">
               <div className="grid gap-2">
@@ -733,7 +757,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
           <div className="flex h-[90vh] flex-col">
             <DialogHeader className="space-y-2 border-b px-6 py-4">
               <DialogTitle>
-                {viewingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
+                {viewingSigned?.kind === "time-chit" ? "Time Chit" : viewingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
               </DialogTitle>
               <DialogDescription>
                 {viewingSigned ? formatDateLabel(viewingSigned.date) : ""}
