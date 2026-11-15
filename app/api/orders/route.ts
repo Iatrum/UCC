@@ -1,3 +1,4 @@
+import { assertTimeChitMutationAllowed } from '@/lib/fhir/time-chit-guard';
 import { investigationBillItems, investigationBillingExtensions, INVESTIGATION_BILLING_URL } from '@/lib/fhir/investigation-billing';
 import { NextRequest, NextResponse } from 'next/server';
 import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
     }
 
+    if (procedures !== undefined) {
+      await assertTimeChitMutationAllowed(procedures, consultation.procedures || [], clinicId);
+    }
     if (billingItems !== undefined) {
       if (!Array.isArray(billingItems) || billingItems.some((item: any) =>
         typeof item.id !== 'string' || typeof item.name !== 'string' || !Number.isFinite(item.price) || item.price < 0 ||

@@ -117,3 +117,9 @@ User lifted hold ('Sambung UCC sekarang, start Task 9 POCT lab'). PRs #221/#211/
 
 - 2026-11-14 Task 130 finished by Dev (Grok Bot) after Codex was stopped post-gate. Single final gate `check-all.sh task-isolation-3`: lint 0, build 0, clinics 0, e2e 29/39 (OVERALL FAIL): 9 POCT/X-ray NEW FAILs = clinic staff policy has no Device rule (migrated fake doctor gets 403 on device search) + 1 known-bug summary. Fix D40 (clinic-scoped server Device lookup) + POCT fixture account stamping; focused POCT+X-ray 12/12 (fix-poct-xray.log 11/12, fix-poct-r2.log 1/1), lint/tsc 0. Original gate kept as FAIL evidence, not relabelled. Production migration is a manual user step, not done.
 - 2026-11-14 Task 130 PR: **https://github.com/Iatrum/UCC/pull/232** OPEN DRAFT ai/task-isolation-3 -> dev. Live `gh pr view 232 --json mergeable,mergeStateStatus` = MERGEABLE / UNSTABLE (CI lint-and-build + Vercel pending at creation, no conflict). Task 131 review by Dev: APPROVE (draft) with D40 fixed + rollout-order MAJOR documented; #231 post-merge APPROVE. Claude second review: /workspace/ai-logs/claude-review-isolation-3.md.
+
+- 2026-11-14 Task 140: Time Chit implemented on `ai/task-time-chit` in `/workspace/ucc-pr-time-chit`;
+  own default-off per-clinic module, composer + checkout/historical print, scoped identifiers/accounts
+  and mutation guards. Local :3214/:8113 only; focused Time Chit e2e and boundary tests passed;
+  MC/referral regression 6/6 passed; lint/typecheck and 8 focused unit tests passed.
+  Draft PR and shutdown evidence tracked in `.ai/progress-time-chit.md`.
