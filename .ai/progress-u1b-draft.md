@@ -29,3 +29,6 @@
 - Lint/full tsc PASS; unit **34/34**; retention **4/4**; Task 150 save-state **7/7**; Phase 2 draft containment integration PASS. Before/after screenshots committed.
 - Own detached :3210 server stopped after testing; :8113 left running. No sub-agents. No production, Hostinger, Supabase, Tradebot or real patient data used. No secrets staged, no merges or force pushes.
 - Deployment prerequisite: historical Firestore drafts are not migrated by this local-only change; plan that transition before deploying the new draft backend. Draft publication/live mergeability follows.
+
+## Publication
+Draft PR **https://github.com/Iatrum/UCC/pull/235**, `ai/task-u1b-draft` → `dev`, depends on #234. Initial live `gh pr view 235 --json mergeable,mergeStateStatus` returned **MERGEABLE / UNSTABLE** (checks; no merge conflict). Normal pushes only; no merge/force-push. Original full-gate FAIL and focused-recovery evidence are explicit in the PR body. Development server remains stopped.
