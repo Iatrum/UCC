@@ -21,3 +21,8 @@ Base: origin/ai/task-u1b-save-state e66086d (PR #234). Explicit task-specific pu
 
 ## Validation
 Pending implementation, local screenshots, focused retention/save-state specs, lint, full tsc, unit, workflow and one full gate.
+
+## Final validation and rollout limit
+Real local policy integration verified draft accounts inherit only the patient's clinic, edits/cleanup work, wrong selected clinic is rejected even for multi-clinic staff, and reassignment revokes direct draft access. Four retention tests and seven save-state tests pass. Lint/tsc, 34 unit tests, build and clinic inventory pass. Single full gate was 47/51 FAIL; after test synchronization/port corrections only, focused recovery yields combined 50/51, baseline summary only, zero skipped, comparator 0. Original gate remains FAIL; detailed evidence is in progress.
+
+Historical Firestore drafts were not read or imported. Deployment of the backend switch requires a legacy-draft transition plan; this draft PR does not authorize that production work. Superseded draft contents remain in FHIR audit history under existing retention controls.

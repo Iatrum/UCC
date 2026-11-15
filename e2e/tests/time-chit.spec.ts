@@ -14,14 +14,17 @@ const line = (patch = {}) => ({ name: 'TIME CHIT', procedureId: 'letter-time-chi
 async function openTreatment(page: Page, patientId: string) {
   // Exercise existing local draft fallback; clinical writes still hit local Medplum.
   await page.route('**/api/consultations/plan**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, persistenceAvailable: false, plan: { entries: [], summary: {} } }) }));
-  await page.goto(`/patients/${patientId}`);
+  // Each toggle case deliberately discards the preceding current-screen-only draft.
+  const discard = (dialog: import('@playwright/test').Dialog) => { void dialog.accept(); };
+  page.on('dialog', discard);
+  try { await page.goto(`/patients/${patientId}`); } finally { page.off('dialog', discard); }
   await page.getByRole('tab', { name: 'Treatment', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Search treatment catalog' })).toBeVisible();
 }
 async function search(page: Page, text: string) { await page.getByRole('textbox', { name: 'Search treatment catalog' }).fill(text); }
 
 test('Time Chit toggle, composer, checkout, historical print, validation and clinic scope', async ({ page, request, playwright }) => {
-  expect(BASE).toBe('http://localhost:3214');
+  expect(BASE).toBe('http://localhost:3210');
   expect(MEDPLUM.replace(/\/$/, '')).toBe('http://localhost:8113');
   const m = await fhir(), suffix = randomUUID().slice(0, 8);
   const created = await request.post('/api/patients', { data: { fullName: `Time Chit Fake ${suffix}`, nric: `FAKE-TC-${suffix}`, dateOfBirth: '1990-01-01', gender: 'female', phone: '0100000000' } });
@@ -86,6 +89,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     const signResponse = page.waitForResponse(r => r.url().endsWith('/api/orders') && r.request().method() === 'POST');
     await page.getByRole('button', { name: 'Sign', exact: true }).click();
     expect((await signResponse).status()).toBe(200);
+    await expect(page.getByText('Treatment Signed', { exact: true })).toBeVisible();
     const saved = await request.get(`/api/consultations?id=${consultationId}`);
     expect(saved.status()).toBe(200);
     const savedProcedures = (await saved.json()).consultation.procedures;

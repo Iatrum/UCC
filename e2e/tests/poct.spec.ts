@@ -202,6 +202,8 @@ async function signGlucoseOrder(f: Awaited<ReturnType<typeof fixture>>, page: Pa
   const ordered = page.waitForResponse((r) => r.url().includes('/api/labs/order') && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   expect((await ordered).ok()).toBeTruthy();
+  // The first device order response precedes the completed treatment sign.
+  await expect(page.getByText('Treatment Signed', { exact: true })).toBeVisible();
   const [sr] = (await byPatient('ServiceRequest', f.patientId)).filter((r: ServiceRequest) => r.code?.coding?.some((c: any) => c.code === '14743-9'));
   expect(sr).toBeTruthy();
   return sr;

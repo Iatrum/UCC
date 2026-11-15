@@ -19,3 +19,13 @@
 - Task 150 save-state regression: 7/7 PASS. Multi-clinic Phase 2 integration PASS, now also verifies draft account inheritance, edits, cleanup and loss of access after clinic reassignment.
 - Workflow rerun: 10/11 PASS (combined run 20/21), only baseline known-bug summary fails; checkout/navigation guard regression resolved.
 - Lint/full tsc PASS; unit 34/34 PASS. Full gate pending; source freeze for that run.
+
+## Final validation (2026-11-16)
+- Single full gate: `e2e/scripts/check-all.sh task-u1b-draft-full` **OVERALL FAIL**, retained unchanged. Lint 0, production build 0, clinic inventory 0; e2e 47/51, zero skipped. Failures: baseline known-bug summary; analyser helper navigating before treatment signing finished; Time Chit fixture hard-coded to :3214; X-ray tab selection racing hydration.
+- Corrected test assumptions only after the full run: device simulations wait for “Treatment Signed”; Time Chit uses required :3210 and explicitly confirms deliberate discard between local-only toggle cases; X-ray selects the tab and checks visible study content together. No application-source changes after the full gate.
+- Focused POCT/Time Chit/X-ray replay: 12/13, then final X-ray simulation replay 1/1 PASS. All 13 affected tests now pass. No second full e2e run.
+- Combined evidence: **50/51, zero skipped, baseline summary only**, comparator exit 0 against `/workspace/ai-logs/baseline/results.json`. This does not relabel the original full gate as PASS.
+- Evidence: `/workspace/ai-logs/task-u1b-draft-full/summary.txt`; focused `/workspace/ai-logs/task-u1b-draft-recovery/reports/results.json`; final X-ray `/workspace/ai-logs/task-u1b-draft-xray-replay/reports/results.json`; combined `/workspace/ai-logs/task-u1b-draft/recovery-composite-results.json`; comparator `/workspace/ai-logs/task-u1b-draft/composite-compare.log`.
+- Lint/full tsc PASS; unit **34/34**; retention **4/4**; Task 150 save-state **7/7**; Phase 2 draft containment integration PASS. Before/after screenshots committed.
+- Own detached :3210 server stopped after testing; :8113 left running. No sub-agents. No production, Hostinger, Supabase, Tradebot or real patient data used. No secrets staged, no merges or force pushes.
+- Deployment prerequisite: historical Firestore drafts are not migrated by this local-only change; plan that transition before deploying the new draft backend. Draft publication/live mergeability follows.
