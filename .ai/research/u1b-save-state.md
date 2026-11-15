@@ -19,3 +19,6 @@
 
 ## Design
 Reserve status height. Hydration takes precedence over all assurance. Resolve to Saved (server), Saving…, Saved on this device only (current screen; lost on reload), or Failed to save with a keyboard-accessible Retry. Keep note status honest about its existing sign-only lifecycle. No sidebar/nav, Lab, POCT or clinic scope changes.
+
+## Validation outcome
+Lint and full tsc pass; unit 27/27; focused save-state 7/7. Workflow 10/11, only the pre-existing known-bug summary fails (no skipped tests). The full suite was intentionally excluded. Evidence in `.ai/ux-shots/u1b-save-state/` shows the base composer claiming autosave during a deliberately held GET and each corrected status. Runtime screenshots are written outside the watched source tree, then copied into the evidence folder. Unsigned draft retention is still a separate task.

@@ -11,3 +11,7 @@
 - Lint, full tsc and 27 unit tests pass after final app changes (logs lint-final.log, tsc-final.log, unit-final.log).
 - An intermediate run had 6/7 pass: fake patient fixture received a Next dev 500/SyntaxError while screenshots were written inside the watched tree. Moved runtime screenshots outside source, then copied evidence after completion; verified run passed without retry loops.
 - Evidence now captures the action/status region, avoiding offscreen content in the long sticky composer. Before screenshot is from base 2f56211 with GET held pending.
+- Workflow complete: 10 PASS / 1 FAIL (existing known-bug summary only), zero skipped, exit 1; `/workspace/ai-logs/task-u1b-save/workflow.log` and `workflow/results.json`. Summary issues: Procedure prematurely completed, MC/referral DocumentReference absent, omitted lab status yields 500, inventory not decremented. These are existing probes outside this change. No composer failures.
+- Next auto-restarted once approaching the 2560 MB heap limit during smoke; existing navigation recovery completed, smoke passed. No second server or workflow rerun.
+- Final before screenshot recaptured from base 2f56211 with the draft GET deliberately held pending, using the already-created fake workflow patient. Verified composer source restored byte-for-byte afterward. Before/after images now show action/status regions directly.
+- Self-review: `.ai/REVIEW-u1b-save-state.md`. Final app and focused test commits are pushed; validation/docs milestone next, then draft PR and server shutdown.
