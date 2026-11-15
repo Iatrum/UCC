@@ -9,3 +9,5 @@ Branch `ai/task-u1b-lab-results` (worktree /home/dev/ucc-pr-u1b-lab-results), ba
 - [x] specs: lab-results-state 5/5, poct+xray 12/12 (targeted); full gate run manually, see REVIEW file for env-caused failures
 - [x] dev server on :3217 stopped
 - [ ] draft PR opened (see below)
+- [x] Draft PR: https://github.com/Iatrum/UCC/pull/238 (base dev)
+  `gh pr view 238 --json mergeable,mergeStateStatus` -> {"mergeable":"MERGEABLE","mergeStateStatus":"UNSTABLE","isDraft":true,"baseRefName":"dev"} (UNSTABLE = non-required checks pending/failing; not merged)
