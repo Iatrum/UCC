@@ -26,3 +26,6 @@
 - `e2e/tests/feedback.spec.ts`: 3/3 pass (toggle off = no control + API 404; feature request stored once, repeat not double counted, PII scrubbed; bug queued sanitized, screenshot confirmation enforced).
 - Full e2e (`--workers=1`): 35 passed, 11 failed, 8 not run. No `/workspace` baseline exists on this box, so compared with the previous gate on `dev` (~/ai-logs/u1b-lab-gate): the same 10 specs failed there (clinic-isolation, staff-membership, draft-retention, poct:100, save-state x5, time-chit), the save-state ones partly on hardcoded `/workspace/...` screenshot paths. New vs that gate: `workflow 03 check-in -> queue` (and the 8 dependents did not run). It fails identically with `app/(routes)/layout.tsx` reverted to `origin/dev`, so it is not caused by the layout change; cause not found (blank page, dashboard row never appears). Treat as unresolved until re-run on a clean `dev` baseline.
 - Composer: default-off clinics render the original markup. With the module ON the bar takes ~33px of height above `<main>`; not visually verified against the composer.
+
+## Draft PR
+https://github.com/Iatrum/UCC/pull/239 (draft, base dev). Live: {"baseRefName":"dev","isDraft":true,"mergeStateStatus":"UNSTABLE","mergeable":"MERGEABLE"}
