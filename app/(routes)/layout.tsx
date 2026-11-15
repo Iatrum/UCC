@@ -1,11 +1,12 @@
 import Sidebar from "@/components/sidebar";
+import { FeedbackControl } from "@/components/feedback/feedback-control";
 import { CLINIC_COOKIE, SESSION_COOKIE } from "@/lib/server/cookie-constants";
 import { clinicExists } from "@/lib/server/clinic-validation";
 import {
   getHostFromHeaders,
   resolvePortalPresentation,
 } from "@/lib/server/subdomain-host";
-import { listNavigationModulesForClinic } from "@/lib/module-registry";
+import { isModuleEnabledForClinic, listNavigationModulesForClinic } from "@/lib/module-registry";
 import { requireClinicPageAuth } from "@/lib/server/medplum-auth";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -67,6 +68,11 @@ export default async function AppRoutesLayout({
   }
 
   const modules = await listNavigationModulesForClinic(clinicId).catch(() => []);
+  // Default-off clinic module; when off the chrome below is exactly the original markup.
+  const showFeedback =
+    Boolean(clinicId) &&
+    !isPublicPath &&
+    (await isModuleEnabledForClinic("feedback", clinicId).catch(() => false));
 
   return (
     <div className="flex h-screen flex-col">
@@ -79,9 +85,20 @@ export default async function AppRoutesLayout({
             icon: module.icon,
           }))}
         />
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="w-full p-4 sm:p-8">{children}</div>
-        </main>
+        {showFeedback ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex shrink-0 justify-end border-b px-3 py-1" data-testid="feedback-bar">
+              <FeedbackControl />
+            </div>
+            <main className="min-w-0 flex-1 overflow-y-auto">
+              <div className="w-full p-4 sm:p-8">{children}</div>
+            </main>
+          </div>
+        ) : (
+          <main className="min-w-0 flex-1 overflow-y-auto">
+            <div className="w-full p-4 sm:p-8">{children}</div>
+          </main>
+        )}
       </div>
     </div>
   );

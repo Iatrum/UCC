@@ -18,6 +18,7 @@ export const KNOWN_BRANCH_MODULE_IDS = [
   "poct",
   "pacs",
   "time-chit",
+  "feedback",
 ] as const;
 
 const knownModuleIds = new Set<string>(KNOWN_BRANCH_MODULE_IDS);
