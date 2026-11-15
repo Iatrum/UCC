@@ -29,3 +29,24 @@
 
 ## Draft PR
 https://github.com/Iatrum/UCC/pull/239 (draft, base dev). Live: {"baseRefName":"dev","isDraft":true,"mergeStateStatus":"UNSTABLE","mergeable":"MERGEABLE"}
+
+---
+# Independent review (Task 211, non-author)
+
+Verdict: **APPROVE** (no MAJOR; 3 MINOR)
+
+Checked against `git diff origin/dev...HEAD` (origin/dev already merged into the branch):
+- Header chrome only: `components/sidebar.tsx` and nav lists untouched; `feedback` is toggle-only (`routePath ""`, same pattern as time-chit). OK.
+- Bug / Feature request + optional PNG/JPEG screenshot (magic bytes, <=1 MB, explicit no-patient-info confirmation, never sent to GitHub). OK.
+- Auto-capture: route shape, browser/viewport/lang, last error (<=6 lines), clinic from session not client. OK.
+- PDPA: server-side `sanitizeFeedback` runs before any storage or GitHub call; IC/email/phone/long digits/UUIDs/labelled and honorific names redacted; UA reduced; requester stored as hash. OK.
+- Default off: `feedback` not in `DEFAULT_BRANCH_ENABLED_MODULE_IDS`; layout renders original markup when off; API returns 404 when off. OK.
+- Bugs -> `Iatrum/UCC` issue with labels `bug` + `from-feedback-form`; queued sanitized record when no token/GitHub error. OK.
+- Feature requests deduped per (clinic, normalized title) via conditional create + If-Match retry, with distinct requester count. OK.
+- Composer/Lab tab: no files touched; only `app/(routes)/layout.tsx` wrapper, unchanged when module off. No secrets or patient data in diff (grep clean).
+- Re-ran: `bun test tests/unit` 49 pass; eslint on touched dirs clean. E2E not re-run (no MAJOR fixes).
+
+MINOR:
+1. Names without a label/honorific/bin-binti can slip through regex scrubbing (documented; dialog warning exists). Consider a stricter "description is optional" hint for bugs.
+2. Clinic id is placed in the GitHub issue body; fine if `Iatrum/UCC` stays private, confirm before making it public.
+3. With the module ON the bar takes ~33px above `<main>`; composer layout not visually verified. Check in browser before enabling for a clinic. Also the unresolved `workflow 03 check-in` e2e failure needs a clean `dev` baseline.
