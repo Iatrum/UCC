@@ -7,6 +7,7 @@ import { createFollowUp } from "../../lib/fhir/communication-service";
 import { createPatientDocument } from "../../lib/fhir/document-service";
 import { createLabOrder } from "../../lib/fhir/lab-service";
 import { createImagingOrder } from "../../lib/fhir/imaging-service";
+import { saveTriageEncounter, checkInPatientInTriage } from "../../lib/fhir/triage-service";
 import { assertPatientInClinic } from "../../lib/fhir/write-containment";
 
 // Fake data only. Two clinics; patient P-B belongs to clinic-b.
@@ -94,6 +95,13 @@ describe("write-side clinic containment (Task 320)", () => {
     const m = fakeMedplum();
     await reject(createLabOrder({ patientId: "p-b", encounterId: "e1", tests: [] } as any, m, "clinic-a"));
     await reject(createImagingOrder({ patientId: "p-b", encounterId: "e1" } as any, m, "clinic-a"));
+    expect(m.created.length).toBe(0);
+  });
+
+  it("triage and check-in for a foreign patient never reach createResource (Task 321)", async () => {
+    const m = fakeMedplum();
+    await reject(saveTriageEncounter("p-b", {} as any, m, "clinic-a"));
+    await reject(checkInPatientInTriage("p-b", "cough", undefined, m, "clinic-a"));
     expect(m.created.length).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import { TriageData, VitalSigns, QueueStatus } from '../types';
+import { assertPatientInClinic } from './write-containment';
 import { MedplumClient } from '@medplum/core';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
@@ -390,6 +391,7 @@ export async function saveTriageEncounter(
   clinicId?: string
 ): Promise<string> {
   const client = medplum;
+  await assertPatientInClinic(client, clinicId, patientId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
@@ -507,6 +509,7 @@ export async function checkInPatientInTriage(
   clinicId?: string
 ): Promise<string> {
   const client = medplum ?? (await getAdminMedplum());
+  await assertPatientInClinic(client, clinicId, patientId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
