@@ -3,6 +3,7 @@ import type { Appointment, Communication, Extension, Organization, Patient } fro
 import { env } from "@/lib/env";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
+import { assertPatientInClinic } from './write-containment';
 
 const FOLLOW_UP_CATEGORY_SYSTEM = "https://ucc.emr/communication-category";
 const FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM = "https://ucc.emr/follow-up/source";
@@ -339,6 +340,7 @@ export async function createFollowUp(
   medplum: MedplumClient,
   input: CreateFollowUpInput
 ): Promise<FollowUp> {
+  if (input.patientId) await assertPatientInClinic(medplum, input.clinicId, input.patientId);
   const existing = await findExistingFollowUpBySource(medplum, input.clinicId, input.sourceType, input.sourceId);
   if (existing) return mapCommunicationToFollowUp(existing);
 
