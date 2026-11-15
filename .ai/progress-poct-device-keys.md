@@ -14,4 +14,4 @@ Branch `ai/task-poct-device-keys` (worktree `/home/dev/ucc-pr-poct-device-keys`,
 - [x] relevant specs green (poct 8/8, xray 7/7, workflow 07, clinic-isolation)
 - [x] lint, build:ci, full Playwright run (42 pass; 10 env/known failures, see REVIEW)
 - [x] BACKLOG/CHANGELOG/DECISIONS (D45), REVIEW
-- [ ] draft PR
+- [x] draft PR https://github.com/Iatrum/UCC/pull/236 — live `gh pr view 236 --json mergeable,mergeStateStatus`: {"mergeStateStatus":"UNSTABLE","mergeable":"MERGEABLE"}
