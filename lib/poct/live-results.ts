@@ -3,10 +3,21 @@ import type { PendingPoctOrder } from '@/lib/fhir/lab-service';
 import type { PendingXrayOrder } from '@/lib/fhir/imaging-service';
 
 type Results = { reports: LabReportSummary[]; pending: PendingPoctOrder[]; xrayPending: PendingXrayOrder[]; poctEnabled: boolean; pacsEnabled: boolean };
-type Options = { patientId: string; encounterId?: string; onResults: (data: Results) => void; onLoaded: () => void };
+/** 'denied' = 401/403 (session or clinic access gone, stale data must not stay on screen); 'failed' = anything else. */
+export type LabLoadError = 'denied' | 'failed';
+type Options = {
+  patientId: string; encounterId?: string;
+  /** Called only with a successful, well-formed response. `fetchedAt` is when it was received. */
+  onResults: (data: Results, fetchedAt: number) => void;
+  /** Called when a load fails. The caller decides what to keep; a failure is never an empty result. */
+  onError: (error: LabLoadError) => void;
+  onLoaded: () => void;
+};
+export type LabResultUpdates = { stop: () => void; refresh: () => void };
+type Outcome = 'ok' | 'disabled' | 'denied' | 'failed' | 'queued' | 'aborted';
 
 /** Mounted only by the Lab tab. Notifications invalidate data; the gated API is authoritative. */
-export function startLabResultUpdates({ patientId, encounterId, onResults, onLoaded }: Options): () => void {
+export function startLabResultUpdates({ patientId, encounterId, onResults, onError, onLoaded }: Options): LabResultUpdates {
   const abort = new AbortController();
   let allowed = false;
   let socket: WebSocket | undefined;
@@ -32,32 +43,54 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onLoa
     token = undefined;
   };
 
-  const load = async () => {
+  const stopPoll = () => { clearInterval(poll); poll = undefined; };
+  // Also rechecks the kill switch while connected and covers dropped/missed socket events.
+  // It keeps running after a failed load so the tab recovers by itself when the API returns.
+  const startPoll = () => {
+    if (poll || abort.signal.aborted) return;
+    poll = setInterval(() => { void load().then(afterLoad); }, 30_000);
+  };
+  const afterLoad = (outcome: Outcome) => {
     if (abort.signal.aborted) return;
-    if (loading) { queued = true; return; }
+    if (outcome === 'ok') { startPoll(); void connect(); }
+    else if (outcome === 'failed') startPoll();
+  };
+
+  const load = async (): Promise<Outcome> => {
+    if (abort.signal.aborted) return 'aborted';
+    if (loading) { queued = true; return 'queued'; }
     loading = true;
     try {
       const response = await fetch(endpoint, { signal: abort.signal, cache: 'no-store' });
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) return 'aborted';
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
           allowed = false;
           disconnect();
-          clearInterval(poll);
-          onResults({ reports: [], pending: [], xrayPending: [], poctEnabled: false, pacsEnabled: false });
+          stopPoll();
+          onError('denied');
+          return 'denied';
         }
-        return;
+        onError('failed');
+        return 'failed';
       }
       const data: Results = await response.json();
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) return 'aborted';
+      if (!data || !Array.isArray(data.reports)) throw new Error('Malformed lab results response');
       allowed = data.poctEnabled === true || data.pacsEnabled === true;
-      onResults(data);
-      if (!allowed) { disconnect(); clearInterval(poll); }
-    } catch { /* Keep the last successful results during a transient outage. */ }
+      onResults(data, Date.now());
+      if (!allowed) { disconnect(); stopPoll(); return 'disabled'; }
+      return 'ok';
+    } catch {
+      // Keep the last successful results during a transient outage, but surface the failure.
+      if (abort.signal.aborted) return 'aborted';
+      onError('failed');
+      return 'failed';
+    }
     finally {
       loading = false;
       if (!abort.signal.aborted) onLoaded();
-      if (queued) { queued = false; void load(); }
+      if (queued) { queued = false; void load().then(afterLoad); }
     }
   };
 
@@ -100,11 +133,10 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onLoa
     finally { connecting = false; }
   };
 
-  void load().then(() => {
-    if (!allowed || abort.signal.aborted) return;
-    void connect();
-    // Also rechecks the kill switch while connected. Covers dropped/missed socket events.
-    poll = setInterval(() => { void load().then(() => { void connect(); }); }, 30_000);
-  });
-  return () => { abort.abort(); clearInterval(poll); disconnect(); };
+  void load().then(afterLoad);
+  return {
+    stop: () => { abort.abort(); stopPoll(); disconnect(); },
+    // Manual Retry/Refresh. Also restarts polling after a 401/403 or a kill-switch pause.
+    refresh: () => { void load().then(afterLoad); },
+  };
 }
