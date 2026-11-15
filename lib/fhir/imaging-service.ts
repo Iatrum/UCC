@@ -23,6 +23,7 @@ import {
   type DICOMSeries,
 } from './imaging-constants';
 import { XRAY_TAG_SYSTEM, requireOnlineXrayDevice } from './xray-device';
+import { isXrayStudy, pacsViewerUrlExtension, readPacsViewerUrl } from './pacs-link';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import {
@@ -238,6 +239,8 @@ export async function receiveImagingStudy(
       }] : []),
     ],
     status: 'available',
+    meta: isXrayTaggedOrder(serviceRequest) ? { tag: [{ system: XRAY_TAG_SYSTEM, code: 'xray' }] } : undefined,
+    extension: pacsViewerUrlExtension(studyData.pacsUrl),
     subject: {
       reference: serviceRequest.subject.reference,
     },
@@ -436,6 +439,7 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
       procedure: study.procedureCode?.[0]?.text || 'Unknown Procedure',
       modality: study.modality?.[0]?.code || 'Unknown',
       status: study.status as any,
+      xray: isXrayStudy(study),
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
@@ -446,6 +450,7 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
         numberOfSeries: study.numberOfSeries || 0,
         numberOfInstances: study.numberOfInstances || 0,
         started: study.started ? new Date(study.started) : undefined,
+        pacsUrl: readPacsViewerUrl(study),
         series: (study.series || []).map(s => ({
           uid: s.uid,
           number: s.number || 0,
@@ -499,6 +504,7 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
       procedure: study.procedureCode?.[0]?.text || 'Unknown Procedure',
       modality: study.modality?.[0]?.code || 'Unknown',
       status: study.status as any,
+      xray: isXrayStudy(study),
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
@@ -509,6 +515,7 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
         numberOfSeries: study.numberOfSeries || 0,
         numberOfInstances: study.numberOfInstances || 0,
         started: study.started ? new Date(study.started) : undefined,
+        pacsUrl: readPacsViewerUrl(study),
         series: (study.series || []).map(s => ({
           uid: s.uid,
           number: s.number || 0,
@@ -557,6 +564,7 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
       procedure: study.procedureCode?.[0]?.text || 'Unknown Procedure',
       modality: study.modality?.[0]?.code || 'Unknown',
       status: study.status as any,
+      xray: isXrayStudy(study),
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
@@ -567,6 +575,7 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
         numberOfSeries: study.numberOfSeries || 0,
         numberOfInstances: study.numberOfInstances || 0,
         started: study.started ? new Date(study.started) : undefined,
+        pacsUrl: readPacsViewerUrl(study),
         series: (study.series || []).map(s => ({
           uid: s.uid,
           number: s.number || 0,

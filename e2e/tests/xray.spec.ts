@@ -213,6 +213,7 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
     const studyUid = `1.2.3.${randomUUID()}`;
     const ingested = await request.post('/api/imaging/receive/message', {
       data: { serviceRequestId: sr.id, study: { studyUid, modality: 'DX', description: 'Chest PA', numberOfSeries: 1, numberOfInstances: 2,
+        pacsUrl: `https://pacs.example.test/viewer?studyUid=${studyUid}`,
         series: [{ uid: `${studyUid}.1`, number: 1, modality: 'DX', numberOfInstances: 2 }] }, apiKey: f.deviceKey },
     });
     expect(ingested.ok()).toBeTruthy();
@@ -237,6 +238,20 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
       await expect(page.getByText(STUDY.name, { exact: true }).first()).toBeVisible({ timeout: 2000 });
       await expect(page.getByText('AVAILABLE', { exact: true }).first()).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 30_000 });
+    // Result link: shown only in the Lab/Imaging area, taken from the stored (sanitised) viewer URL.
+    await expect(page.getByRole('button', { name: 'View in PACS' }).first()).toBeVisible();
+    const [study] = studies;
+    expect(study.extension?.find((e: any) => e.url === 'https://ucc.emr/xray/viewer-url')?.valueUrl).toBe(`https://pacs.example.test/viewer?studyUid=${studyUid}`);
+    const withModule = await (await request.get(`/api/imaging/results?patientId=${f.patientId}`)).json();
+    expect(withModule.studies.some((x: any) => x.xray && x.study?.pacsUrl)).toBeTruthy();
+    // Default-off toggle: with `pacs` disabled the X-ray study and its link disappear from the results API.
+    const restoreOff = await setPacsModuleEnabled(f.m, f.clinicId!, false);
+    try {
+      await expect(async () => {
+        const gated = await (await request.get(`/api/imaging/results?patientId=${f.patientId}`)).json();
+        expect(gated.studies.filter((x: any) => x.xray)).toHaveLength(0);
+      }).toPass({ timeout: 20_000 });
+    } finally { await restoreOff(); }
   } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePacsModule(); }
 });
 

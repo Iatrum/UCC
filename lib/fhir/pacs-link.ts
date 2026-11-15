@@ -1,0 +1,43 @@
+import type { Extension, ImagingStudy } from '@medplum/fhirtypes';
+
+export const PACS_VIEWER_URL_EXTENSION = 'https://ucc.emr/xray/viewer-url';
+const XRAY_TAG_SYSTEM = 'https://ucc.emr/xray';
+const MAX_URL_LENGTH = 2048;
+
+/**
+ * A PACS viewer link is device-supplied and rendered as a clickable link, so only
+ * absolute http(s) URLs without embedded credentials are accepted (blocks javascript:,
+ * data:, file: and user:pass@ URLs). Returns the normalised URL or undefined.
+ */
+export function sanitizePacsViewerUrl(input: unknown): string | undefined {
+  if (typeof input !== 'string' || !input.trim() || input.length > MAX_URL_LENGTH) return undefined;
+  try {
+    const url = new URL(input.trim());
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    if (url.username || url.password) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export function pacsViewerUrlExtension(input: unknown): Extension[] | undefined {
+  const url = sanitizePacsViewerUrl(input);
+  return url ? [{ url: PACS_VIEWER_URL_EXTENSION, valueUrl: url }] : undefined;
+}
+
+export function readPacsViewerUrl(study: ImagingStudy): string | undefined {
+  return sanitizePacsViewerUrl(study.extension?.find((e) => e.url === PACS_VIEWER_URL_EXTENSION)?.valueUrl);
+}
+
+export function isXrayStudy(study: ImagingStudy): boolean {
+  return Boolean(study.meta?.tag?.some((t) => t.system === XRAY_TAG_SYSTEM && t.code === 'xray'));
+}
+
+/**
+ * Clinic toggle gate for the results view: with `pacs` off, X-ray studies and their
+ * viewer links are hidden entirely; generic imaging orders are unaffected.
+ */
+export function gateXrayStudies<T extends { xray?: boolean }>(studies: T[], pacsEnabled: boolean): T[] {
+  return pacsEnabled ? studies : studies.filter((s) => !s.xray);
+}
