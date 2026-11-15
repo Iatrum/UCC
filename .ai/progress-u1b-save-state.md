@@ -7,3 +7,7 @@
 - Gate exception: explicit task says do NOT run full suite; check-all would run the full suite, so use targeted checks.
 - Implementation milestone: hydration-first live status, explicit current-screen fallback warning, POST/DELETE pending states, request replay on Retry, sticky independent failures; consult sign-only status and retry. Restored Task 3b merge-on-hydration guard from a852c1f.
 - Before screenshot captured. Lint and full tsc pass; unit tests 27/27 pass. Focused run exposed test assumptions: animated transform affected bounding-box measurement, React Strict Mode issues two mount GETs. Adjusting measurements to layout height and asserting no extra GET after hydration rather than exactly one mount GET.
+- Focused verified run: 7/7 PASS (`/workspace/ai-logs/task-u1b-save/focused-verified.log`). Added coverage for independent failure staying visible across another successful save and retry failure preserving later items. Counters keep overlapping writes pending until all settle.
+- Lint, full tsc and 27 unit tests pass after final app changes (logs lint-final.log, tsc-final.log, unit-final.log).
+- An intermediate run had 6/7 pass: fake patient fixture received a Next dev 500/SyntaxError while screenshots were written inside the watched tree. Moved runtime screenshots outside source, then copied evidence after completion; verified run passed without retry loops.
+- Evidence now captures the action/status region, avoiding offscreen content in the long sticky composer. Before screenshot is from base 2f56211 with GET held pending.

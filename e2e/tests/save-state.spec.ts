@@ -1,7 +1,8 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import path from 'node:path';
 
-const shots = path.resolve(import.meta.dirname, '../../.ai/ux-shots/u1b-save-state');
+// Copy evidence into .ai/ux-shots/u1b-save-state after the run: source writes trigger Next dev reloads.
+const shots = process.env.UCC_SAVE_SHOTS || '/workspace/ai-logs/task-u1b-save/screenshots';
 test.use({ trace: 'off' });
 test.setTimeout(120_000);
 const saved = (entries: any[] = []) => ({ success: true, persistenceAvailable: true, plan: { entries } });
@@ -17,7 +18,7 @@ async function fixture(request: APIRequestContext) {
     fullName: `Save Status Fake ${suffix}`, nric: `FAKE-SAVE-${suffix}`,
     dateOfBirth: '1990-01-01', gender: 'female', phone: '0100000000',
   } });
-  expect(created.ok()).toBeTruthy();
+  expect(created.status(), 'fake patient fixture creation').toBe(200);
   const { patientId } = await created.json();
   const consult = await request.post('/api/consultations', { data: {
     patientId, chiefComplaint: 'Fake save status test', diagnosis: 'Fake test diagnosis',
@@ -38,7 +39,12 @@ async function add(page: Page) {
   await page.locator('button', { hasText: /Paracetamol/ }).filter({ hasText: 'RM' }).first().click();
 }
 const status = (page: Page) => page.getByTestId('composer-save-status');
-const shot = (page: Page, name: string) => page.screenshot({ path: path.join(shots, name), fullPage: true });
+async function shot(page: Page, name: string) {
+  const note = name.includes('note-');
+  const indicator = page.getByTestId(note ? 'consult-save-status' : 'composer-save-status');
+  // Capture the action/status area so the sticky long panel cannot hide it.
+  await indicator.locator(note ? '..' : '../..').screenshot({ path: path.join(shots, name), animations: 'disabled' });
+}
 
 test('hydration waits for GET; late hydration keeps a new item; POST and DELETE show Saving', async ({ page, request }) => {
   const patientId = await fixture(request);
@@ -217,4 +223,36 @@ test('unsigned consult note is honest; failure preserves text and Retry resubmit
   save.resolve();
   await expect(status(page)).toHaveText('Saved (server)');
   expect(posts).toBe(2);
+});
+
+
+test('unrelated success cannot hide failure; repeated Retry failure keeps later saved items', async ({ page, request }) => {
+  const patientId = await fixture(request);
+  let paraAttempts = 0;
+  const entries: any[] = [];
+  await page.route('**/api/consultations/plan**', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: saved() });
+    const entry = route.request().postDataJSON().entry;
+    if (entry.name === 'Paracetamol' && ++paraAttempts < 3) {
+      return route.fulfill({ status: 500, json: { success: false, error: 'Fake repeated failure' } });
+    }
+    entries.push({ ...entry, lineTotal: entry.unitPrice, createdAt: new Date().toISOString() });
+    return route.fulfill({ json: saved(entries) });
+  });
+  await open(page, patientId);
+  await expect(status(page)).toHaveText('Saved (server)');
+  await add(page);
+  await expect(status(page)).toHaveText('Failed to save');
+  await page.locator('input:visible').last().fill('amox');
+  await page.locator('button', { hasText: /Amoxicillin/ }).filter({ hasText: 'RM' }).first().click();
+  await expect(page.getByRole('button', { name: 'Remove Amoxicillin', exact: true })).toBeVisible();
+  await expect(status(page)).toHaveText('Failed to save');
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect.poll(() => paraAttempts).toBe(2);
+  await expect(status(page)).toHaveText('Failed to save');
+  await expect(page.getByRole('button', { name: 'Remove Amoxicillin', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(status(page)).toHaveText('Saved (server)');
+  await expect(page.getByRole('button', { name: 'Remove Amoxicillin', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove Paracetamol', exact: true })).toBeVisible();
 });

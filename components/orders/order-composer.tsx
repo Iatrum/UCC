@@ -380,7 +380,7 @@ export function OrderComposer({
   const hydrated = hydratedKey === draftKey;
   const [loadAttempt, setLoadAttempt] = React.useState(0);
   const [failedSaves, setFailedSaves] = React.useState<Record<string, () => Promise<void>>>({});
-  const [savingIds, setSavingIds] = React.useState<Record<string, boolean>>({});
+  const [savingIds, setSavingIds] = React.useState<Record<string, number>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
   const [saveErrorMessage, setSaveErrorMessage] = React.useState<string | null>(null);
   const persistenceDisabledRef = React.useRef(persistenceDisabled);
@@ -577,6 +577,12 @@ export function OrderComposer({
     if (lastDraftIdRef.current !== draftKey) {
       const isDraftTransition = lastDraftIdRef.current !== null;
       lastDraftIdRef.current = draftKey;
+      persistenceDisabledRef.current = !persistDrafts;
+      queueMicrotask(() => {
+        setPersistenceDisabled(!persistDrafts);
+        setSaveErrorMessage(null);
+        setFailedSaves({});
+      });
       userTouchedRef.current = false;
       removedIdsRef.current.clear();
       if (isDraftTransition) {
@@ -634,7 +640,6 @@ export function OrderComposer({
             variant: "destructive",
           });
         }
-
       } finally {
         if (active) setHydratedKey(draftKey);
       }
@@ -650,7 +655,7 @@ export function OrderComposer({
         return;
       }
       const pendingKey = entry.id || `${entry.tab}:${entry.catalogRef || entry.name}`;
-      setSavingIds((prev) => ({ ...prev, [pendingKey]: true }));
+      setSavingIds((prev) => ({ ...prev, [pendingKey]: (prev[pendingKey] || 0) + 1 }));
       try {
         const response = await fetch("/api/consultations/plan", {
           method: "POST",
@@ -680,7 +685,7 @@ export function OrderComposer({
           return;
         }
         rollback();
-        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry, rollback) }));
+        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry, () => {}) }));
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to save treatment plan changes.",
@@ -689,7 +694,8 @@ export function OrderComposer({
       } finally {
         setSavingIds((prev) => {
           const next = { ...prev };
-          delete next[pendingKey];
+          if (next[pendingKey] > 1) next[pendingKey]--;
+          else delete next[pendingKey];
           return next;
         });
       }
@@ -732,19 +738,19 @@ export function OrderComposer({
   );
 
   const removeEntry = React.useCallback(
-    async (entry: TreatmentPlanEntry): Promise<void> => {
+    async (entry: TreatmentPlanEntry, retrying = false): Promise<void> => {
       userTouchedRef.current = true;
       removedIdsRef.current.add(entry.id);
       const prev = entries;
       const next = prev.filter((item) => item.id !== entry.id);
-      publishPlan(next);
+      if (!retrying) publishPlan(next);
       setDetailEntryId((id) => (id === entry.id ? null : id));
       setEditingDocumentEntryId((id) => (id === entry.id ? null : id));
       if (persistenceDisabled) {
         return;
       }
       const pendingKey = `delete:${entry.id}`;
-      setSavingIds((prev) => ({ ...prev, [pendingKey]: true }));
+      setSavingIds((prev) => ({ ...prev, [pendingKey]: (prev[pendingKey] || 0) + 1 }));
       try {
         const response = await fetch("/api/consultations/plan", {
           method: "DELETE",
@@ -773,8 +779,8 @@ export function OrderComposer({
           disablePersistence();
           return;
         }
-        publishPlan(prev);
-        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry) }));
+        if (!retrying) publishPlan(prev);
+        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry, true) }));
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to delete treatment plan entry.",
@@ -783,7 +789,8 @@ export function OrderComposer({
       } finally {
         setSavingIds((prev) => {
           const next = { ...prev };
-          delete next[pendingKey];
+          if (next[pendingKey] > 1) next[pendingKey]--;
+          else delete next[pendingKey];
           return next;
         });
       }
