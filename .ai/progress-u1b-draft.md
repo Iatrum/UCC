@@ -13,3 +13,9 @@
 - Lint/full tsc pass; unit 34/34. Initial focused suite 10/10. Combined rerun found stale test sessions and a stale post-sign guard; absolute ignored-session paths and guard reset fix those. Workflow checkout now passes; final workflow summary/full gate pending.
 - Before/after screenshots saved in `.ai/ux-shots/u1b-draft/`.
 - Test runner wraps Playwright/warmup in timeout 20m. No remote deployments, production, sidebar/nav or Lab/POCT changes.
+
+## Pre-gate validation
+- Latest retention spec: 4/4 PASS, including cleanup failure/retry without double signing. Tiptap's empty paragraph is normalized so cleanup does not recreate an empty draft.
+- Task 150 save-state regression: 7/7 PASS. Multi-clinic Phase 2 integration PASS, now also verifies draft account inheritance, edits, cleanup and loss of access after clinic reassignment.
+- Workflow rerun: 10/11 PASS (combined run 20/21), only baseline known-bug summary fails; checkout/navigation guard regression resolved.
+- Lint/full tsc PASS; unit 34/34 PASS. Full gate pending; source freeze for that run.

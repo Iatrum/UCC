@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 // App sources are CommonJS-scoped; register TypeScript loading explicitly.
 const require = createRequire(import.meta.url);
 require('tsx/cjs');
+const { draftScope, writeDraft, readDraft, draftValue, clearDraft } = require('../../lib/fhir/consultation-draft.ts');
 const { clinicCompartmentRules, clinicProvenanceRules } = require('../../lib/fhir/clinic-access-policy.ts');
 const { createLabOrder, receiveLabResults } = require('../../lib/fhir/lab-service.ts');
 const { createImagingOrder, receiveImagingStudy, createImagingReport } = require('../../lib/fhir/imaging-service.ts');
@@ -190,6 +191,17 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     }
     await assign([0, 1, 1]);
     await visible([0, 1]);
+    // Drafts inherit only the patient's clinic under the real Phase 2 rules.
+    const noteScope = await draftScope(staff, clinics[1].slug, clinics[1].patient.id, 'consult-note');
+    const retainedNote = await writeDraft(noteScope, { clinicalNotes: 'Fake scoped draft', diagnosis: 'Fake' });
+    owned.push({ resourceType: 'DocumentReference', id: retainedNote.id });
+    expect(await accounts(retainedNote)).toEqual([`HealthcareService/${clinics[1].account.id}`]);
+    expect(draftValue(await readDraft(noteScope), {}).clinicalNotes).toBe('Fake scoped draft');
+    await expect(draftScope(staff, clinics[0].slug, clinics[1].patient.id, 'consult-note')).rejects.toThrow();
+    const updatedNote = await writeDraft(noteScope, { clinicalNotes: 'Fake updated draft', diagnosis: 'Fake' }, retainedNote);
+    await clearDraft(noteScope, updatedNote.meta.versionId);
+    expect(draftValue(await readDraft(noteScope), {})).toEqual({});
+
     await postAsStaff(observationFor(0), 201);
     await postAsStaff(observationFor(1), 201); // second access[] rule must work
     await postAsStaff(observationFor(2), 403);
@@ -294,6 +306,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     expect(await accounts(provenance)).toEqual([`HealthcareService/${clinics[1].account.id}`]);
     expect((await staff.readResource('Provenance', provenanceId, { cache: 'no-cache' })).id === provenanceId).toBe(true);
     await assign([0]);
+    await expect(staff.readResource('DocumentReference', retainedNote.id, { cache: 'no-cache' })).rejects.toThrow();
     await expect(staff.readResource('Provenance', provenanceId, { cache: 'no-cache' })).rejects.toThrow();
     await assign([]);
     await visible([]);

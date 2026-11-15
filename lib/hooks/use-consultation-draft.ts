@@ -37,6 +37,8 @@ export function useConsultationDraft(patientId: string) {
   const change = useCallback((field: keyof Note, value: string) => {
     if (state.current.signing) return;
     if (status === 'cleanup-failed') return;
+    // Tiptap emits an empty paragraph after programmatic clearing. Keep it empty.
+    if (field === 'clinicalNotes' && !value.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()) value = '';
     state.current.touched = true;
     state.current.note = { ...state.current.note, [field]: value };
     setNote(state.current.note);
