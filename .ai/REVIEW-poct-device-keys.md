@@ -12,3 +12,21 @@ Scope: key issuance/authentication, four device-ingress routes, receive services
 - `bun run lint` (tsc + clinic-admin check) and `build:ci` pass.
 - Relevant specs: poct (8/8, incl. new cross-clinic test), xray (7/7 incl. new; one first-run UI timing flake passed on rerun), workflow (07 uses a per-device key; only the expected known-bug summary fails), clinic-isolation passes (the spec hard-codes `:3210`, so it was run with that base; it calls services in-process).
 - Full Playwright run (without the `:3210`-hardcoded clinic-isolation test): 42 passed, 10 failed — none from this change: 5× save-state + 1× draft-retention write screenshots under `/workspace` (absent here), time-chit and staff-membership assert `BASE === :3210`, workflow 11 is the documented known-bug summary, and poct 101 aborted a `/poct` navigation once and passed on rerun. `check-all.sh` itself could not run as written (needs `/workspace`), so its steps were run by hand; the baseline comparison was not possible. clinic-check ran (inventory mode).
+
+## Task 181 — independent (non-author) review
+
+Scope: `git diff origin/dev...HEAD` (origin/dev already merged; PR #236 open). `tsc --noEmit` clean. E2E not re-run (no code change by reviewer).
+
+Checked:
+- **Per-device hashed keys**: SHA-256 hash stored as a Device identifier; plaintext returned once by `issueDeviceKey`, not persisted/logged; no `ucc_dk_` literal or secret in the diff.
+- **Auth on all four routes** (`/api/labs/receive`, `/message`, `/api/imaging/receive`, `/message`): `authenticateDeviceKey` runs first; no key / unknown / revoked / inactive Device / wrong device type → 401, not bound to exactly one clinic or module off → 403. No env-key fallback remains → fails closed.
+- **Clinic match**: clinic comes from the Device, never the request. `assertOrderInDeviceClinic` (identifier + `meta.accounts`, read with `X-Medplum: extended`) runs before any write in `receiveLabResults`/`receiveImagingStudy`; bots additionally compare before further reads. Both service functions now require `deviceClinicId`; no other callers exist.
+- **Toggles**: `poct`/`pacs` checked per Device clinic; preserved.
+- **Phase 1.4 gap**: honestly documented as resolved for receive paths, with the caveat that `getAdminMedplum()` still sets no global extended header.
+- **Composer / Lab-tab-only / nav**: no composer, sidebar/nav or results-placement files touched.
+
+Findings:
+- MINOR: `/api/imaging/report` still fails open without `PACS_API_KEY` and does no clinic check (already logged as BACKLOG 5; not device ingress).
+- MINOR: legacy body `apiKey` still accepted; 403 vs 400/500 lets a key holder probe order existence; no rate limiting or admin UI for rotation (author-listed residuals).
+
+**Verdict: APPROVE** (no MAJOR; MINORs above are tracked).
