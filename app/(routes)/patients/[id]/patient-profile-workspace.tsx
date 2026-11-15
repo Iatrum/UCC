@@ -177,6 +177,7 @@ export default function PatientProfileWorkspace({
     useState<SignedConsultationForTreatment | null>(null);
   const [treatmentPanelAnimationVersion, setTreatmentPanelAnimationVersion] = useState(0);
   const [consultSubmitting, setConsultSubmitting] = useState(false);
+  const [consultSaveFailed, setConsultSaveFailed] = useState(false);
   const [treatmentSubmitting, setTreatmentSubmitting] = useState(false);
   const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
@@ -395,6 +396,7 @@ export default function PatientProfileWorkspace({
 
     try {
       setConsultSubmitting(true);
+      setConsultSaveFailed(false);
       const response = await fetch("/api/consultations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -439,6 +441,7 @@ export default function PatientProfileWorkspace({
       setPanelOpen(true);
       router.refresh();
     } catch (error) {
+      setConsultSaveFailed(true);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to save consultation.",
@@ -982,8 +985,11 @@ export default function PatientProfileWorkspace({
                     </div>
                     <div className="border-t px-5 py-4">
                       <Button type="submit" disabled={consultSubmitting} className="w-full">
-                        {consultSubmitting ? "Signing..." : "Sign"}
+                        {consultSubmitting ? "Saving…" : consultSaveFailed ? "Retry" : "Sign"}
                       </Button>
+                      <p role="status" aria-live="polite" aria-atomic="true" data-testid="consult-save-status" className="mt-2 min-h-8 text-[11px] leading-4 text-muted-foreground">
+                        {consultSubmitting ? "Saving…" : consultSaveFailed ? "Failed to save" : "Not saved — sign to save. This note is only on this screen until signed."}
+                      </p>
                     </div>
                   </form>
                 )}

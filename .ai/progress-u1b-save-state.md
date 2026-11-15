@@ -5,3 +5,5 @@
 - Dev server started detached from this worktree, port 3210, 2560 MB cap; pid/log outside repository.
 - Next: before screenshots, implementation, focused tests and workflow, lint/types/unit, draft PR.
 - Gate exception: explicit task says do NOT run full suite; check-all would run the full suite, so use targeted checks.
+- Implementation milestone: hydration-first live status, explicit current-screen fallback warning, POST/DELETE pending states, request replay on Retry, sticky independent failures; consult sign-only status and retry. Restored Task 3b merge-on-hydration guard from a852c1f.
+- Before screenshot captured. Lint and full tsc pass; unit tests 27/27 pass. Focused run exposed test assumptions: animated transform affected bounding-box measurement, React Strict Mode issues two mount GETs. Adjusting measurements to layout height and asserting no extra GET after hydration rather than exactly one mount GET.

@@ -344,10 +344,7 @@ function isDraftPersistenceUnavailable(error: unknown): boolean {
     message.includes("UNAUTHENTICATED") ||
     message.includes("invalid authentication credentials") ||
     message.includes("Unable to detect a Project Id") ||
-    message.includes("persistence is unavailable") ||
-    message.includes("Failed to load treatment plan draft") ||
-    message.includes("Failed to save treatment plan entry") ||
-    message.includes("Failed to delete entry")
+    message.includes("persistence is unavailable")
   );
 }
 
@@ -373,8 +370,16 @@ export function OrderComposer({
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [entries, setEntries] = React.useState<TreatmentPlanEntry[]>([]);
+  const entriesRef = React.useRef<TreatmentPlanEntry[]>([]);
+  const userTouchedRef = React.useRef(false);
+  const removedIdsRef = React.useRef(new Set<string>());
+  const lastDraftIdRef = React.useRef<string | null>(null);
   const [summary, setSummary] = React.useState<TreatmentPlanSummary>(() => computeTreatmentPlanSummary([]));
-  const [hydrated, setHydrated] = React.useState(false);
+  const draftKey = `${patientId}:${consultationId || ""}:${draftId}`;
+  const [hydratedKey, setHydratedKey] = React.useState<string | null>(null);
+  const hydrated = hydratedKey === draftKey;
+  const [loadAttempt, setLoadAttempt] = React.useState(0);
+  const [failedSaves, setFailedSaves] = React.useState<Record<string, () => Promise<void>>>({});
   const [savingIds, setSavingIds] = React.useState<Record<string, boolean>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
   const [saveErrorMessage, setSaveErrorMessage] = React.useState<string | null>(null);
@@ -493,6 +498,7 @@ export function OrderComposer({
   const publishPlan = React.useCallback(
     (nextEntries: TreatmentPlanEntry[]) => {
       const nextSummary = computeTreatmentPlanSummary(nextEntries);
+      entriesRef.current = nextEntries;
       setEntries(nextEntries);
       setSummary(nextSummary);
       onPlanChange?.(nextEntries, nextSummary);
@@ -545,6 +551,10 @@ export function OrderComposer({
     );
   }, [referralTemplateHtml, referralTo, referralContent, referralDiagnosis, organization, patient]);
 
+  // Read the current callbacks without making parent renders restart hydration.
+  const hydrationContext = React.useRef({ initialEntries, publishPlan });
+  hydrationContext.current = { initialEntries, publishPlan };
+
   const loadDraft = React.useCallback(async () => {
     const response = await fetch(
       `/api/consultations/plan?draftId=${encodeURIComponent(draftId)}&patientId=${encodeURIComponent(
@@ -553,7 +563,7 @@ export function OrderComposer({
       { cache: "no-store" }
     );
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.success) {
+    if (data?.persistenceAvailable !== false && (!response.ok || !data?.success)) {
       throw new Error(data?.error || "Failed to load treatment plan draft");
     }
     return data as {
@@ -563,10 +573,34 @@ export function OrderComposer({
   }, [consultationId, draftId, patientId]);
 
   React.useEffect(() => {
+    const { initialEntries, publishPlan } = hydrationContext.current;
+    if (lastDraftIdRef.current !== draftKey) {
+      const isDraftTransition = lastDraftIdRef.current !== null;
+      lastDraftIdRef.current = draftKey;
+      userTouchedRef.current = false;
+      removedIdsRef.current.clear();
+      if (isDraftTransition) {
+        publishPlan(initialEntries);
+      }
+    }
+
+    const publishHydratedPlan = (serverEntries: TreatmentPlanEntry[]) => {
+      if (!userTouchedRef.current) {
+        publishPlan(serverEntries);
+        return;
+      }
+      const localEntries = entriesRef.current;
+      const localIds = new Set(localEntries.map((entry) => entry.id));
+      publishPlan([
+        ...localEntries,
+        ...serverEntries.filter((entry) => !localIds.has(entry.id) && !removedIdsRef.current.has(entry.id)),
+      ]);
+    };
+
     if (!persistDrafts) {
       queueMicrotask(() => {
-        publishPlan(initialEntries);
-        setHydrated(true);
+        publishHydratedPlan(initialEntries);
+        setHydratedKey(draftKey);
       });
       return;
     }
@@ -576,17 +610,20 @@ export function OrderComposer({
       try {
         const data = await loadDraft();
         if (!active) return;
+        setSaveErrorMessage(null);
         if (data.persistenceAvailable === false) {
           disablePersistence();
-        }
-        if (data.plan.entries.length > 0) {
-          publishPlan(data.plan.entries);
+          publishHydratedPlan(initialEntries);
           return;
         }
-        publishPlan(initialEntries);
+        if (data.plan.entries.length > 0) {
+          publishHydratedPlan(data.plan.entries);
+          return;
+        }
+        publishHydratedPlan(initialEntries);
       } catch (error) {
         if (!active) return;
-        publishPlan(initialEntries);
+        publishHydratedPlan(initialEntries);
         if (isDraftPersistenceUnavailable(error)) {
           disablePersistence();
         } else {
@@ -597,18 +634,18 @@ export function OrderComposer({
             variant: "destructive",
           });
         }
-        console.error("Failed to hydrate treatment plan draft:", error);
+
       } finally {
-        if (active) setHydrated(true);
+        if (active) setHydratedKey(draftKey);
       }
     })();
     return () => {
       active = false;
     };
-  }, [initialEntries, loadDraft, persistDrafts, publishPlan, toast]);
+  }, [draftKey, loadAttempt, loadDraft, persistDrafts, disablePersistence, toast]);
 
   const persistEntry = React.useCallback(
-    async (entry: TreatmentPlanEntryInput, rollback: () => void) => {
+    async (entry: TreatmentPlanEntryInput, rollback: () => void): Promise<void> => {
       if (persistenceDisabled) {
         return;
       }
@@ -631,7 +668,11 @@ export function OrderComposer({
         if (persistenceDisabledRef.current) {
           return;
         }
-        setSaveErrorMessage(null);
+        setFailedSaves((prev) => {
+          const next = { ...prev };
+          delete next[pendingKey];
+          return next;
+        });
         publishPlan(data.plan.entries as TreatmentPlanEntry[]);
       } catch (error) {
         if (isDraftPersistenceUnavailable(error)) {
@@ -639,7 +680,7 @@ export function OrderComposer({
           return;
         }
         rollback();
-        setSaveErrorMessage("Last change was not saved.");
+        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry, rollback) }));
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to save treatment plan changes.",
@@ -658,6 +699,7 @@ export function OrderComposer({
 
   const addCatalogItem = React.useCallback(
     async (tab: TreatmentPlanTab, item: CatalogItem) => {
+      userTouchedRef.current = true;
       const nowIso = new Date().toISOString();
       const optimistic: TreatmentPlanEntry = {
         id: crypto.randomUUID(),
@@ -690,7 +732,9 @@ export function OrderComposer({
   );
 
   const removeEntry = React.useCallback(
-    async (entry: TreatmentPlanEntry) => {
+    async (entry: TreatmentPlanEntry): Promise<void> => {
+      userTouchedRef.current = true;
+      removedIdsRef.current.add(entry.id);
       const prev = entries;
       const next = prev.filter((item) => item.id !== entry.id);
       publishPlan(next);
@@ -699,6 +743,8 @@ export function OrderComposer({
       if (persistenceDisabled) {
         return;
       }
+      const pendingKey = `delete:${entry.id}`;
+      setSavingIds((prev) => ({ ...prev, [pendingKey]: true }));
       try {
         const response = await fetch("/api/consultations/plan", {
           method: "DELETE",
@@ -716,7 +762,11 @@ export function OrderComposer({
         if (persistenceDisabledRef.current) {
           return;
         }
-        setSaveErrorMessage(null);
+        setFailedSaves((prev) => {
+          const next = { ...prev };
+          delete next[pendingKey];
+          return next;
+        });
         publishPlan(data.plan.entries as TreatmentPlanEntry[]);
       } catch (error) {
         if (isDraftPersistenceUnavailable(error)) {
@@ -724,11 +774,17 @@ export function OrderComposer({
           return;
         }
         publishPlan(prev);
-        setSaveErrorMessage("Last change was not saved.");
+        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry) }));
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to delete treatment plan entry.",
           variant: "destructive",
+        });
+      } finally {
+        setSavingIds((prev) => {
+          const next = { ...prev };
+          delete next[pendingKey];
+          return next;
         });
       }
     },
@@ -763,6 +819,7 @@ export function OrderComposer({
 
   const updateEntryField = React.useCallback(
     async (entry: TreatmentPlanEntry, patch: Partial<TreatmentPlanEntryInput>) => {
+      userTouchedRef.current = true;
       const prev = entries;
       const next = prev.map((item) => {
         if (item.id !== entry.id) return item;
@@ -925,15 +982,38 @@ export function OrderComposer({
             {submitting ? "Saving…" : submitLabel}
           </Button>
           {persistDrafts ? (
-            <p className="text-[11px] text-muted-foreground">
-              {Object.keys(savingIds).length > 0
-                ? "Autosaving order composer…"
-                : persistenceDisabled
-                ? "Not saved to server – this draft is only on this screen until you Sign."
-                : saveErrorMessage
-                ? saveErrorMessage
-                : "All changes autosaved."}
-            </p>
+            <div className="min-h-16 text-[11px] leading-4 text-muted-foreground">
+              <p role="status" aria-live="polite" aria-atomic="true" data-testid="composer-save-status">
+                {!hydrated
+                  ? "Checking saved draft…"
+                  : Object.keys(savingIds).length > 0
+                  ? "Saving…"
+                  : saveErrorMessage || Object.keys(failedSaves).length > 0
+                  ? "Failed to save"
+                  : persistenceDisabled
+                  ? "Saved on this device only — on this screen; lost on reload. Sign to save to server."
+                  : "Saved (server)"}
+              </p>
+              {hydrated && (saveErrorMessage || Object.keys(failedSaves).length > 0) ? (
+                <button
+                  type="button"
+                  className="inline-flex min-h-8 items-center underline underline-offset-2"
+                  disabled={Object.keys(savingIds).length > 0}
+                  onClick={() => {
+                    if (saveErrorMessage) {
+                      setHydratedKey(null);
+                      setLoadAttempt((attempt) => attempt + 1);
+                    } else {
+                      void (async () => {
+                        for (const retry of Object.values(failedSaves)) await retry();
+                      })();
+                    }
+                  }}
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -955,7 +1035,10 @@ export function OrderComposer({
                     type="number"
                     min="1"
                     value={mcDays}
-                    onChange={(event) => setMcDays(Number(event.target.value || 1))}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDays(Number(event.target.value || 1));
+                    }}
                   />
                 </div>
                 <div>
@@ -963,7 +1046,10 @@ export function OrderComposer({
                   <Input
                     type="date"
                     value={mcStartDate}
-                    onChange={(event) => setMcStartDate(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcStartDate(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
@@ -971,7 +1057,10 @@ export function OrderComposer({
                   <Input
                     placeholder="Dr. ..."
                     value={mcDoctorName}
-                    onChange={(event) => setMcDoctorName(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDoctorName(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
@@ -979,7 +1068,10 @@ export function OrderComposer({
                   <Input
                     placeholder="Diagnosis"
                     value={mcDiagnosis}
-                    onChange={(event) => setMcDiagnosis(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDiagnosis(event.target.value);
+                    }}
                   />
                 </div>
               </div>
@@ -1007,14 +1099,23 @@ export function OrderComposer({
               <div className="space-y-3">
                 <div>
                   <Label className="text-xs">Referral to:</Label>
-                  <Input value={referralTo} onChange={(event) => setReferralTo(event.target.value)} />
+                  <Input
+                    value={referralTo}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setReferralTo(event.target.value);
+                    }}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Diagnosis</Label>
                   <Input
                     placeholder="Diagnosis"
                     value={referralDiagnosis}
-                    onChange={(event) => setReferralDiagnosis(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setReferralDiagnosis(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
@@ -1022,7 +1123,10 @@ export function OrderComposer({
                   <Textarea
                     className="min-h-[260px] leading-6"
                     value={referralContent}
-                    onChange={(event) => setReferralContent(event.target.value)}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setReferralContent(event.target.value);
+                    }}
                   />
                 </div>
                 <div className="rounded-md border p-2 text-xs text-muted-foreground">
@@ -1073,6 +1177,7 @@ export function OrderComposer({
                 <Input
                   value={detailEntry.name}
                   onChange={(event) => {
+                    userTouchedRef.current = true;
                     const next = entries.map((item) =>
                       item.id === detailEntry.id ? { ...item, name: event.target.value } : item
                     );
@@ -1090,6 +1195,7 @@ export function OrderComposer({
                     step="1"
                     value={detailEntry.quantity}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const value = Number(event.target.value || 0);
                       const next = entries.map((item) =>
                         item.id === detailEntry.id
@@ -1115,6 +1221,7 @@ export function OrderComposer({
                     step="0.01"
                     value={detailEntry.unitPrice}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const value = Number(event.target.value || 0);
                       const next = entries.map((item) =>
                         item.id === detailEntry.id
@@ -1139,6 +1246,7 @@ export function OrderComposer({
                   placeholder="Instruction"
                   value={detailEntry.instruction || ""}
                   onChange={(event) => {
+                    userTouchedRef.current = true;
                     const next = entries.map((item) =>
                       item.id === detailEntry.id ? { ...item, instruction: event.target.value } : item
                     );
@@ -1153,6 +1261,7 @@ export function OrderComposer({
                     placeholder="Dosage"
                     value={detailEntry.dosage || ""}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const next = entries.map((item) =>
                         item.id === detailEntry.id ? { ...item, dosage: event.target.value } : item
                       );
@@ -1164,6 +1273,7 @@ export function OrderComposer({
                     placeholder="Frequency"
                     value={detailEntry.frequency || ""}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const next = entries.map((item) =>
                         item.id === detailEntry.id ? { ...item, frequency: event.target.value } : item
                       );
@@ -1175,6 +1285,7 @@ export function OrderComposer({
                     placeholder="Duration"
                     value={detailEntry.duration || ""}
                     onChange={(event) => {
+                      userTouchedRef.current = true;
                       const next = entries.map((item) =>
                         item.id === detailEntry.id ? { ...item, duration: event.target.value } : item
                       );
