@@ -27,3 +27,16 @@ See PR description for lint/build/e2e results.
   - `poct` "online + Sign" and `xray` "offline device" failed in the full run (dev server briefly refused connections under memory pressure); both passed on re-run, and all 12 poct+xray specs passed in an earlier targeted run.
   - `workflow` 08 skipped-after-failure and a re-run flaked in 07/02 (Labs tab panel never switched / register patient timeout) on a loaded box. 07 passed in the full run. Not proven independent of load; worth re-running on a quiet box / port 3210.
 - New `lab-results-state.spec.ts`: 5/5 pass (both targeted and in the full run).
+
+## Independent review (Task 201, non-author)
+Diff reviewed: `git diff origin/dev...HEAD` (branch already contains origin/dev; no merge needed). PR #238 open.
+- Failed fetch distinct from true empty: yes (`lab-load-error` alert + Retry vs "No lab results available"); malformed 200 treated as failure.
+- Known reports retained across failed refresh: yes (stale banner, timestamp unchanged); 401/403 deliberately clears data and shows Access denied.
+- Retry/Refresh + "Last updated" timestamp: present on loaded, empty, and error views.
+- Lab-tab only: no composer/sidebar/nav/API/Firebase files touched; spec 5 asserts no results in composer. No secrets in diff.
+- Re-ran `lab-results-state.spec.ts` on :3217 (UCC_REPORTS/UCC_EVIDENCE redirected to /tmp since /workspace is not writable): 5/5 pass.
+- MINOR: a manual Refresh while a load is in flight is queued; the in-flight load's `onLoaded` clears the "Refreshing…" spinner early. Cosmetic only.
+- MINOR: stale-banner text says "Retrying automatically" though a 'disabled' (kill-switch) pause has no polling; banner can't show in that state, so no impact.
+- Not re-verified: full-suite baseline (no baseline on this box; author's caveats stand).
+
+**Verdict: APPROVE** (2 MINOR, no MAJOR; no code changes made).
