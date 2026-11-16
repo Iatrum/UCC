@@ -49,3 +49,7 @@ next-env.d.ts
 e2e/.secrets/
 e2e/reports/
 e2e/node_modules
+
+# dev PACS secrets (X-ray phase 3)
+infra/pacs-dev/secrets/
+infra/pacs-dev/viewer-secret

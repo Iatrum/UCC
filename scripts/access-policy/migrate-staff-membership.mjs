@@ -51,7 +51,7 @@ const refId = (reference) => reference?.split('/')?.[1];
 
 const CLINIC_POLICY_NAME = 'UCC Clinic Staff Policy';
 const CLINIC_IDENTIFIER_SYSTEM = 'clinic';
-const BACKUP_ROOT = '/workspace/ai-logs/task-isolation-phase2/backup';
+const BACKUP_ROOT = process.env.UCC_MEMBERSHIP_BACKUP_DIR || '/workspace/ai-logs/task-isolation-phase2/backup';
 
 // Every %token this script knows how to turn into an access[].parameter
 // entry. If the live policy's criteria/writeConstraint reference a token not
