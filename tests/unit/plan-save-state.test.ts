@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { planWriteOutcome } from '../../lib/plan-save-state';
+import { planWriteOutcome, mergeUnsavedEntries } from '../../lib/plan-save-state';
 
 describe('planWriteOutcome (composer never shows saved for a rejected save)', () => {
   test('only a successful 2xx body is saved', () => {
@@ -18,5 +18,21 @@ describe('planWriteOutcome (composer never shows saved for a rejected save)', ()
     expect(planWriteOutcome(true, {})).toBe('failed');
     expect(planWriteOutcome(true, { success: 'yes' })).toBe('failed');
     for (const bad of [null, undefined, 'x', 3]) expect(planWriteOutcome(true, bad)).toBe('failed');
+  });
+});
+
+describe('mergeUnsavedEntries (a failed item must not vanish when a later save succeeds)', () => {
+  const e = (id: string, name = id) => ({ id, name });
+  test('no failures: server plan verbatim', () => {
+    expect(mergeUnsavedEntries([e('a')], [e('a'), e('b')], new Set())).toEqual([e('a')]);
+  });
+  test('failed add is re-appended after the server entries', () => {
+    expect(mergeUnsavedEntries([e('b')], [e('a'), e('b')], new Set(['a']))).toEqual([e('b'), e('a')]);
+  });
+  test('failed edit keeps the local version', () => {
+    expect(mergeUnsavedEntries([e('a', 'old')], [e('a', 'new')], new Set(['a']))).toEqual([e('a', 'new')]);
+  });
+  test('failed id no longer on screen (removed) is not resurrected', () => {
+    expect(mergeUnsavedEntries([e('b')], [e('b')], new Set(['a']))).toEqual([e('b')]);
   });
 });

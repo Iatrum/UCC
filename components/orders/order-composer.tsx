@@ -1,6 +1,6 @@
 "use client";
 
-import { planWriteOutcome } from "@/lib/plan-save-state";
+import { mergeUnsavedEntries, planWriteOutcome } from "@/lib/plan-save-state";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 
 import { PoctSection } from "./poct-section";
@@ -382,6 +382,8 @@ export function OrderComposer({
   const hydrated = hydratedKey === draftKey;
   const [loadAttempt, setLoadAttempt] = React.useState(0);
   const [failedSaves, setFailedSaves] = React.useState<Record<string, () => Promise<void>>>({});
+  const failedSavesRef = React.useRef(failedSaves);
+  failedSavesRef.current = failedSaves;
   const [savingIds, setSavingIds] = React.useState<Record<string, number>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
   const [saveErrorMessage, setSaveErrorMessage] = React.useState<string | null>(null);
@@ -695,7 +697,13 @@ export function OrderComposer({
           delete next[pendingKey];
           return next;
         });
-        publishPlan(data.plan.entries as TreatmentPlanEntry[]);
+        publishPlan(
+          mergeUnsavedEntries(
+            data.plan.entries as TreatmentPlanEntry[],
+            entriesRef.current,
+            new Set(Object.keys(failedSavesRef.current).filter((id) => id !== pendingKey))
+          )
+        );
       } catch (error) {
         // Keep the doctor's item on screen: status says "Failed to save", Sign stays disabled, Retry replays it.
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry) }));
@@ -792,7 +800,13 @@ export function OrderComposer({
           delete next[pendingKey];
           return next;
         });
-        publishPlan(data.plan.entries as TreatmentPlanEntry[]);
+        publishPlan(
+          mergeUnsavedEntries(
+            data.plan.entries as TreatmentPlanEntry[],
+            entriesRef.current,
+            new Set(Object.keys(failedSavesRef.current).filter((id) => id !== pendingKey))
+          )
+        );
       } catch (error) {
         if (!retrying) publishPlan(prev);
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry, true) }));
