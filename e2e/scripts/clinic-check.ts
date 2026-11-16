@@ -22,7 +22,7 @@ res.warning = ids.size < 4 ? `only ${ids.size}/4 clinics present` : undefined;
 const types = ['Patient', 'Encounter', 'Observation', 'Condition', 'Procedure',
   'MedicationRequest', 'MedicationStatement', 'AllergyIntolerance', 'ServiceRequest',
   'DiagnosticReport', 'ImagingStudy', 'DocumentReference', 'Appointment', 'Invoice',
-  'Task', 'Basic', 'ChargeItemDefinition', 'Medication', 'Communication',
+  'Task', 'Basic', 'ChargeItemDefinition', 'Medication', 'MedicationDispense', 'Communication',
   'QuestionnaireResponse', 'Schedule', 'Slot', 'Provenance'];
 const accountClinics = new Map((await all('HealthcareService')).flatMap(h => {
   const clinic = h.identifier?.find((i: any) => i.system === 'clinic')?.value;

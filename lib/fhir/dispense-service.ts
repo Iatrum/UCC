@@ -124,6 +124,34 @@ async function findDispenses(
   );
 }
 
+export type DispenseAuditRecord = {
+  id: string;
+  status: string;
+  medicationId: string;
+  name: string;
+  quantity: number;
+  stockBefore?: number;
+  stockAfter?: number;
+};
+
+/** Clinic-scoped audit view of what checkout deducted for one visit. */
+export async function listDispensesForConsultation(
+  medplum: MedplumClient,
+  clinicId: string,
+  consultationId: string
+): Promise<DispenseAuditRecord[]> {
+  const intExt = (d: MedicationDispense, url: string) => d.extension?.find((e) => e.url === url)?.valueInteger;
+  return (await findDispenses(medplum, clinicId, consultationId)).map((d) => ({
+    id: d.id ?? '',
+    status: d.status,
+    medicationId: medicationIdOf(d) ?? '',
+    name: d.medicationReference?.display ?? '',
+    quantity: Number(d.quantity?.value ?? 0),
+    stockBefore: intExt(d, DISPENSE_STOCK_BEFORE_EXTENSION_URL),
+    stockAfter: intExt(d, DISPENSE_STOCK_AFTER_EXTENSION_URL),
+  }));
+}
+
 function recordedQuantity(dispense: MedicationDispense | undefined): number {
   if (!dispense || dispense.status !== 'completed') return 0;
   return Number(dispense.quantity?.value ?? 0) || 0;

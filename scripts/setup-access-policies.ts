@@ -106,6 +106,7 @@ async function setupAccessPolicies() {
       ...clinicCompartmentRules("Basic"),
       ...clinicCompartmentRules("ChargeItemDefinition"),
       ...clinicCompartmentRules("Medication"),
+      ...clinicCompartmentRules("MedicationDispense"),
       ...clinicCompartmentRules("Communication"),
       ...clinicCompartmentRules("QuestionnaireResponse"),
       ...clinicCompartmentRules("Schedule"),

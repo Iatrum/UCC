@@ -52,7 +52,7 @@ const RESOURCE_TYPES = [
   'MedicationRequest', 'MedicationStatement', 'AllergyIntolerance',
   'ServiceRequest', 'DiagnosticReport', 'ImagingStudy', 'DocumentReference',
   'Appointment', 'Invoice', 'Task', 'Basic', 'ChargeItemDefinition',
-  'Medication', 'Communication', 'QuestionnaireResponse', 'Schedule', 'Slot',
+  'Medication', 'MedicationDispense', 'Communication', 'QuestionnaireResponse', 'Schedule', 'Slot',
   'Provenance',
 ];
 
