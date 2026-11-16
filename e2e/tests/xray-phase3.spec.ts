@@ -119,6 +119,11 @@ test('stored DICOM appears as a study matched by accession; viewer link is clini
     const pending = await (await request.get(`/api/labs/results?patientId=${patientId}`)).json();
     expect(pending.xrayPending.find((o: any) => o.id === order.id)?.accessionNumber).toBe(acc);
 
+    // The accession number is shown to staff with the pending order (Lab tab only).
+    await page.goto(`/patients/${patientId}/labs-imaging`);
+    await expect(page.getByRole('cell', { name: 'Chest X-ray (PA)', exact: true })).toBeVisible();
+    await expect(page.getByTestId('xray-accession')).toHaveText(acc);
+
     const stored = await storeSyntheticStudy(acc, 2);
     orthancIds.push(stored.orthancId);
     let study: any;

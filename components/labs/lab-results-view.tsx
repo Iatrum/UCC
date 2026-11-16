@@ -145,6 +145,10 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
     );
   }
 
+  // The accession number joins the DICOM study to this order in the PACS (X-ray phase 3); the column
+  // only exists when an order carries one.
+  const showAccession = xrayPending.some((order) => order.accessionNumber);
+
   if (reports.length === 0 && pending.length === 0 && xrayPending.length === 0) {
     return (
       <Card>
@@ -216,6 +220,7 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
               <TableHeader>
                 <TableRow>
                   <TableHead>Study</TableHead>
+                  {showAccession && <TableHead>Accession #</TableHead>}
                   <TableHead>Ordered</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -223,14 +228,10 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
               <TableBody>
                 {xrayPending.map((order) => (
                   <TableRow key={order.id}>
-                    <TableCell className="font-medium">
-                      {order.display}
-                      {order.accessionNumber && (
-                        <span className="block text-xs font-normal text-muted-foreground" data-testid="xray-accession">
-                          Accession # <span className="font-mono">{order.accessionNumber}</span>
-                        </span>
-                      )}
-                    </TableCell>
+                    <TableCell className="font-medium">{order.display}</TableCell>
+                    {showAccession && (
+                      <TableCell className="font-mono text-sm" data-testid="xray-accession">{order.accessionNumber || '—'}</TableCell>
+                    )}
                     <TableCell className="text-sm text-muted-foreground">
                       {order.authoredOn ? new Date(order.authoredOn).toLocaleString() : 'N/A'}
                     </TableCell>
