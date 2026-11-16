@@ -14,4 +14,4 @@ Reviewed commit `4d14512` ("Merge origin/dev into Task 354 branch"), parents `b4
 - e2e (`check-all.sh`) not run in this review (review-only, one dev server limit); the composer e2e specs are unchanged by the merge.
 
 ## Mergeable state (live, `gh pr view 261`)
-OPEN, base `dev`, mergeable = MERGEABLE, mergeStateStatus = UNSTABLE (non-required checks pending/failing; no conflicts). Not merged by this review.
+OPEN, base `dev`, mergeable = MERGEABLE, mergeStateStatus = UNSTABLE (no conflicts; `gh pr checks` reports no checks on the branch, so the cause is not visible from here). Not merged by this review.
