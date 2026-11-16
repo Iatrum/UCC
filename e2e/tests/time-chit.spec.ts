@@ -169,10 +169,14 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
       await adminPage.goto(`/admin/clinics/${org.id}`);
       const moduleSwitch = adminPage.getByRole('switch', { name: 'Toggle Time Chit (Surat Masa)' });
       await expect(moduleSwitch).toBeChecked();
-      await moduleSwitch.uncheck();
-      const save = adminPage.waitForResponse(r => r.url().includes(`/api/admin/clinics/${org.id}`) && r.request().method() === 'PATCH', { timeout: 120_000 }); // cold dev compile of the admin page/route can exceed 45 s
-      await adminPage.getByRole('button', { name: 'Save Module Settings' }).click();
-      expect((await save).status()).toBe(200);
+      // A click before React hydrates (cold dev compile) is lost and no PATCH is sent: retry the idempotent save.
+      await expect(async () => {
+        if (await moduleSwitch.isChecked()) await moduleSwitch.uncheck();
+        await expect(moduleSwitch).not.toBeChecked({ timeout: 2_000 });
+        const save = adminPage.waitForResponse(r => r.url().includes(`/api/admin/clinics/${org.id}`) && r.request().method() === 'PATCH', { timeout: 20_000 });
+        await adminPage.getByRole('button', { name: 'Save Module Settings' }).click();
+        expect((await save).status()).toBe(200);
+      }).toPass({ timeout: 150_000 });
       await adminPage.reload(); await expect(moduleSwitch).not.toBeChecked();
       await adminPage.screenshot({ path: `${EVIDENCE}/time-chit-admin-toggle.png`, fullPage: true });
       // A new clinic without a module-settings extension also starts off.
