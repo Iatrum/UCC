@@ -1,4 +1,5 @@
-import type { MedplumClient } from "@medplum/core";
+import { OperationOutcomeError, forbidden, type MedplumClient } from "@medplum/core";
+import { assertPatientInClinic } from "@/lib/fhir/write-containment";
 import type { Appointment, Patient, Practitioner, Schedule, Slot } from "@medplum/fhirtypes";
 import {
   CLINIC_IDENTIFIER_SYSTEM,
@@ -426,6 +427,8 @@ export async function bookSlotToAppointment(
   clinicId: string,
   input: BookSlotInput
 ): Promise<{ appointmentId: string; slotId: string }> {
+  // Task 350: prove the patient is in this clinic before reading/booking anything.
+  await assertPatientInClinic(medplum, clinicId, input.patientId);
   const slot = await medplum.readResource("Slot", input.slotId);
   if (slot.status !== "free") {
     throw new Error("Slot is no longer available");
@@ -439,7 +442,8 @@ export async function bookSlotToAppointment(
   const schedule = await medplum.readResource("Schedule", scheduleId);
   const { clinicId: scheduleClinicId, practitionerId } = parseScheduleIdentifier(schedule);
   if (scheduleClinicId !== clinicId) {
-    throw new Error("Slot does not belong to this clinic");
+    // Task 350: opaque forbidden (403), not a 500, and no hint about the foreign slot.
+    throw new OperationOutcomeError(forbidden);
   }
 
   const patient = await medplum.readResource("Patient", input.patientId);
@@ -507,6 +511,8 @@ export async function manualBookAppointmentWithSlot(
   clinicId: string,
   input: ManualBookAppointmentInput
 ): Promise<{ appointmentId: string; slotId: string }> {
+  // Task 350: runs before ensureClinicianSchedule creates a Schedule.
+  await assertPatientInClinic(medplum, clinicId, input.patientId);
   const start = new Date(input.scheduledAt);
   if (!Number.isFinite(start.getTime())) {
     throw new Error("Invalid appointment date and time");
