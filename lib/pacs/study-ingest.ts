@@ -149,6 +149,14 @@ export async function ingestPacsStudy(study: OrthancStudy, medplum: MedplumClien
   const unmatched = async (reason: UnmatchedReason): Promise<IngestOutcome> =>
     ({ outcome: 'unmatched', reason, reviewId: await upsertReviewTask(medplum, deviceClinicId, study, reason) });
 
+  // Once an unknown study has entered review, a later matching order or corrected accession
+  // must not silently attach it. Only the explicit staff attach action can decide its patient.
+  const reviewed = await findReviewTask(medplum, deviceClinicId, study.studyUid);
+  if (reviewed?.id) {
+    const reason = (reviewed.statusReason?.text || 'no-order') as UnmatchedReason;
+    return unmatched(reason);
+  }
+
   const accession = normalizeAccessionNumber(study.accessionNumber);
   if (!accession) return unmatched('no-accession');
 
