@@ -6,6 +6,8 @@
  * a JSON blob; these helpers only build template data / default text from it.
  */
 
+import { stripDiagnosisFromTemplate } from "./template-diagnosis";
+
 export type SignedDocumentKind = "mc" | "referral";
 
 const ESC: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -31,8 +33,8 @@ export function mcDiagnosisBlock(diagnosis: string | undefined | null, include: 
 
 /**
  * Fill `{{key}}` placeholders. Values are HTML-escaped unless the key is listed
- * in `rawKeys`. When `hideMcDiagnosis` is set, legacy custom templates that
- * hard-code a "Diagnosis: {{diagnosis}}" element have that element removed.
+ * in `rawKeys`. When `hideMcDiagnosis` is set, the diagnosis element is removed
+ * structurally (see `stripDiagnosisFromTemplate`) and the value is never filled.
  */
 export function fillDocumentTemplate(
   html: string,
@@ -41,10 +43,13 @@ export function fillDocumentTemplate(
 ): string {
   const raw = new Set(opts.rawKeys ?? []);
   let out = html;
+  let values = data;
   if (opts.hideMcDiagnosis) {
-    out = out.replace(/<(\w+)[^>]*>\s*Diagnosis:\s*\{\{diagnosis\}\}\s*<\/\1>/gi, "");
+    out = stripDiagnosisFromTemplate(out);
+    // Defence in depth: the value itself is never substituted when hidden.
+    values = { ...data, diagnosis: "", diagnosisBlock: "" };
   }
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(values)) {
     out = out.split(`{{${key}}}`).join(raw.has(key) ? value : escapeHtmlText(value));
   }
   return out;

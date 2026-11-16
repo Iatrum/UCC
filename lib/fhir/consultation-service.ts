@@ -2,6 +2,7 @@ import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } fro
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
 import { isSignedDocumentNote } from '@/lib/clinical-documents';
+import { auditSignedDocument } from './signed-document-audit';
 import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
@@ -198,35 +199,6 @@ async function validateAndCreate(medplum: MedplumClient, resource: any) {
     throw new Error(`Invalid ${resource.resourceType}: ${validation.errors.join(', ')}`);
   }
   return medplum.createResource(resource);
-}
-
-/**
- * Audit trail for MC / referral documents (Task 408): one Provenance per
- * document Procedure. Non-blocking, like the Encounter provenance.
- */
-async function auditSignedDocument(
-  medplum: MedplumClient,
-  created: { id?: string } | undefined,
-  proc: { notes?: string },
-  practitionerId: string | undefined,
-  organizationId: string | undefined,
-  activity: 'CREATE' | 'UPDATE',
-  clinicTenant: { accountReference: string } | null | undefined
-): Promise<void> {
-  if (!created?.id || !isSignedDocumentNote(proc.notes)) return;
-  try {
-    await createProvenanceForResource(
-      medplum,
-      'Procedure',
-      created.id,
-      practitionerId,
-      organizationId,
-      activity,
-      clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
-    );
-  } catch (error) {
-    console.warn('Failed to create document Provenance (non-blocking):', error);
-  }
 }
 
 /**

@@ -25,6 +25,19 @@
 - Practitioner MMC is not prefilled from the `Practitioner` resource (`/api/practitioners` does not return it).
 - Procedures are replaced (delete+create) on consultation update, so a document gets a fresh Provenance per save.
 
+## Task 414 follow-ups (review 409)
+- Diagnosis hiding: replaced the single-shape regex with `stripDiagnosisFromTemplate` (`lib/template-diagnosis.ts`): tokenises the
+  template, builds a light element tree and drops the smallest self-contained element (p/li/tr/td/short div) holding
+  `{{diagnosis}}` plus a separate "Diagnosis:" label sibling; never deletes a large container. Any miss is blanked in place.
+  Defence in depth: when hidden the `diagnosis`/`diagnosisBlock` values are never substituted, so a template shape we do not
+  recognise can leave at worst an empty label, never the diagnosis. No HTML parser dependency exists in the repo, so none was added
+  (DOM parsing on the server/print path would also need jsdom). Tests: 11 template shapes in `clinical-documents.test.ts`.
+- Provenance test: helper extracted to `lib/fhir/signed-document-audit.ts`; `tests/unit/signed-document-audit.test.ts` runs the real
+  `createProvenance` with a fake client and asserts target, agent, onBehalfOf, CREATE/UPDATE, clinic account stamp, skip for non-MC
+  notes, non-blocking failure, and that a cross-clinic account is refused.
+- ESLint errors in `order-composer.tsx` (refs during render L606, `removeEntry` self-reference in its own retry closure L738/L833)
+  left as-is: fixing them means restructuring the autosave/retry callbacks of the consultation composer, not trivially safe.
+
 ## References
 - FHIR R4 Provenance https://hl7.org/fhir/R4/provenance.html ; Procedure https://hl7.org/fhir/R4/procedure.html
 - Medplum Provenance/AccessPolicy: https://www.medplum.com/docs/access/access-policies

@@ -37,6 +37,47 @@ describe('MC document', () => {
   });
 });
 
+describe('diagnosis hiding is structural, not a single regex shape', () => {
+  const D = 'Fake fever';
+  const hide = (tpl: string) => fillDocumentTemplate(tpl, { diagnosis: D, doctorName: 'Dr Fake', patientName: 'Ali' }, { hideMcDiagnosis: true });
+  const cases: Record<string, [string, string]> = {
+    'nested label in strong': ['<div><p><strong>Diagnosis:</strong> {{diagnosis}}</p><b>{{doctorName}}</b></div>', '<div><b>Dr Fake</b></div>'],
+    'uppercase tag + attrs + extra spaces': ['<P CLASS="a>b">  DIAGNOSIS :   {{ diagnosis }} </P><i>x</i>', '<i>x</i>'],
+    'table row label/value cells': ['<table><tr><td>Name</td><td>{{patientName}}</td></tr><tr><td>Diagnosis</td><td>{{diagnosis}}</td></tr></table>', '<table><tr><td>Name</td><td>Ali</td></tr></table>'],
+    'label and value in separate divs': ['<div><b>Diagnosis:</b></div><div>{{diagnosis}}</div><p>{{doctorName}}</p>', '<p>Dr Fake</p>'],
+    'list item': ['<ul><li>Diagnosis: {{diagnosis}}</li><li>Other</li></ul>', '<ul><li>Other</li></ul>'],
+    'self-closing br inside paragraph': ['<p>Diagnosis:<br/>{{diagnosis}}</p><p>ok</p>', '<p>ok</p>'],
+    'html comment and attribute contain the placeholder': ['<!-- {{diagnosis}} --><p title="{{diagnosis}}">hi</p>', '<!--  --><p title="">hi</p>'],
+  };
+  for (const [name, [tpl, expected]] of Object.entries(cases)) {
+    test(name, () => {
+      const out = hide(tpl);
+      expect(out).not.toContain(D);
+      expect(out).toBe(expected);
+    });
+  }
+  test('never deletes a large container or sibling content that merely holds the diagnosis inline', () => {
+    const out = hide('<div class="body"><p>Patient {{patientName}} is unfit.</p>Diagnosis: {{diagnosis}} <p>Signed {{doctorName}}</p></div>');
+    expect(out).toBe('<div class="body"><p>Patient Ali is unfit.</p> <p>Signed Dr Fake</p></div>');
+  });
+  test('keeps other cells in a row that also holds other data', () => {
+    const out = hide('<table><tr><td>{{patientName}}</td><td>Diagnosis: {{diagnosis}}</td></tr></table>');
+    expect(out).toBe('<table><tr><td>Ali</td></tr></table>');
+  });
+  test('value never appears even if the template shape is unrecognised or malformed', () => {
+    for (const tpl of ['<p>Dx {{diagnosis}}', '{{diagnosis}}', '<span>{{diagnosis}}</span><', '<div><p>{{diagnosis}}</div></p>']) {
+      expect(hide(tpl)).not.toContain(D);
+    }
+  });
+  test('diagnosisBlock value is never filled when hidden, even if the caller supplied it', () => {
+    const out = fillDocumentTemplate('<p>{{diagnosisBlock}}</p>', { diagnosisBlock: '<p>Diagnosis: Fake fever</p>' }, { rawKeys: ['diagnosisBlock'], hideMcDiagnosis: true });
+    expect(out).not.toContain('Fake fever');
+  });
+  test('templates are untouched when diagnosis is shown', () => {
+    expect(fillDocumentTemplate('<p>Diagnosis: {{diagnosis}}</p>', { diagnosis: D })).toBe('<p>Diagnosis: Fake fever</p>');
+  });
+});
+
 describe('referral letter', () => {
   test('default body pulls visit summary, current meds and allergies', () => {
     const body = buildReferralBody({
