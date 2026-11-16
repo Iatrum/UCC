@@ -1,8 +1,5 @@
 # CHANGELOG (plain language)
 
-## 2026-11-16 — Task 351 independent Task 350 review
-Closed remaining export and patient-linked create containment gaps; clinical resources retain clinic scope and own-clinic note/triage writes are positive-tested. Added export route boundary coverage and corrected a rejection test that previously stopped at input validation. Validation: unit 57/57, routes 3/3, lint pass; full workflow gate blocked by unavailable /workspace paths. Review verdict remains HOLD pending clinical workflow validation; see REVIEW-task350.md.
-
 ## 2026-11-15 — Task 300: POCT X-ray phase 1 (result link in Labs & Imaging, toggle-gated)
 X-ray ordering from the composer and device-key ingest already existed. This adds the missing result side: a study reported by an X-ray device can carry a PACS viewer link, stored as a sanitised `https://ucc.emr/xray/viewer-url` extension (http/https only, no embedded credentials) and shown as "View in PACS" only in the Labs & Imaging tab. X-ray studies are tagged `xray`; `/api/imaging/results` now requires clinic auth and hides X-ray studies and links when the clinic's `pacs` toggle is off (default off). Generic imaging orders are unaffected. Fake DICOM metadata only. Builds on PR #236 (per-device keys).
 
