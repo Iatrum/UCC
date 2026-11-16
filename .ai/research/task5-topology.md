@@ -63,3 +63,8 @@ A rehearsal caught that POST replaces supplied IDs even for super-admin callers 
 - https://github.com/medplum/medplum/blob/v5.2.15/packages/server/src/fhir/repo.ts
 - https://github.com/medplum/medplum/blob/v5.2.15/packages/fhir-router/src/fhirrouter.ts
 The failed POST-manifest rehearsal was fully cleaned up and is not counted as passing verification.
+
+## Canonical dev pagination and operator ownership
+The live dev database exceeds one page of Patients. Its Bundle next links advertise `http://localhost:8113` while the approved caller uses `http://127.0.0.1:8113`. Initially the strict verifier refused that origin mismatch and exited nonzero after cleaning all probes. It now accepts only this known local FHIR alias and rewrites the path/query onto the configured 127.0.0.1 origin; actual requests remain on the approved endpoint. Arbitrary foreign origins, URL credentials and pagination loops remain refused; remote production targets require exact-origin pagination. Both migration and verifier share that behavior.
+
+An existing non-superAdmin project with the operator project's name is never promoted based on its name alone. Promotion requires the ID recorded after this migration created the project. Existing superAdmin operator projects are verified through dedicated login/membership checks.

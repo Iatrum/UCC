@@ -72,6 +72,20 @@ if (!isLocal) {
   }
 }
 const B = base.origin + '/';
+// Dev advertises localhost links even when the approved request origin is
+// 127.0.0.1. Accept only that known loopback alias, then keep every actual
+// request on the configured origin. Never rewrite arbitrary pagination hosts.
+function requestUrl(value) {
+  let url = new URL(value, B);
+  if (url.username || url.password) throw new Error('URL credentials refused');
+  if (url.origin !== base.origin) {
+    const localAliases = new Set(['http://localhost:8113', 'http://127.0.0.1:8113']);
+    if (!isLocal || !localAliases.has(url.origin) || !url.pathname.startsWith('/fhir/R4/')) throw new Error('Foreign pagination refused');
+    url = new URL(url.pathname + url.search, B);
+  }
+  return url;
+}
+
 const PROJECT_ID = val('--project');
 if (!PROJECT_ID || !/^[0-9a-f-]{36}$/.test(PROJECT_ID)) die('--project <clinical project uuid> is required');
 const OPS_NAME = val('--ops-project-name') || 'UCC Platform Operator';
@@ -92,7 +106,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function raw(token, method, p, body, headers = {}) {
   const h = { 'content-type': 'application/fhir+json', 'X-Medplum': 'extended', ...headers };
   if (token) h.authorization = `Bearer ${token}`;
-  const url = new URL(p, B);
+  const url = requestUrl(p);
   if (url.origin !== base.origin || url.username || url.password) die('Nonlocal request refused');
   if (method === 'PUT' && body?.meta?.versionId) h['If-Match'] = `W/"${body.meta.versionId}"`;
   const r = await fetch(url, { method, headers: h, redirect: 'error', signal: AbortSignal.timeout(30000), body: body === undefined ? undefined : JSON.stringify(body) });
@@ -338,9 +352,10 @@ async function main() {
   if (!ops) {
     const r = await f('POST', 'Project', { resourceType: 'Project', name: OPS_NAME });
     if (r.status !== 201) die(`operator project create failed (${r.status})${reason(r)}`);
-    ops = r.json; log(`created operator project ${ops.id}`);
+    ops = r.json; manifest.operatorProjectId = ops.id; saveManifest(); log(`created operator project ${ops.id}`);
   }
   if (!ops.superAdmin) {
+    if (manifest.operatorProjectId !== ops.id) die('Refusing to promote a pre-existing unowned project');
     const r = await f('PUT', `Project/${ops.id}`, { ...ops, superAdmin: true });
     if (r.status !== 200) die(`operator project superAdmin update failed (${r.status})${reason(r)}`);
     ops = r.json; log('operator project set superAdmin=true');

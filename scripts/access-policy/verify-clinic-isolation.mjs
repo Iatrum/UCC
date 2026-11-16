@@ -38,6 +38,20 @@ if (!isLocal && opt('--allow-remote') !== base.origin) {
 }
 if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) throw Error('Bare Medplum origin required');
 const B = base.origin + '/';
+// Dev advertises localhost links even when the approved request origin is
+// 127.0.0.1. Accept only that known loopback alias, then keep every actual
+// request on the configured origin. Never rewrite arbitrary pagination hosts.
+function requestUrl(value) {
+  let url = new URL(value, B);
+  if (url.username || url.password) throw new Error('URL credentials refused');
+  if (url.origin !== base.origin) {
+    const localAliases = new Set(['http://localhost:8113', 'http://127.0.0.1:8113']);
+    if (!isLocal || !localAliases.has(url.origin) || !url.pathname.startsWith('/fhir/R4/')) throw new Error('Foreign pagination refused');
+    url = new URL(url.pathname + url.search, B);
+  }
+  return url;
+}
+
 const ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL, password: process.env.MEDPLUM_ADMIN_PASSWORD };
 if (!ADMIN.email || !ADMIN.password) { console.error('Admin credentials required'); process.exit(2); }
 let staffPassword = process.env.UCC_STAFF_PASSWORD;
@@ -50,7 +64,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function http(token, method, p, body) {
   const headers = { 'content-type': 'application/fhir+json' };
   if (token) headers.authorization = `Bearer ${token}`;
-  const url = new URL(p, B);
+  const url = requestUrl(p);
   if (url.origin !== base.origin) throw Error('Foreign pagination refused');
   const r = await fetch(url, { method, headers, redirect: 'error', signal: AbortSignal.timeout(30000), body: body ? JSON.stringify(body) : undefined });
   const text = await r.text();
@@ -60,7 +74,7 @@ async function http(token, method, p, body) {
     const visited = new Set();
     let next = json.link?.find(l => l.relation === 'next')?.url;
     while (next) {
-      const pageUrl = new URL(next, B);
+      const pageUrl = requestUrl(next);
       if (pageUrl.origin !== base.origin || visited.has(next) || visited.size > 10000) throw Error('Invalid search pagination');
       visited.add(next);
       const page = await fetch(pageUrl, {headers,redirect:'error',signal:AbortSignal.timeout(30000)});

@@ -1,6 +1,6 @@
 # Task 5 — security review and verification
 
-Status: implementation complete; final gate and final migration-manifest rehearsal in progress. Self-review only; no independent agent was invoked.
+Status: implementation and migration rehearsal verified; corrected full gate, cleanup and publication pending. Self-review only; no independent agent was invoked.
 
 ## Design
 
@@ -33,10 +33,14 @@ The first full-gate attempt was interrupted after a fake Playwright cookie was a
 ## Verification
 
 - Unit suite: 127 passed, 0 failed (14 files).
-- Disposable non-superAdmin topology rehearsal: dry-run, apply, no-op second apply, live pre-cutover token restriction, app-client boundaries, grant-drift refusal, default dry-run rollback, exact grant/policy/directory restoration, cleanup passed. Its black-box verifier passed 110/110 with no fatal error. This preceded the final manifest/admin-identity guards; final rerun is required below.
+- Disposable non-superAdmin topology rehearsal: dry-run, apply, no-op second apply, live pre-cutover token restriction, app-client boundaries, grant-drift refusal, default dry-run rollback, exact grant/policy/directory restoration, cleanup passed. Its black-box verifier passed 110/110 with no fatal error. The final manifest/admin-identity rerun below supersedes this earlier rehearsal.
 - First completed full gate (`task5-policy-final`): lint/build/clinic inventory 0; 60/64 tests passed. Time Chit hit a stale synthetic catalog duplicate; checkout captured only “Loading checkout...” after its fixed six-second sleep, filled zero, then failed and skipped serial smoke/summary. Backed up/deleted the one stale fake catalog and replaced the test sleep with UI readiness and a real-total assertion. This run remains FAIL. A corrected full gate is required.
 - Corrected final full gate: pending. Baseline explicitly supplied: `/home/dev/ai-logs/int-360/reports/results.json`, an inherited 58/62 run with four previously recorded failures. The comparator alone is insufficient evidence for the requested positive workflows; record their actual results below.
-- Final manifest rehearsal: pending.
+- Final manifest/ownership rehearsal (`rehearsal-verified.log`): PASS, including refusal to promote an unrelated same-name project, policy-ID manifest checks, pre-cutover token restriction, app-client scope, no-op reapply, 110/110 isolation checks, drift refusal, exact rollback and complete cleanup.
+- Live clinical-project verification (`isolation-final.json`): 110/110, no fatal error, all 10 probes removed. Pagination was exercised against the larger fake dataset, with localhost canonical links rewritten onto the approved 127.0.0.1 endpoint.
+- Admin API smoke: PASS (invite, profile/clinic edit, staff login/read, admin-directory denial, retained-session deactivation, reactivation, deletion).
+- A subsequent full-gate attempt was stopped after Feedback generated an ID-like random hex title suffix; the privacy scrubber correctly redacted it, so exact-title lookup failed. Confirmed the stored title contained REDACTED; use an alphabetic random suffix. Backed up/deleted that one synthetic row. This was not a pagination problem; no pagination test change is retained.
+- Task gates now use `UCC_NO_TRACE=1` to avoid retaining credential-bearing traces; task-owned old traces/report bundles were removed and text artifacts redacted. Private migration backups remain exact and contain no redaction markers.
 - Dev server cleanup: pending.
 
 Production remains a manual Hidayat operation under `.ai/RUNBOOK-task5-production-migration.md`; no production readiness claim until all pending items are resolved and the pinned production version is separately rehearsed.

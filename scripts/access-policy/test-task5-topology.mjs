@@ -81,6 +81,12 @@ try{
   const original=await get(`Project/${project.id}`);
   await cli();check(isDeepStrictEqual(await get(`Project/${project.id}`),original),'default dry-run makes no project writes');
   check(!fs.existsSync(`${dir}/task5-pre-${project.id}.json`),'dry-run does not create migration snapshot');
+  const unrelated = await create({ resourceType: 'Project', name: opsName });
+  await cli(['--apply'], 2);
+  check((await get(`Project/${unrelated.id}`)).superAdmin !== true, 'unowned same-name project is never promoted');
+  check((await get(`Project/${project.id}`)).superAdmin === true, 'refused operator promotion leaves clinical topology unchanged');
+  const removedCollision = await http(root, `fhir/R4/Project/${unrelated.id}`, 'DELETE');
+  check(removedCollision.status === 200, 'synthetic operator-name collision removed');
   const existingStaffToken = await login(members[0].email, fakePassword, project.id);
   check((await http(existingStaffToken, `fhir/R4/ProjectMembership/${members[0].member.id}`)).status === 200, 'pre-cutover token positive control');
   await cli(['--apply']);
