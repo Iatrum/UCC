@@ -20,10 +20,10 @@ test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot:
 
 test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union and exact rollback', async () => {
   test.setTimeout(15 * 60_000);
-  expect(BASE).toBe('http://localhost:3210');
-  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(MEDPLUM).origin);
+  expect(BASE).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9]\d{3,4}$/);
+  expect(MEDPLUM.replace(/\/$/, '')).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   process.loadEnvFile(new URL('../../.env.local', import.meta.url));
-  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL!).origin);
+  expect(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL!).origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   // A prior spec can use the whole 5/min login budget.
   await new Promise(resolve => setTimeout(resolve, 65_000));
   const m: MedplumClient = await getAdminMedplum();
@@ -109,7 +109,8 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
       expect(JSON.stringify((await m.readResource('ProjectMembership', member.id!, { cache: 'no-cache' })).access ?? null)).toBe('null');
       expect(await cli(['--apply', '--membership', member.id!])).toContain('Applied clinic staff policy');
       const current = await m.readResource('ProjectMembership', member.id!, { cache: 'no-cache' });
-      const backupPath = `${process.env.UCC_MEMBERSHIP_BACKUP_DIR || '/workspace/ai-logs/task-isolation-phase2/backup'}/${member.project!.reference!.split('/')[1]}-${member.id}.json`;
+      const backupRoot = process.env.UCC_MEMBERSHIP_BACKUP_DIR || '/workspace/ai-logs/task-isolation-phase2/backup';
+      const backupPath = `${backupRoot}/${member.project!.reference!.split('/')[1]}-${member.id}.json`;
       expect(fs.statSync(backupPath).mode & 0o777).toBe(0o600);
       const expectedUnion = '^(' + indices.map(i => `HealthcareService/${clinics[i].account.id}`).sort().join('|') + ')$';
       expect(current.access?.length).toBe(indices.length);

@@ -6,6 +6,9 @@ set -u
 LOG_ROOT=${UCC_LOG_ROOT:-/workspace/ai-logs}
 LABEL=${1:-run}; BASE=${2:-$LOG_ROOT/baseline/results.json}
 REPO=$(cd "$(dirname "$0")/../.." && pwd); OUT=$LOG_ROOT/$LABEL; mkdir -p "$OUT"; FAIL=0
+export UCC_MEMBERSHIP_BACKUP_DIR=${UCC_MEMBERSHIP_BACKUP_DIR:-$OUT/membership-backups}
+export UCC_EVIDENCE=${UCC_EVIDENCE:-$OUT/evidence}
+export UCC_SAVE_SHOTS=${UCC_SAVE_SHOTS:-$OUT/save-state-shots}
 export UCC_REPORTS=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}
 export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=1536}
 step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c" | tee -a "$OUT/summary.txt"; [ $c -eq 0 ] || FAIL=1; }
@@ -15,7 +18,7 @@ step lint bun run lint
 step build env PATH="$HOME/.local/node22/bin:$PATH" bun run build:ci
 # Optional foreground orchestration: after this build, the caller starts the
 # local built app in its own process group and creates this readiness file.
-if [ "${UCC_E2E_BATCHED:-0}" != "1" ] && [ -n "${UCC_SERVER_READY_FILE:-}" ]; then
+if [ "${UCC_E2E_BATCHED:-0}" != "1" ] && [ -z "${UCC_LOW_MEMORY_GATE:-}" ] && [ -n "${UCC_SERVER_READY_FILE:-}" ]; then
   [ "$FAIL" -eq 0 ] || { echo "OVERALL: FAIL" | tee -a "$OUT/summary.txt"; exit 1; }
   step server-ready timeout 3m bash -c 'while [ ! -f "$UCC_SERVER_READY_FILE" ]; do sleep 1; done'
 fi
@@ -23,6 +26,9 @@ cd "$REPO/e2e"
 RES=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}/results.json; rm -f "$RES"
 if [ "${UCC_E2E_BATCHED:-0}" = "1" ]; then
   timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-40m}" node scripts/run-batched.mjs > "$OUT/e2e.log" 2>&1
+elif [ "${UCC_LOW_MEMORY_GATE:-0}" = 1 ]; then
+  # Driver owns one dev server at a time and reclaims its compiler heap between groups.
+  timeout --kill-after=30s 40m node scripts/run-low-memory.mjs > "$OUT/e2e.log" 2>&1
 else
   timeout 20m node scripts/warmup.mjs > "$OUT/warmup.log" 2>&1
   timeout "${UCC_E2E_TIMEOUT:-20m}" npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1

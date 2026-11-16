@@ -19,12 +19,12 @@ const { saveTriageEncounter, updateTriageEncounter, updateQueueStatusForPatient 
 // Disposable fake clinics and identity only. Never record credentials or bodies.
 test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot: 'off' });
 test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter stamping', async () => {
-  expect(BASE).toBe('http://localhost:3210');
-  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(MEDPLUM).origin);
+  expect(BASE).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9]\d{3,4}$/);
+  expect(MEDPLUM.replace(/\/$/, '')).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   // Direct service calls need the same local service credentials as Next.
   // Load without printing values, then enforce the local endpoint before use.
   process.loadEnvFile(new URL('../../.env.local', import.meta.url));
-  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103').origin);
+  expect(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103').origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   const m: MedplumClient = await getAdminMedplum();
   const api = await request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
   const owned: Array<{ resourceType: any; id: string }> = [];
@@ -166,8 +166,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
         headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', 'X-Medplum': 'extended' },
         body: JSON.stringify(resource),
       });
-      if (expected === 403) expect([403, 404], `${resource.resourceType} update denied`).toContain(response.status);
-      else expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
+      expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
     };
     await putAsStaff({ ...ownObservation, status: 'amended' }, 200);
     await putAsStaff({ ...ownObservation, subject: observationFor(1).subject }, 403);

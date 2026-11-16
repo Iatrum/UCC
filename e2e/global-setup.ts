@@ -11,8 +11,15 @@ export default async function () {
   const ctx = await request.newContext({ baseURL: BASE });
   let ok = false;
   for (let i = 0; i < 3 && !ok; i++) {
-    ok = (await ctx.post('/api/auth/login', { data: { email: USER, password: PASSWORD } })).ok();
-    if (!ok) await new Promise(r => setTimeout(r, 65_000));
+    const response = await ctx.post('/api/auth/login', { data: { email: USER, password: PASSWORD } });
+    ok = response.ok();
+    if (!ok && i < 2) {
+      // The shared dev Medplum may have a longer auth cooldown than the old fixed 65 s retry.
+      const retryAfter = Number(response.headers()['retry-after']);
+      const seconds = response.status() === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(600, Math.ceil(retryAfter) + 1) : 65;
+      await new Promise(r => setTimeout(r, seconds * 1000));
+    }
   }
   if (!ok) throw new Error('Login failed for ' + USER);
   const inv = await (await ctx.get('/api/inventory')).json();

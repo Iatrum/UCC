@@ -3,7 +3,7 @@
  *
  * Orthanc credentials live only in server env and never reach a browser: the viewer talks to UCC's
  * study-scoped DICOMweb proxy, and UCC talks to Orthanc. Everything is off (503) until all of
- * PACS_ORTHANC_URL / PACS_ORTHANC_USER / PACS_ORTHANC_PASSWORD / PACS_VIEWER_ORIGIN / PACS_VIEWER_SECRET
+ * PACS_ORTHANC_URL / PACS_ORTHANC_USER / PACS_ORTHANC_PASSWORD / PACS_VIEWER_ORIGIN / PACS_VIEWER_SECRET / PACS_ORTHANC_CLINICS
  * are set; see .ai/PLAN-xray-phase3.md.
  */
 import { isDicomUid } from './viewer-token';

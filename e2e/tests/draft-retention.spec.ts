@@ -1,6 +1,7 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import path from 'node:path';
-const shots = process.env.UCC_DRAFT_SHOTS || '/workspace/ai-logs/task-u1b-draft/screenshots';
+import { BASE, EVIDENCE } from '../lib/env';
+const shots = path.join(EVIDENCE, 'draft-retention');
 test.use({ trace: 'off' });
 test.setTimeout(120000);
 async function fixture(request: APIRequestContext) {
@@ -63,7 +64,7 @@ test('other clinic cannot read or overwrite notes and plans; forged owner is ign
   const scoped = await request.storageState();
   const cookies = scoped.cookies.map(c => c.name === 'medplum-clinic' ? { ...c, value: 'other-clinic-fake' } : c);
   const { request: pwRequest } = await import('@playwright/test');
-  const foreign = await pwRequest.newContext({ baseURL: 'http://localhost:3210', storageState: { cookies, origins: [] } });
+  const foreign = await pwRequest.newContext({ baseURL: BASE, storageState: { cookies, origins: [] } });
   for (const endpoint of [
     `/api/consultations/draft?patientId=${patientId}`,
     `/api/consultations/plan?patientId=${patientId}&draftId=forged`,
