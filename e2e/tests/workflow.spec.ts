@@ -139,7 +139,15 @@ test('06 composer (plan API stubbed as persistence-unavailable): meds, services,
   await expect(page.getByText('Paracetamol').last()).toBeVisible();
   facts.composerTotal = await page.getByText(/Current order total/).innerText().catch(() => '');
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
-  await page.waitForTimeout(15000); await shot(page, '11-treatment-signed');
+  // Signing persists medication, lab and imaging orders through separate routes.
+  // A cold dev compilation can exceed 15 seconds before those writes finish.
+  await expect.poll(async () => {
+    const [medications, orders] = await Promise.all([
+      byPatient('MedicationRequest', facts.patientId), byPatient('ServiceRequest', facts.patientId),
+    ]);
+    return medications.length > 0 && orders.length >= 2;
+  }, { timeout: 90_000, message: 'Signed medication, lab and imaging orders persist' }).toBe(true);
+  await shot(page, '11-treatment-signed');
   const pid = facts.patientId;
   const [mr, sr, proc, docs, enc] = await Promise.all(['MedicationRequest', 'ServiceRequest', 'Procedure', 'DocumentReference', 'Encounter'].map(t => byPatient(t, pid)));
   facts.afterTreatment = { MedicationRequest: mr.length, ServiceRequest: sr.map((s: any) => s.code?.text), Procedure: proc.map((p: any) => `${p.code?.text}:${p.status}`), DocumentReference: docs.length, Encounter: enc.map((e: any) => e.status) };
