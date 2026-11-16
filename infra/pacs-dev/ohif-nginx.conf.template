@@ -12,6 +12,7 @@ server {
   # Launch: UCC validates the one-time token, sets the HttpOnly viewer cookie on THIS origin and
   # redirects to /viewer. The token never reaches Orthanc.
   location = /launch {
+    access_log off; # launch query contains a short-lived bearer capability
     limit_except GET { deny all; }
     proxy_pass http://${UCC_UPSTREAM}/api/pacs/viewer/launch$is_args$args;
     proxy_set_header Host localhost;
