@@ -1,6 +1,8 @@
 import { Consultation } from '@/lib/models'; // Import canonical types
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { getConsultationFromMedplum, getPatientConsultationsFromMedplum } from '../fhir/consultation-service';
+import { withClinicIdentifier } from '../fhir/clinic-tenancy';
+import { assertEncounterInClinic } from '../fhir/write-containment';
 
 // Removed local Prescription interface definition
 /*
@@ -73,18 +75,21 @@ export async function getConsultationById(id: string): Promise<Consultation | nu
   }
 }
 
-export async function updateConsultation(id: string, consultation: Partial<Consultation>): Promise<boolean> {
+export async function updateConsultation(id: string, consultation: Partial<Consultation>, clinicId?: string): Promise<boolean> {
   try {
+    // Task 350: fail closed - the encounter must belong to the caller's clinic.
+    const medplum = await getAdminMedplum();
+    const patientId = await assertEncounterInClinic(medplum, clinicId, id);
     if (consultation.notes) {
-      const medplum = await getAdminMedplum();
-      await medplum.createResource({
-        resourceType: 'Observation',
-        status: 'final',
+      await medplum.createResource(withClinicIdentifier<import("@medplum/fhirtypes").Observation>({
+        resourceType: 'Observation' as const,
+        status: 'final' as const,
+        subject: { reference: `Patient/${patientId}` },
         encounter: { reference: `Encounter/${id}` },
         code: { text: 'Clinical Notes' },
         valueString: consultation.notes,
         effectiveDateTime: new Date().toISOString(),
-      });
+      }, clinicId));
     }
     return true;
   } catch (error) {

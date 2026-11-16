@@ -12,7 +12,8 @@ import {
   checkInPatientInTriage,
 } from "./fhir/triage-service";
 import { getPatientConsultationsFromMedplum, getConsultationFromMedplum, saveConsultationToMedplum } from "./fhir/consultation-service";
-import { resolveClinicTenant, resourceMatchesClinicTenant } from "./fhir/clinic-tenancy";
+import { resolveClinicTenant, resourceMatchesClinicTenant, withClinicIdentifier } from "./fhir/clinic-tenancy";
+import { assertEncounterInClinic } from "./fhir/write-containment";
 
 export interface Patient {
   id: string;
@@ -206,14 +207,17 @@ export async function createConsultation(
   return encounterId;
 }
 
-export async function updateConsultation(id: string, data: Partial<Consultation>): Promise<void> {
+export async function updateConsultation(id: string, data: Partial<Consultation>, clinicId?: string): Promise<void> {
   const medplum = await getAdminMedplum();
+  // Task 350: fail closed - the encounter must belong to the caller's clinic.
+  const patientId = await assertEncounterInClinic(medplum, clinicId, id);
 
   // For now, support updating notes/progress via an Observation amendment.
   if (data.notes) {
-    await medplum.createResource({
-      resourceType: 'Observation',
-      status: 'final',
+    await medplum.createResource(withClinicIdentifier<import("@medplum/fhirtypes").Observation>({
+      resourceType: 'Observation' as const,
+      status: 'final' as const,
+      subject: { reference: `Patient/${patientId}` },
       encounter: { reference: `Encounter/${id}` },
       code: {
         coding: [{ system: 'http://loinc.org', code: '48767-8', display: 'Clinical note' }],
@@ -221,7 +225,7 @@ export async function updateConsultation(id: string, data: Partial<Consultation>
       },
       valueString: data.notes,
       effectiveDateTime: new Date().toISOString(),
-    });
+    }, clinicId));
   }
 }
 

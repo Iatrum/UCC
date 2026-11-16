@@ -74,7 +74,7 @@ describe("write-side clinic containment (Task 320)", () => {
     const m = fakeMedplum();
     await reject(completeCheckoutInvoice(m, {
       consultationId: "c1", patientId: "p-b", clinicId: "clinic-a",
-      items: [{ description: "Fake", quantity: 1, unitPrice: 10 }], paymentMethod: "cash", paidAmount: 10, totalAmount: 10,
+      items: [{ name: "Fake", type: "Service", quantity: 1, price: 10 }], paymentMethod: "cash", paidAmount: 10, totalAmount: 10,
     } as any));
     expect(m.created.length).toBe(0);
   });

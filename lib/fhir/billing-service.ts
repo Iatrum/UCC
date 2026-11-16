@@ -309,7 +309,7 @@ export async function completeCheckoutInvoice(
   const balance = roundMoney(Math.max(normalizedTotalAmount - normalizedPaidAmount, 0));
   const nowDate = new Date();
   const now = nowDate.toISOString();
-  await assertPatientInClinic(medplum, input.clinicId, input.patientId);
+  await assertPatientInClinic(medplum, input.clinicId, input.patientId, input.consultationId);
   const clinicTenant = await resolveClinicTenant(medplum, input.clinicId);
   const existing = await findExistingInvoice(medplum, input.consultationId, input.clinicId);
   const invoiceNumber = await resolveInvoiceNumber(medplum, existing, input.invoiceNumber, nowDate);

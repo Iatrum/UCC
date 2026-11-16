@@ -1,5 +1,7 @@
 # STATE (updated by Dev each round)
 
+- 2026-11-16 Task 351: independently reviewed Task 350 PR #247 in /home/dev/ucc-task351. Fixed export cross-clinic reads/weak account matching, raw-REST mapper boundary, absent-clinic bypass, billing Task/invoice and consultation guard gaps, triage child identifiers (two loops). Unit 57/57 + isolated route tests 3/3 + lint PASS; mutation tests prove guards/query scope matter. Full gate infrastructure FAIL (hardcoded unwritable /workspace paths; no browser/baseline results). Verdict HOLD for workflow validation, .ai/REVIEW-task350.md. Normal pushes to existing Task 350 branch explicitly authorized; no merge/force-push, no server started, existing :3210 and production untouched. Usage meter unavailable.
+
 Branch: `ai-work` (local only, from `dev` @ 85f6c4b). Never pushed.
 Pre-existing local change kept untouched (NOT committed): `.claude/worktrees/agent-a639f69d` gitlink deleted in working tree; stray untracked file `ign toggle buttons…` left as is.
 

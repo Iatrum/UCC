@@ -11,3 +11,6 @@ Reviewed PR #243 (`ai/task-320-write-containment`) as a non-author.
 
 ## Verdict
 APPROVE after the triage/check-in fix (loop 1 of 2). The follow-ups above remain open.
+
+## Task 350 update
+The follow-ups above (scheduling book/manual-book, updateConsultation x2, export-to-medplum, export-consultation, /api/fhir/export) are addressed in Task 350; see `.ai/research/task350-containment-2.md`.
