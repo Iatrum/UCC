@@ -109,7 +109,7 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
       expect(JSON.stringify((await m.readResource('ProjectMembership', member.id!, { cache: 'no-cache' })).access ?? null)).toBe('null');
       expect(await cli(['--apply', '--membership', member.id!])).toContain('Applied clinic staff policy');
       const current = await m.readResource('ProjectMembership', member.id!, { cache: 'no-cache' });
-      const backupPath = `/workspace/ai-logs/task-isolation-phase2/backup/${member.project!.reference!.split('/')[1]}-${member.id}.json`;
+      const backupPath = `${process.env.UCC_MEMBERSHIP_BACKUP_DIR || '/workspace/ai-logs/task-isolation-phase2/backup'}/${member.project!.reference!.split('/')[1]}-${member.id}.json`;
       expect(fs.statSync(backupPath).mode & 0o777).toBe(0o600);
       const expectedUnion = '^(' + indices.map(i => `HealthcareService/${clinics[i].account.id}`).sort().join('|') + ')$';
       expect(current.access?.length).toBe(indices.length);

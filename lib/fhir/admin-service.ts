@@ -89,17 +89,13 @@ export async function syncPractitionerClinicAccounts(
     const reference = parameters?.find((p) => p.name === "clinicAccount")?.valueReference?.reference;
     if (reference) accounts.push(reference);
   }
-  try {
-    await medplum.post(`fhir/R4/Practitioner/${practitionerId}/$set-accounts`, {
+  await medplum.post(`fhir/R4/Practitioner/${practitionerId}/$set-accounts`, {
       resourceType: "Parameters",
       parameter: [
         ...accounts.map((reference) => ({ name: "accounts", valueReference: { reference } })),
         { name: "propagate", valueBoolean: false },
       ],
-    });
-  } catch (error) {
-    console.error("[syncPractitionerClinicAccounts] could not stamp Practitioner", practitionerId, error instanceof Error ? error.message : error);
-  }
+  });
 }
 
 async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<string> {
@@ -736,6 +732,15 @@ export async function updatePractitionerInMedplum(
       request: { method: "POST", url: "PractitionerRole" },
     });
   }
+  // Hide the directory entry before changing clinics. If the transaction or
+  // restamp fails, old colleagues cannot retain access through stale accounts.
+  await medplum.post(`fhir/R4/Practitioner/${id}/$set-accounts`, {
+    resourceType: "Parameters",
+    parameter: [{ name: "propagate", valueBoolean: false }],
+  });
+  const directoryVersion = await medplum.readResource("Practitioner", id, { cache: "no-cache" });
+  entries[0].resource = { ...updated, meta: directoryVersion.meta };
+  entries[0].request!.ifMatch = directoryVersion.meta?.versionId ? `W/"${directoryVersion.meta.versionId}"` : undefined;
   await medplum.executeBatch({ resourceType: "Bundle", type: "transaction", entry: entries });
   await syncPractitionerClinicAccounts(medplum, id);
 

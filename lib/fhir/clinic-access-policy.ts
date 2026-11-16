@@ -18,6 +18,20 @@ const PATIENT_PATHS: Record<string, string[]> = {
 /** Version-specific write enforcement: see research/isolation-prereqs.md. */
 export function clinicCompartmentRules(resourceType: string): AccessPolicyResource[] {
   const criteria = `${resourceType}?_compartment=%clinicAccount`;
+  // Registration uses the authenticated server route, which assigns the clinic
+  // account. A direct staff Patient create has no parent from which to inherit
+  // an account, so it must not accept caller-supplied clinic identifiers/meta.
+  if (resourceType === 'Patient') {
+    const accountConstraint = [{ language: 'text/fhirpath', expression: "meta.accounts.exists() and meta.accounts.all(reference = '%clinicAccount' or reference.matches('%clinicWriteAccounts'))" }];
+    return [
+      { resourceType, criteria, interaction: READ },
+      { resourceType, criteria, compartment: { reference: '%clinicAccount' }, interaction: ['update'], readonlyFields: ['meta'], writeConstraint: [
+        ...accountConstraint,
+        { language: 'text/fhirpath', expression: "%before.identifier.where(system = 'clinic').value ~ %after.identifier.where(system = 'clinic').value" },
+      ] },
+      { resourceType, criteria, compartment: { reference: '%clinicAccount' }, interaction: ['delete'], writeConstraint: accountConstraint },
+    ];
+  }
   const paths = PATIENT_PATHS[resourceType];
   if (!paths) {
     return [{ resourceType, criteria, interaction: ['create', 'read', 'update', 'delete', 'search', 'history', 'vread'] }];

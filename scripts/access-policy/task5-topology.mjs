@@ -25,7 +25,7 @@
 //   MEDPLUM_ADMIN_EMAIL=.. MEDPLUM_ADMIN_PASSWORD=.. \
 //   bun scripts/access-policy/task5-topology.mjs --project <clinicalProjectId> \
 //        [--operator-email <email>] [--app-client <ClientApplication id>] \
-//        [--rename "UCC Clinics"] [--backup-dir <dir>] [--skip-membership <id,id>]
+//        [--rename "UCC Clinics"] [--backup-dir <dir>]
 //   ... add --apply            to execute (prepare, verify operator login, cut over)
 //   ... --rollback --apply     to restore superAdmin + the backed-up documents
 //   ... --rollback             (dry-run) shows what rollback would restore
@@ -49,16 +49,19 @@ const val = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : un
 const APPLY = flag('--apply');
 const ROLLBACK = flag('--rollback');
 const KNOWN = new Set(['--apply', '--rollback', '--project', '--operator-email', '--app-client', '--rename',
-  '--backup-dir', '--skip-membership', '--allow-remote', '--backup-confirmed', '--ops-project-name', '--purge-operator']);
+  '--backup-dir', '--allow-remote', '--backup-confirmed', '--ops-project-name']);
+const seenArguments = new Set();
 for (let i = 0; i < argv.length; i++) {
-  if (argv[i].startsWith('--')) { if (!KNOWN.has(argv[i])) die(`Unknown argument ${argv[i]}`); if (!['--apply', '--rollback', '--purge-operator'].includes(argv[i])) i++; }
-  else die(`Unexpected argument ${argv[i]}`);
+  const name = argv[i];
+  if (!KNOWN.has(name) || seenArguments.has(name)) die('Unknown or repeated argument');
+  seenArguments.add(name);
+  if (!['--apply', '--rollback'].includes(name) && (!argv[++i] || argv[i].startsWith('--'))) die('Missing argument value');
 }
 function die(m) { console.error(`ERROR: ${m}`); process.exit(2); }
 const log = (m) => console.log(m);
 
 const base = new URL(process.env.MEDPLUM_BASE_URL || 'http://127.0.0.1:8113');
-if (base.username || base.password || base.search || base.hash || base.pathname !== '/') die('MEDPLUM_BASE_URL must be a bare origin');
+if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== '/') die('MEDPLUM_BASE_URL must be a bare origin');
 const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname) && base.port === '8113';
 if (!isLocal) {
   if (val('--allow-remote') !== base.origin) die(`Remote target ${base.origin}: pass --allow-remote ${base.origin} (production is a manual operator step, see the runbook)`);
@@ -75,8 +78,9 @@ const OPS_NAME = val('--ops-project-name') || 'UCC Platform Operator';
 const RENAME = val('--rename') || 'UCC Clinics';
 const OPERATOR_EMAIL = (val('--operator-email') || (isLocal ? 'task5-operator@example.invalid' : '')).toLowerCase();
 if (!OPERATOR_EMAIL) die('--operator-email is required for a remote target (use a dedicated address you control)');
-const ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL || (isLocal ? 'admin@example.com' : ''), password: process.env.MEDPLUM_ADMIN_PASSWORD || (isLocal ? 'medplum_admin' : '') };
+const ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL, password: process.env.MEDPLUM_ADMIN_PASSWORD };
 if (!ADMIN.email || !ADMIN.password) die('MEDPLUM_ADMIN_EMAIL / MEDPLUM_ADMIN_PASSWORD are required');
+if (OPERATOR_EMAIL === ADMIN.email?.toLowerCase()) die('Operator must be a separate identity');
 const BACKUP_DIR = val('--backup-dir') || path.join(process.env.HOME || '.', 'ucc-task5-backup');
 const PRE_FILE = path.join(BACKUP_DIR, `task5-pre-${PROJECT_ID}.json`);
 const LOCK_FILE = path.join(BACKUP_DIR, 'task5.lock');
@@ -85,10 +89,12 @@ const OPERATOR_PW_FILE = path.join(BACKUP_DIR, `operator-${crypto.createHash('sh
 // ------------------------------------------------------------------- http
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function raw(token, method, p, body, headers = {}) {
-  const h = { 'content-type': 'application/fhir+json', ...headers };
+  const h = { 'content-type': 'application/fhir+json', 'X-Medplum': 'extended', ...headers };
   if (token) h.authorization = `Bearer ${token}`;
-  const url = p.startsWith('http') ? p.replace(/^https?:\/\/[^/]+\//, B) : B + p;
-  const r = await fetch(url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+  const url = new URL(p, B);
+  if (url.origin !== base.origin || url.username || url.password) die('Nonlocal request refused');
+  if (method === 'PUT' && body?.meta?.versionId) h['If-Match'] = `W/"${body.meta.versionId}"`;
+  const r = await fetch(url, { method, headers: h, redirect: 'error', signal: AbortSignal.timeout(30000), body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await r.text();
   let json; try { json = text ? JSON.parse(text) : undefined; } catch { json = undefined; }
   return { status: r.status, json };
@@ -108,7 +114,7 @@ async function login({ email, password }, projectId) {
       const p = await raw(null, 'POST', 'auth/profile', { login: r.json.login, profile: m.id });
       code = p.json?.code;
     }
-    const t = await fetch(B + 'oauth2/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: verifier }).toString() });
+    const t = await fetch(B + 'oauth2/token', { redirect: 'error', signal: AbortSignal.timeout(30000), method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: verifier }).toString() });
     if (t.status === 429) { await sleep(20000); continue; }
     const tj = await t.json().catch(() => ({}));
     if (!tj.access_token) return { error: 'token exchange failed' };
@@ -117,15 +123,19 @@ async function login({ email, password }, projectId) {
   }
   return { error: 'login rate-limited' };
 }
-const reason = (r) => { const i = r?.json?.issue?.[0]; return i ? `: ${(i.details?.text || i.diagnostics || '').toString().slice(0, 300)}${i.expression ? ' @' + i.expression.join(',') : ''}` : ''; };
+// Response diagnostics can contain sensitive resource contents. Status only.
+const reason = () => '';
 const F = (s) => (method, p, body) => raw(s.token, method, 'fhir/R4/' + p, body);
 async function searchAll(f, query) {
-  const out = []; let r = await f('GET', query);
+  const out = []; const visited = new Set(); let r = await f('GET', query);
   if (r.status !== 200) die(`search ${query.split('?')[0]} failed (${r.status})`);
   for (;;) {
+    if (r.status !== 200 || r.json?.resourceType !== 'Bundle') die('Invalid search response');
     for (const e of r.json.entry || []) out.push(e.resource);
     const next = (r.json.link || []).find((l) => l.relation === 'next')?.url;
     if (!next) return out;
+    if (visited.has(next) || visited.size > 10000) die('Invalid pagination');
+    visited.add(next);
     r = await raw(sessToken(f), 'GET', next);
   }
 }
@@ -137,7 +147,7 @@ async function inspect(f, { forApply }) {
   const project = (await f('GET', `Project/${PROJECT_ID}`)).json;
   if (!project || project.resourceType !== 'Project') die('clinical project not readable with this login');
   const memberships = (await searchAll(f, `ProjectMembership?project=Project/${PROJECT_ID}&_count=1000`)).filter((m) => projectOf(m) === PROJECT_ID);
-  const policies = await searchAll(f, 'AccessPolicy?_count=1000');
+  const policies = await searchAll(f, `AccessPolicy?_project=${PROJECT_ID}&_count=1000`);
   const named = (name) => policies.filter((p) => p.name === name);
   const base = (await searchAll(f, 'Project?name=FHIR%20R4&_count=10')).find((p) => p.name === 'FHIR R4');
   const ops = (await searchAll(f, `Project?name=${encodeURIComponent(OPS_NAME)}&_count=10`)).filter((p) => p.name === OPS_NAME);
@@ -150,7 +160,9 @@ const writeUnion = (refs) => `^(${[...new Set(refs)].sort().map((r) => r.replace
 
 // Canonical access[] for a staff membership: each entry keeps its clinic params and
 // carries the same server-derived clinicWriteAccounts union (mirrors admin-service).
+const plannedStaffAccess = new Map();
 function canonicalAccess(m) {
+  if (plannedStaffAccess.has(m.id)) return plannedStaffAccess.get(m.id);
   const refs = clinicAccounts(m);
   const union = writeUnion(refs);
   return (m.access || []).map((a) => {
@@ -169,21 +181,23 @@ async function directoryPlan(f) {
   const orgs = await searchAll(f, q('Organization'));
   const services = await searchAll(f, q('HealthcareService'));
   const slugOf = (r) => (r.identifier || []).find((i) => i.system === 'clinic')?.value;
+  if (new Set(services.filter(slugOf).map(slugOf)).size !== services.filter(slugOf).length) die('Duplicate clinic account identifiers');
   const accountBySlug = new Map(services.filter(slugOf).map((h) => [slugOf(h), `HealthcareService/${h.id}`]));
   const accountByOrg = new Map(orgs.filter(slugOf).filter((o) => accountBySlug.has(slugOf(o))).map((o) => [`Organization/${o.id}`, accountBySlug.get(slugOf(o))]));
-  const want = new Map();
+  const want = new Map((await searchAll(f, q('Practitioner'))).map(p => [`Practitioner/${p.id}`, new Set()]));
   for (const r of await searchAll(f, q('PractitionerRole'))) {
     const pr = r.practitioner?.reference; const acct = accountByOrg.get(r.organization?.reference);
     if (!pr || r.active === false) continue;
     if (!want.has(pr)) want.set(pr, new Set());
-    if (acct) want.get(pr).add(acct);
+    if (!acct) die('Active PractitionerRole has no unambiguous clinic account');
+    want.get(pr).add(acct);
   }
   const changes = [];
   for (const [pr, set] of want) {
     const cur = (await raw(_tok, 'GET', `fhir/R4/${pr}`, undefined, { 'X-Medplum': 'extended' })).json;
-    if (!cur || cur.resourceType !== 'Practitioner') continue;
+    if (!cur || cur.resourceType !== 'Practitioner' || cur.meta?.project !== PROJECT_ID) die('Directory profile is outside the clinical project');
     const have = new Set((cur.meta?.accounts || []).map((a) => a.reference));
-    if (have.size !== set.size || [...set].some((a) => !have.has(a))) changes.push({ pr, accounts: [...set] });
+    if (have.size !== set.size || [...set].some((a) => !have.has(a))) changes.push({ pr, accounts: [...set].sort(), before: [...have].sort() });
   }
   return changes;
 }
@@ -225,22 +239,49 @@ async function main() {
   const wantClient = val('--app-client');
   const appClient = wantClient ? clients.find((m) => m.profile.reference === `ClientApplication/${wantClient}`) : (clients.length === 1 ? clients[0] : undefined);
   if (!appClient) die(`app client membership not unique/found (${clients.length} client memberships); pass --app-client <ClientApplication id>`);
-  const skip = new Set((val('--skip-membership') || '').split(',').filter(Boolean));
-  const staff = st.memberships.filter((m) => isStaff(m) && !skip.has(m.id));
-  for (const id of skip) log(`      SKIPPED by operator: ProjectMembership/${id} (left exactly as it is; review it by hand)`);
-  const unpoliced = staff.filter((m) => !(m.access || []).length || !clinicAccounts(m).length);
+  const staff = st.memberships.filter(isStaff);
+  const unsupported = st.memberships.filter(m => !isClient(m) && !m.admin && !isStaff(m));
+  if (unsupported.length) die('Unsupported non-staff memberships require a separately reviewed migration');
+  const orgs = await searchAll(f, `Organization?_project=${PROJECT_ID}&_count=100`);
+  const services = await searchAll(f, `HealthcareService?_project=${PROJECT_ID}&_count=100`);
+  const roles = await searchAll(f, `PractitionerRole?_project=${PROJECT_ID}&_count=100`);
+  const slug = r => (r.identifier || []).filter(i => i.system === 'clinic').map(i => i.value);
+  const unresolved = [];
+  for (const member of staff) {
+    const assignments = roles.filter(r => r.active !== false && r.practitioner?.reference === member.profile.reference);
+    const clinics = [];
+    for (const role of assignments) {
+      const org = orgs.find(o => `Organization/${o.id}` === role.organization?.reference);
+      const keys = org ? slug(org) : [];
+      const accounts = services.filter(h => keys.length === 1 && slug(h).length === 1 && slug(h)[0] === keys[0]);
+      if (accounts.length !== 1) die('Staff assignment has no unique clinic Organization/account pair');
+      clinics.push({ org: role.organization.reference, account: `HealthcareService/${accounts[0].id}` });
+    }
+    const unique = [...new Map(clinics.map(c => [c.org, c])).values()].sort((a,b) => a.org.localeCompare(b.org));
+    if (!unique.length) unresolved.push(member);
+    const union = writeUnion(unique.map(c => c.account));
+    plannedStaffAccess.set(member.id, unique.map(c => ({ policy: { reference: 'CLINIC_POLICY' }, parameter: [
+      { name: 'clinicAccount', valueReference: { reference: c.account } },
+      { name: 'clinicOrganization', valueReference: { reference: c.org } },
+      { name: 'clinicWriteAccounts', valueString: union },
+    ] })));
+  }
+  const unpoliced = unresolved;
   const clinicPolicy = st.named(CLINIC_POLICY_NAME);
   if (clinicPolicy.length > 1) die(`${clinicPolicy.length} policies named "${CLINIC_POLICY_NAME}" exist in the server; pick one and delete the duplicates first`);
   const appPolicyExisting = st.named(APP_SERVER_POLICY_NAME);
   if (appPolicyExisting.length > 1) die(`duplicate "${APP_SERVER_POLICY_NAME}" policies`);
   const clinicPolicyRef = clinicPolicy[0] && `AccessPolicy/${clinicPolicy[0].id}`;
-  const wrongPolicy = staff.filter((m) => (m.access || []).some((a) => a.policy?.reference !== clinicPolicyRef));
+  const wrongPolicy = staff.filter((m) => (m.access || []).some((a) => a.policy?.reference !== clinicPolicyRef) || (!m.access?.length && m.accessPolicy && m.accessPolicy.reference !== clinicPolicyRef));
+  if (clinicPolicyRef) for (const [id, access] of plannedStaffAccess) plannedStaffAccess.set(id, access.map(a => ({ ...a, policy: { reference: clinicPolicyRef } })));
   const needParamRefresh = staff.filter((m) => !unpoliced.includes(m) && !isDeepStrictEqual(canonicalAccess(m), m.access));
   const wantClinic = clinicStaffPolicyResources();
   const clinicPolicyStale = !clinicPolicy[0] || !isDeepStrictEqual(clinicPolicy[0].resource, wantClinic);
   const wantApp = appServerPolicyResources();
   const appPolicyStale = !appPolicyExisting[0] || !isDeepStrictEqual(appPolicyExisting[0].resource, wantApp);
+  if (st.ops.length > 1) die('Ambiguous operator project');
   const opsProject = st.ops[0];
+  if (opsProject?.id === PROJECT_ID) die('Operator and clinical project must differ');
   const dirChanges = await directoryPlan(f);
 
   log('\nPLAN');
@@ -251,7 +292,7 @@ async function main() {
   log(` 4b. staff directory: ${dirChanges.length} Practitioner(s) need meta.accounts synced from their active PractitionerRoles`);
   log(` 5. app client membership ${appClient.id}: admin=${Boolean(appClient.admin)} policy=${appClient.accessPolicy?.reference || 'none'} -> admin + ${APP_SERVER_POLICY_NAME}`);
   log(` 6. staff memberships: ${staff.length} non-admin Practitioner(s); unpoliced=${unpoliced.length} (blocker), foreign/old policy=${wrongPolicy.length}, parameter refresh=${needParamRefresh.length}`);
-  for (const m of unpoliced) log(`      BLOCKER ProjectMembership/${m.id} (${m.profile?.reference}) has no clinic access[]: run scripts/access-policy/migrate-staff-membership.mjs first`);
+  for (const m of unpoliced) log(`      BLOCKER ProjectMembership/${m.id} (${m.profile?.reference}) has no active clinic assignment; fix PractitionerRole first`);
   log(` 7. cut-over: project superAdmin ${Boolean(proj.superAdmin)} -> false, name "${proj.name}" -> "${RENAME}", link to base "FHIR R4" project: ${st.baseProject ? ((proj.link || []).some((l) => l.project?.reference === `Project/${st.baseProject.id}`) ? 'present' : 'ADD') : 'base project not found (skipped)'}`);
   const admins = st.memberships.filter((m) => m.admin && !isClient(m));
   log(` 8. ${admins.length} human project admin membership(s) keep admin=true (project-scoped admin, no superAdmin)`);
@@ -265,11 +306,16 @@ async function main() {
     const snap = {
       kind: 'task5-pre', at: new Date().toISOString(), projectId: PROJECT_ID, server: base.origin,
       project: proj, clinicPolicy: clinicPolicy[0] || null, appPolicy: appPolicyExisting[0] || null,
-      memberships: st.memberships, opsProjectExisted: Boolean(opsProject),
+      memberships: st.memberships, staffAccess: Object.fromEntries(plannedStaffAccess), opsProjectExisted: Boolean(opsProject),
     };
-    fs.writeFileSync(PRE_FILE, JSON.stringify(snap, null, 2), { mode: 0o600 });
+    snap.directory = dirChanges;
+    fs.writeFileSync(PRE_FILE, JSON.stringify(snap, null, 2), { mode: 0o600, flag: 'wx' });
     log(`pre-change snapshot written: ${PRE_FILE}`);
-  } else log(`pre-change snapshot kept (never overwritten): ${PRE_FILE}`);
+  } else {
+    const prior = JSON.parse(fs.readFileSync(PRE_FILE, 'utf8'));
+    if (prior.server !== base.origin || prior.projectId !== PROJECT_ID) die('Snapshot target mismatch');
+    log(`pre-change snapshot kept (never overwritten): ${PRE_FILE}`);
+  }
 
   // ------------------------------------------------------------ step 1 + 2
   let ops = opsProject;
@@ -285,7 +331,10 @@ async function main() {
   }
   const opsMembers = await searchAll(f, `ProjectMembership?project=Project/${ops.id}&_count=100`);
   let opPw = process.env.OPERATOR_PASSWORD || (fs.existsSync(OPERATOR_PW_FILE) ? fs.readFileSync(OPERATOR_PW_FILE, 'utf8').trim() : '');
-  if (!opsMembers.some((m) => m.admin)) {
+  if (opsMembers.length && (opsMembers.length !== 1 || !opsMembers[0].admin)) die('Operator project must contain exactly one dedicated admin');
+  if (!opsMembers.length) {
+    const existing = await searchAll(f, `User?email=${encodeURIComponent(OPERATOR_EMAIL)}&_count=100`);
+    if (existing.length) die('Operator email already exists: refusing to reuse a clinical/global identity');
     if (!opPw) { opPw = crypto.randomBytes(24).toString('base64url'); fs.writeFileSync(OPERATOR_PW_FILE, opPw + '\n', { mode: 0o600 }); log(`operator password generated -> ${OPERATOR_PW_FILE} (0600, never printed)`); }
     const r = await raw(sess.token, 'POST', `admin/projects/${ops.id}/invite`, { resourceType: 'Practitioner', firstName: 'UCC', lastName: 'Operator', email: OPERATOR_EMAIL, password: opPw, sendEmail: false, admin: true });
     if (r.status !== 200 && r.status !== 201) die(`operator invite failed (${r.status})`);
@@ -299,7 +348,7 @@ async function main() {
       if (r.status !== 200) die(`policy ${name} update failed (${r.status})${reason(r)}`);
       log(`policy "${name}" updated (${existing.id})`); return r.json;
     }
-    const r = await f('POST', 'AccessPolicy', { resourceType: 'AccessPolicy', name, resource });
+    const r = await f('POST', 'AccessPolicy', { resourceType: 'AccessPolicy', meta: { project: PROJECT_ID }, name, resource });
     if (r.status !== 201) die(`policy ${name} create failed (${r.status})${reason(r)}`);
     log(`policy "${name}" created (${r.json.id})`); return r.json;
   };
@@ -312,14 +361,14 @@ async function main() {
   const ap = await upsertPolicy(appPolicyExisting[0], APP_SERVER_POLICY_NAME, wantApp);
   // ------------------------------------------------------------ step 5 + 6
   for (const m of staff) {
-    const desired = canonicalAccess(m);
+    const desired = canonicalAccess(m).map(a => ({ ...a, policy: { reference: `AccessPolicy/${cp.id}` } }));
     if (isDeepStrictEqual(desired, m.access) && !m.accessPolicy) continue;
     const r = await f('PUT', `ProjectMembership/${m.id}`, { ...m, accessPolicy: undefined, access: desired });
     if (r.status !== 200) die(`staff membership ${m.id} update failed (${r.status})${reason(r)}`);
     log(`staff membership ${m.id}: access[] normalised`);
   }
-  if (!appClient.admin || appClient.accessPolicy?.reference !== `AccessPolicy/${ap.id}`) {
-    const r = await f('PUT', `ProjectMembership/${appClient.id}`, { ...appClient, admin: true, accessPolicy: { reference: `AccessPolicy/${ap.id}` } });
+  if (!appClient.admin || appClient.access?.length || appClient.accessPolicy?.reference !== `AccessPolicy/${ap.id}`) {
+    const r = await f('PUT', `ProjectMembership/${appClient.id}`, { ...appClient, access: undefined, admin: true, accessPolicy: { reference: `AccessPolicy/${ap.id}` } });
     if (r.status !== 200) die(`app client membership update failed (${r.status})${reason(r)}`);
     log(`app client membership ${appClient.id}: now ${APP_SERVER_POLICY_NAME}`);
   }
@@ -333,9 +382,11 @@ async function main() {
   const link = [...(cur.link || [])];
   if (st.baseProject && !link.some((l) => l.project?.reference === `Project/${st.baseProject.id}`)) link.push({ project: { reference: `Project/${st.baseProject.id}` } });
   const next = { ...cur, name: RENAME, superAdmin: false, link: link.length ? link : undefined };
-  const r = await fo('PUT', `Project/${PROJECT_ID}`, next);
+  const needsCutover = !isDeepStrictEqual(cur, next);
+  const r = needsCutover ? await fo('PUT', `Project/${PROJECT_ID}`, next) : { status: 200 };
   if (r.status !== 200) die(`cut-over failed (${r.status}); run --rollback --apply if anything looks wrong`);
   const after = (await fo('GET', `Project/${PROJECT_ID}`)).json;
+  if (after.id !== PROJECT_ID) die('Cut-over identity mismatch');
   if (after.superAdmin) die('cut-over verification failed: project still superAdmin');
   log(`CUT OVER: project ${PROJECT_ID} superAdmin=false name="${after.name}"`);
   log('\nNext: restart nothing; run scripts/access-policy/verify-clinic-isolation.mjs and the app regression suite.');
@@ -344,7 +395,7 @@ async function main() {
 async function rollback(f, st, sess, mode) {
   if (!fs.existsSync(PRE_FILE)) die(`no pre-change snapshot at ${PRE_FILE}`);
   const snap = JSON.parse(fs.readFileSync(PRE_FILE, 'utf8'));
-  if (snap.projectId !== PROJECT_ID) die('snapshot is for another project');
+  if (snap.server !== base.origin || snap.projectId !== PROJECT_ID) die('snapshot is for another project');
   log('\nROLLBACK PLAN (from ' + PRE_FILE + ')');
   const cur = st.project;
   log(` 1. project superAdmin ${Boolean(cur.superAdmin)} -> ${Boolean(snap.project.superAdmin)}, name "${cur.name}" -> "${snap.project.name}", links restored (${(snap.project.link || []).length})`);
@@ -358,10 +409,30 @@ async function rollback(f, st, sess, mode) {
   for (const [m, a] of diffs) log(`      ProjectMembership/${m.id}: ${a}`);
   if (snap.clinicPolicy) log(` 3. restore "${CLINIC_POLICY_NAME}" to the pre-change definition (${snap.clinicPolicy.resource?.length} rules)`);
   log(` 4. "${APP_SERVER_POLICY_NAME}": ${snap.appPolicy ? 'restore pre-change definition' : 'delete (created by this migration)'}`);
-  log(` 5. operator project and membership are left in place (harmless). ${flag('--purge-operator') ? 'will be purged' : 'pass --purge-operator to delete the operator membership and project'}`);
+  log(' 5. operator retained for recovery; remove manually only after successful verification');
+  log(` 6. restore ${(snap.directory || []).length} directory account snapshots`);
   if (!APPLY) { log('\nDRY-RUN complete. Nothing was written.'); return; }
   if (!cur.superAdmin && mode !== 'operator') die('need the operator session to restore superAdmin');
+  // Validate drift before changing any backed-up document. Operational freeze is required.
+  for (const [old, action] of diffs) {
+    if (!action.startsWith('restore')) die('Missing backed-up membership; rollback refused');
+    const now = st.memberships.find(x => x.id === old.id);
+    const isApp = isClient(old);
+    const expected = isApp
+      ? { ...old, access: undefined, admin: true, accessPolicy: { reference: `AccessPolicy/${st.named(APP_SERVER_POLICY_NAME)[0]?.id}` } }
+      : { ...old, accessPolicy: undefined, access: (snap.staffAccess?.[old.id] || canonicalAccess(old)).map(a => ({ ...a, policy: { reference: `AccessPolicy/${st.named(CLINIC_POLICY_NAME)[0]?.id}` } })) };
+    if (!isDeepStrictEqual([now.access, now.accessPolicy, now.admin], [expected.access, expected.accessPolicy, expected.admin])) die('Grant drift; rollback refused before writes');
+  }
+  for (const item of snap.directory || []) {
+    const current = await raw(_tok, 'GET', `fhir/R4/${item.pr}`, undefined, { 'X-Medplum': 'extended' });
+    const have = (current.json?.meta?.accounts || []).map(a => a.reference).sort();
+    if (!isDeepStrictEqual(have, item.accounts) && !isDeepStrictEqual(have, item.before)) die('Directory account drift; rollback refused');
+  }
   // Order: policies+memberships first (still scoped by the current mode), flip last.
+  for (const [name, desired, before] of [[CLINIC_POLICY_NAME, clinicStaffPolicyResources(), snap.clinicPolicy], [APP_SERVER_POLICY_NAME, appServerPolicyResources(), snap.appPolicy]]) {
+    const live = st.named(name)[0];
+    if (live && !isDeepStrictEqual(live.resource, desired) && !isDeepStrictEqual(live.resource, before?.resource)) die('Policy drift; rollback refused');
+  }
   if (snap.clinicPolicy) {
     const live = st.named(CLINIC_POLICY_NAME)[0];
     if (live && !isDeepStrictEqual(live.resource, snap.clinicPolicy.resource)) {
@@ -375,18 +446,25 @@ async function rollback(f, st, sess, mode) {
     const r = await f('PUT', `ProjectMembership/${m.id}`, { ...now, access: m.access, accessPolicy: m.accessPolicy, admin: m.admin });
     if (r.status !== 200) die(`membership ${m.id} restore failed (${r.status})`); log(`membership ${m.id} restored`);
   }
+  if (!snap.clinicPolicy) {
+    const cp = st.named(CLINIC_POLICY_NAME)[0];
+    if (cp) { const deleted = await f('DELETE', `AccessPolicy/${cp.id}`); if (![200,204].includes(deleted.status)) die('Clinic policy delete failed'); }
+  }
   const app = st.named(APP_SERVER_POLICY_NAME)[0];
-  if (app && !snap.appPolicy) { const r = await f('DELETE', `AccessPolicy/${app.id}`); log(`app server policy delete: ${r.status}`); }
-  else if (app && snap.appPolicy) { await f('PUT', `AccessPolicy/${app.id}`, { ...app, resource: snap.appPolicy.resource }); }
+  if (app && !snap.appPolicy) { const r = await f('DELETE', `AccessPolicy/${app.id}`); if (![200,204].includes(r.status)) die('App policy delete failed'); log('App server policy deleted'); }
+  else if (app && snap.appPolicy) { const saved = await f('PUT', `AccessPolicy/${app.id}`, { ...app, resource: snap.appPolicy.resource }); if (saved.status !== 200) die('App policy restore failed'); }
+  for (const item of snap.directory || []) {
+    const restored = await f('POST', `${item.pr}/$set-accounts`, { resourceType: 'Parameters', parameter: [
+      ...item.before.map(reference => ({ name: 'accounts', valueReference: { reference } })),
+      { name: 'propagate', valueBoolean: false },
+    ] });
+    if (restored.status !== 200) die('Directory restore failed');
+  }
   const live = (await f('GET', `Project/${PROJECT_ID}`)).json;
   const r = await f('PUT', `Project/${PROJECT_ID}`, { ...live, name: snap.project.name, superAdmin: snap.project.superAdmin || false, link: snap.project.link });
   if (r.status !== 200) die(`project restore failed (${r.status})`);
   log(`project restored: superAdmin=${Boolean((await f('GET', `Project/${PROJECT_ID}`)).json.superAdmin)}`);
-  if (flag('--purge-operator') && st.ops[0]) {
-    for (const m of await searchAll(f, `ProjectMembership?project=Project/${st.ops[0].id}&_count=100`)) await f('DELETE', `ProjectMembership/${m.id}`);
-    const d = await f('DELETE', `Project/${st.ops[0].id}`); log(`operator project delete: ${d.status}`);
-  }
   log('ROLLBACK complete.');
 }
 
-try { await main(); } catch (e) { console.error('ERROR:', e?.message || e); process.exit(2); }
+try { await main(); } catch (e) { console.error('ERROR: migration failed; inspect status-only output and use rollback after reviewing drift'); process.exit(2); }

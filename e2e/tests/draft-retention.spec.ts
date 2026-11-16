@@ -1,6 +1,6 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import path from 'node:path';
-const shots = '/workspace/ai-logs/task-u1b-draft/screenshots';
+const shots = process.env.UCC_DRAFT_SHOTS || '/workspace/ai-logs/task-u1b-draft/screenshots';
 test.use({ trace: 'off' });
 test.setTimeout(120000);
 async function fixture(request: APIRequestContext) {

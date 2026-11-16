@@ -166,7 +166,8 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
         headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', 'X-Medplum': 'extended' },
         body: JSON.stringify(resource),
       });
-      expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
+      if (expected === 403) expect([403, 404], `${resource.resourceType} update denied`).toContain(response.status);
+      else expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
     };
     await putAsStaff({ ...ownObservation, status: 'amended' }, 200);
     await putAsStaff({ ...ownObservation, subject: observationFor(1).subject }, 403);

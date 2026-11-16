@@ -36,8 +36,10 @@ if (!isLocal && opt('--allow-remote') !== base.origin) {
   console.error('Refusing non-local Medplum without --allow-remote <exact origin>');
   process.exit(2);
 }
+if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) throw Error('Bare Medplum origin required');
 const B = base.origin + '/';
-const ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL || 'admin@example.com', password: process.env.MEDPLUM_ADMIN_PASSWORD || 'medplum_admin' };
+const ADMIN = { email: process.env.MEDPLUM_ADMIN_EMAIL, password: process.env.MEDPLUM_ADMIN_PASSWORD };
+if (!ADMIN.email || !ADMIN.password) { console.error('Admin credentials required'); process.exit(2); }
 let staffPassword = process.env.UCC_STAFF_PASSWORD;
 if (!staffPassword) {
   try { staffPassword = fs.readFileSync(new URL('../../e2e/.secrets/pw', import.meta.url), 'utf8').trim(); } catch { /* handled below */ }
@@ -48,9 +50,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function http(token, method, p, body) {
   const headers = { 'content-type': 'application/fhir+json' };
   if (token) headers.authorization = `Bearer ${token}`;
-  const r = await fetch(B + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const url = new URL(p, B);
+  if (url.origin !== base.origin) throw Error('Foreign pagination refused');
+  const r = await fetch(url, { method, headers, redirect: 'error', signal: AbortSignal.timeout(30000), body: body ? JSON.stringify(body) : undefined });
   const text = await r.text();
   let json; try { json = text ? JSON.parse(text) : undefined; } catch { json = undefined; }
+  if (r.ok && method === 'GET' && url.pathname.startsWith('/fhir/R4/') && url.search) {
+    if (json?.resourceType !== 'Bundle' || !Array.isArray(json.entry || [])) throw Error('Malformed search response');
+    const visited = new Set();
+    let next = json.link?.find(l => l.relation === 'next')?.url;
+    while (next) {
+      const pageUrl = new URL(next, B);
+      if (pageUrl.origin !== base.origin || visited.has(next) || visited.size > 10000) throw Error('Invalid search pagination');
+      visited.add(next);
+      const page = await fetch(pageUrl, {headers,redirect:'error',signal:AbortSignal.timeout(30000)});
+      const data = await page.json();
+      if (page.status !== 200 || data.resourceType !== 'Bundle') throw Error('Search pagination failed');
+      json.entry = [...(json.entry || []), ...(data.entry || [])];
+      next = data.link?.find(l => l.relation === 'next')?.url;
+    }
+  }
   return { status: r.status, json };
 }
 async function login({ email, password }) {
@@ -68,7 +87,7 @@ async function login({ email, password }) {
       code = p.json?.code;
     }
     const form = new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: verifier });
-    const t = await fetch(B + 'oauth2/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+    const t = await fetch(B + 'oauth2/token', { redirect: 'error', signal: AbortSignal.timeout(30000), method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form.toString() });
     if (t.status === 429) { await sleep(20000); continue; }
     const tj = await t.json();
     if (!tj.access_token) throw new Error('token exchange failed');
@@ -82,7 +101,7 @@ function check(group, name, ok, detail = '') {
   results.push({ group, name, ok: Boolean(ok), detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  [${group}] ${name}${detail ? ' — ' + detail : ''}`);
 }
-const denied = (s) => s === 403 || s === 404 || s === 401;
+const denied = (s) => s === 403 || s === 404;
 const ids = (bundle) => new Set((bundle?.entry || []).map((e) => `${e.resource.resourceType}/${e.resource.id}`));
 const TAG = { system: 'http://iatrum.com/seed', code: 'task5-isolation-probe' };
 
@@ -94,7 +113,7 @@ async function main() {
   // 1. Discover each staff member's clinic from their membership (admin view).
   const staff = [];
   for (const email of STAFF) {
-    const ms = (await A('GET', `ProjectMembership?user:User.email=${encodeURIComponent(email)}`)).json;
+    const ms = (await A('GET', `ProjectMembership?user:User.email=${encodeURIComponent(email)}${PROJECT_ID ? '&project=Project/'+PROJECT_ID : ''}`)).json;
     const m = ms?.entry?.[0]?.resource;
     const param = (m?.access || []).flatMap((a) => a.parameter || []);
     const acct = param.find((p) => p.name === 'clinicAccount')?.valueReference?.reference;
@@ -170,9 +189,9 @@ async function main() {
         const rd = await S('GET', `${type}/${r.id}`);
         check(gf, `cannot READ ${type}`, denied(rd.status), `status ${rd.status}`);
         const byId = await S('GET', `${type}?_id=${r.id}`);
-        check(gf, `cannot SEARCH ${type} by id`, ids(byId.json).size === 0, `status ${byId.status}, hits ${ids(byId.json).size}`);
+        check(gf, `cannot SEARCH ${type} by id`, byId.status === 200 && ids(byId.json).size === 0, `status ${byId.status}, hits ${ids(byId.json).size}`);
         const all = await S('GET', `${type}?_count=1000`);
-        check(gf, `${type} list omits foreign`, !ids(all.json).has(`${type}/${r.id}`), `status ${all.status}`);
+        check(gf, `${type} list omits foreign`, all.status === 200 && !ids(all.json).has(`${type}/${r.id}`), `status ${all.status}`);
         const before = (await A('GET', `${type}/${r.id}`)).json;
         const put = await S('PUT', `${type}/${r.id}`, { ...before, text: { status: 'generated', div: '<div xmlns="http://www.w3.org/1999/xhtml">tamper</div>' } });
         check(gf, `cannot UPDATE ${type}`, denied(put.status), `status ${put.status}`);
@@ -181,6 +200,9 @@ async function main() {
         const after = (await A('GET', `${type}/${r.id}`)).json;
         check(gf, `${type} untouched`, after?.meta?.versionId === before?.meta?.versionId, '');
       }
+      const forged = await S('POST', 'Patient', { resourceType: 'Patient', identifier: [{ system: 'clinic', value: f.slug }], meta: { accounts: [{ reference: f.acct }], compartment: [{ reference: f.acct }] } });
+      if (forged.json?.id) created.push(`Patient/${forged.json.id}`);
+      check(gf, 'cannot CREATE Patient with forged foreign accounts', forged.status === 403, `status ${forged.status}`);
       // Write containment: create new clinical resources pointing at the foreign patient.
       const subj = { reference: `Patient/${f.own.Patient.id}` };
       const attempts = {
@@ -192,7 +214,7 @@ async function main() {
       for (const [type, body] of Object.entries(attempts)) {
         const r = await S('POST', type, { ...body, meta: { tag: [TAG] } });
         if (r.json?.id && r.json.resourceType === type) created.push(`${type}/${r.json.id}`);
-        check(gf, `cannot CREATE ${type} for foreign patient`, denied(r.status) || r.status === 400, `status ${r.status}`);
+        check(gf, `cannot CREATE ${type} for foreign patient`, r.status === 403, `status ${r.status}`);
       }
     }
 
@@ -202,6 +224,7 @@ async function main() {
     for (const o of foreign) for (const p of practitionersByOrg.get(o.org) || []) if (!mine.has(p)) otherOnly.add(p);
     const pr = await S('GET', 'Practitioner?_count=1000');
     const seen = new Set([...ids(pr.json)]);
+    if (pr.status !== 200) throw Error('Directory positive control failed');
     const leaked = [...otherOnly].filter((p) => seen.has(p));
     check(g, 'cannot list other clinics\' Practitioners', leaked.length === 0, `status ${pr.status}, leaked ${leaked.length}/${otherOnly.size}`);
     check(g, 'still lists OWN clinic Practitioners', [...mine].every((p) => seen.has(p)) && mine.size > 0, `status ${pr.status}, visible ${[...mine].filter((p) => seen.has(p)).length}/${mine.size}`);
@@ -248,7 +271,8 @@ try {
   let n = 0;
   for (const ref of sorted) { const r = await http(adminTok, 'DELETE', 'fhir/R4/' + ref); if (r.status < 300) n++; }
   console.log(`cleanup: deleted ${n}/${sorted.length} probe resources`);
-} catch (e) { console.error('cleanup error:', e.message); }
+  if (n !== sorted.length) fatal ||= new Error('Probe cleanup incomplete');
+} catch { fatal ||= new Error('Probe cleanup failed'); console.error('Probe cleanup failed'); }
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${LABEL}: ${results.length - failed.length}/${results.length} checks passed, ${failed.length} failed${fatal ? ', FATAL error' : ''}`);
