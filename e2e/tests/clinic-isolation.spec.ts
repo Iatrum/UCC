@@ -283,7 +283,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     await verifyResult(study);
     const cachedStudy: any = await plain.readResource('ImagingStudy', studyId, {cache:'no-cache'});
     expect(cachedStudy.meta?.accounts ?? []).toEqual([]);
-    const imagingReportId = await createImagingReport(studyId, 'Fake findings', 'Fake impression', 'final', undefined, plain);
+    const imagingReportId = await createImagingReport(studyId, 'Fake findings', 'Fake impression', 'final', undefined, plain, clinics[1].slug);
     const imagingReport = await m.readResource('DiagnosticReport', imagingReportId, extended);
     owned.push({resourceType:'DiagnosticReport', id:imagingReportId});
     await verifyResult(imagingReport);

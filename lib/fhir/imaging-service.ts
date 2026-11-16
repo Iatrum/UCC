@@ -317,10 +317,11 @@ export async function createImagingReport(
   findings: string,
   impression: string,
   status: 'preliminary' | 'final' = 'final',
-  radiologist?: string,
-  medplum?: MedplumClient
+  radiologist: string | undefined,
+  medplum: MedplumClient,
+  deviceClinicId: string
 ): Promise<string> {
-  const client = medplum ?? (await getAdminMedplum());
+  const client = medplum;
   
   console.log(`📝 Creating imaging report for study ${imagingStudyId}`);
 
@@ -328,14 +329,19 @@ export async function createImagingReport(
   const imagingStudy = await client.readResource('ImagingStudy', imagingStudyId, {
     cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
   });
+  // Fail closed: the study AND the order it is based on must both belong to the authenticated
+  // Device's clinic. The clinic comes from the Device, never from the request or the resource.
+  await assertOrderInDeviceClinic(client, imagingStudy, deviceClinicId);
+  const basedOnServiceRequestId = imagingStudy.basedOn?.find((ref) => ref.reference?.startsWith('ServiceRequest/'))?.reference?.split('/')[1];
+  if (!basedOnServiceRequestId) throw new ForbiddenError('Imaging study has no originating order');
+  const serviceRequest = await client.readResource('ServiceRequest', basedOnServiceRequestId, {
+    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
+  });
+  await assertOrderInDeviceClinic(client, serviceRequest, deviceClinicId);
   const accountRefs = getResourceAccountReferences(imagingStudy);
-  // Clinic identifier is on the originating ServiceRequest, not the ImagingStudy itself;
-  // needed so the Lab tab's live-update subscription (criteria includes identifier=clinic|<id>)
+  // Stamped so the Lab tab's live-update subscription (criteria includes identifier=clinic|<id>)
   // can match this report.
-  const basedOnServiceRequestId = imagingStudy.basedOn?.[0]?.reference?.split('/')[1];
-  const clinicId = basedOnServiceRequestId
-    ? getClinicIdentifierValue(await client.readResource('ServiceRequest', basedOnServiceRequestId))
-    : undefined;
+  const clinicId = deviceClinicId;
 
   // Create DiagnosticReport
   const report = await validateAndCreate<DiagnosticReport>(client, {
