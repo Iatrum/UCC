@@ -13,9 +13,12 @@ if ((process.env.UCC_BASE_URL || 'http://localhost:3210') !== 'http://localhost:
 if (!['http://localhost:8113', 'http://127.0.0.1:8113'].includes(new URL(process.env.MEDPLUM_URL || 'http://127.0.0.1:8113').origin)) throw Error('Dev Medplum only');
 const env = { ...process.env, NODE_OPTIONS: '--max-old-space-size=3072', MEDPLUM_URL: 'http://127.0.0.1:8113/', MEDPLUM_BASE_URL: 'http://127.0.0.1:8113/', NEXT_PUBLIC_MEDPLUM_BASE_URL: 'http://127.0.0.1:8113/', UCC_NO_TRACE: '1' };
 const files = fs.readdirSync(path.join(e2e, 'tests')).filter(f => /\.spec\.ts$/.test(f) && (process.env.UCC_ADMIN_E2E || f !== 'admin.spec.ts')).sort();
-const groups = Array.from({ length: 6 }, () => []);
+const groups = Array.from({ length: 10 }, () => []);
 for (const file of files) {
-  const group = file === 'admin.spec.ts' ? 5 : file === 'workflow.spec.ts' ? 4 : file === 'time-chit.spec.ts' ? 3 : /^(poct|xray|xray-phase2|xray-phase3)\.spec/.test(file) ? 2 : /^(draft-retention|lab-results-state|save-state)\.spec/.test(file) ? 1 : 0;
+  const group = file === 'admin.spec.ts' ? 9 : file === 'workflow.spec.ts' ? 8 : file === 'time-chit.spec.ts' ? 7
+    : file === 'xray-phase3.spec.ts' ? 6 : /^(xray|xray-phase2)\.spec/.test(file) ? 5
+    : file === 'poct.spec.ts' ? 4 : /^(draft-retention|lab-results-state|save-state)\.spec/.test(file) ? 3
+    : file === 'staff-membership.spec.ts' ? 2 : file === 'clinic-isolation.spec.ts' ? 1 : 0;
   groups[group].push(file);
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -27,13 +30,13 @@ let floorHit = false;
 const guard = setInterval(() => {
   const available = Number(fs.readFileSync('/proc/meminfo', 'utf8').match(/^MemAvailable:\s+(\d+)/m)?.[1]);
   fs.appendFileSync(memoryLog, `${new Date().toISOString()} ${available}\n`);
-  if (available < 2883584 && !floorHit) { // 2.75 GiB: headroom above the required 2.5 GB
+  if (available < 2726298 && !floorHit) { // 2.6 GiB: headroom above the required 2.5 GB
     floorHit = true; cancelled = true;
     console.error('Available RAM guard reached; stopping only owned test/server groups');
     if (browserTest?.pid) { try { process.kill(-browserTest.pid, 'SIGINT'); } catch {} }
     else void stopGroup(server);
   }
-}, 3000);
+}, 1000);
 async function stopGroup(child) {
   if (!child?.pid) return;
   try { process.kill(-child.pid, 'SIGTERM'); } catch (e) { if (e.code !== 'ESRCH') throw e; }

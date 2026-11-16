@@ -1,6 +1,6 @@
 # X-ray phase 3: real DICOM storage + viewer (Task 357)
 
-Status: implementation merged in #255; clinic/logging corrections merged in #256; final review/validation in #257. Previously built and tested on the VPS **dev** stack only, behind the existing default-off `pacs` clinic toggle. Synthetic DICOM only. Nothing here touches production containers (`medplum-*`, `root-traefik-1`), `/opt/medplum` or `/root`.
+Status: implementation merged in #255; clinic/logging corrections merged in #256; remaining corrections and real DICOM/OHIF proof in draft #257. Required full gate remains on HOLD. Previously built and tested on the VPS **dev** stack only, behind the existing default-off `pacs` clinic toggle. Synthetic DICOM only. Nothing here touches production containers (`medplum-*`, `root-traefik-1`), `/opt/medplum` or `/root`.
 
 ## What it does
 
@@ -51,6 +51,18 @@ UCC server env (all six required, otherwise the PACS routes answer 503 and no vi
 
 - Unit (`bun test tests/unit`): `pacs-viewer-token.test.ts` (tokens, cookie handling, DICOMweb scoping, accession, Orthanc mapping) and `pacs-ingest-viewer.test.ts` (ingress auth, matching, review list, link/launch/proxy with a fake Medplum and fake Orthanc).
 - E2E (`e2e/tests/xray-phase3.spec.ts`, skipped when the dev PACS is absent): generates synthetic DICOM, stores it in Orthanc, waits for the Lua webhook to produce the ImagingStudy, checks unmatched and foreign-clinic cases, the viewer link and proxy scoping, and opens the study in OHIF from the Lab tab. Screenshots: `.ai/ux-shots/task357/`.
+
+### Low-memory full gate on the shared VPS
+
+Reserve the single dev slot first: no other UCC runner may start a server or build during this gate. Do not edit gate scripts while they execute. The opt-in driver owns/restarts one loopback :3210 server between spec groups, caps its heap at 2048 MB under NODE_OPTIONS 3072, enforces a 2.6 GiB RAM guard, wraps Playwright in timeout, and retains every group report. It combines reports only if all groups complete. The latest finer grouping has not yet completed a full live run.
+
+```bash
+UCC_LOW_MEMORY_GATE=1 UCC_LOW_MEMORY_DEV=1 NODE_OPTIONS=--max-old-space-size=3072 \
+  UCC_LOG_ROOT=/home/dev/ai-logs/task357-final UCC_BASE_URL=http://localhost:3210 \
+  bash e2e/scripts/check-all.sh task357-final /path/to/comparable-baseline/results.json
+```
+
+`UCC_LOG_ROOT` also supplies writable evidence, save-state screenshots and private disposable-membership backup paths. No server quota/auth settings are relaxed. The e2e Node helper retries only dev Medplum 429 responses after the reported cooldown; UCC/browser security responses are not retried. Use fake records only.
 
 ## Production notes (not done; needs a decision before any production rollout)
 
