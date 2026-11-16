@@ -168,9 +168,20 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       });
       expect(response.status, `${resource.resourceType} update authorization`).toBe(expected);
     };
+    // Medplum 5.2.15 hides a write that would move a resource into an inaccessible clinic as 404 (not 403).
+    // Either way the write must be denied and the stored resource must stay unchanged (checked below).
+    const putDenied = async (resource: any) => {
+      const response = await fetch(`${MEDPLUM.replace(/\/$/, '')}/fhir/R4/${resource.resourceType}/${resource.id}`, {
+        method: 'PUT', redirect: 'error',
+        headers: { Authorization: `Bearer ${staff!.getAccessToken()}`, 'Content-Type': 'application/fhir+json', 'X-Medplum': 'extended' },
+        body: JSON.stringify(resource),
+      });
+      expect([403, 404], `${resource.resourceType} cross-clinic update denied`).toContain(response.status);
+    };
     await putAsStaff({ ...ownObservation, status: 'amended' }, 200);
-    await putAsStaff({ ...ownObservation, subject: observationFor(1).subject }, 403);
-    await putAsStaff({ ...clinics[1].observation, subject: observationFor(0).subject }, 403);
+    await putDenied({ ...ownObservation, subject: observationFor(1).subject });
+    expect((await m.readResource('Observation', ownObservation.id!, extended) as any).subject.reference).toBe(observationFor(0).subject.reference);
+    await putDenied({ ...clinics[1].observation, subject: observationFor(0).subject });
     await postAsStaff({ ...observationFor(0), performer: [{ reference: `Patient/${clinics[1].patient.id}` }] }, 403);
     await postAsStaff({ resourceType: 'Observation', status: 'final', code: { text: 'Fake unattached' }, meta: { accounts: [{reference:`HealthcareService/${clinics[0].account.id}`}] } }, 403);
     // Reproduces Phase 0 exactly. Forged app identifiers and protected metadata
