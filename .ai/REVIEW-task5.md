@@ -124,3 +124,14 @@ Reviewed PR #251 at `a847089f044c95c64aa5eb03b608899f979d8fc2` in the separate `
 ## Task 406 — the 11 new failures in the Task 352 accepted-gate report (16 November 2026, Claude)
 
 All 11 are POCT/X-ray cases in one batch where the owned dev server died silently (log ends mid-request, no error); the following 10 tests got ECONNREFUSED/429. Re-running poct, xray and xray-phase2 on head `dcabad1` with one server gives **18/18 pass**. Not caused by #251; no code change. Details: `.ai/research/task406.md`. A complete full-gate verdict and the live super-admin rehearsal remain outstanding.
+
+## Task 407 — independent review of Task 406 at `18180b5` (16 November 2026, Claude)
+
+**Verdict: ACCEPT Task 406's triage as sound; it is a docs-only triage, not a fix. PR #251 approval blockers from Task 388/405 are unchanged.**
+
+- **No code fix exists.** `git diff dcabad1..18180b5` changes only `.ai/REVIEW-task5.md` and `.ai/research/task406.md`. So no e2e or unit test was weakened, skipped or deleted, and no composer, Lab/POCT, policy, nav or Firebase code changed.
+- **Evidence checked.** I re-read `/home/dev/ucc-task352-evidence/accepted-gate/reports/results.json` (65 tests, 14 non-passing). The timeline matches Task 406: the poct "Per-device keys" `toBeVisible` timeout (13:46:58) is followed by 10 failures in 0-3 s, first `ECONNREFUSED ::1:3210`, then Medplum `429`, which is a cascade. The other 3 (workflow known-bug probe, staff-membership CLI, Time Chit) are the non-cascade failures Task 406 attributes to the baseline.
+- **Caveats.** (1) Why the dev server died is inferred (log ends mid-request, no stack), not proven. The first trigger, the 43 s timeout, is not independently explained. (2) The 18/18 re-run is one run, so a flake is not excluded. (3) I did not rerun e2e or compare the 3 baseline failures myself. The gate still has no OVERALL verdict.
+- **Fresh checks on `18180b5`** (own worktree `/home/dev/ucc-task407`, no server started, no Medplum call): `bun test tests/unit` 254 pass / 0 fail; `bun run lint` (tsc + clinic-admin check) clean. `eslint .` reports 7 errors and 5 warnings (react-hooks rules) in `app/(routes)/login/page.tsx`, `components/labs/lab-results-view.tsx` and `components/orders/order-composer.tsx`; none of these files is touched by the PR, so they are not regressions from it.
+- **Still outstanding:** complete current-head `check-all.sh` with a final OVERALL and no new failures; live super-admin demotion/rollback rehearsal with nonempty foreign fixtures; live proof that issued access/refresh tokens fail after revocation.
+- Review-only: no merge, force-push, container, `/opt/medplum`, `/root` or secret access.
