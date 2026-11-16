@@ -8,14 +8,23 @@ import {
   updateInventoryMedicationInMedplum,
 } from '@/lib/fhir/inventory-service';
 import {
+  PURCHASE_CLINIC_SYSTEM,
+  PURCHASE_CODE_SYSTEM,
+  PURCHASE_CODE_VALUE,
+  PURCHASE_DATA_EXT,
+  fromBasic,
+  isClinicPurchaseOrder,
+  listClinicPurchaseOrders,
+} from '@/lib/server/purchase-orders';
+import {
   INVENTORY_PURCHASING_DISABLED_ERROR,
   INVENTORY_PURCHASING_ENABLED,
 } from '@/lib/purchasing';
 
-const CODE_SYSTEM = 'urn:iatrum:resource-type';
-const CODE_VALUE = 'purchase-order';
-const CLINIC_SYSTEM = 'clinic';
-const DATA_EXT = 'urn:iatrum:purchase-order/data';
+const CODE_SYSTEM = PURCHASE_CODE_SYSTEM;
+const CODE_VALUE = PURCHASE_CODE_VALUE;
+const CLINIC_SYSTEM = PURCHASE_CLINIC_SYSTEM;
+const DATA_EXT = PURCHASE_DATA_EXT;
 
 function disabledResponse() {
   return NextResponse.json(
@@ -69,18 +78,6 @@ function toBasic(data: any, clinicId: string): Basic {
   };
 }
 
-function fromBasic(resource: Basic): any {
-  const raw = resource.extension?.find((e) => e.url === DATA_EXT)?.valueString;
-  if (!raw) throw new Error('Malformed purchase order resource');
-  return { ...JSON.parse(raw), id: resource.id };
-}
-
-function belongsToClinic(resource: Basic, clinicId: string) {
-  return resource.identifier?.some(
-    (i) => i.system === CLINIC_SYSTEM && i.value === clinicId
-  );
-}
-
 export async function GET(req: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(req);
@@ -90,20 +87,13 @@ export async function GET(req: NextRequest) {
 
     if (id) {
       const resource = await medplum.readResource('Basic', id) as Basic;
-      if (!belongsToClinic(resource, clinicId)) {
+      if (!isClinicPurchaseOrder(resource, clinicId)) {
         return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
       }
       return NextResponse.json({ success: true, purchaseOrder: fromBasic(resource) });
     }
 
-    const resources = await medplum.searchResources('Basic', {
-      code: `${CODE_SYSTEM}|${CODE_VALUE}`,
-      _count: '500',
-      _sort: '-_lastUpdated',
-    });
-    const orders = (resources ?? [])
-      .filter((r) => belongsToClinic(r, clinicId))
-      .map(fromBasic);
+    const orders = (await listClinicPurchaseOrders(medplum, clinicId)).map(fromBasic);
     return NextResponse.json({ success: true, purchaseOrders: orders });
   } catch (error) {
     return handleRouteError(error, 'GET /api/purchases');
@@ -169,7 +159,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const existing = await medplum.readResource('Basic', id) as Basic;
-    if (!belongsToClinic(existing, clinicId)) {
+    if (!isClinicPurchaseOrder(existing, clinicId)) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
     const current = fromBasic(existing);
@@ -285,7 +275,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
     const existing = await medplum.readResource('Basic', id) as Basic;
-    if (!belongsToClinic(existing, clinicId)) {
+    if (!isClinicPurchaseOrder(existing, clinicId)) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
     await medplum.deleteResource('Basic', id);

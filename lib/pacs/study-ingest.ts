@@ -15,6 +15,7 @@ import type { ImagingStudy, ServiceRequest, Task } from '@medplum/fhirtypes';
 import { receiveImagingStudy } from '@/lib/fhir/imaging-service';
 import { assignResourceToClinicTenant, getClinicIdentifierValue, resolveClinicTenant } from '@/lib/fhir/clinic-tenancy';
 import { XRAY_TAG_SYSTEM } from '@/lib/fhir/xray-device';
+import { isPacsStoredStudy, isXrayStudy, PACS_STORED_TAG } from '@/lib/fhir/pacs-link';
 import { ConflictError, ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { DICOM_UID_SYSTEM, XRAY_ACCESSION_SYSTEM, normalizeAccessionNumber, readAccessionNumber, readStudyUid } from './accession';
@@ -126,6 +127,11 @@ async function refreshStudy(medplum: MedplumClient, existing: ImagingStudy, stud
   const data = toStudyData(study);
   await medplum.updateResource<ImagingStudy>({
     ...existing,
+    // A phase-2 device notification may have created this study before the pixels arrived.
+    // Only this trusted Orthanc read-back can promote it to a stored, viewer-ready study.
+    meta: isXrayStudy(existing) && !isPacsStoredStudy(existing)
+      ? { ...existing.meta, tag: [...(existing.meta?.tag ?? []), PACS_STORED_TAG] }
+      : existing.meta,
     numberOfSeries: data.numberOfSeries,
     numberOfInstances: data.numberOfInstances,
     description: data.description ?? existing.description,
@@ -148,6 +154,14 @@ export async function ingestPacsStudy(study: OrthancStudy, medplum: MedplumClien
 
   const unmatched = async (reason: UnmatchedReason): Promise<IngestOutcome> =>
     ({ outcome: 'unmatched', reason, reviewId: await upsertReviewTask(medplum, deviceClinicId, study, reason) });
+
+  // Once an unknown study has entered review, a later matching order or corrected accession
+  // must not silently attach it. Only the explicit staff attach action can decide its patient.
+  const reviewed = await findReviewTask(medplum, deviceClinicId, study.studyUid);
+  if (reviewed?.id) {
+    const reason = (reviewed.statusReason?.text || 'no-order') as UnmatchedReason;
+    return unmatched(reason);
+  }
 
   const accession = normalizeAccessionNumber(study.accessionNumber);
   if (!accession) return unmatched('no-accession');

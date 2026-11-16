@@ -202,6 +202,20 @@ describe("POST /api/pacs/orthanc/study (PACS ingress)", () => {
     expect(studies()[0].numberOfInstances).toBe(3);
   });
 
+  test("pixels arriving for a phase-2 study enable the viewer without creating another study", async () => {
+    ORTHANC[1] = { accession: "UXAAAA2222", images: 1 };
+    const first = await (await notify(1)).json();
+    const existing = studies()[0];
+    existing.meta.tag = existing.meta.tag.filter((t: any) => t.system !== "https://ucc.emr/pacs");
+    ORTHANC[1].images = 2;
+    expect(await (await notify(1)).json()).toMatchObject({ imagingStudyId: first.imagingStudyId, created: false });
+    expect(studies()).toHaveLength(1);
+    expect(studies()[0].meta.tag).toContainEqual({ system: "https://ucc.emr/pacs", code: "orthanc" });
+    expect(studies()[0].numberOfInstances).toBe(2);
+    const response = await post(link, "/api/pacs/viewer/link", { imagingStudyId: first.imagingStudyId });
+    expect(response.status).toBe(200);
+  });
+
   test("unmatched studies go to the device clinic's review list and are never attached", async () => {
     const cases: [number, string | undefined, string][] = [
       [2, undefined, "no-accession"], [3, "UXNOSUCH99", "no-order"], [4, "UXDUPE6666", "ambiguous"],
@@ -228,6 +242,21 @@ describe("POST /api/pacs/orthanc/study (PACS ingress)", () => {
     expect(archiveReads).toHaveLength(0);
     expect(studies()).toHaveLength(0);
     expect(tasks()).toHaveLength(0);
+  });
+
+  test("a study in review is never auto-attached when an order appears later", async () => {
+    ORTHANC[3] = { accession: "UXLATE9999" };
+    const first = await (await notify(3)).json();
+    expect(first).toMatchObject({ outcome: "unmatched", reason: "no-order" });
+    db.push(order("sr-late", "clinic-a", "UXLATE9999"));
+    expect(await (await notify(3)).json()).toMatchObject({ outcome: "unmatched", reviewId: first.reviewId });
+    expect(studies()).toHaveLength(0);
+    expect(db.find((x) => x.id === "sr-late").status).toBe("active");
+    const dismissed = await post(unmatched.POST, "/api/pacs/unmatched", { id: first.reviewId, action: "dismiss" });
+    expect(dismissed.status).toBe(200);
+    expect(await (await notify(3)).json()).toMatchObject({ outcome: "unmatched", reviewId: first.reviewId });
+    expect(studies()).toHaveLength(0);
+    expect(tasks()[0].status).toBe("rejected");
   });
 
   test("clinic B can ingest only when the archive is explicitly bound to clinic B", async () => {
@@ -273,6 +302,16 @@ describe("review list /api/pacs/unmatched", () => {
     expect((await act({ id: reviewId, action: "bogus" })).status).toBe(400);
     expect(studies()).toHaveLength(0);
     expect(tasks()[0].status).toBe("requested");
+  });
+
+  test("staff attachment refuses an archive bound to another clinic before reading pixels", async () => {
+    ORTHANC[3] = { accession: "UXNOSUCH99" };
+    const { reviewId } = await (await notify(3)).json();
+    archiveReads.length = 0;
+    process.env.PACS_ORTHANC_CLINICS = "clinic-b";
+    expect((await act({ id: reviewId, action: "attach", serviceRequestId: "sr-a-open2" })).status).toBe(403);
+    expect(archiveReads).toHaveLength(0);
+    expect(studies()).toHaveLength(0);
   });
 
   test("staff attach creates the study on the chosen order and closes the entry; dismiss rejects it", async () => {
