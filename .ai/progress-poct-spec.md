@@ -1,0 +1,6 @@
+# Task 190 — poct.spec post-merge failure
+- Base: origin/dev 7c42a6d, branch ai/task-poct-spec, own dev server :3216.
+- Reproduction: `poct.spec.ts` 7/7 passed three times in isolation on current origin/dev. The 403-vs-503 failure (task-isolation-3 baseline) was a fixture bug fixed by a815000 (PACS-only keeps the shared DiagnosticReport channel open; 403 only when both modules are off). Route `app/(routes)/api/labs/subscription/route.ts` matches that design; no product bug found, so no product change.
+- Change: tightened the subscription test (REVIEW-task-isolation-3 MINOR). Every 200/503 call must now return the same transport status as the POCT-on call, and a 503 body must be `{error:'Live updates unavailable'}`. A 503 for the wrong reason, or a 200/503 mismatch across module combinations, now fails.
+- Gate: lint (tsc + clinic-admin check) exit 0. Full Playwright on :3216 was cut off at 47 tests (my shell hit its time limit) and had failures in other specs; see REVIEW-poct-spec.md. Not a clean full gate.
+- Draft PR: https://github.com/Iatrum/UCC/pull/237
