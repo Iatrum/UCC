@@ -14,6 +14,13 @@ const tagSystem = 'https://ucc.emr/xray';
 // Mirrors lib/module-settings.ts: the PACS feature toggle gate, same mechanism as every other module.
 const moduleExtensionUrl = 'https://ucc.emr/organization-enabled-module-ids';
 const defaultBranchEnabledModuleIds = ['appointments', 'inventory', 'analytics', 'follow-up'];
+const pacsHostsExtensionUrl = 'https://ucc.emr/organization-pacs-viewer-hosts';
+// Phase 2: viewer links are default-deny; this is what an admin saves in the clinic form. Returns a cleanup.
+async function allowPacsHost(m: MedplumClient, clinicId: string, host: string) {
+  const org = await m.searchOne('Organization', { identifier: `clinic|${clinicId}` });
+  await m.updateResource<Organization>({ ...org!, extension: [...(org!.extension?.filter((e) => e.url !== pacsHostsExtensionUrl) ?? []), { url: pacsHostsExtensionUrl, valueString: JSON.stringify([host]) }] });
+  return async () => { const latest = await m.readResource('Organization', org!.id!); await m.updateResource<Organization>({ ...latest, extension: latest.extension?.filter((e) => e.url !== pacsHostsExtensionUrl) }); };
+}
 const STUDY = { code: '36643-5', name: 'Chest X-ray (PA)', unitPrice: 45 };
 
 // Sets the "pacs" module on/off for the clinic's Organization (same toggle an admin flips in /admin/clinics).
@@ -175,6 +182,7 @@ test('X-ray module disabled for the clinic: composer hides the section and the A
 
 test('Simulated X-ray device study reaches the Lab tab pending card and clears it; duplicate study and bad key fail correctly', async ({ request, page }) => {
   const f = await fixture(request, page, true);
+  let cleanupHost: (() => Promise<void>) | undefined;
   try {
     const addButton = page.getByRole('button', { name: `Add X-ray ${STUDY.name}`, exact: true });
     const removeButton = page.getByRole('button', { name: `Remove ${STUDY.name}`, exact: true });
@@ -213,7 +221,7 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
     const studyUid = `1.2.3.${randomUUID()}`;
     const ingested = await request.post('/api/imaging/receive/message', {
       data: { serviceRequestId: sr.id, study: { studyUid, modality: 'DX', description: 'Chest PA', numberOfSeries: 1, numberOfInstances: 2,
-        pacsUrl: `https://pacs.example.test/viewer?studyUid=${studyUid}`,
+        pacsUrl: `https://viewer.fake-pacs.org/viewer?studyUid=${studyUid}`,
         series: [{ uid: `${studyUid}.1`, number: 1, modality: 'DX', numberOfInstances: 2 }] }, apiKey: f.deviceKey },
     });
     expect(ingested.ok()).toBeTruthy();
@@ -229,6 +237,8 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
     expect(studies).toHaveLength(1);
     expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('completed');
 
+    const removeHost = await allowPacsHost(f.m, f.clinicId!, 'viewer.fake-pacs.org');
+    cleanupHost = removeHost;
     await page.goto(`/patients/${f.patientId}/labs-imaging`);
     await expect(page.getByText('Pending X-ray', { exact: true })).toHaveCount(0);
     const imagingTab = page.getByRole('tab', { name: 'Imaging Studies', exact: true });
@@ -239,9 +249,9 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
       await expect(page.getByText('AVAILABLE', { exact: true }).first()).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 30_000 });
     // Result link: shown only in the Lab/Imaging area, taken from the stored (sanitised) viewer URL.
-    await expect(page.getByRole('button', { name: 'View in PACS' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'View in PACS' }).first()).toBeVisible();
     const [study] = studies;
-    expect(study.extension?.find((e: any) => e.url === 'https://ucc.emr/xray/viewer-url')?.valueUrl).toBe(`https://pacs.example.test/viewer?studyUid=${studyUid}`);
+    expect(study.extension?.find((e: any) => e.url === 'https://ucc.emr/xray/viewer-url')?.valueUrl).toBe(`https://viewer.fake-pacs.org/viewer?studyUid=${studyUid}`);
     const withModule = await (await request.get(`/api/imaging/results?patientId=${f.patientId}`)).json();
     expect(withModule.studies.some((x: any) => x.xray && x.study?.pacsUrl)).toBeTruthy();
     // Default-off toggle: with `pacs` disabled the X-ray study and its link disappear from the results API.
@@ -252,7 +262,7 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
         expect(gated.studies.filter((x: any) => x.xray)).toHaveLength(0);
       }).toPass({ timeout: 20_000 });
     } finally { await restoreOff(); }
-  } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePacsModule(); }
+  } finally { await cleanupHost?.(); await f.m.deleteResource('Device', f.device.id!); await f.restorePacsModule(); }
 });
 
 test('X-ray module disabled after an order exists blocks PATCH/DELETE of that order; a generic imaging order stays mutable', async ({ request, page }) => {

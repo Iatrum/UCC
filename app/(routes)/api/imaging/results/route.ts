@@ -9,7 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPatientImagingStudies, getEncounterImagingStudies } from '@/lib/fhir/imaging-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
-import { gateXrayStudies } from '@/lib/fhir/pacs-link';
+import { gateXrayStudies, isXrayModality, sanitizePacsViewerUrl } from '@/lib/fhir/pacs-link';
+import { allowedPacsUrl } from '@/lib/fhir/pacs-allowlist';
+import { getPacsHostsForClinic } from '@/lib/server/pacs-hosts';
 import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
@@ -36,16 +38,34 @@ export async function GET(request: NextRequest) {
 
     let studies;
     if (encounterId) {
-      studies = await getEncounterImagingStudies(encounterId, medplum);
+      studies = await getEncounterImagingStudies(encounterId, medplum, clinicId);
     } else if (patientId) {
-      studies = await getPatientImagingStudies(patientId, medplum);
+      studies = await getPatientImagingStudies(patientId, medplum, clinicId);
     }
 
     const pacsEnabled = await isModuleEnabledForClinic('pacs', clinicId);
-    return NextResponse.json({
-      success: true,
-      studies: gateXrayStudies(studies || [], pacsEnabled),
+    const gated = gateXrayStudies(studies || [], pacsEnabled);
+    // X-ray viewer links are default-deny: kept only for X-ray modalities and hosts on the clinic allowlist.
+    const hosts = gated.some((s) => s.xray || isXrayModality(s.modality)) ? await getPacsHostsForClinic(clinicId) : [];
+    const result = gated.map((s) => {
+      if (!s.study) return s;
+      const xray = s.xray || isXrayModality(s.modality);
+      const link = pacsEnabled && xray && isXrayModality(s.modality) ? allowedPacsUrl(s.study.pacsUrl, hosts) : undefined;
+      return {
+        ...s,
+        study: {
+          ...s.study,
+          pacsUrl: link,
+          series: s.study.series.map((x) => ({
+            ...x,
+            endpoint: xray
+              ? (pacsEnabled ? allowedPacsUrl(x.endpoint, hosts) : undefined)
+              : sanitizePacsViewerUrl(x.endpoint),
+          })),
+        },
+      };
     });
+    return NextResponse.json({ success: true, studies: result });
 
   } catch (error: any) {
     return handleRouteError(error, 'imaging/results');
