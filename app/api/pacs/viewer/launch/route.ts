@@ -6,7 +6,7 @@
  * involved: the token is the capability, minted for a signed-in clinic user by /api/pacs/viewer/link.
  */
 import { NextRequest } from 'next/server';
-import { getPacsConfig } from '@/lib/pacs/orthanc-client';
+import { getPacsConfig, pacsServesClinic } from '@/lib/pacs/orthanc-client';
 import {
   SESSION_TTL_SECONDS, VIEWER_COOKIE_PATH, consumeLaunchToken, mintViewerToken, verifyViewerToken, viewerCookieName,
 } from '@/lib/pacs/viewer-token';
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   if (request.headers.get('x-pacs-viewer-host') !== config.viewerHost) return refuse(404, 'Not found');
 
   const claims = verifyViewerToken(request.nextUrl.searchParams.get('t'), 'launch', config.viewerSecret);
-  if (!claims || !consumeLaunchToken(claims)) return refuse(403, 'This viewer link has expired or was already used. Reopen the study from the patient record.');
+  if (!claims || !pacsServesClinic(config, claims.clinicId) || !consumeLaunchToken(claims)) return refuse(403, 'This viewer link has expired or was already used. Reopen the study from the patient record.');
 
   const session = mintViewerToken({ kind: 'session', clinicId: claims.clinicId, studyUid: claims.studyUid }, config.viewerSecret);
   const cookie = [

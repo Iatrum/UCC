@@ -6,7 +6,7 @@
  * searches are forced to that study, and Orthanc's credentials are added here, server-side.
  */
 import { NextRequest } from 'next/server';
-import { fetchDicomweb, getPacsConfig, PacsUpstreamError } from '@/lib/pacs/orthanc-client';
+import { fetchDicomweb, getPacsConfig, pacsServesClinic, PacsUpstreamError } from '@/lib/pacs/orthanc-client';
 import { readViewerSessions, scopeDicomwebRequest } from '@/lib/pacs/viewer-token';
 
 export const runtime = 'nodejs';
@@ -30,6 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const wanted = request.nextUrl.searchParams.get('StudyInstanceUID');
   sessions.sort((a, b) => Number(b.studyUid === wanted) - Number(a.studyUid === wanted));
   for (const claims of sessions) {
+    if (!pacsServesClinic(config, claims.clinicId)) continue;
     upstreamPath = scopeDicomwebRequest(path, request.nextUrl.searchParams, claims.studyUid);
     if (upstreamPath) break;
   }

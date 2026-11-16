@@ -16,7 +16,7 @@ export interface PacsConfig {
   viewerHost: string;
   viewerSecure: boolean;
   viewerSecret: string;
-  /** Optional allowlist of clinic ids that may use this Orthanc (empty = any clinic with the module on). */
+  /** Exactly one clinic owns this archive; shared archives need per-study ownership first. */
   clinics: string[];
 }
 
@@ -44,6 +44,10 @@ export function getPacsConfig(env: Record<string, string | undefined> = process.
   const user = env.PACS_ORTHANC_USER;
   const password = env.PACS_ORTHANC_PASSWORD;
   const secret = env.PACS_VIEWER_SECRET;
+  const clinics = (env.PACS_ORTHANC_CLINICS || '').split(',').map((c) => c.trim()).filter(Boolean);
+  // Orthanc ids/UIDs carry no clinic ownership. A multi-clinic or unbound archive would let a
+  // different clinic's valid Device key read its pixels and attach them using its own accession.
+  if (clinics.length !== 1 || !/^[A-Za-z0-9.-]{1,64}$/.test(clinics[0])) return undefined;
   if (!orthanc || !viewer || !user || !password || !secret || secret.length < 32) return undefined;
   return {
     orthancUrl: orthanc.origin,
@@ -52,7 +56,7 @@ export function getPacsConfig(env: Record<string, string | undefined> = process.
     viewerHost: viewer.host,
     viewerSecure: viewer.protocol === 'https:',
     viewerSecret: secret,
-    clinics: (env.PACS_ORTHANC_CLINICS || '').split(',').map((c) => c.trim()).filter(Boolean),
+    clinics,
   };
 }
 
@@ -64,7 +68,7 @@ export function requirePacsConfig(): PacsConfig {
 
 /** True when this Orthanc may hold studies of `clinicId` (see PACS_ORTHANC_CLINICS). */
 export function pacsServesClinic(config: PacsConfig, clinicId: string): boolean {
-  return !config.clinics.length || config.clinics.includes(clinicId);
+  return config.clinics.length === 1 && config.clinics[0] === clinicId;
 }
 
 export interface OrthancSeries {

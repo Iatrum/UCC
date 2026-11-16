@@ -30,8 +30,11 @@ mkdir -p secrets && chmod 700 secrets
 if [ "${1:-}" = ucc-env ]; then
   # Server env for the UCC app. Contains secrets: redirect it, e.g.  ./up.sh ucc-env >> ../../.env.local
   if [ -t 1 ]; then echo "refusing to print secrets to a terminal; redirect to UCC's .env.local" >&2; exit 1; fi
+  : "${PACS_ORTHANC_CLINICS:?Set PACS_ORTHANC_CLINICS to the single clinic owning this archive}"
+  [[ "$PACS_ORTHANC_CLINICS" =~ ^[A-Za-z0-9.-]{1,64}$ ]] || { echo "Exactly one clinic id is required" >&2; exit 1; }
   . ./.env.local
   echo "# Dev PACS (infra/pacs-dev) - X-ray phase 3"
+  echo "PACS_ORTHANC_CLINICS=$PACS_ORTHANC_CLINICS"
   echo "PACS_ORTHANC_URL=http://127.0.0.1:8042"
   echo "PACS_ORTHANC_USER=$ORTHANC_USER"
   echo "PACS_ORTHANC_PASSWORD=$ORTHANC_PASSWORD"

@@ -117,17 +117,19 @@ describe("accession numbers", () => {
 describe("Orthanc client helpers", () => {
   const env = {
     PACS_ORTHANC_URL: "http://127.0.0.1:8042", PACS_ORTHANC_USER: "fake", PACS_ORTHANC_PASSWORD: "fake-password",
-    PACS_VIEWER_ORIGIN: "https://viewer.fake-clinic.org", PACS_VIEWER_SECRET: SECRET,
+    PACS_VIEWER_ORIGIN: "https://viewer.fake-clinic.org", PACS_VIEWER_SECRET: SECRET, PACS_ORTHANC_CLINICS: "clinic-a",
   };
   test("config is all-or-nothing", () => {
     const config = getPacsConfig(env)!;
-    expect(config).toMatchObject({ orthancUrl: "http://127.0.0.1:8042", viewerOrigin: "https://viewer.fake-clinic.org", viewerHost: "viewer.fake-clinic.org", viewerSecure: true, clinics: [] });
+    expect(config).toMatchObject({ orthancUrl: "http://127.0.0.1:8042", viewerOrigin: "https://viewer.fake-clinic.org", viewerHost: "viewer.fake-clinic.org", viewerSecure: true, clinics: ["clinic-a"] });
     for (const key of Object.keys(env)) expect(getPacsConfig({ ...env, [key]: undefined })).toBeUndefined();
     expect(getPacsConfig({ ...env, PACS_VIEWER_SECRET: "short" })).toBeUndefined();
     expect(getPacsConfig({ ...env, PACS_ORTHANC_URL: "http://user:pw@127.0.0.1:8042" })).toBeUndefined();
     expect(getPacsConfig({ ...env, PACS_VIEWER_ORIGIN: "javascript:alert(1)" })).toBeUndefined();
-    expect(pacsServesClinic(config, "any")).toBe(true);
-    const scoped = getPacsConfig({ ...env, PACS_ORTHANC_CLINICS: "clinic-a, clinic-c" })!;
+    expect(pacsServesClinic(config, "any")).toBe(false);
+    expect(getPacsConfig({ ...env, PACS_ORTHANC_CLINICS: "clinic-a, clinic-c" })).toBeUndefined();
+    expect(getPacsConfig({ ...env, PACS_ORTHANC_CLINICS: "" })).toBeUndefined();
+    const scoped = getPacsConfig(env)!;
     expect(pacsServesClinic(scoped, "clinic-a")).toBe(true);
     expect(pacsServesClinic(scoped, "clinic-b")).toBe(false);
   });
