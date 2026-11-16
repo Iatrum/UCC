@@ -59,7 +59,7 @@ test('X-ray viewer link: default deny, shown only for allowlisted https host and
   const mkSr = (code: string) => m.createResource<ServiceRequest>({ resourceType: 'ServiceRequest', status: 'active', intent: 'order',
     subject: { reference: `Patient/${patientId}` }, performer: [{ reference: `Device/${device.id}` }],
     code: { coding: [{ system: 'http://loinc.org', code, display: 'Chest X-ray (PA)' }] },
-    identifier: [{ system: 'clinic', value: clinicId }], meta: { tag: [{ system: tagSystem, code: 'xray' }] } });
+    identifier: [{ system: 'clinic', value: clinicId }], meta: { tag: [{ system: tagSystem, code: 'xray' }], account: patient.meta?.account, accounts: patient.meta?.accounts } });
   const ingest = async (srId: string, modality: string, pacsUrl: string, endpoint?: string) => {
     const uid = `1.2.3.${randomUUID()}`;
     const r = await request.post('/api/imaging/receive/message', { headers: { Authorization: `Bearer ${key}` },
