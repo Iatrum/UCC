@@ -54,15 +54,38 @@ export function makeFake(initial: any[]) {
     },
     async createResourceIfNoneExist(resource: any, query: string) {
       api.guardWrite(resource.resourceType);
-      const [, value] = query.replace('identifier=', '').split('|');
+      // Every `identifier=system|value` param must match (FHIR AND semantics across repeated params).
+      const wanted = query.split('&').map((q) => q.replace('identifier=', '').split('|'));
       const hit = [...db.values()].find(
-        (r) => r.resourceType === resource.resourceType && r.identifier?.some((i: any) => i.value === value)
+        (r) =>
+          r.resourceType === resource.resourceType &&
+          wanted.every(([sys, val]) => r.identifier?.some((i: any) => i.system === sys && i.value === val))
       );
       if (hit) return structuredClone(hit);
       const id = `d${++seq}`;
       const saved = { ...resource, id, meta: { ...(resource.meta ?? {}), versionId: '1' } };
       db.set(`${resource.resourceType}/${id}`, saved);
       return structuredClone(saved);
+    },
+    async createResource(resource: any) {
+      api.guardWrite(resource.resourceType);
+      const id = `c${++seq}`;
+      const saved = { ...resource, id, meta: { ...(resource.meta ?? {}), versionId: '1' } };
+      db.set(`${resource.resourceType}/${id}`, saved);
+      return structuredClone(saved);
+    },
+    async searchOne(type: string, params: Record<string, string>) {
+      if (type === 'HealthcareService') return { resourceType: 'HealthcareService', id: `hs-${String(params.identifier).split('|')[1]}` };
+      return (await api.searchResources(type, { ...params, _count: '1' }))[0];
+    },
+    /** Called on `$set-accounts`; default behaviour bumps the invoice version (the clinic-assignment write). */
+    onSetAccounts: undefined as undefined | ((url: string) => void),
+    async post(url: string) {
+      if (api.onSetAccounts) { api.onSetAccounts(url); return {}; }
+      const m = url.match(/(\w+)\/([^/]+)\/\$set-accounts/);
+      const cur = m && db.get(`${m[1]}/${m[2]}`);
+      if (cur) db.set(`${m[1]}/${m[2]}`, { ...cur, meta: { ...cur.meta, versionId: bump(cur) } });
+      return {};
     },
     async deleteResource(type: string, id: string) {
       if (api.failDelete) throw new Error('500 delete failed');

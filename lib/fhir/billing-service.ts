@@ -297,6 +297,21 @@ function isVersionConflict(error: unknown): boolean {
   return /412|precondition|version|conflict/i.test(message);
 }
 
+/** Billed content that stock deduction depends on. */
+function billedContent(invoice: Invoice): string {
+  return JSON.stringify([invoice.status, invoice.lineItem, invoice.totalGross?.value, invoice.totalNet?.value]);
+}
+
+/**
+ * True when `current` is the invoice this request saved, or differs only by a metadata-only bump
+ * (clinic account assignment): same billed content. A different version with different content means a
+ * concurrent checkout/void saved in between.
+ */
+export function isOwnVersionOrClinicBump(saved: Invoice, current: Invoice): boolean {
+  if (!current.meta?.versionId || current.meta.versionId === saved.meta?.versionId) return true;
+  return billedContent(saved) === billedContent(current);
+}
+
 async function findExistingInvoice(
   medplum: MedplumClient,
   consultationId: string,
@@ -384,12 +399,24 @@ export async function completeCheckoutInvoice(
     };
 
     try {
-      saved = existing?.id
-        ? await medplum.updateResource(withClinicIdentifier(invoice, input.clinicId), {
-            // Optimistic lock: a concurrent checkout/void that changed the invoice makes this write fail.
-            headers: existing.meta?.versionId ? { "If-Match": `W/"${existing.meta.versionId}"` } : undefined,
-          })
-        : await medplum.createResource<Invoice>(withClinicIdentifier(invoice, input.clinicId));
+      if (existing?.id) {
+        saved = await medplum.updateResource(withClinicIdentifier(invoice, input.clinicId), {
+          // Optimistic lock: a concurrent checkout/void that changed the invoice makes this write fail.
+          headers: existing.meta?.versionId ? { "If-Match": `W/"${existing.meta.versionId}"` } : undefined,
+        });
+      } else {
+        // Idempotent per visit: conditional create (FHIR If-None-Exist) on consultation + clinic identifiers.
+        // Two first-time checkouts for the same visit resolve to ONE invoice.
+        saved = await medplum.createResourceIfNoneExist<Invoice>(
+          withClinicIdentifier(invoice, input.clinicId),
+          `identifier=${INVOICE_IDENTIFIER_SYSTEM}|${input.consultationId}&identifier=${CLINIC_IDENTIFIER_SYSTEM}|${input.clinicId}`
+        );
+        if (getStoredInvoiceNumber(saved) !== invoiceNumber || saved.date !== now) {
+          // A competing checkout created the invoice first: adopt it and apply our data as a guarded update.
+          if (attempt < 3) continue;
+          throw new Error("Invoice was created concurrently; please retry checkout");
+        }
+      }
       break;
     } catch (err) {
       if (existing?.id && attempt < 3 && isVersionConflict(err)) continue; // re-read the newer invoice and re-apply
@@ -397,14 +424,19 @@ export async function completeCheckoutInvoice(
     }
   }
   await assignResourceToClinicTenant(medplum, "Invoice", saved, clinicTenant);
-  // assignResourceToClinicTenant may write a new version; reconcile stock against the final one.
+  // assignResourceToClinicTenant may write a new version (the clinic-assignment bump). Re-read, but only
+  // accept a version we did not write if it is that bump (same billed content); otherwise another checkout
+  // saved in between and must reconcile stock itself, so this request must not deduct outdated quantities.
   const finalInvoice = (await medplum.readResource("Invoice", saved.id as string).catch(() => saved)) as Invoice;
+  const supersededByOther = !isOwnVersionOrClinicBump(saved, finalInvoice);
 
   // Auto-deduct inventory for the billed medication lines (idempotent; never blocks checkout).
   let stock: CheckoutDispenseResult | undefined;
   let dispenseError: string | undefined;
   try {
-    stock = await deductStockForCheckout(medplum, {
+    if (supersededByOther) {
+      stock = { adjusted: [], unmatched: [], negativeStock: [], unresolved: [], retained: [], superseded: true };
+    } else stock = await deductStockForCheckout(medplum, {
       clinicId: input.clinicId,
       consultationId: input.consultationId,
       patientId: input.patientId,

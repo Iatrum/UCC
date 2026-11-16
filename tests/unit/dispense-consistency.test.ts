@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { deductStockForCheckout, readStock, reverseStockForCheckout } from "../../lib/fhir/dispense-service";
 import { makeFake } from "./helpers/fake-medplum";
-import { deleteInvoice, voidInvoice } from "../../lib/fhir/billing-service";
+import { completeCheckoutInvoice, deleteInvoice, voidInvoice } from "../../lib/fhir/billing-service";
 
 // Task 402: regression tests for the Task 359 review findings on checkout stock deduction.
 const INV = "https://ucc.emr/inventory/medication";
@@ -223,5 +223,61 @@ describe("Finding 4: void/delete ordering and recovery", () => {
     await deleteInvoice(fake as any, "inv1", "clinic-a");
     expect(fake.db.has("Invoice/inv1")).toBe(false);
     expect(stock("m1")).toBe(100);
+  });
+});
+
+// Task 410: end-to-end checkout races (fake data only).
+describe("Task 410: checkout version guard and idempotent invoice creation", () => {
+  let fake: ReturnType<typeof makeFake>;
+  const seed = () => [
+    med("m1", "Fake Drug", 100),
+    { resourceType: "Organization", id: "clinic-a" },
+    { resourceType: "Patient", id: "p1", identifier: [{ system: "clinic", value: "clinic-a" }] },
+    { resourceType: "Encounter", id: "enc1", subject: { reference: "Patient/p1" }, identifier: [{ system: "clinic", value: "clinic-a" }] },
+  ];
+  const stock = () => readStock(fake.db.get("Medication/m1"));
+  const invoices = () => [...fake.db.values()].filter((x) => x.resourceType === "Invoice");
+  const checkout = (qty: number) =>
+    completeCheckoutInvoice(fake as any, {
+      consultationId: "enc1", patientId: "p1", clinicId: "clinic-a", paymentMethod: "cash",
+      items: [{ id: "i1", name: "Fake Drug", type: "Item", quantity: qty, price: 2 }],
+      paidAmount: qty * 2, totalAmount: qty * 2,
+    });
+  beforeEach(() => { fake = makeFake(seed()); });
+
+  it("a concurrent checkout saving between our save and re-read: we do not adopt its version or deduct", async () => {
+    // B (qty 2) saves right after A (qty 5) saved, before A re-reads.
+    fake.onSetAccounts = () => {
+      const cur = fake.db.get(`Invoice/${invoices()[0].id}`);
+      fake.db.set(`Invoice/${cur.id}`, {
+        ...cur,
+        lineItem: [{ sequence: 1, extension: [{ url: "q", valueDecimal: 2 }] }],
+        meta: { ...cur.meta, versionId: String(Number(cur.meta.versionId) + 1) },
+      });
+    };
+    const r = await checkout(5);
+    expect(r.stock?.superseded).toBe(true);
+    expect(stock()).toBe(100); // A deducted nothing; B reconciles the stock itself
+    expect([...fake.db.values()].filter((x) => x.resourceType === "MedicationDispense")).toHaveLength(0);
+  });
+
+  it("only the clinic-assignment bump is accepted: stock is deducted once", async () => {
+    const r = await checkout(5); // default fake $set-accounts bumps the version without changing content
+    expect(r.stock?.superseded).toBeUndefined();
+    expect(stock()).toBe(95);
+  });
+
+  it("two first-time checkouts for the same visit create exactly one invoice", async () => {
+    const [a, b] = await Promise.all([checkout(5), checkout(5)]);
+    expect(invoices()).toHaveLength(1);
+    expect(a.invoice.id).toBe(b.invoice.id);
+    expect(stock()).toBe(95);
+  });
+
+  it("checkout is never blocked by low stock", async () => {
+    fake.db.set("Medication/m1", med("m1", "Fake Drug", 1));
+    const r = await checkout(5);
+    expect(r.invoice.id).toBeDefined();
+    expect(r.dispenseError).toBeUndefined();
   });
 });
