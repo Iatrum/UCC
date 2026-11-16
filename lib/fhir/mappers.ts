@@ -3,6 +3,7 @@ import { saveFhirResource } from "./firestore";
 import { createFhirResource, isMedplumConfigured } from "./medplum-direct";
 import { findMedicationByName } from "./terminologies/medications";
 import { formatMedicationNameWithStrength } from "@/lib/prescriptions";
+import { withClinicIdentifier } from "./clinic-tenancy";
 import { validateFhirResource, logValidation } from "./validation";
 
 type PatientInput = Omit<AppPatient, 'email' | 'postalCode' | 'address' | 'emergencyContact' | 'medicalHistory'> & {
@@ -20,7 +21,7 @@ type ConsultationInput = {
   chiefComplaint?: string;
 };
 
-export async function toFhirPatient(app: PatientInput): Promise<{ reference: string; id: string }> {
+export async function toFhirPatient(app: PatientInput, clinicId?: string): Promise<{ reference: string; id: string }> {
   // MEDPLUM ONLY - No Firebase fallback
   const nameParts = app.fullName.trim().split(/\s+/);
   const family = nameParts.pop() || '';
@@ -90,14 +91,15 @@ export async function toFhirPatient(app: PatientInput): Promise<{ reference: str
   logValidation('Patient', validation);
 
   // Save to Medplum ONLY
-  const created = await createFhirResource(resource);
+  const created = await createFhirResource(withClinicIdentifier(resource, clinicId));
   return { reference: `Patient/${created.id}`, id: created.id };
 }
 
 export async function toFhirEncounter(
   patientRef: string,
   consult: ConsultationInput,
-  practitionerRef?: string  // Optional practitioner reference for FHIR compliance
+  practitionerRef?: string,  // Optional practitioner reference for FHIR compliance
+  clinicId?: string
 ): Promise<{ reference: string; id: string }> {
   // MEDPLUM ONLY - No Firebase fallback
   const startDate = new Date(consult.date ?? new Date()).toISOString();
@@ -137,11 +139,11 @@ export async function toFhirEncounter(
   };
 
   // Save to Medplum ONLY
-  const created = await createFhirResource(resource);
+  const created = await createFhirResource(withClinicIdentifier(resource, clinicId));
   return { reference: `Encounter/${created.id}`, id: created.id };
 }
 
-export async function toFhirCondition(patientRef: string, encounterRef: string, diagnosis: string): Promise<{ reference: string; id: string }> {
+export async function toFhirCondition(patientRef: string, encounterRef: string, diagnosis: string, clinicId?: string): Promise<{ reference: string; id: string }> {
   // MEDPLUM ONLY - No Firebase fallback
 
   const code: any = {
@@ -192,11 +194,11 @@ export async function toFhirCondition(patientRef: string, encounterRef: string, 
   logValidation('Condition', validation);
 
   // Save to Medplum ONLY
-  const created = await createFhirResource(resource);
+  const created = await createFhirResource(withClinicIdentifier(resource, clinicId));
   return { reference: `Condition/${created.id}`, id: created.id };
 }
 
-export async function toFhirMedicationRequest(patientRef: string, encounterRef: string, p: Prescription): Promise<{ reference: string; id: string }> {
+export async function toFhirMedicationRequest(patientRef: string, encounterRef: string, p: Prescription, clinicId?: string): Promise<{ reference: string; id: string }> {
   // MEDPLUM ONLY - No Firebase fallback
   const freqMap: Record<string, number> = { od: 1, bd: 2, tds: 3, qid: 4 };
   const frequency = p.frequency ? freqMap[(p.frequency as string).toLowerCase()] : undefined;
@@ -248,11 +250,11 @@ export async function toFhirMedicationRequest(patientRef: string, encounterRef: 
   logValidation('MedicationRequest', validation);
 
   // Save to Medplum ONLY
-  const created = await createFhirResource(resource);
+  const created = await createFhirResource(withClinicIdentifier(resource, clinicId));
   return { reference: `MedicationRequest/${created.id}`, id: created.id };
 }
 
-export async function toFhirServiceRequest(patientRef: string, encounterRef: string, pr: ProcedureRecord): Promise<{ reference: string; id: string }> {
+export async function toFhirServiceRequest(patientRef: string, encounterRef: string, pr: ProcedureRecord, clinicId?: string): Promise<{ reference: string; id: string }> {
   // MEDPLUM ONLY - No Firebase fallback
   const codeable = pr.codingCode || pr.codingDisplay || pr.codingSystem
     ? {
@@ -279,6 +281,6 @@ export async function toFhirServiceRequest(patientRef: string, encounterRef: str
   };
 
   // Save to Medplum ONLY
-  const created = await createFhirResource(resource);
+  const created = await createFhirResource(withClinicIdentifier(resource, clinicId));
   return { reference: `ServiceRequest/${created.id}`, id: created.id };
 }

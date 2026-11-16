@@ -7,6 +7,7 @@ import { MedplumClient } from '@medplum/core';
 import type { Observation } from '@medplum/fhirtypes';
 import type { Consultation } from '@/lib/models';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { makeClinicStamper } from '@/lib/fhir/write-containment';
 
 async function getMedplumClient(): Promise<MedplumClient | null> {
   try {
@@ -30,7 +31,8 @@ export async function exportConsultationToMedplum(
     gender?: string;
     phone?: string;
     address?: string;
-  }
+  },
+  clinicId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const medplum = await getMedplumClient();
@@ -38,18 +40,24 @@ export async function exportConsultationToMedplum(
       return { success: false, error: 'Medplum not configured' };
     }
 
+    // Task 350: fail closed - every export is owned by exactly one clinic.
+    if (!clinicId) {
+      return { success: false, error: 'Clinic context is required' };
+    }
+    const { stamp, isOwn } = await makeClinicStamper(medplum, clinicId);
+
     console.log(`📤 Exporting consultation ${consultation.id} to Medplum...`);
 
     // 1. Create or get Patient resource
     let patient;
     if (patientData.ic) {
-      patient = await medplum.searchOne('Patient', {
-        identifier: patientData.ic,
-      });
+      // Only re-use a Patient that belongs to this clinic; never read across clinics.
+      const matches = await medplum.searchResources('Patient', { identifier: patientData.ic });
+      patient = matches.find((candidate) => isOwn(candidate));
     }
 
     if (!patient) {
-      patient = await medplum.createResource({
+      patient = await medplum.createResource(stamp({
         resourceType: 'Patient',
         identifier: patientData.ic
           ? [{ system: 'urn:ic', value: patientData.ic }]
@@ -67,7 +75,7 @@ export async function exportConsultationToMedplum(
           ? [{ system: 'phone', value: patientData.phone }]
           : undefined,
         address: patientData.address ? [{ text: patientData.address }] : undefined,
-      });
+      }));
       console.log(`✅ Created Patient: ${(patient as any).id}`);
     } else {
       console.log(`✅ Found existing Patient: ${(patient as any).id}`);
@@ -78,7 +86,7 @@ export async function exportConsultationToMedplum(
       ? new Date(consultation.date).toISOString()
       : new Date().toISOString();
 
-    const encounter = await medplum.createResource({
+    const encounter = await medplum.createResource(stamp({
       resourceType: 'Encounter',
       status: 'finished',
       class: {
@@ -100,12 +108,12 @@ export async function exportConsultationToMedplum(
           value: consultation.id,
         },
       ],
-    });
+    }));
     console.log(`✅ Created Encounter: ${(encounter as any).id}`);
 
     // 3. Create Condition (Diagnosis)
     if (consultation.diagnosis) {
-      const condition = await medplum.createResource({
+      const condition = await medplum.createResource(stamp({
         resourceType: 'Condition',
         subject: {
           reference: `Patient/${(patient as any).id}`,
@@ -117,13 +125,13 @@ export async function exportConsultationToMedplum(
           text: consultation.diagnosis,
         },
         recordedDate: encounterDate,
-      });
+      }));
       console.log(`✅ Created Condition: ${(condition as any).id}`);
     }
 
     // 4. Create Observation for Chief Complaint
     if (consultation.chiefComplaint) {
-      const observation = await medplum.createResource<Observation>({
+      const observation = await medplum.createResource<Observation>(stamp({
         resourceType: 'Observation',
         status: 'final',
         subject: {
@@ -137,13 +145,13 @@ export async function exportConsultationToMedplum(
         },
         valueString: consultation.chiefComplaint,
         effectiveDateTime: encounterDate,
-      });
+      }));
       console.log(`✅ Created Chief Complaint Observation: ${(observation as any).id}`);
     }
 
     // 5. Create Observation for Clinical Notes
     if (consultation.notes) {
-      const notesObs = await medplum.createResource<Observation>({
+      const notesObs = await medplum.createResource<Observation>(stamp({
         resourceType: 'Observation',
         status: 'final',
         subject: {
@@ -157,14 +165,14 @@ export async function exportConsultationToMedplum(
         },
         valueString: consultation.notes,
         effectiveDateTime: encounterDate,
-      });
+      }));
       console.log(`✅ Created Clinical Notes Observation: ${notesObs.id}`);
     }
 
     // 6. Create Procedures
     if (consultation.procedures && consultation.procedures.length > 0) {
       for (const proc of consultation.procedures) {
-        const procedure = await medplum.createResource({
+        const procedure = await medplum.createResource(stamp({
           resourceType: 'Procedure',
           status: 'completed',
           subject: {
@@ -177,7 +185,7 @@ export async function exportConsultationToMedplum(
             text: typeof proc === 'string' ? proc : (proc as any).name || 'Procedure',
           },
           performedDateTime: encounterDate,
-        });
+        }));
         console.log(`✅ Created Procedure: ${(procedure as any).id}`);
       }
     }
@@ -185,7 +193,7 @@ export async function exportConsultationToMedplum(
     // 7. Create MedicationRequests (Prescriptions)
     if (consultation.prescriptions && consultation.prescriptions.length > 0) {
       for (const rx of consultation.prescriptions) {
-        const medicationRequest = await medplum.createResource({
+        const medicationRequest = await medplum.createResource(stamp({
           resourceType: 'MedicationRequest',
           status: 'active',
           intent: 'order',
@@ -211,7 +219,7 @@ export async function exportConsultationToMedplum(
             },
           ],
           authoredOn: encounterDate,
-        });
+        }));
         console.log(`✅ Created MedicationRequest: ${(medicationRequest as any).id}`);
       }
     }
