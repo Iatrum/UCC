@@ -92,10 +92,24 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (result.dispenseError) {
+      await createBillingExceptionTask(medplum, {
+        consultationId: body.consultationId,
+        patientId: body.patientId,
+        clinicId,
+        paymentMethod: body.paymentMethod,
+        invoiceId: invoice.id,
+        errorClass: "stock-deduction-failed",
+        errorSummary: `Invoice saved, but inventory deduction failed: ${result.dispenseError}. Re-run checkout to retry safely.`,
+        requesterReference,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       invoiceId: invoice.id,
       invoiceNumber: getInvoiceNumber(invoice),
+      stockNegative: result.stock?.negativeStock ?? [],
     });
   } catch (error) {
     if (isClientFixableBillingError(error)) {

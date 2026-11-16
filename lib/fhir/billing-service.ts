@@ -11,6 +11,11 @@ import {
   withClinicIdentifier,
 } from "@/lib/fhir/clinic-tenancy";
 import { assertPatientInClinic } from './write-containment';
+import {
+  deductStockForCheckout,
+  reverseStockForCheckout,
+  type CheckoutDispenseResult,
+} from "@/lib/fhir/dispense-service";
 
 export type CheckoutPaymentMethod = "cash" | "card" | "qr" | "panel";
 
@@ -37,6 +42,9 @@ export type CompleteCheckoutInput = {
 export type CompleteCheckoutResult = {
   invoice: Invoice;
   queueUpdateError?: string;
+  /** Auto stock deduction outcome; `dispenseError` set when it failed (invoice is still saved). */
+  stock?: CheckoutDispenseResult;
+  dispenseError?: string;
 };
 
 const CURRENCY = "MYR";
@@ -373,12 +381,28 @@ export async function completeCheckoutInvoice(
     : await medplum.createResource<Invoice>(withClinicIdentifier(invoice, input.clinicId));
   await assignResourceToClinicTenant(medplum, "Invoice", saved, clinicTenant);
 
+  // Auto-deduct inventory for the billed medication lines (idempotent; never blocks checkout).
+  let stock: CheckoutDispenseResult | undefined;
+  let dispenseError: string | undefined;
+  try {
+    stock = await deductStockForCheckout(medplum, {
+      clinicId: input.clinicId,
+      consultationId: input.consultationId,
+      patientId: input.patientId,
+      invoiceId: saved.id,
+      items: normalizedItems,
+    });
+  } catch (err) {
+    console.error("[billing-service] Invoice saved but stock deduction failed for consultation", input.consultationId, err);
+    dispenseError = err instanceof Error ? err.message : "Stock deduction failed";
+  }
+
   try {
     await updateQueueStatusForPatient(input.patientId, "completed", medplum, input.clinicId);
   } catch (err) {
     console.error("[billing-service] Invoice saved but queue status update failed for patient", input.patientId, err);
     const message = err instanceof Error ? err.message : "Queue status update failed";
-    return { invoice: saved, queueUpdateError: message };
+    return { invoice: saved, queueUpdateError: message, stock, dispenseError };
   }
 
   try {
@@ -391,7 +415,7 @@ export async function completeCheckoutInvoice(
     console.error("[billing-service] Checkout completed but review follow-up creation failed", input.patientId, err);
   }
 
-  return { invoice: saved };
+  return { invoice: saved, stock, dispenseError };
 }
 
 export async function getInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<Invoice | null> {
@@ -427,14 +451,29 @@ export async function getConsultationInvoice(medplum: MedplumClient, consultatio
   return null;
 }
 
+function consultationIdOfInvoice(invoice: Invoice): string | undefined {
+  return invoice.identifier?.find((identifier) => identifier.system === INVOICE_IDENTIFIER_SYSTEM)?.value;
+}
+
+/** Return the stock deducted at checkout (clinic-scoped, idempotent). */
+async function restoreStockForInvoice(medplum: MedplumClient, invoice: Invoice, clinicId?: string): Promise<void> {
+  const consultationId = consultationIdOfInvoice(invoice);
+  const invoiceClinic =
+    clinicId || invoice.extension?.find((ext) => ext.url === CLINIC_EXTENSION_URL)?.valueString;
+  if (!consultationId || !invoiceClinic) return;
+  await reverseStockForCheckout(medplum, { clinicId: invoiceClinic, consultationId, invoiceId: invoice.id });
+}
+
 export async function voidInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<Invoice> {
   const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
   await assertInvoiceBelongsToClinic(medplum, invoice, clinicId);
+  await restoreStockForInvoice(medplum, invoice, clinicId);
   return medplum.updateResource({ ...invoice, status: "cancelled" });
 }
 
 export async function deleteInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<void> {
   const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
   await assertInvoiceBelongsToClinic(medplum, invoice, clinicId);
+  await restoreStockForInvoice(medplum, invoice, clinicId);
   await medplum.deleteResource("Invoice", invoiceId);
 }
