@@ -46,6 +46,7 @@ const { completeCheckoutInvoice } = await import('../../lib/fhir/billing-service
 const { saveConsultationToMedplum, updateConsultationInMedplum } = await import('../../lib/fhir/consultation-service');
 const { toFhirPatient, toFhirEncounter, toFhirCondition, toFhirMedicationRequest, toFhirServiceRequest } = await import('../../lib/fhir/mappers');
 const { assertPatientInClinic } = await import('../../lib/fhir/write-containment');
+const { saveTriageEncounter } = await import('../../lib/fhir/triage-service');
 const m = fake as MedplumClient;
 const reject = async (p: Promise<unknown>) => {
   let err: any;
@@ -212,4 +213,11 @@ describe('Task 351 independent review regressions', () => {
     expect(created[0].subject.reference).toBe('Patient/p-a');
     expect(created[0].identifier).toContainEqual({ system: 'clinic', value: 'clinic-a' });
   });
+});
+
+it('Task 351 triage persists own-clinic complaint and vitals with clinic identifiers', async () => {
+  fresh();
+  await saveTriageEncounter('p-a', { triageLevel: 3, chiefComplaint: 'Fake complaint', vitalSigns: { temperature: 37 } } as any, m, 'clinic-a');
+  expect(created.map(r => r.resourceType)).toEqual(['Encounter', 'Observation', 'Observation']);
+  for (const r of created) expect(r.identifier).toContainEqual({ system: 'clinic', value: 'clinic-a' });
 });

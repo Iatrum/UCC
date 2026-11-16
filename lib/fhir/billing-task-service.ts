@@ -1,7 +1,7 @@
 import { assertPatientInClinic } from './write-containment';
 import type { MedplumClient } from "@medplum/core";
 import type { Annotation, Task } from "@medplum/fhirtypes";
-import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
+import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier, resolveClinicTenant } from "@/lib/fhir/clinic-tenancy";
 
 const BILLING_EXCEPTION_CODE_SYSTEM = "https://ucc.emr/task-type";
 const BILLING_EXCEPTION_CODE = "billing-exception";
@@ -79,13 +79,17 @@ export function buildBillingExceptionTaskResource(input: CreateBillingExceptionT
 
 export async function findOpenBillingExceptionTask(
   medplum: MedplumClient,
-  consultationId: string
+  consultationId: string,
+  clinicId: string
 ): Promise<Task | null> {
+  const tenant = await resolveClinicTenant(medplum, clinicId);
+  if (!tenant) throw new Error("Clinic context required");
   const identifier = `${BILLING_EXCEPTION_IDENTIFIER_SYSTEM}|${getBillingExceptionIdentifierValue(consultationId)}`;
   const existing = await medplum.searchResources("Task", {
     identifier,
+    _compartment: tenant.accountReference,
     _count: "20",
-  });
+  }, { cache: "no-cache", headers: { "X-Medplum": "extended" } });
   const open = (existing as Task[]).find(
     (task) => task.status === "requested" || task.status === "in-progress"
   );
@@ -97,7 +101,7 @@ export async function createBillingExceptionTask(
   input: CreateBillingExceptionTaskInput
 ): Promise<Task> {
   await assertPatientInClinic(medplum, input.clinicId, input.patientId, input.consultationId);
-  const existingOpen = await findOpenBillingExceptionTask(medplum, input.consultationId);
+  const existingOpen = await findOpenBillingExceptionTask(medplum, input.consultationId, input.clinicId);
   if (existingOpen) {
     if (getBillingTaskClinicId(existingOpen) !== input.clinicId ||
         existingOpen.for?.reference !== `Patient/${input.patientId}`) {

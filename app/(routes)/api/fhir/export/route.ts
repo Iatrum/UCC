@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getConsultationFromMedplum } from "@/lib/fhir/consultation-service";
 import { getPatientFromMedplum } from "@/lib/fhir/patient-service";
 import { toFhirEncounter, toFhirCondition, toFhirMedicationRequest, toFhirServiceRequest } from "@/lib/fhir/mappers";
-import { assertPatientInClinic } from "@/lib/fhir/write-containment";
+import { assertPatientInClinic, assertEncounterInClinic } from "@/lib/fhir/write-containment";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { z } from "zod";
 import { writeServerAuditLog } from "@/lib/server/logging";
@@ -33,6 +33,12 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ error: 'Invalid body' }), { status: 400 });
     }
     const { consultationId } = parsed.data;
+    // Authorize before loading the consultation graph with all its clinical data.
+    try {
+      await assertEncounterInClinic(medplum, clinicId, consultationId);
+    } catch {
+      return new Response(JSON.stringify({ error: 'Consultation not found' }), { status: 404 });
+    }
 
     const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
     if (!consultation) return new Response(JSON.stringify({ error: 'Consultation not found' }), { status: 404 });
