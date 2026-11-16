@@ -46,11 +46,19 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   else void stopGroup(server);
 });
 async function availablePort() {
-  await new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.once('error', () => reject(Error('Port :3210 is occupied; refusing to touch another server')));
-    probe.listen(3210, () => probe.close(resolve));
-  });
+  // Allow an owned cold server to finish releasing the port after the build stage.
+  // Never terminate an occupied port's owner.
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const free = await new Promise(resolve => {
+      const probe = net.createServer();
+      probe.once('error', () => resolve(false));
+      probe.listen(3210, '127.0.0.1', () => probe.close(() => resolve(true)));
+    });
+    if (free) return;
+    if (cancelled) throw Error('Gate interrupted');
+    await pause(100);
+  }
+  throw Error('Port :3210 is occupied; refusing to touch another server');
 }
 fs.mkdirSync(reports, { recursive: true });
 fs.rmSync(path.join(reports, 'results.json'), { force: true });
