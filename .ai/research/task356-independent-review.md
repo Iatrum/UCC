@@ -16,3 +16,9 @@ The changed classifier consumes the provider's explicit AUTH_RATE_LIMITED:<secon
 Added independent login-phase 429/500/502/503 route assertions, complementing submitted token-exchange coverage. Browser verification will exercise all three user-visible notices with controlled failures, then perform one real login using the fake dev account and local Medplum only. Disable traces/screenshots to avoid persisting credentials or sessions. Block browser requests outside the isolated app and dev Medplum; avoid clinical pages.
 
 Port 3210 is occupied by another worktree; do not stop it. Use one temporary server on 3216 with NODE_OPTIONS=--max-old-space-size=3072; kill its entire process group at completion. Production-probing push workflow requires [skip ci] commits, as in the submitted branch. Full-gate limitations must be reported separately from focused checks.
+
+## Focused results
+
+Independent unit suite: 178/178 pass, lint and targeted ESLint pass. Timeout-wrapped browser test: one pass in 28.5 seconds, three simulated failure messages plus exactly one real fake-account login against dev Medplum. Required check-all failed before its test steps because /workspace cannot be created. Server process group stopped and port 3216 verified closed. See .ai/REVIEW-356.md for verdict and live-state limitations.
+
+Independent memory-capped build: PASS (Next.js 16.2.1 webpack, TypeScript and page generation). Existing PR refreshed after the coverage commit: draft, MERGEABLE/CLEAN, Vercel statuses successful. The path-blocked full gate remains a separate unresolved validation limitation.
