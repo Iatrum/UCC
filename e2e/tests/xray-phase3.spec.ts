@@ -97,8 +97,9 @@ test('stored DICOM appears as a study matched by accession; viewer link is clini
     identifier: [{ system: 'clinic', value: clinicId }, identifier], meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
     deviceName: [{ name: `Fake PACS ${suffix}`, type: 'user-friendly-name' }], type: { coding: [{ system: typeSystem, code: 'xray' }] } });
   cleanup.push(() => m.deleteResource('Device', device.id!));
+  const originalKey = fs.readFileSync(KEY_FILE);
   fs.writeFileSync(KEY_FILE, `${key}\n`, { mode: 0o600 });
-  cleanup.push(async () => fs.writeFileSync(KEY_FILE, '', { mode: 0o600 }));
+  cleanup.push(async () => fs.writeFileSync(KEY_FILE, originalKey, { mode: 0o600 }));
 
   const mkOrder = async (clinic: string, acc: string) => {
     const sr = await m.createResource<ServiceRequest>({ resourceType: 'ServiceRequest', status: 'active', intent: 'order',
