@@ -76,12 +76,14 @@ const seed = () => {
 // Orthanc is faked at the fetch layer: study n has accession ORTHANC[n].
 const ORTHANC: Record<number, { accession?: string; images?: number }> = {};
 const realFetch = globalThis.fetch;
+const archiveReads: string[] = [];
 const dicomwebCalls: { url: string; headers: Record<string, string> }[] = [];
 globalThis.fetch = (async (input: any, init?: any) => {
   const url = String(input);
   if (!url.startsWith("http://orthanc.fake.test")) return realFetch(input, init);
   if (new Headers(init?.headers).get("authorization") !== `Basic ${Buffer.from("fakeuser:fakepass").toString("base64")}`) return new Response("", { status: 401 });
   const path = url.slice("http://orthanc.fake.test".length);
+  archiveReads.push(path);
   const m = path.match(/^\/studies\/(\d{8})-[a-f-]+(\/series)?$/);
   if (m) {
     const n = Number(m[1]); const s = ORTHANC[n];
@@ -129,7 +131,7 @@ const studies = () => db.filter((r) => r.resourceType === "ImagingStudy");
 const tasks = () => db.filter((r) => r.resourceType === "Task");
 const viewerHost = { "x-pacs-viewer-host": "viewer.fake.test:3320" };
 
-beforeEach(() => { seed(); pacsEnabled = true; sessionClinic = "clinic-a"; signedIn = true; dicomwebCalls.length = 0; for (const k of Object.keys(ORTHANC)) delete ORTHANC[Number(k)]; delete process.env.PACS_ORTHANC_CLINICS; });
+beforeEach(() => { seed(); pacsEnabled = true; sessionClinic = "clinic-a"; signedIn = true; dicomwebCalls.length = 0; archiveReads.length = 0; for (const k of Object.keys(ORTHANC)) delete ORTHANC[Number(k)]; process.env.PACS_ORTHANC_CLINICS = "clinic-a"; });
 afterAll(() => {
   globalThis.fetch = realFetch;
   for (const [k, v] of Object.entries(savedEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
@@ -220,7 +222,16 @@ describe("POST /api/pacs/orthanc/study (PACS ingress)", () => {
     expect(tasks()).toHaveLength(cases.length);
   });
 
-  test("the same accession sent by clinic B's device matches clinic B's order only", async () => {
+  test("foreign Device cannot read the archive even with its own matching accession", async () => {
+    ORTHANC[8] = { accession: "UXBBBB3333" };
+    expect((await notify(8, KEY_B)).status).toBe(403);
+    expect(archiveReads).toHaveLength(0);
+    expect(studies()).toHaveLength(0);
+    expect(tasks()).toHaveLength(0);
+  });
+
+  test("clinic B can ingest only when the archive is explicitly bound to clinic B", async () => {
+    process.env.PACS_ORTHANC_CLINICS = "clinic-b";
     ORTHANC[8] = { accession: "UXBBBB3333" };
     const body = await (await notify(8, KEY_B)).json();
     expect(body).toMatchObject({ outcome: "matched", serviceRequestId: "sr-b1" });
@@ -335,6 +346,16 @@ describe("viewer link, launch and DICOMweb proxy", () => {
     expect((await open(url)).status).toBe(403); // replay
     expect((await open(`${VIEWER}/launch?t=garbage`)).status).toBe(403);
     expect((await open(`${VIEWER}/launch`)).status).toBe(403);
+  });
+
+  test("existing viewer tokens stop working when the archive clinic changes", async () => {
+    const { url } = await (await mint(await ingestA())).json();
+    const cookie = (await open(url)).headers.get("set-cookie")!.split(";")[0];
+    const second = await (await mint(studies()[0].id)).json();
+    process.env.PACS_ORTHANC_CLINICS = "clinic-b";
+    expect((await open(second.url)).status).toBe(403);
+    expect((await proxy(`studies/${uid(1)}/metadata`, cookie)).status).toBe(403);
+    expect(dicomwebCalls).toHaveLength(0);
   });
 
   test("proxy: only the session's study, Orthanc credentials added server-side, nothing upstream leaks back", async () => {

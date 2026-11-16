@@ -32,3 +32,10 @@ Plan, setup and production notes: `.ai/PLAN-xray-phase3.md`. This file records w
 - One earlier run of the three X-ray specs had a single failure in `xray.spec.ts` "Radiology report ingress"; it passed alone and in the next full run, and the failure output was not captured. Treated as a flake, not explained.
 - Not run: `e2e/scripts/check-all.sh` (hardcodes `/workspace/ai-logs`, not writable on this VPS, as in Tasks 351/355), `next build`, the full e2e suite, the admin suite.
 - `tests/unit/admin-status-route.test.ts` was changed to keep the real exports in its module mocks: its partial mock of `medplum-auth` broke any later unit file importing other names from it.
+
+
+## 357b continuation (2026-11-16)
+- Resumed `/home/dev/ucc-task357`, fetched origin, confirmed all local code commits already merged in #255. New branch `ai/task-357b-pacs` starts at origin/dev; local setup/research/changelog preserved as a8a43e3. Draft #256 opened early. Explicit task authorization overrides the standing no-remote rule for normal milestone pushes and draft PRs only.
+- Re-read official Orthanc Lua, OHIF DICOMweb, FHIR R4 ImagingStudy, DICOM PS3.18 and Next after docs above. Medplum searchResources accepts URLSearchParams and fetch options: https://www.medplum.com/docs/sdk/core.medplumclient.searchresources . React effect cleanup: https://react.dev/reference/react/useEffect . Installed client SDK in this VPS node_modules is 5.1.13 (not claimed as 5.2.8); no SDK API changes made.
+- Security finding: optional/multi-clinic Orthanc allowlist allowed any enabled clinic's device to read any archive study and potentially claim it. Require exactly one explicit owning clinic, reject foreign devices before archive access, and enforce the same binding for staff attachment and existing launch/session tokens. Shared-archive ownership is not implemented.
+- Required gate previously hardcoded unwritable `/workspace` output. Add an optional `UCC_LOG_ROOT` override retaining existing defaults so this VPS can run the real check-all script under `/home/dev`.

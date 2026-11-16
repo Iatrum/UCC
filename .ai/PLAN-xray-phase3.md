@@ -1,6 +1,6 @@
 # X-ray phase 3: real DICOM storage + viewer (Task 357)
 
-Status: built and tested on the VPS **dev** stack only, behind the existing default-off `pacs` clinic toggle. Synthetic DICOM only. Nothing here touches production containers (`medplum-*`, `root-traefik-1`), `/opt/medplum` or `/root`.
+Status: implementation merged in #255; continuation validation in #256. Previously built and tested on the VPS **dev** stack only, behind the existing default-off `pacs` clinic toggle. Synthetic DICOM only. Nothing here touches production containers (`medplum-*`, `root-traefik-1`), `/opt/medplum` or `/root`.
 
 ## What it does
 
@@ -36,7 +36,7 @@ Measured idle: Orthanc about 27 MB, OHIF about 4 MB.
 ```bash
 cd infra/pacs-dev
 ./up.sh                                   # first run creates .env.local, viewer-secret, secrets/ (all git-ignored)
-./up.sh ucc-env >> ../../.env.local       # PACS_* server env for UCC (refuses to print to a terminal)
+PACS_ORTHANC_CLINICS=demo ./up.sh ucc-env >> ../../.env.local       # PACS_* server env for UCC (refuses to print to a terminal)
 # issue an X-ray Device key in UCC for the clinic, then put it (one line) in secrets/device-key
 UCC_UPSTREAM=127.0.0.1:3357 ./up.sh       # only if UCC is not on :3210
 ./gen-synthetic.sh /tmp/dcm UXTEST123456 2   # synthetic DX images (pydicom in a throw-away container)
@@ -44,8 +44,8 @@ UCC_UPSTREAM=127.0.0.1:3357 ./up.sh       # only if UCC is not on :3210
 ./up.sh down                              # stop; the orthanc-db volume is kept
 ```
 
-UCC server env (all five required, otherwise the PACS routes answer 503 and no viewer button works):
-`PACS_ORTHANC_URL`, `PACS_ORTHANC_USER`, `PACS_ORTHANC_PASSWORD`, `PACS_VIEWER_ORIGIN`, `PACS_VIEWER_SECRET` (32+ characters). Optional `PACS_ORTHANC_CLINICS` (comma-separated clinic ids allowed to use this Orthanc).
+UCC server env (all six required, otherwise the PACS routes answer 503 and no viewer button works):
+`PACS_ORTHANC_URL`, `PACS_ORTHANC_USER`, `PACS_ORTHANC_PASSWORD`, `PACS_VIEWER_ORIGIN`, `PACS_VIEWER_SECRET` (32+ characters), `PACS_ORTHANC_CLINICS` (exactly one clinic id owning this archive; unset or multiple ids fail closed).
 
 ## Tests
 
@@ -57,7 +57,7 @@ UCC server env (all five required, otherwise the PACS routes answer 503 and no v
 1. **Storage sizing.** Plan 10 to 30 MB per X-ray image (uncompressed DX/CR), usually 1 to 3 images per study. Example: 30 studies/day x 2 images x 20 MB is about 1.2 GB/day, about 440 GB/year per clinic. The VPS disk (96 GB, 74 GB free today) is not enough beyond a short pilot. Options: lossless transcoding on ingest (Orthanc `IngestTranscoding` to JPEG-LS/JPEG 2000 lossless, typically 2 to 3 times smaller; needs a viewer check), a retention policy, and external storage.
 2. **External storage.** Move pixels to object storage with the Orthanc object-storage plugin (S3-compatible, also Azure/GCS) and the index to PostgreSQL (Orthanc PostgreSQL plugin) instead of the default SQLite. Both are bundled in the `orthancteam/orthanc` image but are not enabled or tested here. Encrypt the bucket, keep it private, and back up the index together with the bucket.
 3. **Memory.** Orthanc is capped at 384 MB. DICOMweb plugin 1.24 in this image buffers STOW and WADO chunked transfers in RAM (it logs a performance warning), so a very large multi-frame study could hit the cap. Plain DX images are fine. Keep 2.5 GB free on the shared VPS; better, run the PACS on its own host.
-4. **One Orthanc per clinic, or an allowlist.** A device key decides the clinic. If several clinics shared one Orthanc, a clinic's key could point UCC at another clinic's study id, and it would attach if the accession matched one of its own orders. Until per-clinic labelling exists, run one Orthanc per clinic or set `PACS_ORTHANC_CLINICS` to the single clinic it serves.
+4. **One Orthanc per clinic is enforced.** `PACS_ORTHANC_CLINICS` must contain exactly one clinic id. A foreign clinic device is rejected before reading Orthanc; staff attachment, launch and proxy access check the same binding. A shared archive requires authoritative per-study ownership and is outside this implementation. Never repoint an archive containing one clinic's images at another clinic.
 5. **Network.** The X-ray device must reach Orthanc's DICOM port (4242) over the clinic LAN or a VPN, never the public internet. Register each modality AET (`DicomModalities`); `DicomAlwaysAllowStore` stays false. DICOM TLS is available in Orthanc and not configured here.
 6. **Viewer origin.** Serve OHIF on its own HTTPS hostname (for example `viewer.<domain>`) behind the existing reverse proxy, set `PACS_VIEWER_ORIGIN` to it (the cookie then gets `Secure`). Only `/launch` and `/dicom-web/` are forwarded to UCC. The webhook relay must stay on a private interface.
 7. **Launch tokens are single-use per app process.** The used-token list is in memory. With more than one UCC instance a launch URL could be redeemed once per instance within its 60 s life. Use a shared store (or one instance) before scaling out.

@@ -18,7 +18,7 @@ import { XRAY_TAG_SYSTEM } from '@/lib/fhir/xray-device';
 import { ConflictError, ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { DICOM_UID_SYSTEM, XRAY_ACCESSION_SYSTEM, normalizeAccessionNumber, readAccessionNumber, readStudyUid } from './accession';
-import { fetchOrthancStudy, requirePacsConfig, type OrthancStudy } from './orthanc-client';
+import { fetchOrthancStudy, pacsServesClinic, requirePacsConfig, type OrthancStudy } from './orthanc-client';
 import type { ImagingStudyData } from '@/lib/fhir/imaging-constants';
 
 export const UNMATCHED_TASK_SYSTEM = 'https://ucc.emr/pacs/task';
@@ -255,6 +255,7 @@ export async function attachUnmatchedStudy(
   }
   const studyUid = readStudyUid(task);
   const orthancStudyId = task.input?.find((i) => i.type?.text === 'orthancStudyId')?.valueString;
+  if (!pacsServesClinic(config, clinicId)) throw new ForbiddenError('PACS storage is not available to this clinic');
   const study = orthancStudyId ? await fetchOrthancStudy(config, orthancStudyId) : undefined;
   if (!study || !studyUid || study.studyUid !== studyUid) throw new ConflictError('The study is no longer available in the PACS');
   if (await findStudyByUid(client, clinicId, studyUid)) throw new ConflictError('This study is already attached to an order');
