@@ -30,6 +30,7 @@ import {
 } from "@/lib/treatment-plan";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
 import { timeChitHours, timeChitError, fillTimeChitTemplate } from "@/lib/time-chit";
+import { buildReferralBody, fillDocumentTemplate, mcDiagnosisBlock, mcDiagnosisVisible, mmcLine } from "@/lib/clinical-documents";
 import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import { formatDisplayDate } from "@/lib/utils";
 
@@ -62,7 +63,7 @@ interface OrderComposerProps {
   onPlanChange?: (entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => void;
   submitLabel?: string;
   submitting?: boolean;
-  patient?: { id: string; fullName: string; nric: string } | null;
+  patient?: { id: string; fullName: string; nric: string; medicalHistory?: { allergies?: string[]; medications?: string[] } | null } | null;
   timeChitEnabled?: boolean;
   poctEnabled?: boolean;
   pacsEnabled?: boolean;
@@ -295,35 +296,24 @@ function multilineTextToHtml(value: string): string {
 function buildReferralDefaultContent({
   patientName,
   consultation,
+  medications,
+  allergies,
 }: {
   patientName?: string | null;
   consultation?: OrderComposerProps["consultation"];
+  medications?: string[];
+  allergies?: string[];
 }): string {
-  const clinicalSummary = htmlToPlainText(consultation?.chiefComplaint);
-  const additionalNotes = htmlToPlainText(consultation?.notes);
-  const progressNote = htmlToPlainText(consultation?.progressNote);
-  const diagnosis = (consultation?.diagnosis || "").trim();
-  const dateLabel = consultation?.date ? formatDisplayDate(consultation.date) : "";
-  const visitLabel = dateLabel ? ` during the consultation on ${dateLabel}` : "";
-  const patientLabel = patientName || "this patient";
-  const details = [
-    clinicalSummary ? `Clinical summary:\n${clinicalSummary}` : null,
-    diagnosis ? `Diagnosis:\n${diagnosis}` : null,
-    additionalNotes ? `Additional notes:\n${additionalNotes}` : null,
-    progressNote ? `Progress note:\n${progressNote}` : null,
-  ].filter(Boolean);
-
-  if (details.length === 0) {
-    return "Please include any medical information you deem relevant for the referral";
-  }
-
-  return [
-    `Dear Doctor,`,
-    `Thank you for seeing ${patientLabel} for further assessment and management. The following details were recorded${visitLabel}:`,
-    ...details,
-    `Kindly evaluate and advise on further management.`,
-    `Thank you.`,
-  ].join("\n\n");
+  return buildReferralBody({
+    patientName,
+    visitDate: consultation?.date ? formatDisplayDate(consultation.date) : "",
+    clinicalSummary: htmlToPlainText(consultation?.chiefComplaint),
+    diagnosis: (consultation?.diagnosis || "").trim(),
+    notes: htmlToPlainText(consultation?.notes),
+    progressNote: htmlToPlainText(consultation?.progressNote),
+    medications,
+    allergies,
+  });
 }
 
 export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | undefined {
@@ -341,6 +331,10 @@ export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | und
     mcDiagnosis: entry.meta?.mcDiagnosis || "",
     mcStartDate: entry.meta?.mcStartDate || "",
     mcDoctorName: entry.meta?.mcDoctorName || "",
+    mcDoctorMmc: entry.meta?.mcDoctorMmc || "",
+    mcIncludeDiagnosis: entry.meta?.mcIncludeDiagnosis || "",
+    referralDoctorName: entry.meta?.referralDoctorName || "",
+    referralDoctorMmc: entry.meta?.referralDoctorMmc || "",
     referralTo: entry.meta?.referralTo || "",
     referralDiagnosis: entry.meta?.referralDiagnosis || "",
     referralContent: entry.meta?.referralContent || "",
@@ -355,6 +349,29 @@ function isDraftPersistenceUnavailable(error: unknown): boolean {
     message.includes("Unable to detect a Project Id") ||
     message.includes("persistence is unavailable")
   );
+}
+
+const SIGNER_KEY = "ucc.document-signer";
+/** Remember the last doctor name / MMC number typed on an MC or referral (browser-local, not clinic data). */
+function rememberSigner(name: string, mmc: string) {
+  try {
+    if (name.trim()) localStorage.setItem(SIGNER_KEY, JSON.stringify({ name: name.trim(), mmc: mmc.trim() }));
+  } catch {}
+}
+function recallSigner(): { name: string; mmc: string } {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SIGNER_KEY) || "{}");
+    return { name: String(parsed.name || ""), mmc: String(parsed.mmc || "") };
+  } catch {
+    return { name: "", mmc: "" };
+  }
+}
+
+function printHtml(html: string) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  const win = window.open(url, "_blank");
+  if (win) win.addEventListener("load", () => win.print());
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function OrderComposer({
@@ -421,6 +438,10 @@ export function OrderComposer({
   const [mcDiagnosis, setMcDiagnosis] = React.useState("");
   const [mcStartDate, setMcStartDate] = React.useState(() => new Date().toISOString().split("T")[0]);
   const [mcDoctorName, setMcDoctorName] = React.useState("");
+  const [mcDoctorMmc, setMcDoctorMmc] = React.useState("");
+  const [mcIncludeDiagnosis, setMcIncludeDiagnosis] = React.useState(false);
+  const [referralDoctorName, setReferralDoctorName] = React.useState("");
+  const [referralDoctorMmc, setReferralDoctorMmc] = React.useState("");
   const [referralTo, setReferralTo] = React.useState("(Insert Hosp name)");
   const [referralDiagnosis, setReferralDiagnosis] = React.useState("");
   const [referralContent, setReferralContent] = React.useState(
@@ -491,8 +512,13 @@ export function OrderComposer({
   );
 
   const defaultReferralContent = React.useMemo(
-    () => buildReferralDefaultContent({ patientName: patient?.fullName, consultation }),
-    [consultation, patient?.fullName]
+    () => buildReferralDefaultContent({
+      patientName: patient?.fullName,
+      consultation,
+      medications: patient?.medicalHistory?.medications ?? [],
+      allergies: patient?.medicalHistory?.allergies ?? [],
+    }),
+    [consultation, patient?.fullName, patient?.medicalHistory]
   );
 
   React.useEffect(() => {
@@ -538,7 +564,7 @@ export function OrderComposer({
   const mcPreviewHtml = React.useMemo(() => {
     if (!mcTemplateHtml) return null;
     const endDate = calcMcEndDate(mcStartDate, mcDays);
-    const data: Record<string, string> = {
+    return fillDocumentTemplate(mcTemplateHtml, {
       clinicName: organization?.name ?? "",
       clinicAddress: organization?.address ?? "",
       clinicPhone: organization?.phone ?? "",
@@ -548,19 +574,17 @@ export function OrderComposer({
       mcDays: String(mcDays),
       mcStartDate: formatDisplayDate(new Date(mcStartDate)),
       mcEndDate: endDate,
-      diagnosis: mcDiagnosis,
+      diagnosis: mcIncludeDiagnosis ? mcDiagnosis : "",
       doctorName: mcDoctorName,
+      mmcLine: mmcLine(mcDoctorMmc),
+      diagnosisBlock: mcDiagnosisBlock(mcDiagnosis, mcIncludeDiagnosis),
       date: formatDisplayDate(new Date()),
-    };
-    return Object.entries(data).reduce(
-      (acc, [k, v]) => acc.replaceAll(`{{${k}}}`, v),
-      mcTemplateHtml
-    );
-  }, [mcTemplateHtml, mcDays, mcStartDate, mcDiagnosis, mcDoctorName, organization, patient]);
+    }, { rawKeys: ["mmcLine", "diagnosisBlock"], hideMcDiagnosis: !mcIncludeDiagnosis });
+  }, [mcTemplateHtml, mcDays, mcStartDate, mcDiagnosis, mcIncludeDiagnosis, mcDoctorName, mcDoctorMmc, organization, patient]);
 
   const referralPreviewHtml = React.useMemo(() => {
     if (!referralTemplateHtml) return null;
-    const data: Record<string, string> = {
+    return fillDocumentTemplate(referralTemplateHtml, {
       clinicName: organization?.name ?? "",
       clinicAddress: organization?.address ?? "",
       clinicPhone: organization?.phone ?? "",
@@ -568,17 +592,14 @@ export function OrderComposer({
       patientNric: patient?.nric ?? "",
       patientAge: "",
       referralTo: referralTo,
-      referralFrom: organization?.name ?? "",
+      referralFrom: referralDoctorName || organization?.name || "",
       referralBody: multilineTextToHtml(referralContent),
       diagnosis: referralDiagnosis,
-      doctorName: organization?.name ?? "",
+      doctorName: referralDoctorName,
+      mmcLine: mmcLine(referralDoctorMmc),
       date: formatDisplayDate(new Date()),
-    };
-    return Object.entries(data).reduce(
-      (acc, [k, v]) => acc.replaceAll(`{{${k}}}`, v),
-      referralTemplateHtml
-    );
-  }, [referralTemplateHtml, referralTo, referralContent, referralDiagnosis, organization, patient]);
+    }, { rawKeys: ["referralBody", "mmcLine"] });
+  }, [referralTemplateHtml, referralTo, referralContent, referralDiagnosis, referralDoctorName, referralDoctorMmc, organization, patient]);
 
   // Read the current callbacks without making parent renders restart hydration.
   const hydrationContext = React.useRef({ initialEntries, publishPlan });
@@ -847,9 +868,9 @@ export function OrderComposer({
         documentStatus: status,
         ...(editingDocumentKind === "time-chit" ? { ...tcDetails, kind: "time-chit", tcHours: timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut)! } : {}),
         ...(editingDocumentKind === "mc"
-          ? { mcDays: String(mcDays), mcDiagnosis, mcStartDate, mcDoctorName }
+          ? { mcDays: String(mcDays), mcDiagnosis, mcStartDate, mcDoctorName, mcDoctorMmc, mcIncludeDiagnosis: mcIncludeDiagnosis ? "true" : "" }
           : {}),
-        ...(editingDocumentKind === "referral" ? { referralTo, referralDiagnosis, referralContent } : {}),
+        ...(editingDocumentKind === "referral" ? { referralTo, referralDiagnosis, referralContent, referralDoctorName, referralDoctorMmc } : {}),
       },
     });
     toast({
@@ -857,8 +878,16 @@ export function OrderComposer({
       description: `${editingDocumentEntry.name} updated.`,
     });
     setEditingDocumentEntryId(null);
+    rememberSigner(
+      editingDocumentKind === "mc" ? mcDoctorName : referralDoctorName,
+      editingDocumentKind === "mc" ? mcDoctorMmc : referralDoctorMmc
+    );
     setMcStartDate(new Date().toISOString().split("T")[0]);
     setMcDoctorName("");
+    setMcDoctorMmc("");
+    setMcIncludeDiagnosis(false);
+    setReferralDoctorName("");
+    setReferralDoctorMmc("");
   }
 
   const updateEntryField = React.useCallback(
@@ -964,7 +993,12 @@ export function OrderComposer({
                     setMcDays(Number(entry.meta?.mcDays || 1));
                     setMcDiagnosis(entry.meta?.mcDiagnosis || "");
                     setMcStartDate(entry.meta?.mcStartDate || new Date().toISOString().split("T")[0]);
-                    setMcDoctorName(entry.meta?.mcDoctorName || "");
+                    const signer = recallSigner();
+                    setMcDoctorName(entry.meta?.mcDoctorName || signer.name);
+                    setMcDoctorMmc(entry.meta?.mcDoctorMmc || signer.mmc);
+                    setMcIncludeDiagnosis(mcDiagnosisVisible({ mcIncludeDiagnosis: entry.meta?.mcIncludeDiagnosis }));
+                    setReferralDoctorName(entry.meta?.referralDoctorName || signer.name);
+                    setReferralDoctorMmc(entry.meta?.referralDoctorMmc || signer.mmc);
                     setReferralTo(entry.meta?.referralTo || "(Insert Hosp name)");
                     setReferralDiagnosis(entry.meta?.referralDiagnosis || defaultReferralDiagnosis);
                     setReferralContent(entry.meta?.referralContent || defaultReferralContent);
@@ -1134,6 +1168,17 @@ export function OrderComposer({
                   />
                 </div>
                 <div>
+                  <Label className="text-xs">MMC registration no.</Label>
+                  <Input
+                    placeholder="MMC no."
+                    value={mcDoctorMmc}
+                    onChange={(event) => {
+                      userTouchedRef.current = true;
+                      setMcDoctorMmc(event.target.value);
+                    }}
+                  />
+                </div>
+                <div>
                   <Label className="text-xs">Diagnosis</Label>
                   <Input
                     placeholder="Diagnosis"
@@ -1143,7 +1188,23 @@ export function OrderComposer({
                       setMcDiagnosis(event.target.value);
                     }}
                   />
+                  <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={mcIncludeDiagnosis}
+                      onChange={(event) => {
+                        userTouchedRef.current = true;
+                        setMcIncludeDiagnosis(event.target.checked);
+                      }}
+                    />
+                    Show diagnosis on the MC (hidden by default)
+                  </label>
                 </div>
+                {mcPreviewHtml ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => printHtml(mcPreviewHtml)}>
+                    Print MC
+                  </Button>
+                ) : null}
               </div>
               <div className="rounded-lg border overflow-hidden h-[420px]">
                 {mcPreviewHtml ? (
@@ -1177,6 +1238,30 @@ export function OrderComposer({
                     }}
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Doctor&apos;s name</Label>
+                    <Input
+                      placeholder="Dr. ..."
+                      value={referralDoctorName}
+                      onChange={(event) => {
+                        userTouchedRef.current = true;
+                        setReferralDoctorName(event.target.value);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">MMC registration no.</Label>
+                    <Input
+                      placeholder="MMC no."
+                      value={referralDoctorMmc}
+                      onChange={(event) => {
+                        userTouchedRef.current = true;
+                        setReferralDoctorMmc(event.target.value);
+                      }}
+                    />
+                  </div>
+                </div>
                 <div>
                   <Label className="text-xs">Diagnosis</Label>
                   <Input
@@ -1199,10 +1284,11 @@ export function OrderComposer({
                     }}
                   />
                 </div>
-                <div className="rounded-md border p-2 text-xs text-muted-foreground">
-                  <p className="font-semibold text-foreground">Insert smart fields</p>
-                  <p>Patient name · Doctor name · Visit date · Identification · Age · Time in · Diagnosis</p>
-                </div>
+                {referralPreviewHtml ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => printHtml(referralPreviewHtml)}>
+                    Print referral letter
+                  </Button>
+                ) : null}
               </div>
               <div className="rounded-lg border overflow-hidden h-[420px]">
                 {referralPreviewHtml ? (

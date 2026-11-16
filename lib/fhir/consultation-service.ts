@@ -1,6 +1,7 @@
 import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } from './write-containment';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
+import { isSignedDocumentNote } from '@/lib/clinical-documents';
 import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
@@ -197,6 +198,35 @@ async function validateAndCreate(medplum: MedplumClient, resource: any) {
     throw new Error(`Invalid ${resource.resourceType}: ${validation.errors.join(', ')}`);
   }
   return medplum.createResource(resource);
+}
+
+/**
+ * Audit trail for MC / referral documents (Task 408): one Provenance per
+ * document Procedure. Non-blocking, like the Encounter provenance.
+ */
+async function auditSignedDocument(
+  medplum: MedplumClient,
+  created: { id?: string } | undefined,
+  proc: { notes?: string },
+  practitionerId: string | undefined,
+  organizationId: string | undefined,
+  activity: 'CREATE' | 'UPDATE',
+  clinicTenant: { accountReference: string } | null | undefined
+): Promise<void> {
+  if (!created?.id || !isSignedDocumentNote(proc.notes)) return;
+  try {
+    await createProvenanceForResource(
+      medplum,
+      'Procedure',
+      created.id,
+      practitionerId,
+      organizationId,
+      activity,
+      clinicTenant ? [{ reference: clinicTenant.accountReference }] : undefined
+    );
+  } catch (error) {
+    console.warn('Failed to create document Provenance (non-blocking):', error);
+  }
 }
 
 /**
@@ -441,9 +471,9 @@ export async function saveConsultationToMedplum(
           }
         : { text: proc.name };
 
-      await validateAndCreate(client, withClinicIdentifiers({
+      const createdProc = await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
-        meta: isTimeChitProcedure(proc) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
+        meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
         status: 'completed',
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
@@ -452,6 +482,7 @@ export async function saveConsultationToMedplum(
         extension: orderExtensions(proc),
         performedDateTime: encounterDate,
       }, clinicId));
+      await auditSignedDocument(client, createdProc, proc, consultation.practitionerId, consultation.organizationId || clinicId, 'CREATE', clinicTenant);
     }
   }
 
@@ -891,9 +922,9 @@ export async function updateConsultationInMedplum(
           }
         : { text: proc.name };
 
-      await validateAndCreate(client, withClinicIdentifiers({
+      const createdProc = await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
-        meta: isTimeChitProcedure(proc) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
+        meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
         status: 'completed',
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
@@ -902,6 +933,7 @@ export async function updateConsultationInMedplum(
         extension: orderExtensions(proc),
         performedDateTime: now,
       }, clinicId));
+      await auditSignedDocument(client, createdProc, proc, updates.practitionerId, updates.organizationId || clinicId, 'UPDATE', clinicTenant);
     }
   }
 
