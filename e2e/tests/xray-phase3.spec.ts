@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fhir } from '../lib/fhir';
+import { EVIDENCE } from '../lib/env';
 import { newDeviceKey } from '../lib/device-key';
 
 // X-ray phase 3 (Task 357): real DICOM storage + viewer, against the DEV PACS only (compose project
@@ -17,7 +18,7 @@ import { newDeviceKey } from '../lib/device-key';
 test.use({ trace: 'off' });
 
 const PACS_DIR = path.join(import.meta.dirname, '../../infra/pacs-dev');
-const SHOTS = path.join(import.meta.dirname, '../../.ai/ux-shots/task357');
+const SHOTS = path.join(EVIDENCE, 'task357');
 const ORTHANC = process.env.PACS_ORTHANC_URL || 'http://127.0.0.1:8042';
 const VIEWER = process.env.PACS_VIEWER_ORIGIN || 'http://127.0.0.1:3320';
 const KEY_FILE = path.join(PACS_DIR, 'secrets/device-key');

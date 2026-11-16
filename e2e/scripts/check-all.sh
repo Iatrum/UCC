@@ -6,6 +6,8 @@ set -u
 LOG_ROOT=${UCC_LOG_ROOT:-/workspace/ai-logs}
 LABEL=${1:-run}; BASE=${2:-$LOG_ROOT/baseline/results.json}
 REPO=$(cd "$(dirname "$0")/../.." && pwd); OUT=$LOG_ROOT/$LABEL; mkdir -p "$OUT"; FAIL=0
+export UCC_EVIDENCE=${UCC_EVIDENCE:-$OUT/evidence}
+export UCC_SAVE_SHOTS=${UCC_SAVE_SHOTS:-$OUT/save-state-shots}
 export UCC_REPORTS=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}
 export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=1536}
 step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c" | tee -a "$OUT/summary.txt"; [ $c -eq 0 ] || FAIL=1; }
