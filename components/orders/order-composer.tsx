@@ -1,5 +1,6 @@
 "use client";
 
+import { planWriteOutcome } from "@/lib/plan-save-state";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 
 import { PoctSection } from "./poct-section";
@@ -347,16 +348,6 @@ export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | und
   });
 }
 
-function isDraftPersistenceUnavailable(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("UNAUTHENTICATED") ||
-    message.includes("invalid authentication credentials") ||
-    message.includes("Unable to detect a Project Id") ||
-    message.includes("persistence is unavailable")
-  );
-}
-
 export function OrderComposer({
   draftId,
   patientId,
@@ -592,7 +583,7 @@ export function OrderComposer({
       { cache: "no-store" }
     );
     const data = await response.json().catch(() => ({}));
-    if (data?.persistenceAvailable !== false && (!response.ok || !data?.success)) {
+    if (planWriteOutcome(response.ok, data) === "failed") {
       throw new Error(data?.error || "Failed to load treatment plan draft");
     }
     return data as {
@@ -659,16 +650,12 @@ export function OrderComposer({
       } catch (error) {
         if (!active) return;
         publishHydratedPlan(initialEntries);
-        if (isDraftPersistenceUnavailable(error)) {
-          disablePersistence();
-        } else {
-          setSaveErrorMessage("Could not load saved draft.");
-          toast({
-            title: "Could not load saved draft",
-            description: "The previously saved draft could not be loaded.",
-            variant: "destructive",
-          });
-        }
+        setSaveErrorMessage("Could not load saved draft.");
+        toast({
+          title: "Could not load saved draft",
+          description: "The previously saved draft could not be loaded.",
+          variant: "destructive",
+        });
       } finally {
         if (active) setHydratedKey(draftKey);
       }
@@ -679,7 +666,7 @@ export function OrderComposer({
   }, [draftKey, loadAttempt, loadDraft, persistDrafts, disablePersistence, toast]);
 
   const persistEntry = React.useCallback(
-    async (entry: TreatmentPlanEntryInput, rollback: () => void): Promise<void> => {
+    async (entry: TreatmentPlanEntryInput): Promise<void> => {
       if (persistenceDisabled) {
         return;
       }
@@ -692,11 +679,12 @@ export function OrderComposer({
           body: JSON.stringify({ draftId, patientId, consultationId, entry }),
         });
         const data = await response.json().catch(() => ({}));
-        if (data?.persistenceAvailable === false) {
+        const outcome = planWriteOutcome(response.ok, data);
+        if (outcome === "local-only") {
           disablePersistence();
           return;
         }
-        if (!response.ok || !data?.success) {
+        if (outcome === "failed") {
           throw new Error(data?.error || "Failed to save treatment plan entry");
         }
         if (persistenceDisabledRef.current) {
@@ -709,12 +697,8 @@ export function OrderComposer({
         });
         publishPlan(data.plan.entries as TreatmentPlanEntry[]);
       } catch (error) {
-        if (isDraftPersistenceUnavailable(error)) {
-          disablePersistence();
-          return;
-        }
-        rollback();
-        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry, () => {}) }));
+        // Keep the doctor's item on screen: status says "Failed to save", Sign stays disabled, Retry replays it.
+        setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry) }));
         toast({
           title: "Autosave failed",
           description: error instanceof Error ? error.message : "Failed to save treatment plan changes.",
@@ -759,8 +743,7 @@ export function OrderComposer({
           quantity: optimistic.quantity,
           unitPrice: optimistic.unitPrice,
           meta: optimistic.meta,
-        },
-        () => publishPlan(prev)
+        }
       );
     },
     [entries, persistEntry, publishPlan]
@@ -775,6 +758,12 @@ export function OrderComposer({
       if (!retrying) publishPlan(next);
       setDetailEntryId((id) => (id === entry.id ? null : id));
       setEditingDocumentEntryId((id) => (id === entry.id ? null : id));
+      // A pending failed save for this entry is moot once the user removes it.
+      setFailedSaves((failed) => {
+        if (!(entry.id in failed)) return failed;
+        const { [entry.id]: _dropped, ...rest } = failed;
+        return rest;
+      });
       if (persistenceDisabled) {
         return;
       }
@@ -787,11 +776,12 @@ export function OrderComposer({
           body: JSON.stringify({ draftId, patientId, consultationId, entryId: entry.id }),
         });
         const data = await response.json().catch(() => ({}));
-        if (data?.persistenceAvailable === false) {
+        const outcome = planWriteOutcome(response.ok, data);
+        if (outcome === "local-only") {
           disablePersistence();
           return;
         }
-        if (!response.ok || !data?.success) {
+        if (outcome === "failed") {
           throw new Error(data?.error || "Failed to delete entry");
         }
         if (persistenceDisabledRef.current) {
@@ -804,10 +794,6 @@ export function OrderComposer({
         });
         publishPlan(data.plan.entries as TreatmentPlanEntry[]);
       } catch (error) {
-        if (isDraftPersistenceUnavailable(error)) {
-          disablePersistence();
-          return;
-        }
         if (!retrying) publishPlan(prev);
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry, true) }));
         toast({
@@ -892,8 +878,7 @@ export function OrderComposer({
           frequency: patch.frequency ?? entry.frequency,
           duration: patch.duration ?? entry.duration,
           meta: patch.meta ?? entry.meta,
-        },
-        () => publishPlan(prev)
+        }
       );
     },
     [entries, persistEntry, publishPlan]
