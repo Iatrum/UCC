@@ -1,6 +1,6 @@
 # Task 5 — security review and verification
 
-Status: implementation and migration rehearsal verified; corrected full gate, cleanup and publication pending. Self-review only; no independent agent was invoked.
+Status: Task 404 fixes session instructions and operator recovery; current-head live super-admin rehearsal and complete gate remain outstanding. Historical evidence below is not current release approval. Self-review only; no independent agent was invoked for Task 404.
 
 ## Design
 
@@ -100,3 +100,12 @@ For the next complete gate, opt-in `UCC_E2E_WORKFLOW_FIRST=1` runs the full pati
 - `verify-clinic-isolation.mjs`: the foreign-Practitioner leak check now fails when the foreign-only set is empty, with a separate explicit non-vacuity check; admin role listing checks status and uses `_count=100` (the `http()` helper already follows every `next` link, so paging is exercised rather than truncated).
 - Runbook: repo-root note, manual recovery for orphan operator User, concrete (but unverified) session revocation via `Login.revoked`.
 - **Live demotion rehearsal NOT run.** The only dev credential in the env files (e2e admin) logs in to project "UCC Clinics", which is already `superAdmin=false`, so the rehearsal cannot create fixture projects. A super-admin operator credential is needed (`DEV_OPERATOR_EMAIL`/`DEV_OPERATOR_PASSWORD`). I did not use passwords from other runs' backup directories or agent transcripts. Nothing on dev was changed; the failed attempts cleaned up their fixtures.
+
+## Task 404 — Task 388 follow-up (16 November 2026, Codex)
+
+- Replaced the unsupported Login revocation filter with a tested operator helper: search only by `user`, follow/validate all pages, filter absent/false revocation locally, preserve fields with version-conditioned updates, verify no active sessions remain. Dedicated operator authentication and self-revocation guards are mandatory. Preview is the default.
+- Added optional disposable-fake-session verification: prove access and refresh work first (including refresh rotation), then require old access 401 and refresh 400/invalid_grant after revocation. This path was tested against simulated responses only, **not live Medplum**.
+- Runbook provides hidden-input commands, counts/exit-code expectations, recovery decision table, exact rollback preview/apply commands, snapshot checks, post-rollback checks and credential cleanup. Removed unsupported orphan deletion/re-invite/restart/expiry fallback advice. No migration, policy or application implementation was changed.
+- Read the Task 388 PR comment and tagged Medplum 5.2.8/5.2.15 source; research/limits in `.ai/research/task404-session-recovery.md`. Unauthenticated dev metadata reports 5.2.15; unauthenticated Login search and auth/me both return 401. No authenticated API mutation, password-file/transcript access or super-admin login.
+- **Live rehearsal remains OUTSTANDING by user instruction.** Require a newly supplied authorized dev super-admin credential, nonempty foreign fixtures and actual multiple pages before release. Full current-head gate and production-version compatibility remain outstanding. Historical “accepted” gate wording above does not resolve Task 388's 51/65 / 11-new-failure / missing-OVERALL finding.
+- Checks: unit suite **254 passed, 0 failed**, including 19 new HTTP-simulation tests; full TypeScript no-emit and repository lint passed; helper ESLint and Node syntax passed; all 10 runbook Bash blocks passed `bash -n` without execution. No Next server was started. No protected container/path, Supabase/Tradebot, real patient data, composer, sidebar, Lab/POCT behavior or Firebase Storage was touched.
