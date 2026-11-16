@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { InventoryMedicationData } from '@/lib/fhir/inventory-service';
 import {
   createInventoryMedicationInMedplum,
   deleteInventoryMedicationInMedplum,
@@ -9,6 +10,14 @@ import {
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
+import { InventoryValidationError, parseInventoryInput } from '@/lib/fhir/inventory-validation';
+
+function inventoryError(error: unknown, context: string) {
+  if (error instanceof InventoryValidationError) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  }
+  return handleRouteError(error, context);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -36,14 +45,8 @@ export async function POST(request: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(request);
     const medplum = await getAdminMedplum();
-    const data = await request.json();
-
-    if (!data?.name) {
-      return NextResponse.json({ success: false, error: 'Missing required field: name' }, { status: 400 });
-    }
-    if (!Array.isArray(data?.strengths)) {
-      return NextResponse.json({ success: false, error: 'Missing required field: strengths' }, { status: 400 });
-    }
+    const body = await request.json().catch(() => null);
+    const data = parseInventoryInput(body, { partial: false }) as InventoryMedicationData;
 
     const medicationId = await createInventoryMedicationInMedplum(medplum, data, clinicId);
     return NextResponse.json({
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
       message: 'Medication saved to FHIR successfully',
     });
   } catch (error) {
-    return handleRouteError(error, 'POST /api/inventory');
+    return inventoryError(error, 'POST /api/inventory');
   }
 }
 
@@ -60,16 +63,18 @@ export async function PATCH(request: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(request);
     const medplum = await getAdminMedplum();
-    const { medicationId, ...updates } = await request.json();
+    const body = await request.json().catch(() => null);
+    const { medicationId, ...rawUpdates } = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
 
-    if (!medicationId) {
+    if (typeof medicationId !== 'string' || !medicationId) {
       return NextResponse.json({ success: false, error: 'Missing medicationId' }, { status: 400 });
     }
+    const updates = parseInventoryInput(rawUpdates, { partial: true });
 
     await updateInventoryMedicationInMedplum(medplum, medicationId, updates, clinicId);
     return NextResponse.json({ success: true, message: 'Medication updated successfully' });
   } catch (error) {
-    return handleRouteError(error, 'PATCH /api/inventory');
+    return inventoryError(error, 'PATCH /api/inventory');
   }
 }
 

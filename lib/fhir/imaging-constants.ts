@@ -60,6 +60,8 @@ export interface ImagingReportSummary {
   procedure: string;
   modality: string;
   status: 'registered' | 'available' | 'cancelled';
+  /** True for studies produced by the POCT X-ray device flow (gated by the `pacs` clinic toggle). */
+  xray?: boolean;
   orderedAt: Date;
   performedAt?: Date;
   study?: ImagingStudyData;

@@ -54,7 +54,7 @@ function parseAnalyserMessage(input: AnalyserMessage): { serviceRequestId: strin
  * tagged `poct` (this path is the POCT analyser bridge, not a general lab
  * results receiver — that's `/api/labs/receive`).
  */
-export async function ingestAnalyserMessage(input: AnalyserMessage, medplum: MedplumClient): Promise<IngestResult> {
+export async function ingestAnalyserMessage(input: AnalyserMessage, medplum: MedplumClient, deviceClinicId: string): Promise<IngestResult> {
   const { serviceRequestId, results } = parseAnalyserMessage(input);
   if (results.length === 0) throw new Error('Analyser message contained no results');
 
@@ -64,7 +64,9 @@ export async function ingestAnalyserMessage(input: AnalyserMessage, medplum: Med
   }
 
   const clinicId = getClinicIdentifierValue(serviceRequest);
-  if (!clinicId || !(await isModuleEnabledForClinic('poct', clinicId))) {
+  // The device's clinic (from its authenticated key) must own the order before anything is read or written.
+  if (!clinicId || clinicId !== deviceClinicId) throw new ForbiddenError("Order does not belong to this device's clinic");
+  if (!(await isModuleEnabledForClinic('poct', clinicId))) {
     throw new ForbiddenError('POCT module is disabled for this clinic');
   }
   // Retransmission after a completed order returns its existing report. Corrections
@@ -81,12 +83,12 @@ export async function ingestAnalyserMessage(input: AnalyserMessage, medplum: Med
     throw new ConflictError('POCT order cannot receive results in its current status');
   }
 
-  const diagnosticReportId = await receiveLabResults(serviceRequestId, results, undefined, medplum);
+  const diagnosticReportId = await receiveLabResults(serviceRequestId, results, undefined, medplum, deviceClinicId);
   return { serviceRequestId, diagnosticReportId };
 }
 
 /** Medplum Bot handler shape — not wired to a live Bot resource yet, kept deploy-ready. */
-export async function handler(medplum: MedplumClient, event: { input: string; contentType?: string }): Promise<IngestResult> {
+export async function handler(medplum: MedplumClient, event: { input: string; contentType?: string; deviceClinicId: string }): Promise<IngestResult> {
   const format: AnalyserMessageFormat = event.contentType === 'x-application/hl7-v2+er7' ? 'hl7' : 'astm';
-  return ingestAnalyserMessage({ format, message: event.input }, medplum);
+  return ingestAnalyserMessage({ format, message: event.input }, medplum, event.deviceClinicId);
 }

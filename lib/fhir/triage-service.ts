@@ -1,5 +1,7 @@
 import { TriageData, VitalSigns, QueueStatus } from '../types';
+import { assertPatientInClinic } from './write-containment';
 import { MedplumClient } from '@medplum/core';
+import type { Observation } from '@medplum/fhirtypes';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
@@ -327,9 +329,10 @@ async function createChiefComplaintObservation(
   medplum: MedplumClient,
   encounterId: string,
   patientRef: string,
-  chiefComplaint: string
+  chiefComplaint: string,
+  clinicId?: string
 ) {
-  await validateAndCreate(medplum, {
+  await validateAndCreate(medplum, withClinicIdentifier<Observation>({
     resourceType: 'Observation',
     status: 'final',
     subject: { reference: patientRef },
@@ -339,14 +342,15 @@ async function createChiefComplaintObservation(
       text: 'Chief Complaint',
     },
     valueString: chiefComplaint,
-  });
+  }, clinicId));
 }
 
 async function createVitalsObservations(
   medplum: MedplumClient,
   encounterId: string,
   patientRef: string,
-  vitals: VitalSigns
+  vitals: VitalSigns,
+  clinicId?: string
 ) {
   const promises: Promise<any>[] = [];
 
@@ -364,7 +368,7 @@ async function createVitalsObservations(
       : { value };
 
     promises.push(
-      validateAndCreate(medplum, {
+      validateAndCreate(medplum, withClinicIdentifier<Observation>({
         resourceType: 'Observation',
         status: 'final',
         subject: { reference: patientRef },
@@ -376,7 +380,7 @@ async function createVitalsObservations(
         ...(key === 'painScore'
           ? { valueInteger: value }
           : { valueQuantity }),
-      })
+      }, clinicId))
     );
   });
 
@@ -390,6 +394,7 @@ export async function saveTriageEncounter(
   clinicId?: string
 ): Promise<string> {
   const client = medplum;
+  await assertPatientInClinic(client, clinicId, patientId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
@@ -482,8 +487,8 @@ export async function saveTriageEncounter(
     encounterId = encounter.id!;
   }
 
-  await createChiefComplaintObservation(client, encounterId, `Patient/${patientId}`, triagePayload.chiefComplaint);
-  await createVitalsObservations(client, encounterId, `Patient/${patientId}`, triagePayload.vitalSigns || {});
+  await createChiefComplaintObservation(client, encounterId, `Patient/${patientId}`, triagePayload.chiefComplaint, clinicId);
+  await createVitalsObservations(client, encounterId, `Patient/${patientId}`, triagePayload.vitalSigns || {}, clinicId);
   return encounterId;
 }
 
@@ -507,6 +512,7 @@ export async function checkInPatientInTriage(
   clinicId?: string
 ): Promise<string> {
   const client = medplum ?? (await getAdminMedplum());
+  await assertPatientInClinic(client, clinicId, patientId);
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   const existing = await getActiveTriageEncounter(patientId, client, clinicId);
 
@@ -555,7 +561,7 @@ export async function checkInPatientInTriage(
   await assignResourceToClinicTenant(client, 'Encounter', encounter, clinicTenant);
 
   if (chiefComplaint) {
-    await createChiefComplaintObservation(client, encounter.id!, `Patient/${patientId}`, chiefComplaint);
+    await createChiefComplaintObservation(client, encounter.id!, `Patient/${patientId}`, chiefComplaint, clinicId);
   }
 
   return encounter.id!;

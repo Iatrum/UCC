@@ -7,6 +7,7 @@ import {
   updateOrganizationDetailsInMedplum,
 } from "@/lib/fhir/admin-service";
 import { normalizeEnabledModuleIds } from "@/lib/module-settings";
+import { validatePacsHosts } from "@/lib/fhir/pacs-allowlist";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,6 +38,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       );
     }
 
+    let pacsViewerHosts: string[] | undefined;
+    if (body.pacsViewerHosts !== undefined) {
+      if (!Array.isArray(body.pacsViewerHosts)) {
+        return NextResponse.json({ error: "pacsViewerHosts must be a list" }, { status: 400 });
+      }
+      const { hosts, invalid } = validatePacsHosts(body.pacsViewerHosts);
+      if (invalid.length) {
+        return NextResponse.json(
+          { error: `Invalid PACS viewer host(s): ${invalid.join(", ")}. Use DNS names only (host or host:port), HTTPS, no IP addresses.` },
+          { status: 400 }
+        );
+      }
+      pacsViewerHosts = hosts;
+    }
+
     const updated = await updateOrganizationDetailsInMedplum(id, {
       name,
       phone: body.phone ? String(body.phone).trim() : undefined,
@@ -46,6 +62,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       enabledModuleIds: Array.isArray(body.enabledModuleIds)
         ? normalizeEnabledModuleIds(body.enabledModuleIds)
         : undefined,
+      pacsViewerHosts,
     });
 
     return NextResponse.json({ success: true, clinic: updated });

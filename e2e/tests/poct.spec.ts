@@ -2,7 +2,7 @@ import { test, expect, type Page, type APIRequestContext } from '@playwright/tes
 import type { Device, Organization, ServiceRequest } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
-import { POCT_API_KEY } from '../lib/env';
+import { newDeviceKey, bearer } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
 
 // Analyser requests contain a runtime secret; exclude them from trace artifacts.
@@ -58,8 +58,9 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   const consult = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake POCT test visit', diagnosis: 'Fake test', procedures: [], prescriptions: [] } });
   expect(consult.ok()).toBeTruthy();
   const { consultationId } = await consult.json();
+  const { key: deviceKey, identifier: keyHash } = newDeviceKey();
   const device = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
-    identifier: [{ system: 'clinic', value: clinicId }],
+    identifier: [{ system: 'clinic', value: clinicId }, keyHash],
     meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
     deviceName: [{ name: `Fake POCT ${suffix}`, type: 'user-friendly-name' }],
     type: { coding: [{ system: typeSystem, code: 'glucose' }] },
@@ -70,7 +71,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   await page.goto(`/patients/${patientId}`);
   await page.getByRole('tab', { name: 'Treatment', exact: true }).click();
   await expect(page.getByRole('region', { name: 'POCT', exact: true })).toBeVisible();
-  return { m, patientId, patientName: `POCT Fake ${suffix}`, consultationId, clinicId, device, restorePoctModule };
+  return { m, patientId, patientName: `POCT Fake ${suffix}`, consultationId, clinicId, device, deviceKey, restorePoctModule };
 }
 
 test('POCT offline analyser cannot be added; auth, clinic and server guard fail closed', async ({ request, page, playwright, baseURL }) => {
@@ -265,18 +266,18 @@ test('Simulated analyser HL7/ASTM results reach the Lab tab, clear pending, and 
       identifier: [{ system: 'clinic', value: f.clinicId! }],
     });
     const rejected = await request.post('/api/labs/receive/message', {
-      data: { format: 'hl7', message: buildTestOruMessage(plainSr.id!, 1, 'N'), apiKey: POCT_API_KEY },
+      data: { format: 'hl7', message: buildTestOruMessage(plainSr.id!, 1, 'N'), apiKey: f.deviceKey },
     });
     expect(rejected.status()).toBe(400);
 
     const ingested = await request.post('/api/labs/receive/message', {
-      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: POCT_API_KEY },
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: f.deviceKey },
     });
     expect(ingested.ok()).toBeTruthy();
     const ingestResult = await ingested.json();
     expect(ingestResult.serviceRequestId).toBe(sr.id);
     const replay = await request.post('/api/labs/receive/message', {
-      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: POCT_API_KEY },
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 6.8, 'H'), apiKey: f.deviceKey },
     });
     expect(replay.ok()).toBeTruthy();
     expect((await replay.json()).diagnosticReportId).toBe(ingestResult.diagnosticReportId);
@@ -309,7 +310,7 @@ test('Simulated analyser HL7/ASTM results reach the Lab tab, clear pending, and 
       performer: [{ reference: `Device/${f.device.id}` }],
     });
     const astmIngested = await request.post('/api/labs/receive/message', {
-      data: { format: 'astm', message: buildTestAstmMessage(sr2.id!, '1988-5', 'CRP', 42, 'HH'), apiKey: POCT_API_KEY },
+      data: { format: 'astm', message: buildTestAstmMessage(sr2.id!, '1988-5', 'CRP', 42, 'HH'), apiKey: f.deviceKey },
     });
     expect(astmIngested.ok()).toBeTruthy();
 
@@ -334,7 +335,7 @@ test('POCT module disabled after an order exists blocks PATCH/DELETE of that ord
     const disable = await setClinicModuleEnabled(f.m, f.clinicId, false);
     try {
       const blockedMessage = await request.post('/api/labs/receive/message', {
-        data: { format: 'hl7', message: buildTestOruMessage(poctServiceRequestId, 6.8, 'H'), apiKey: POCT_API_KEY },
+        data: { format: 'hl7', message: buildTestOruMessage(poctServiceRequestId, 6.8, 'H'), apiKey: f.deviceKey },
       });
       expect(blockedMessage.status()).toBe(403);
       expect((await f.m.readResource('ServiceRequest', poctServiceRequestId)).status).toBe('active');
@@ -415,7 +416,7 @@ test('Lab subscription notifications refresh results without navigation; dropped
     await expect(page.getByText('Pending POCT Tests', { exact: true })).toBeVisible();
     await expect.poll(() => Boolean(socket)).toBe(true);
     const ingested = await request.post('/api/labs/receive/message', {
-      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 7.1, 'H'), apiKey: POCT_API_KEY },
+      data: { format: 'hl7', message: buildTestOruMessage(sr.id!, 7.1, 'H'), apiKey: f.deviceKey },
     });
     expect(ingested.ok()).toBeTruthy();
     const notify = (id: string) => socket!.send(JSON.stringify({ resourceType: 'Bundle', entry: [{ resource: {
@@ -485,6 +486,10 @@ test('Lab subscription API enforces login, clinic patient/encounter scope and PO
     // Real local Medplum may lack websocket-subscriptions project capability. Both
     // states are supported; deterministic transport coverage is in the test above.
     expect([200, 503]).toContain(response.status());
+    // Shared channel: whichever transport state Medplum has, it must be the same
+    // for every module combination that keeps the channel open (never 403 here).
+    const transportStatus = response.status();
+    if (response.status() === 503) expect(await response.json()).toEqual({ error: 'Live updates unavailable' });
     if (response.ok()) {
       const binding = await response.json();
       expect(typeof binding.token).toBe('string');
@@ -498,10 +503,78 @@ test('Lab subscription API enforces login, clinic patient/encounter scope and PO
       expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403);
       const restorePacsOnly = await setClinicModuleEnabled(f.m, f.clinicId!, true, 'pacs');
       try {
-        expect([200, 503]).toContain((await request.post('/api/labs/subscription', { data: body })).status());
+        expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(transportStatus);
       } finally { await restorePacsOnly(); }
       expect((await request.post('/api/labs/subscription', { data: body })).status()).toBe(403);
     }
     finally { await disable(); }
   } finally { await anonymous.dispose(); await f.m.deleteResource('Device', f.device.id!); await restorePacs(); await f.restorePoctModule(); }
+});
+
+test('Per-device keys: no/unknown/revoked/inactive/wrong-type key fail closed; a clinic-A key cannot write into a clinic-B order', async ({ request, page }) => {
+  const f = await fixture(request, page, true);
+  const otherClinic = f.clinicId === 'demo' ? 'clinicb' : 'demo';
+  const created: { type: 'Device' | 'ServiceRequest'; id: string }[] = [];
+  const make = async <T extends Device | ServiceRequest>(resource: T) => { const r = await f.m.createResource<T>(resource); created.push({ type: r.resourceType as 'Device', id: r.id! }); return r; };
+  try {
+    const subject = { reference: `Patient/${f.patientId}` };
+    const orderIn = (clinic: string, poct: boolean): ServiceRequest => ({ resourceType: 'ServiceRequest', status: 'active', intent: 'order', subject,
+      ...(poct ? { meta: { tag: [{ system: tagSystem, code: 'poct' }] } } : {}),
+      code: { coding: [{ system: 'http://loinc.org', code: poct ? '14743-9' : '58410-2', display: poct ? 'Glucose' : 'CBC' }] },
+      identifier: [{ system: 'clinic', value: clinic }] });
+    const ownPoct = await make(orderIn(f.clinicId, true));
+    const ownPlain = await make(orderIn(f.clinicId, false));
+    const foreignPoct = await make(orderIn(otherClinic, true));
+    const foreignPlain = await make(orderIn(otherClinic, false));
+    const results = [{ testCode: '718-7', testName: 'Haemoglobin', value: 13.9, unit: 'g/dL', status: 'final' }];
+    const oru = (id: string) => ({ format: 'hl7', message: buildTestOruMessage(id, 6.8, 'H') });
+    const reportsFor = async (id: string) => f.m.searchResources('DiagnosticReport', { 'based-on': `ServiceRequest/${id}` }, { cache: 'no-cache' });
+
+    // 1. No key / malformed key / unknown key -> 401 on both lab ingress routes (no shared-env-key fallback, no fail-open).
+    for (const headers of [{}, bearer('not-a-device-key'), bearer(`ucc_dk_${randomUUID()}`)]) {
+      expect((await request.post('/api/labs/receive/message', { headers, data: oru(ownPoct.id!) })).status()).toBe(401);
+      expect((await request.post('/api/labs/receive', { headers, data: { serviceRequestId: ownPlain.id, results } })).status()).toBe(401);
+    }
+
+    // 2. A clinic-A key cannot write into a clinic-B ServiceRequest (either route, any header style).
+    const crossMessage = await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(foreignPoct.id!) });
+    expect(crossMessage.status()).toBe(403);
+    const crossJson = await request.post('/api/labs/receive', { headers: { 'X-Device-Key': f.deviceKey }, data: { serviceRequestId: foreignPlain.id, results } });
+    expect(crossJson.status()).toBe(403);
+    for (const sr of [foreignPoct, foreignPlain]) {
+      expect(await reportsFor(sr.id!)).toHaveLength(0);
+      expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('active');
+    }
+
+    // 3. An X-ray device key is the wrong device type for lab ingress.
+    const xray = newDeviceKey();
+    await make<Device>({ resourceType: 'Device', status: 'active', identifier: [{ system: 'clinic', value: f.clinicId }, xray.identifier],
+      meta: { tag: [{ system: 'https://ucc.emr/xray', code: 'simulated' }] }, type: { coding: [{ system: 'https://ucc.emr/xray/device-type', code: 'xray' }] } });
+    expect((await request.post('/api/labs/receive/message', { headers: bearer(xray.key), data: oru(ownPoct.id!) })).status()).toBe(401);
+
+    // 4. Inactive and revoked devices are refused.
+    await f.m.updateResource({ ...f.device, status: 'inactive' as const });
+    expect((await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(ownPoct.id!) })).status()).toBe(401);
+    await f.m.updateResource({ ...f.device, status: 'active' as const, identifier: f.device.identifier!.filter((id) => !id.system?.includes('api-key')) });
+    expect((await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(ownPoct.id!) })).status()).toBe(401);
+    await f.m.updateResource(f.device);
+    expect(await reportsFor(ownPoct.id!)).toHaveLength(0);
+
+    // 5. Module toggle still gates device ingress for the device's clinic.
+    const restore = await setClinicModuleEnabled(f.m, f.clinicId, false);
+    try { expect((await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(ownPoct.id!) })).status()).toBe(403); }
+    finally { await restore(); }
+
+    // 6. The device's own clinic still works, via either route; the clinic identifier is stamped from the Device.
+    const ok = await request.post('/api/labs/receive', { headers: bearer(f.deviceKey), data: { serviceRequestId: ownPlain.id, results } });
+    expect(ok.ok(), await ok.text()).toBeTruthy();
+    const report = await f.m.readResource('DiagnosticReport', (await ok.json()).diagnosticReportId);
+    expect(report.identifier).toContainEqual({ system: 'clinic', value: f.clinicId });
+    const okMessage = await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(ownPoct.id!) });
+    expect(okMessage.ok(), await okMessage.text()).toBeTruthy();
+  } finally {
+    for (const r of created.reverse()) await f.m.deleteResource(r.type, r.id).catch(() => {});
+    await f.m.deleteResource('Device', f.device.id!);
+    await f.restorePoctModule();
+  }
 });

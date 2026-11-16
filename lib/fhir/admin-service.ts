@@ -11,6 +11,7 @@ import {
   normalizeEnabledModuleIds,
   withEnabledModuleIdsExtension,
 } from "@/lib/module-settings";
+import { getPacsHostsFromOrganization, withPacsHostsExtension } from "@/lib/fhir/pacs-allowlist";
 
 function getIdFromReference(reference?: string): string | undefined {
   if (!reference) return undefined;
@@ -122,6 +123,7 @@ export interface ClinicSummary {
   parentId?: string;
   parentName?: string;
   enabledModuleIds: string[];
+  pacsViewerHosts: string[];
 }
 
 export interface ParentOrganizationSummary {
@@ -161,6 +163,7 @@ function mapOrganizationToSummary(org: Organization, parentName?: string): Clini
     parentId,
     parentName,
     enabledModuleIds: getEnabledModuleIdsFromOrganization(org),
+    pacsViewerHosts: getPacsHostsFromOrganization(org),
   };
 }
 
@@ -314,12 +317,15 @@ export async function updateOrganizationDetailsInMedplum(
       ? [{ system: "phone" as const, value: input.phone }]
       : undefined,
     address: input.address ? [{ text: input.address }] : undefined,
-    extension: input.enabledModuleIds
-      ? withEnabledModuleIdsExtension(
-          brandingExtensions,
-          normalizeEnabledModuleIds(input.enabledModuleIds)
-        )
-      : brandingExtensions,
+    extension: withPacsHostsExtension(
+      input.enabledModuleIds
+        ? withEnabledModuleIdsExtension(
+            brandingExtensions,
+            normalizeEnabledModuleIds(input.enabledModuleIds)
+          )
+        : brandingExtensions,
+      input.pacsViewerHosts
+    ),
   };
 
   const saved = await medplum.updateResource(updated);
@@ -391,6 +397,8 @@ export interface OrganizationInput {
   logoUrl?: string;
   parentId?: string;
   enabledModuleIds?: string[];
+  /** undefined = leave unchanged; [] = clear (default deny). */
+  pacsViewerHosts?: string[];
 }
 
 function scrubDeletedPractitionerTelecom(

@@ -14,27 +14,22 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestXrayStudy, type XrayStudyMessage } from '@/lib/pacs/xray-device-bot';
-import { ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
+import { AuthError, ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
+import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
 export const runtime = 'nodejs';
 
 interface ReceiveXrayStudyRequest extends XrayStudyMessage {
-  apiKey?: string;
+  apiKey?: string; // legacy body field; prefer the `Authorization: Bearer` / `X-Device-Key` header
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: ReceiveXrayStudyRequest = await request.json();
 
-    // Device ingress must fail closed when its key has not been configured.
-    const expectedApiKey = process.env.PACS_API_KEY;
-    if (!expectedApiKey) {
-      return NextResponse.json({ error: 'X-ray device ingestion is not configured' }, { status: 503 });
-    }
-    if (body.apiKey !== expectedApiKey) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid API key' }, { status: 401 });
-    }
+    // Fail closed: the calling Device is authenticated by its own key; its clinic scopes every write.
+    const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'pacs');
 
     if (!body.serviceRequestId) {
       return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
@@ -44,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const medplum = await getAdminMedplum();
-    const result = await ingestXrayStudy({ serviceRequestId: body.serviceRequestId, study: body.study }, medplum);
+    const result = await ingestXrayStudy({ serviceRequestId: body.serviceRequestId, study: body.study }, medplum, device.clinicId);
 
     return NextResponse.json({
       success: true,
@@ -53,6 +48,7 @@ export async function POST(request: NextRequest) {
       message: 'X-ray study received and stored successfully',
     });
   } catch (error: any) {
+    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
     if (error instanceof ForbiddenError || error instanceof ConflictError) {
       return NextResponse.json({ error: error.message }, { status: error instanceof ForbiddenError ? 403 : 409 });
     }

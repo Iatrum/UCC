@@ -10,6 +10,7 @@ import {
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
+import { assertPatientInClinic } from './write-containment';
 
 export interface ReferralData {
   patientId: string;
@@ -55,6 +56,7 @@ export async function saveReferralToMedplum(
   referralData: ReferralData,
   clinicId?: string
 ): Promise<string> {
+  await assertPatientInClinic(medplum, clinicId, referralData.patientId);
   const serviceRequest: ServiceRequest = withClinicIdentifier<ServiceRequest>({
     resourceType: 'ServiceRequest',
     status: 'active',

@@ -182,11 +182,16 @@ async function exchangeAuthorizationCode(
     code_verifier: codeVerifier,
   });
 
-  const response = await fetch(`${MEDPLUM_BASE_URL}/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${MEDPLUM_BASE_URL}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+  } catch {
+    throw new LoginRouteError('AUTH_UNAVAILABLE', 'The sign-in server is busy or unavailable.', 503);
+  }
 
   if (response.status === 429) {
     throw new LoginRouteError(
@@ -195,6 +200,10 @@ async function exchangeAuthorizationCode(
       429,
       getRetryAfterSeconds(response)
     );
+  }
+
+  if (response.status >= 500) {
+    throw new LoginRouteError('AUTH_UNAVAILABLE', 'The sign-in server is busy or unavailable.', 503);
   }
 
   const payload = await response.json().catch(() => ({}));

@@ -7,13 +7,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPatientImagingStudies, getEncounterImagingStudies } from '@/lib/fhir/imaging-service';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { gateXrayStudies, isXrayModality, sanitizePacsViewerUrl } from '@/lib/fhir/pacs-link';
+import { allowedPacsUrl } from '@/lib/fhir/pacs-allowlist';
+import { getPacsHostsForClinic } from '@/lib/server/pacs-hosts';
+import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
     const encounterId = searchParams.get('encounterId');
@@ -25,28 +30,45 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Clinic scope: the patient/encounter must belong to the caller's clinic (same check as /api/labs/results).
+    const target = await medplum.searchOne(encounterId ? 'Encounter' : 'Patient', {
+      _id: (encounterId || patientId)!, identifier: `clinic|${clinicId}`,
+    }, { cache: 'no-cache' });
+    if (!target) throw new ForbiddenError('Imaging results unavailable in current clinic');
+
     let studies;
     if (encounterId) {
-      studies = await getEncounterImagingStudies(encounterId, medplum);
+      studies = await getEncounterImagingStudies(encounterId, medplum, clinicId);
     } else if (patientId) {
-      studies = await getPatientImagingStudies(patientId, medplum);
+      studies = await getPatientImagingStudies(patientId, medplum, clinicId);
     }
 
-    return NextResponse.json({
-      success: true,
-      studies,
+    const pacsEnabled = await isModuleEnabledForClinic('pacs', clinicId);
+    const gated = gateXrayStudies(studies || [], pacsEnabled);
+    // X-ray viewer links are default-deny: kept only for X-ray modalities and hosts on the clinic allowlist.
+    const hosts = gated.some((s) => s.xray || isXrayModality(s.modality)) ? await getPacsHostsForClinic(clinicId) : [];
+    const result = gated.map((s) => {
+      if (!s.study) return s;
+      const xray = s.xray || isXrayModality(s.modality);
+      const link = pacsEnabled && xray && isXrayModality(s.modality) ? allowedPacsUrl(s.study.pacsUrl, hosts) : undefined;
+      return {
+        ...s,
+        study: {
+          ...s.study,
+          pacsUrl: link,
+          series: s.study.series.map((x) => ({
+            ...x,
+            endpoint: xray
+              ? (pacsEnabled ? allowedPacsUrl(x.endpoint, hosts) : undefined)
+              : sanitizePacsViewerUrl(x.endpoint),
+          })),
+        },
+      };
     });
+    return NextResponse.json({ success: true, studies: result });
 
   } catch (error: any) {
-    console.error('Error getting imaging studies:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to get imaging studies',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+    return handleRouteError(error, 'imaging/results');
   }
 }
 

@@ -24,6 +24,17 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Thrown when a requested resource does not exist (or belongs to another
+ * clinic). Route handlers map this to 404, not 500.
+ */
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+/**
  * Host / session is missing clinic scope (subdomain or clinic cookie).
  * Not an authentication failure — user may be signed in on localhost or apex.
  */
@@ -107,6 +118,7 @@ function isForbiddenLikeError(error: unknown): boolean {
  * - AuthError      → 401  (client should re-authenticate)
  * - ForbiddenError → 403  (authenticated but not allowed)
  * - Medplum 403    → 403  (raw OperationOutcome/authz failure)
+ * - NotFoundError  → 404
  * - Any other      → 500  (unexpected server failure)
  *
  * Always logs the error server-side so it is visible in logs without
@@ -148,6 +160,11 @@ export function handleRouteError(
       { error: 'You do not have permission to perform this action.' },
       { status: 403 }
     );
+  }
+
+  if (error instanceof NotFoundError) {
+    console.warn(`${label} Not found:`, error.message);
+    return NextResponse.json({ error: error.message }, { status: 404 });
   }
 
   if (error instanceof ClinicContextError) {

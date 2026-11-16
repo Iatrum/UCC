@@ -23,6 +23,7 @@ import {
   type DICOMSeries,
 } from './imaging-constants';
 import { XRAY_TAG_SYSTEM, requireOnlineXrayDevice } from './xray-device';
+import { isXrayStudy, pacsViewerUrlExtension, readPacsViewerUrl } from './pacs-link';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import {
@@ -30,6 +31,7 @@ import {
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
+  assertOrderInDeviceClinic,
   getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
@@ -207,7 +209,8 @@ export async function createImagingOrder(
 export async function receiveImagingStudy(
   serviceRequestId: string,
   studyData: ImagingStudyData,
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  deviceClinicId: string
 ): Promise<string> {
   const client = medplum;
   
@@ -217,6 +220,8 @@ export async function receiveImagingStudy(
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
     cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
   });
+  // Never write a study into another clinic's order: the clinic comes from the authenticated Device.
+  await assertOrderInDeviceClinic(client, serviceRequest, deviceClinicId);
   const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
@@ -227,12 +232,15 @@ export async function receiveImagingStudy(
   const imagingStudy = await validateAndCreate<ImagingStudy>(client, {
     resourceType: 'ImagingStudy',
     identifier: [
+      { system: CLINIC_IDENTIFIER_SYSTEM, value: deviceClinicId },
       ...(studyData.accessionNumber ? [{
         system: 'accession',
         value: studyData.accessionNumber,
       }] : []),
     ],
     status: 'available',
+    meta: isXrayTaggedOrder(serviceRequest) ? { tag: [{ system: XRAY_TAG_SYSTEM, code: 'xray' }] } : undefined,
+    extension: pacsViewerUrlExtension(studyData.pacsUrl),
     subject: {
       reference: serviceRequest.subject.reference,
     },
@@ -405,10 +413,11 @@ export async function getPatientImagingOrders(patientId: string, medplum: Medplu
 /**
  * Get all imaging studies for a patient
  */
-export async function getPatientImagingStudies(patientId: string, medplum: MedplumClient): Promise<ImagingReportSummary[]> {
+export async function getPatientImagingStudies(patientId: string, medplum: MedplumClient, clinicId: string): Promise<ImagingReportSummary[]> {
   const client = medplum;
   
   const studies = await client.searchResources('ImagingStudy', {
+    identifier: `clinic|${clinicId}`,
     subject: `Patient/${patientId}`,
     _sort: '-started',
   });
@@ -418,10 +427,14 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
   for (const study of studies) {
     // Get associated diagnostic report if exists
     const reports = await client.searchResources('DiagnosticReport', {
+      identifier: `clinic|${clinicId}`,
       study: `ImagingStudy/${study.id}`,
     });
 
-    const report = reports[0];
+    const report = reports.find((candidate) =>
+      candidate.subject?.reference === study.subject?.reference &&
+      candidate.imagingStudy?.some((ref) => ref.reference === `ImagingStudy/${study.id}`)
+    );
 
     summaries.push({
       id: study.id!,
@@ -431,6 +444,7 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
       procedure: study.procedureCode?.[0]?.text || 'Unknown Procedure',
       modality: study.modality?.[0]?.code || 'Unknown',
       status: study.status as any,
+      xray: isXrayStudy(study),
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
@@ -441,6 +455,7 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
         numberOfSeries: study.numberOfSeries || 0,
         numberOfInstances: study.numberOfInstances || 0,
         started: study.started ? new Date(study.started) : undefined,
+        pacsUrl: readPacsViewerUrl(study),
         series: (study.series || []).map(s => ({
           uid: s.uid,
           number: s.number || 0,
@@ -469,10 +484,11 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
 /**
  * Get imaging studies for an encounter
  */
-export async function getEncounterImagingStudies(encounterId: string, medplum: MedplumClient): Promise<ImagingReportSummary[]> {
+export async function getEncounterImagingStudies(encounterId: string, medplum: MedplumClient, clinicId: string): Promise<ImagingReportSummary[]> {
   const client = medplum;
   
   const studies = await client.searchResources('ImagingStudy', {
+    identifier: `clinic|${clinicId}`,
     encounter: `Encounter/${encounterId}`,
     _sort: '-started',
   });
@@ -481,10 +497,14 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
 
   for (const study of studies) {
     const reports = await client.searchResources('DiagnosticReport', {
+      identifier: `clinic|${clinicId}`,
       study: `ImagingStudy/${study.id}`,
     });
 
-    const report = reports[0];
+    const report = reports.find((candidate) =>
+      candidate.subject?.reference === study.subject?.reference &&
+      candidate.imagingStudy?.some((ref) => ref.reference === `ImagingStudy/${study.id}`)
+    );
 
     summaries.push({
       id: study.id!,
@@ -494,6 +514,7 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
       procedure: study.procedureCode?.[0]?.text || 'Unknown Procedure',
       modality: study.modality?.[0]?.code || 'Unknown',
       status: study.status as any,
+      xray: isXrayStudy(study),
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
@@ -504,6 +525,7 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
         numberOfSeries: study.numberOfSeries || 0,
         numberOfInstances: study.numberOfInstances || 0,
         started: study.started ? new Date(study.started) : undefined,
+        pacsUrl: readPacsViewerUrl(study),
         series: (study.series || []).map(s => ({
           uid: s.uid,
           number: s.number || 0,
@@ -552,6 +574,7 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
       procedure: study.procedureCode?.[0]?.text || 'Unknown Procedure',
       modality: study.modality?.[0]?.code || 'Unknown',
       status: study.status as any,
+      xray: isXrayStudy(study),
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
@@ -562,6 +585,7 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
         numberOfSeries: study.numberOfSeries || 0,
         numberOfInstances: study.numberOfInstances || 0,
         started: study.started ? new Date(study.started) : undefined,
+        pacsUrl: readPacsViewerUrl(study),
         series: (study.series || []).map(s => ({
           uid: s.uid,
           number: s.number || 0,

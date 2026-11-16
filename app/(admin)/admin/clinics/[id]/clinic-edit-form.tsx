@@ -68,6 +68,7 @@ export default function ClinicEditForm({
     address: clinic.address ?? "",
     logoUrl: clinic.logoUrl ?? "",
     enabledModuleIds: clinic.enabledModuleIds,
+    pacsViewerHostsText: (clinic.pacsViewerHosts ?? []).join("\n"),
   });
 
   const handleChange =
@@ -85,7 +86,13 @@ export default function ClinicEditForm({
       const res = await fetch(`/api/admin/clinics/${clinic.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          pacsViewerHosts: form.pacsViewerHostsText
+            .split(/[\s,]+/)
+            .map((h) => h.trim())
+            .filter(Boolean),
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -309,6 +316,23 @@ export default function ClinicEditForm({
                 </div>
                 );
               })}
+            </div>
+          )}
+          {enabledModuleSet.has("pacs") && (
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="pacsViewerHosts">Allowed PACS viewer hosts</Label>
+              <textarea
+                id="pacsViewerHosts"
+                data-testid="pacs-viewer-hosts"
+                className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder={"viewer.example-clinic.com\npacs.example-clinic.com:8443"}
+                value={form.pacsViewerHostsText}
+                onChange={(e) => setForm((prev) => ({ ...prev, pacsViewerHostsText: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                One host per line (HTTPS only, optional :port). X-ray viewer links are shown only for these exact
+                hosts; IP addresses, wildcards and internal names are rejected. Empty = no viewer links.
+              </p>
             </div>
           )}
           {modules.length > 0 && (

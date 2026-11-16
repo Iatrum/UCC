@@ -10,6 +10,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { receiveLabResults, type LabResult } from '@/lib/fhir/lab-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
+import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -17,21 +19,15 @@ interface ReceiveLabResultsRequest {
   serviceRequestId: string;
   results: LabResult[];
   conclusion?: string;
-  apiKey?: string; // For authentication from external POCT systems
+  apiKey?: string; // Per-device key (prefer the `Authorization: Bearer` / `X-Device-Key` header)
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: ReceiveLabResultsRequest = await request.json();
 
-    // Validate API key if provided (optional - implement your own auth)
-    const expectedApiKey = process.env.POCT_API_KEY;
-    if (expectedApiKey && body.apiKey !== expectedApiKey) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Invalid API key' },
-        { status: 401 }
-      );
-    }
+    // Fail closed: the calling analyser Device is authenticated by its own key; its clinic scopes every write.
+    const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'poct');
 
     // Validate required fields
     if (!body.serviceRequestId) {
@@ -64,7 +60,8 @@ export async function POST(request: NextRequest) {
       body.serviceRequestId,
       body.results,
       body.conclusion,
-      medplum
+      medplum,
+      device.clinicId
     );
 
     return NextResponse.json({
@@ -74,6 +71,8 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
+    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
+    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
     console.error('Error receiving lab results:', error);
     
     return NextResponse.json(
@@ -92,7 +91,7 @@ curl -X POST http://localhost:3000/api/labs/receive \
   -H "Content-Type: application/json" \
   -d '{
     "serviceRequestId": "service-request-123",
-    "apiKey": "your-api-key",
+    "apiKey": "<per-device key>",
     "results": [
       {
         "testCode": "2339-0",

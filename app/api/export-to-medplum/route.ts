@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getAdminMedplum } from '@/lib/server/medplum-auth';
+import { makeClinicStamper } from '@/lib/fhir/write-containment';
 
 type ConsultationData = {
   id: string;
@@ -48,16 +49,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { action } = await request.json();
+    const { action, clinicId } = await request.json();
 
     if (action !== 'export_all') {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
+    // Task 350: fail closed - one clinic per run; never export across clinics.
+    if (typeof clinicId !== 'string' || !/^[A-Za-z0-9.-]+$/.test(clinicId)) {
+      return NextResponse.json({ error: 'clinicId is required' }, { status: 400 });
+    }
 
     const medplum = await getAdminMedplum();
+    let clinic;
+    try {
+      clinic = await makeClinicStamper(medplum, clinicId);
+    } catch {
+      return NextResponse.json({ error: 'Clinic not found' }, { status: 404 });
+    }
+    const { stamp, isOwn, patientSearch } = clinic;
 
-    // Fetch all consultations from Firebase
-    const consultationsSnapshot = await adminDb.collection('consultations').get();
+    // Fetch only this clinic's consultations (documents without a clinicId are never exported).
+    const consultationsSnapshot = await adminDb.collection('consultations').where('clinicId', '==', clinicId).get();
     const consultations: ConsultationData[] = [];
 
     consultationsSnapshot.forEach((doc) => {
@@ -77,13 +89,14 @@ export async function POST(request: NextRequest) {
     for (const consultation of consultations) {
       try {
         // 1. Create or get Patient resource
-        const patientResponse = await medplum.searchOne('Patient', {
-          identifier: consultation.patientIc,
-        });
+        const matches = consultation.patientIc ? await medplum.searchResources('Patient', {
+          ...patientSearch, identifier: consultation.patientIc,
+        }, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } }) : [];
 
-        let patient = patientResponse;
+        // Re-use only a Patient owned by this clinic; otherwise create one in this clinic.
+        let patient: any = matches.find((candidate) => isOwn(candidate));
         if (!patient) {
-          patient = await medplum.createResource({
+          patient = await medplum.createResource(stamp({
             resourceType: 'Patient',
             identifier: [
               {
@@ -106,12 +119,12 @@ export async function POST(request: NextRequest) {
             address: consultation.patientAddress
               ? [{ text: consultation.patientAddress }]
               : undefined,
-          });
+          }));
           console.log(`✅ Created Patient: ${(patient as any).id}`);
         }
 
         // 2. Create Encounter resource
-        const encounter = await medplum.createResource({
+        const encounter = await medplum.createResource(stamp({
           resourceType: 'Encounter',
           status: 'finished',
           class: {
@@ -127,12 +140,12 @@ export async function POST(request: NextRequest) {
             start: consultation.consultationDate,
             end: consultation.consultationDate,
           },
-        });
+        }));
         console.log(`✅ Created Encounter: ${(encounter as any).id}`);
 
         // 3. Create Condition (Diagnosis) resource
         if (consultation.diagnosis) {
-          const condition = await medplum.createResource({
+          const condition = await medplum.createResource(stamp({
             resourceType: 'Condition',
             subject: {
               reference: `Patient/${(patient as any).id}`,
@@ -144,13 +157,13 @@ export async function POST(request: NextRequest) {
               text: consultation.diagnosis,
             },
             recordedDate: consultation.consultationDate,
-          });
+          }));
           console.log(`✅ Created Condition: ${(condition as any).id}`);
         }
 
         // 4. Create Procedure (Treatment) resource
         if (consultation.treatment) {
-          const procedure = await medplum.createResource({
+          const procedure = await medplum.createResource(stamp({
             resourceType: 'Procedure',
             status: 'completed',
             subject: {
@@ -163,13 +176,13 @@ export async function POST(request: NextRequest) {
               text: consultation.treatment,
             },
             performedDateTime: consultation.consultationDate,
-          });
+          }));
           console.log(`✅ Created Procedure: ${(procedure as any).id}`);
         }
 
         // 5. Create Observation (Notes) if present
         if (consultation.notes) {
-          const observation = await medplum.createResource({
+          const observation = await medplum.createResource(stamp({
             resourceType: 'Observation',
             status: 'final',
             subject: {
@@ -183,14 +196,14 @@ export async function POST(request: NextRequest) {
             },
             valueString: consultation.notes,
             effectiveDateTime: consultation.consultationDate,
-          });
+          }));
           console.log(`✅ Created Observation: ${(observation as any).id}`);
         }
 
         // 6. Create MedicationRequest resources
         if (consultation.medications && consultation.medications.length > 0) {
           for (const med of consultation.medications) {
-            const medicationRequest = await medplum.createResource({
+            const medicationRequest = await medplum.createResource(stamp({
               resourceType: 'MedicationRequest',
               status: 'active',
               intent: 'order',
@@ -224,7 +237,7 @@ export async function POST(request: NextRequest) {
                 },
               ],
               authoredOn: consultation.consultationDate,
-            });
+            }));
             console.log(`✅ Created MedicationRequest: ${(medicationRequest as any).id}`);
           }
         }

@@ -144,14 +144,17 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
                   </div>
                   {study.study.pacsUrl && (
                     <div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => window.open(study.study?.pacsUrl, '_blank')}
-                      >
-                        <ExternalLink className="h-4 w-4 mr-1" />
-                        View in PACS
+                      <Button variant="outline" size="sm" className="h-8" asChild>
+                        <a
+                          href={study.study.pacsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer nofollow"
+                          referrerPolicy="no-referrer"
+                          data-testid="xray-viewer-link"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-1" />
+                          View in PACS
+                        </a>
                       </Button>
                     </div>
                   )}
@@ -180,7 +183,7 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => window.open(series.endpoint, '_blank')}
+                              onClick={() => window.open(series.endpoint, '_blank', 'noopener,noreferrer')}
                             >
                               <ExternalLink className="h-4 w-4" />
                             </Button>

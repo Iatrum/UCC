@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, CheckCircle2, Clock, TrendingDown, TrendingUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { AlertCircle, CheckCircle2, Clock, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { LabReportSummary } from '@/lib/fhir/lab-constants';
-import { startLabResultUpdates } from '@/lib/poct/live-results';
+import { startLabResultUpdates, type LabLoadError, type LabResultUpdates } from '@/lib/poct/live-results';
 import type { PendingPoctOrder } from '@/lib/fhir/lab-service';
 import type { PendingXrayOrder } from '@/lib/fhir/imaging-service';
 
@@ -22,18 +23,60 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
   const [pending, setPending] = useState<PendingPoctOrder[]>([]);
   const [xrayPending, setXrayPending] = useState<PendingXrayOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<LabLoadError | null>(null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const updates = useRef<LabResultUpdates | null>(null);
 
   useEffect(() => {
     setReports([]);
     setPending([]);
     setXrayPending([]);
     setIsLoading(true);
-    return startLabResultUpdates({
+    setLoadError(null);
+    setFetchedAt(null);
+    setIsRefreshing(false);
+    const handle = startLabResultUpdates({
       patientId, encounterId,
-      onResults: (data) => { setReports(data.reports || []); setPending(data.pending || []); setXrayPending(data.xrayPending || []); },
-      onLoaded: () => setIsLoading(false),
+      onResults: (data, at) => {
+        setReports(data.reports || []); setPending(data.pending || []); setXrayPending(data.xrayPending || []);
+        setLoadError(null); setFetchedAt(at);
+      },
+      // A failed fetch never becomes an empty list: known results stay (except after 401/403, where access is gone).
+      onError: (error) => {
+        setLoadError(error);
+        if (error === 'denied') { setReports([]); setPending([]); setXrayPending([]); setFetchedAt(null); }
+      },
+      onLoaded: () => { setIsLoading(false); setIsRefreshing(false); },
     });
+    updates.current = handle;
+    return () => { handle.stop(); updates.current = null; };
   }, [patientId, encounterId]);
+
+  const refresh = () => { setIsRefreshing(true); updates.current?.refresh(); };
+  const hasKnownData = fetchedAt !== null;
+
+  const statusBar = (
+    <div className="flex flex-wrap items-center justify-between gap-2" data-testid="lab-status-bar">
+      <p className="text-xs text-muted-foreground" data-testid="lab-last-updated" aria-live="polite">
+        {fetchedAt ? `Last updated ${new Date(fetchedAt).toLocaleTimeString()}` : 'Not updated yet'}
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={isRefreshing}>
+        <RefreshCw className={`mr-2 h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+        {isRefreshing ? 'Refreshing…' : 'Refresh'}
+      </Button>
+    </div>
+  );
+
+  const errorBanner = loadError === 'failed' && hasKnownData && (
+    <Alert variant="destructive" data-testid="lab-stale-banner">
+      <AlertCircle className="h-4 w-4" />
+      <AlertTitle>Could not refresh lab results</AlertTitle>
+      <AlertDescription>
+        Showing the results last received at {new Date(fetchedAt!).toLocaleTimeString()}. They may be out of date. Retrying automatically.
+      </AlertDescription>
+    </Alert>
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -74,6 +117,34 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
     );
   }
 
+  // Failed first load (or access revoked): never present this as "no results".
+  if (loadError && !hasKnownData) {
+    const denied = loadError === 'denied';
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Laboratory Results</CardTitle>
+          <CardDescription>{denied ? 'Lab results are not available to you' : 'Lab results could not be loaded'}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert variant="destructive" data-testid="lab-load-error">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{denied ? 'Access denied' : 'Could not load lab results'}</AlertTitle>
+            <AlertDescription>
+              {denied
+                ? 'Your session may have expired or you may no longer have access to this clinic. Sign in again, then retry.'
+                : 'This is a loading problem, not an empty record: results may exist. Retry, or check your connection.'}
+            </AlertDescription>
+          </Alert>
+          <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={isRefreshing}>
+            <RefreshCw className={`mr-2 h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Retrying…' : 'Retry'}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (reports.length === 0 && pending.length === 0 && xrayPending.length === 0) {
     return (
       <Card>
@@ -81,10 +152,12 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
           <CardTitle>Laboratory Results</CardTitle>
           <CardDescription>No lab results available</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {errorBanner}
           <p className="text-sm text-muted-foreground">
             No laboratory tests have been ordered or completed for this {encounterId ? 'encounter' : 'patient'}.
           </p>
+          {statusBar}
         </CardContent>
       </Card>
     );
@@ -92,6 +165,8 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
 
   return (
     <div className="space-y-6">
+      {statusBar}
+      {errorBanner}
       {pending.length > 0 && (
         <Card aria-label="Pending POCT tests">
           <CardHeader>
