@@ -13,3 +13,5 @@ Official references checked 2026-11-16:
 - [OWASP SSRF](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html): no server URL dereference here. DNS names can resolve to private IPs, so DNS syntax rejection is not SSRF containment if a proxy is added later.
 
 Findings before fixes: results route verifies the target but ImagingStudy and DiagnosticReport searches lack clinic identifiers; untagged studies bypass URL enforcement and raw series URLs reach window.open. Generic imaging should retain safe http(s) series links, while X-ray links require the clinic allowlist. Regressions must cover patient and encounter searches plus untagged malicious endpoints.
+
+Report matching reference: [FHIR R4 DiagnosticReport](https://hl7.org/fhir/R4/diagnosticreport.html#search) defines imagingStudy and subject; report selection explicitly confirms both links instead of relying solely on the pre-existing study search parameter.
