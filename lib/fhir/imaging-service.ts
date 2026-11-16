@@ -413,10 +413,11 @@ export async function getPatientImagingOrders(patientId: string, medplum: Medplu
 /**
  * Get all imaging studies for a patient
  */
-export async function getPatientImagingStudies(patientId: string, medplum: MedplumClient): Promise<ImagingReportSummary[]> {
+export async function getPatientImagingStudies(patientId: string, medplum: MedplumClient, clinicId: string): Promise<ImagingReportSummary[]> {
   const client = medplum;
   
   const studies = await client.searchResources('ImagingStudy', {
+    identifier: `clinic|${clinicId}`,
     subject: `Patient/${patientId}`,
     _sort: '-started',
   });
@@ -426,10 +427,14 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
   for (const study of studies) {
     // Get associated diagnostic report if exists
     const reports = await client.searchResources('DiagnosticReport', {
+      identifier: `clinic|${clinicId}`,
       study: `ImagingStudy/${study.id}`,
     });
 
-    const report = reports[0];
+    const report = reports.find((candidate) =>
+      candidate.subject?.reference === study.subject?.reference &&
+      candidate.imagingStudy?.some((ref) => ref.reference === `ImagingStudy/${study.id}`)
+    );
 
     summaries.push({
       id: study.id!,
@@ -479,10 +484,11 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
 /**
  * Get imaging studies for an encounter
  */
-export async function getEncounterImagingStudies(encounterId: string, medplum: MedplumClient): Promise<ImagingReportSummary[]> {
+export async function getEncounterImagingStudies(encounterId: string, medplum: MedplumClient, clinicId: string): Promise<ImagingReportSummary[]> {
   const client = medplum;
   
   const studies = await client.searchResources('ImagingStudy', {
+    identifier: `clinic|${clinicId}`,
     encounter: `Encounter/${encounterId}`,
     _sort: '-started',
   });
@@ -491,10 +497,14 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
 
   for (const study of studies) {
     const reports = await client.searchResources('DiagnosticReport', {
+      identifier: `clinic|${clinicId}`,
       study: `ImagingStudy/${study.id}`,
     });
 
-    const report = reports[0];
+    const report = reports.find((candidate) =>
+      candidate.subject?.reference === study.subject?.reference &&
+      candidate.imagingStudy?.some((ref) => ref.reference === `ImagingStudy/${study.id}`)
+    );
 
     summaries.push({
       id: study.id!,

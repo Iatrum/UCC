@@ -117,3 +117,45 @@ test('X-ray viewer link: default deny, shown only for allowlisted https host and
     await restoreOrg();
   }
 });
+
+// Regression: target ownership alone does not authorize every linked study/report.
+test('results scope each study/report and sanitize untagged viewer URLs', async ({ request }) => {
+  const m = await fhir();
+  const suffix = randomUUID().slice(0, 8);
+  const created = await request.post('/api/patients', { data: { fullName: `Review Fake ${suffix}`, nric: `FAKE-REVIEW-${suffix}`, dateOfBirth: '1990-01-01', gender: 'female', phone: '0100000000' } });
+  expect(created.ok()).toBeTruthy();
+  const { patientId } = await created.json();
+  const patient = await m.readResource('Patient', patientId);
+  const clinicId = patient.identifier!.find((i) => i.system === 'clinic')!.value!;
+  const restoreOrg = await setOrgExtensions(m, clinicId, (e) => withHosts(withPacsOn(e), []));
+  const cleanup: Array<() => Promise<unknown>> = [];
+  try {
+    const encounter = await m.createResource({ resourceType: 'Encounter', status: 'in-progress', class: { code: 'AMB' }, subject: { reference: `Patient/${patientId}` }, identifier: [{ system: 'clinic', value: clinicId }] });
+    cleanup.push(() => m.deleteResource('Encounter', encounter.id!));
+    const ids: string[] = [];
+    for (const [owner, modality, endpoint] of [[clinicId, 'US', 'javascript:alert(1)'], [clinicId, 'DX', 'https://offlist.fake-pacs.org/series'], [`fake-foreign-${suffix}`, 'DX', 'https://offlist.fake-pacs.org/series']] as const) {
+      const study = await m.createResource({ resourceType: 'ImagingStudy', status: 'available', subject: { reference: `Patient/${patientId}` }, encounter: { reference: `Encounter/${encounter.id}` }, identifier: [{ system: 'clinic', value: owner }], modality: [{ code: modality }], extension: [{ url: 'https://ucc.emr/xray/viewer-url', valueUrl: 'https://offlist.fake-pacs.org/viewer' }], series: [{ uid: `1.2.3.${ids.length}`, modality: { code: modality }, endpoint: [{ reference: endpoint }] }] });
+      cleanup.push(() => m.deleteResource('ImagingStudy', study.id!));
+      ids.push(study.id!);
+    }
+    const report = await m.createResource({ resourceType: 'DiagnosticReport', status: 'final', code: { text: 'Fake foreign report' }, subject: { reference: `Patient/${patientId}` }, imagingStudy: [{ reference: `ImagingStudy/${ids[0]}` }], identifier: [{ system: 'clinic', value: `fake-foreign-${suffix}` }], conclusion: 'FAKE FOREIGN REPORT MUST NOT LEAK' });
+    cleanup.push(() => m.deleteResource('DiagnosticReport', report.id!));
+    const unrelated = await m.createResource({ resourceType: 'DiagnosticReport', status: 'final', code: { text: 'Fake unrelated report' }, subject: { reference: `Patient/${patientId}` }, imagingStudy: [{ reference: `ImagingStudy/${ids[2]}` }], identifier: [{ system: 'clinic', value: clinicId }], conclusion: 'FAKE UNRELATED REPORT MUST NOT APPEAR' });
+    cleanup.push(() => m.deleteResource('DiagnosticReport', unrelated.id!));
+    for (const query of [`patientId=${patientId}`, `encounterId=${encounter.id}`]) {
+      const response = await request.get(`/api/imaging/results?${query}`);
+      expect(response.ok()).toBeTruthy();
+      const { studies } = await response.json();
+      expect(studies.map((s: any) => s.id).sort()).toEqual(ids.slice(0, 2).sort());
+      for (const s of studies) {
+        expect(s.report).toBeUndefined();
+        expect(s.study.pacsUrl).toBeUndefined();
+        expect(s.study.series[0].endpoint).toBeUndefined();
+      }
+    }
+  } finally {
+    for (const remove of cleanup.reverse()) await remove();
+    await restoreOrg();
+    await m.deleteResource('Patient', patientId);
+  }
+});
