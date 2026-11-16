@@ -48,23 +48,23 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ error: 'Consultation not found' }), { status: 404 });
     }
     const patientRef = `Patient/${consultation.patientId}`;
-    const { reference: encounterRef } = await toFhirEncounter(patientRef, consultation, undefined, clinicId);
+    const { reference: encounterRef } = await toFhirEncounter(patientRef, consultation, undefined, clinicId, medplum);
 
     const created: Record<string, any> = { patient: patientRef, encounter: encounterRef };
 
     if (consultation.diagnosis) {
-      created.conditionId = await toFhirCondition(patientRef, encounterRef, consultation.diagnosis, clinicId);
+      created.conditionId = await toFhirCondition(patientRef, encounterRef, consultation.diagnosis, clinicId, medplum);
     }
 
     if (Array.isArray(consultation.prescriptions)) {
       created.medicationRequestIds = await Promise.all(
-        consultation.prescriptions.map(p => toFhirMedicationRequest(patientRef, encounterRef, p, clinicId))
+        consultation.prescriptions.map(p => toFhirMedicationRequest(patientRef, encounterRef, p, clinicId, medplum))
       );
     }
 
     if (Array.isArray(consultation.procedures)) {
       created.serviceRequestIds = await Promise.all(
-        consultation.procedures.map(pr => toFhirServiceRequest(patientRef, encounterRef, pr, clinicId))
+        consultation.procedures.map(pr => toFhirServiceRequest(patientRef, encounterRef, pr, clinicId, medplum))
       );
     }
 

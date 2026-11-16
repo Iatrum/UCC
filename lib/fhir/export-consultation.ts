@@ -44,7 +44,7 @@ export async function exportConsultationToMedplum(
     if (!clinicId) {
       return { success: false, error: 'Clinic context is required' };
     }
-    const { stamp, isOwn } = await makeClinicStamper(medplum, clinicId);
+    const { stamp, isOwn, patientSearch } = await makeClinicStamper(medplum, clinicId);
 
     console.log(`📤 Exporting consultation ${consultation.id} to Medplum...`);
 
@@ -52,7 +52,7 @@ export async function exportConsultationToMedplum(
     let patient;
     if (patientData.ic) {
       // Only re-use a Patient that belongs to this clinic; never read across clinics.
-      const matches = await medplum.searchResources('Patient', { identifier: patientData.ic });
+      const matches = await medplum.searchResources('Patient', { ...patientSearch, identifier: patientData.ic }, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } });
       patient = matches.find((candidate) => isOwn(candidate));
     }
 

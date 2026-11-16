@@ -1,3 +1,4 @@
+import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } from './write-containment';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
 import { investigationBillItems } from './investigation-billing';
@@ -272,6 +273,7 @@ async function getOrCreatePatient(
     // Patient exists but not linked to this clinic -> deny
     throw new Error('Patient does not belong to this clinic');
   } else if (clinicTenant) {
+    await assertPatientInClinic(medplum, clinicId, patient.id);
     // Ensure existing patient carries the clinic identifier and Organization tenant,
     // even if it previously matched only via a legacy managingOrganization/account reference.
     const needsTenant = getClinicIdentifierValue(patient as any) !== clinicId;
@@ -306,6 +308,8 @@ export async function saveConsultationToMedplum(
   medplum: MedplumClient
 ): Promise<string> {
   const client = medplum;
+  // Require clinic context before the legacy find-or-create patient flow.
+  await makeClinicStamper(client, clinicId);
 
   console.log(`💾 Saving consultation to Medplum (source of truth)...`);
 
@@ -730,6 +734,8 @@ export async function updateConsultationInMedplum(
   medplum: MedplumClient
 ): Promise<void> {
   const client = medplum;
+
+  await assertEncounterInClinic(client, clinicId, encounterId);
 
   // 1. Verify encounter exists and belongs to this clinic
   let encounter: Encounter;

@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Clinic not found' }, { status: 404 });
     }
-    const { stamp, isOwn } = clinic;
+    const { stamp, isOwn, patientSearch } = clinic;
 
     // Fetch only this clinic's consultations (documents without a clinicId are never exported).
     const consultationsSnapshot = await adminDb.collection('consultations').where('clinicId', '==', clinicId).get();
@@ -89,9 +89,9 @@ export async function POST(request: NextRequest) {
     for (const consultation of consultations) {
       try {
         // 1. Create or get Patient resource
-        const matches = await medplum.searchResources('Patient', {
-          identifier: consultation.patientIc,
-        });
+        const matches = consultation.patientIc ? await medplum.searchResources('Patient', {
+          ...patientSearch, identifier: consultation.patientIc,
+        }, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } }) : [];
 
         // Re-use only a Patient owned by this clinic; otherwise create one in this clinic.
         let patient: any = matches.find((candidate) => isOwn(candidate));

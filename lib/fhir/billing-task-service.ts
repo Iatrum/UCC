@@ -1,3 +1,4 @@
+import { assertPatientInClinic } from './write-containment';
 import type { MedplumClient } from "@medplum/core";
 import type { Annotation, Task } from "@medplum/fhirtypes";
 import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
@@ -95,8 +96,13 @@ export async function createBillingExceptionTask(
   medplum: MedplumClient,
   input: CreateBillingExceptionTaskInput
 ): Promise<Task> {
+  await assertPatientInClinic(medplum, input.clinicId, input.patientId, input.consultationId);
   const existingOpen = await findOpenBillingExceptionTask(medplum, input.consultationId);
   if (existingOpen) {
+    if (getBillingTaskClinicId(existingOpen) !== input.clinicId ||
+        existingOpen.for?.reference !== `Patient/${input.patientId}`) {
+      throw new Error('Billing task unavailable');
+    }
     return existingOpen;
   }
   const task = buildBillingExceptionTaskResource(input);
