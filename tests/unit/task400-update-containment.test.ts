@@ -23,6 +23,7 @@ function fixture(type: string, clinic: string | undefined = 'clinic-a') {
   const client = {
     async readResource(resourceType: string, id: string, options: unknown) {
       reads.push({ resourceType, id, options });
+      if (resourceType === 'Organization') return { resourceType, id };
       return structuredClone(original);
     },
     async updateResource(resource: any) { writes.push(resource); return resource; },
@@ -78,35 +79,55 @@ describe('Task 400 update-by-id clinic containment', () => {
     expect(await updateBillingExceptionTaskStatus(own.client, 'fake-record', 'requested', undefined, 'clinic-a')).toEqual(own.original);
     expect(own.writes).toHaveLength(0);
   });
-  it('Twilio send rejects foreign clinic before config/network/error-status writes', async () => {
-    const f = fixture('Communication', 'clinic-b');
-    await forbidden(sendFollowUpWithTwilio(f.client, 'fake-record', 'clinic-a'));
-    expect(f.writes).toHaveLength(0);
-    expect(f.reads).toHaveLength(1);
-  });
-  it('own-clinic Twilio send still queues a message using a fake transport', async () => {
-    const f = fixture('Communication');
-    f.original.extension.push({ url: 'https://ucc.emr/communication/patient-phone', valueString: '0000000000' });
-    const fields = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_FROM'] as const;
-    const saved = fields.map(key => env[key]);
-    const originalFetch = globalThis.fetch;
-    let sent = 0;
-    try {
-      for (const key of fields) (env as any)[key] = 'fake-test-only';
-      globalThis.fetch = (async () => {
-        sent++;
-        return new Response(JSON.stringify({ sid: 'fake-sid', status: 'queued' }), { status: 200 });
-      }) as typeof fetch;
-      const result = await sendFollowUpWithTwilio(f.client, 'fake-record', 'clinic-a');
-      expect(sent).toBe(1);
-      expect(result.status).toBe('in-progress');
-      expect(f.writes).toHaveLength(1);
-      expect(f.writes[0].identifier).toEqual(f.original.identifier);
-      expect(f.writes[0].meta).toEqual(f.original.meta);
-    } finally {
-      globalThis.fetch = originalFetch;
-      fields.forEach((key, i) => { (env as any)[key] = saved[i]; });
-    }
-  });
+  for (const ownership of ['foreign', 'missing caller', 'untagged', 'mixed'] as const) {
+    it(`Twilio send rejects ${ownership} clinic before config/network/error-status writes`, async () => {
+      const f = fixture('Communication', ownership === 'foreign' ? 'clinic-b' : 'clinic-a');
+      // Valid phone ensures an absent guard reaches settings/transport rather than
+      // accidentally passing this test through an unrelated validation failure.
+      f.original.extension.push({ url: 'https://ucc.emr/communication/patient-phone', valueString: '0000000000' });
+      if (ownership === 'untagged') f.original.identifier = [];
+      if (ownership === 'mixed') f.original.identifier.push({ system: 'clinic', value: 'clinic-b' });
+      const originalFetch = globalThis.fetch;
+      let sent = 0;
+      try {
+        globalThis.fetch = (async () => { sent++; throw new Error('Unexpected synthetic transport'); }) as typeof fetch;
+        await forbidden(sendFollowUpWithTwilio(f.client, 'fake-record', ownership === 'missing caller' ? undefined : 'clinic-a'));
+        expect(sent).toBe(0);
+        expect(f.writes).toHaveLength(0);
+        expect(f.reads).toHaveLength(1);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  }
+  for (const extensionClinic of ['clinic-a', 'clinic-b', undefined]) {
+    it(`own-clinic Twilio send uses caller settings with clinic extension ${extensionClinic ?? 'absent'}`, async () => {
+      const f = fixture('Communication');
+      f.original.extension = f.original.extension.filter((e: any) => e.url !== 'https://ucc.emr/communication/clinic-id');
+      if (extensionClinic) f.original.extension.push({ url: 'https://ucc.emr/communication/clinic-id', valueString: extensionClinic });
+      f.original.extension.push({ url: 'https://ucc.emr/communication/patient-phone', valueString: '0000000000' });
+      const fields = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_FROM'] as const;
+      const saved = fields.map(key => env[key]);
+      const originalFetch = globalThis.fetch;
+      let sent = 0;
+      try {
+        for (const key of fields) (env as any)[key] = 'fake-test-only';
+        globalThis.fetch = (async () => {
+          sent++;
+          return new Response(JSON.stringify({ sid: 'fake-sid', status: 'queued' }), { status: 200 });
+        }) as typeof fetch;
+        const result = await sendFollowUpWithTwilio(f.client, 'fake-record', 'clinic-a');
+        expect(sent).toBe(1);
+        expect(result.status).toBe('in-progress');
+        expect(f.reads.filter(r => r.resourceType === 'Organization').map(r => r.id)).toEqual(['clinic-a']);
+        expect(f.writes).toHaveLength(1);
+        expect(f.writes[0].identifier).toEqual(f.original.identifier);
+        expect(f.writes[0].meta).toEqual(f.original.meta);
+      } finally {
+        globalThis.fetch = originalFetch;
+        fields.forEach((key, i) => { (env as any)[key] = saved[i]; });
+      }
+    });
+  }
 
 });
