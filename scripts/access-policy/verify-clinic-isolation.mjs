@@ -167,7 +167,11 @@ async function main() {
   }
 
   // Expected per-clinic directory (admin view): practitioners via PractitionerRole.
-  const roles = (await A('GET', 'PractitionerRole?_count=1000')).json;
+  // http() follows every `next` link for searches, so a role list larger than one
+  // page is read in full; a smaller _count makes paging actually exercised.
+  const rolesRes = await A('GET', 'PractitionerRole?_count=100');
+  if (rolesRes.status !== 200) throw new Error(`Admin PractitionerRole listing failed (${rolesRes.status})`);
+  const roles = rolesRes.json;
   const practitionersByOrg = new Map();
   for (const e of roles?.entry || []) {
     const o = e.resource.organization?.reference; const pr = e.resource.practitioner?.reference;
@@ -248,7 +252,9 @@ async function main() {
     const seen = new Set([...ids(pr.json)]);
     if (pr.status !== 200) throw Error('Directory positive control failed');
     const leaked = [...otherOnly].filter((p) => seen.has(p));
-    check(g, 'cannot list other clinics\' Practitioners', leaked.length === 0, `status ${pr.status}, leaked ${leaked.length}/${otherOnly.size}`);
+    // The foreign-only set must be non-empty, otherwise "no leak" would pass vacuously.
+    check(g, 'foreign-clinic Practitioner fixture is non-empty (non-vacuous leak check)', otherOnly.size > 0, `foreign-only ${otherOnly.size}`);
+    check(g, 'cannot list other clinics\' Practitioners', otherOnly.size > 0 && leaked.length === 0, `status ${pr.status}, leaked ${leaked.length}/${otherOnly.size}`);
     check(g, 'still lists OWN clinic Practitioners', [...mine].every((p) => seen.has(p)) && mine.size > 0, `status ${pr.status}, visible ${[...mine].filter((p) => seen.has(p)).length}/${mine.size}`);
     const pro = await S('GET', 'PractitionerRole?_count=1000');
     const roleOrgs = new Set((pro.json?.entry || []).map((e) => e.resource.organization?.reference));
