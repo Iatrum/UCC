@@ -1,10 +1,13 @@
+import { documentDetails, DocumentIssuanceError } from '@/lib/fhir/issued-document-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
-import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
-function procedureKey(p: { procedureId?: string; name: string; price?: number; category?: string }): string {
+function procedureKey(p: { procedureId?: string; name: string; price?: number; category?: string; notes?: string }): string {
+  const details = p.category === 'documents' ? documentDetails(p.notes) : null;
+  if (details) return `document|${details.entryId || p.notes}`;
   return `${p.procedureId ?? p.name}|${p.price ?? ''}|${p.category ?? ''}`;
 }
 
@@ -74,11 +77,13 @@ export async function POST(req: NextRequest) {
         ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}),
       },
       clinicId,
-      medplum
+      medplum,
+      await getCurrentProfile(req)
     );
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof DocumentIssuanceError) return NextResponse.json({ error: error.message }, { status: 400 });
     return handleRouteError(error, 'POST /api/orders');
   }
 }

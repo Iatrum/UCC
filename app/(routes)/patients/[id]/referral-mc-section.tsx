@@ -1,5 +1,6 @@
 "use client";
 
+import { IssuedDocuments } from "@/components/issued-documents";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -112,7 +113,7 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
 
       const details = parseSignedDocumentNote(procedure.notes);
       const kind = signedDocumentKind(procedure);
-      if (!kind) return [];
+      if (!kind || details.documentKey) return [];
 
       return [
         {
@@ -123,7 +124,7 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
             procedure.name ||
             (kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"),
           date: consultation.date,
-          status: details.status || undefined,
+          status: "Draft / legacy record — no issued document",
           details,
           consultationId: consultation.id || "",
           procedureIndex: index,
@@ -374,7 +375,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
             "{{doctorName}}": doc.details.mcDoctorName || "",
             "{{date}}": today,
           };
-    return fillPlaceholders(html, data);
+    return '<p style="text-align:center;font-weight:bold">DRAFT — NOT ISSUED</p>' + fillPlaceholders(html, data);
   }
 
   async function buildLegacyReferralHtml(r: Referral): Promise<string> {
@@ -463,6 +464,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
           <CardDescription>Saved MCs and referral letters.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          <IssuedDocuments patientId={patient.id} refreshKey={JSON.stringify(consultations)} />
           {loading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -486,9 +488,9 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
           )}
           {!loading && !loadError && referrals.length === 0 && signedDocuments.length === 0 && (
             <div className="rounded-lg border border-dashed p-4">
-              <p className="text-sm font-medium">No generated documents yet.</p>
+              <p className="text-sm font-medium">Draft and legacy records</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Signed MCs and referral letters will appear here after a consult is completed.
+                Issued MCs and referral letters appear above after treatment is signed.
               </p>
             </div>
           )}

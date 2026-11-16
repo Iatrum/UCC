@@ -154,7 +154,7 @@ function documentDetailsFromDraft(entry: TreatmentPlanEntry): CheckoutDocumentDe
   return {
     kind,
     title: entry.name || (kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER"),
-    status: entry.meta?.documentStatus || "completed",
+    status: "draft",
     instruction: entry.instruction,
     mcDays: entry.meta?.mcDays,
     mcDiagnosis: entry.meta?.mcDiagnosis,

@@ -1,3 +1,4 @@
+import { ISSUED_DOCUMENT_SYSTEM } from '@/lib/fhir/issued-document-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPatientDocument, deletePatientDocument, listPatientDocuments, updatePatientDocument } from '@/lib/fhir/document-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
@@ -151,6 +152,9 @@ export async function PATCH(request: NextRequest) {
     if (!doc) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
+    if (doc.identifier?.some(i => i.system === ISSUED_DOCUMENT_SYSTEM)) {
+      return NextResponse.json({ error: 'Issued clinical documents cannot be changed or deleted' }, { status: 403 });
+    }
     const patientId = (doc as any).subject?.reference?.replace('Patient/', '');
     if (!patientId) {
       return NextResponse.json({ error: 'Document has no patient reference' }, { status: 400 });
@@ -179,6 +183,9 @@ export async function DELETE(request: NextRequest) {
     const doc = await medplum.readResource('DocumentReference', id).catch(() => null);
     if (!doc) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+    if (doc.identifier?.some(i => i.system === ISSUED_DOCUMENT_SYSTEM)) {
+      return NextResponse.json({ error: 'Issued clinical documents cannot be changed or deleted' }, { status: 403 });
     }
     const patientId = (doc as any).subject?.reference?.replace('Patient/', '');
     if (!patientId) {
