@@ -105,6 +105,19 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (result.stock && (result.stock.unresolved.length > 0)) {
+      await createBillingExceptionTask(medplum, {
+        consultationId: body.consultationId,
+        patientId: body.patientId,
+        clinicId,
+        paymentMethod: body.paymentMethod,
+        invoiceId: invoice.id,
+        errorClass: "stock-line-unresolved",
+        errorSummary: `Inventory line(s) could not be matched to exactly one stock item: ${result.stock.unresolved.join(", ")}.${result.stock.retained.length ? ` Earlier deductions kept unchanged: ${result.stock.retained.join(", ")}.` : ""} Fix the catalog name and re-run checkout.`,
+        requesterReference,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       invoiceId: invoice.id,

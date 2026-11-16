@@ -3,6 +3,7 @@ import type {
   Bundle,
   BundleEntry,
   Extension,
+  Invoice,
   Medication as FHIRMedication,
   MedicationDispense,
 } from '@medplum/fhirtypes';
@@ -37,6 +38,12 @@ export type CheckoutDispenseInput = {
   consultationId: string;
   patientId: string;
   invoiceId?: string;
+  /**
+   * Version of the invoice this reconciliation was computed from. Every stock transaction
+   * includes an If-Match on the invoice, so a request holding an obsolete invoice (or a
+   * voided/deleted one) can never deduct; the newer writer owns reconciliation.
+   */
+  invoiceVersionId?: string;
   items: DispenseLineInput[];
 };
 
@@ -47,7 +54,33 @@ export type CheckoutDispenseResult = {
   unmatched: string[];
   /** Medications whose stock is now below zero. */
   negativeStock: string[];
+  /** Billed lines whose identity is ambiguous/unresolved and touch stock (ambiguous name, renamed item). */
+  unresolved: string[];
+  /** Earlier deductions kept untouched because an unresolved line may still bill them. */
+  retained: string[];
+  /** True when the invoice changed under this request; a newer request reconciles stock. */
+  superseded?: boolean;
 };
+
+const emptyResult = (): CheckoutDispenseResult => ({ adjusted: [], unmatched: [], negativeStock: [], unresolved: [], retained: [] });
+
+const PAGE_SIZE = 100;
+const MAX_PAGES = 200;
+
+/** Read every page of a search (searchResources returns one page; _count is only a page size). */
+export async function searchAll<T>(medplum: MedplumClient, type: string, params: Record<string, string>): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const batch = (await medplum.searchResources(type as any, {
+      ...params,
+      _count: String(PAGE_SIZE),
+      _offset: String(page * PAGE_SIZE),
+    })) as unknown as T[];
+    all.push(...batch);
+    if (batch.length < PAGE_SIZE) return all;
+  }
+  throw new Error(`Search for ${type} exceeded ${MAX_PAGES * PAGE_SIZE} results`);
+}
 
 function normalizeName(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -92,15 +125,19 @@ export function dispensedUnits(quantity: number): number {
  * Returns undefined when nothing or more than one item matches (never guess).
  */
 export function matchInventoryItem(name: string, catalog: FHIRMedication[]): FHIRMedication | undefined {
+  const hits = inventoryCandidates(name, catalog);
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+export function inventoryCandidates(name: string, catalog: FHIRMedication[]): FHIRMedication[] {
   const target = normalizeName(name);
-  if (!target) return undefined;
-  const hits = catalog.filter((med) => {
+  if (!target) return [];
+  return catalog.filter((med) => {
     const base = normalizeName(med.code?.text ?? '');
     if (!base) return false;
     if (base === target) return true;
     return strengthsOf(med).some((s) => normalizeName(`${base} ${s}`) === target);
   });
-  return hits.length === 1 ? hits[0] : undefined;
 }
 
 function dispenseKey(consultationId: string, medicationId: string): string {
@@ -112,11 +149,10 @@ async function findDispenses(
   clinicId: string,
   consultationId: string
 ): Promise<MedicationDispense[]> {
-  const found = (await medplum.searchResources('MedicationDispense', {
+  const found = await searchAll<MedicationDispense>(medplum, 'MedicationDispense', {
     context: `Encounter/${consultationId}`,
     identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-    _count: '200',
-  })) as MedicationDispense[];
+  });
   return found.filter(
     (d) =>
       resourceMatchesClinicTenant(d as any, clinicId) &&
@@ -170,6 +206,17 @@ function isConflict(error: unknown): boolean {
   return /412|precondition|version|conflict/i.test(message);
 }
 
+/** The invoice if it is still at the version this request saved and still billable; otherwise null. */
+async function currentInvoiceIfUnchanged(medplum: MedplumClient, ctx: CheckoutDispenseInput): Promise<Invoice | null> {
+  try {
+    const invoice = (await medplum.readResource('Invoice', ctx.invoiceId!)) as Invoice;
+    if (invoice.meta?.versionId !== ctx.invoiceVersionId || invoice.status === 'cancelled') return null;
+    return invoice;
+  } catch {
+    return null; // deleted
+  }
+}
+
 /** Apply `delta` (positive = deduct) to one medication together with its dispense record. */
 async function applyDelta(
   medplum: MedplumClient,
@@ -177,8 +224,15 @@ async function applyDelta(
   medicationId: string,
   targetQty: number,
   action: 'checkout' | 'reverse'
-): Promise<{ delta: number; stockAfter: number; name: string } | null> {
+): Promise<{ delta: number; stockAfter: number; name: string } | 'superseded' | null> {
+  const guarded = action === 'checkout' && Boolean(ctx.invoiceId && ctx.invoiceVersionId);
+  const invoiceIfMatch = guarded ? `W/"${ctx.invoiceVersionId}"` : undefined;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    let invoice: Invoice | null = null;
+    if (guarded) {
+      invoice = await currentInvoiceIfUnchanged(medplum, ctx);
+      if (!invoice) return 'superseded';
+    }
     const medication = (await medplum.readResource('Medication', medicationId)) as FHIRMedication;
     if (!isClinicInventory(medication, ctx.clinicId)) return null;
 
@@ -227,6 +281,15 @@ async function applyDelta(
         },
         resource: withStock(medication, after),
       },
+      ...(guarded
+        ? [
+            {
+              // Fails the whole transaction (412) if the invoice moved on since this request saved it.
+              request: { method: 'PUT', url: `Invoice/${ctx.invoiceId}`, ifMatch: invoiceIfMatch },
+              resource: invoice as Invoice,
+            } as BundleEntry,
+          ]
+        : []),
       existing?.id
         ? { request: { method: 'PUT', url: `MedicationDispense/${existing.id}` }, resource: dispense }
         : { request: { method: 'POST', url: 'MedicationDispense' }, resource: dispense },
@@ -236,6 +299,7 @@ async function applyDelta(
       await medplum.executeBatch({ resourceType: 'Bundle', type: 'transaction', entry: entries } as Bundle);
       return { delta, stockAfter: after, name };
     } catch (error) {
+      if (guarded && !(await currentInvoiceIfUnchanged(medplum, ctx))) return 'superseded';
       if (attempt < MAX_ATTEMPTS - 1 && isConflict(error)) continue; // stock/dispense changed under us: re-read and retry
       throw error;
     }
@@ -246,39 +310,63 @@ async function applyDelta(
 /**
  * Reconcile stock with the medication lines of a checked-out visit.
  * Safe to call any number of times with the same items.
+ *
+ * A previous deduction is only returned to stock when its medication is positively no longer
+ * billed. If any billed line is ambiguous or unresolved (duplicate catalog name, renamed item)
+ * and could be that medication, the deduction is retained and the line reported in `unresolved`.
  */
 export async function deductStockForCheckout(
   medplum: MedplumClient,
   input: CheckoutDispenseInput
 ): Promise<CheckoutDispenseResult> {
-  const result: CheckoutDispenseResult = { adjusted: [], unmatched: [], negativeStock: [] };
-  const catalog = ((await medplum.searchResources('Medication', {
-    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${input.clinicId}`,
-    _count: '500',
-  })) as FHIRMedication[]).filter((m) => isClinicInventory(m, input.clinicId));
+  const result = emptyResult();
+  const catalog = (
+    await searchAll<FHIRMedication>(medplum, 'Medication', {
+      identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${input.clinicId}`,
+    })
+  ).filter((m) => isClinicInventory(m, input.clinicId));
+  const earlier = await findDispenses(medplum, input.clinicId, input.consultationId);
 
   const demand = new Map<string, number>();
+  const unresolvedLines: Array<{ name: string; candidateIds: Set<string> }> = [];
   for (const line of input.items) {
     if (line.type && line.type !== 'Item') continue;
     const units = dispensedUnits(Number(line.quantity));
     if (units === 0) continue;
-    const med = matchInventoryItem(line.name, catalog);
-    if (!med?.id) {
-      result.unmatched.push(line.name);
+    const hits = inventoryCandidates(line.name, catalog);
+    if (hits.length === 1 && hits[0].id) {
+      demand.set(hits[0].id, (demand.get(hits[0].id) ?? 0) + units);
       continue;
     }
-    demand.set(med.id, (demand.get(med.id) ?? 0) + units);
+    result.unmatched.push(line.name);
+    unresolvedLines.push({ name: line.name, candidateIds: new Set(hits.map((h) => h.id ?? '')) });
+    if (hits.length > 1) result.unresolved.push(line.name);
   }
 
-  // Medications dispensed on an earlier checkout of this visit but no longer billed are returned to stock.
-  const earlier = await findDispenses(medplum, input.clinicId, input.consultationId);
+  // Earlier deductions no longer billed are returned to stock, unless an unresolved line may bill them.
   for (const d of earlier) {
     const id = medicationIdOf(d);
-    if (id && recordedQuantity(d) > 0 && !demand.has(id)) demand.set(id, 0);
+    if (!id || recordedQuantity(d) <= 0 || demand.has(id)) continue;
+    const shown = normalizeName(d.medicationReference?.display ?? '');
+    const maybeStillBilled = unresolvedLines.find(
+      (u) =>
+        u.candidateIds.has(id) ||
+        (shown !== '' && (normalizeName(u.name) === shown || normalizeName(u.name).startsWith(`${shown} `)))
+    );
+    if (maybeStillBilled) {
+      result.retained.push(d.medicationReference?.display ?? id);
+      if (!result.unresolved.includes(maybeStillBilled.name)) result.unresolved.push(maybeStillBilled.name);
+      continue;
+    }
+    demand.set(id, 0);
   }
 
   for (const [medicationId, qty] of demand) {
     const applied = await applyDelta(medplum, input, medicationId, qty, 'checkout');
+    if (applied === 'superseded') {
+      result.superseded = true;
+      break;
+    }
     if (!applied) continue;
     result.adjusted.push({ medicationId, name: applied.name, delta: applied.delta, stockAfter: applied.stockAfter });
     if (applied.stockAfter < 0) result.negativeStock.push(applied.name);
@@ -291,14 +379,14 @@ export async function reverseStockForCheckout(
   medplum: MedplumClient,
   input: Omit<CheckoutDispenseInput, 'items' | 'patientId'> & { patientId?: string }
 ): Promise<CheckoutDispenseResult> {
-  const result: CheckoutDispenseResult = { adjusted: [], unmatched: [], negativeStock: [] };
+  const result = emptyResult();
   const dispenses = await findDispenses(medplum, input.clinicId, input.consultationId);
   for (const d of dispenses) {
     const id = medicationIdOf(d);
     if (!id || recordedQuantity(d) === 0) continue;
     const patientId = input.patientId ?? d.subject?.reference?.replace(/^Patient\//, '') ?? '';
     const applied = await applyDelta(medplum, { ...input, patientId, items: [] }, id, 0, 'reverse');
-    if (applied) result.adjusted.push({ medicationId: id, name: applied.name, delta: applied.delta, stockAfter: applied.stockAfter });
+    if (applied && applied !== 'superseded') result.adjusted.push({ medicationId: id, name: applied.name, delta: applied.delta, stockAfter: applied.stockAfter });
   }
   return result;
 }
