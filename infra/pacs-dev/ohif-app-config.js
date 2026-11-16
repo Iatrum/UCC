@@ -1,0 +1,40 @@
+// OHIF config for UCC. The only data source is this origin's /dicom-web, which nginx forwards to
+// UCC's study-scoped proxy (never to Orthanc). UCC authorises each request with a short-lived,
+// study-scoped HttpOnly cookie set by /launch. No credentials live in this file.
+window.config = {
+  name: 'ucc-pacs',
+  routerBasename: null,
+  extensions: [],
+  modes: [],
+  customizationService: {},
+  showStudyList: false,
+  maxNumberOfWebWorkers: 2,
+  showWarningMessageForCrossOrigin: false,
+  showCPUFallbackMessage: true,
+  showLoadingIndicator: true,
+  strictZSpacingForVolumeViewport: true,
+  investigationalUseDialog: { option: 'never' },
+  showErrorDetails: 'production',
+  defaultDataSourceName: 'ucc',
+  dataSources: [
+    {
+      namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
+      sourceName: 'ucc',
+      configuration: {
+        friendlyName: 'UCC PACS',
+        name: 'ucc',
+        wadoUriRoot: '/dicom-web',
+        qidoRoot: '/dicom-web',
+        wadoRoot: '/dicom-web',
+        qidoSupportsIncludeField: false,
+        imageRendering: 'wadors',
+        thumbnailRendering: 'wadors',
+        enableStudyLazyLoad: true,
+        supportsFuzzyMatching: false,
+        supportsWildcard: false,
+        dicomUploadEnabled: false,
+        omitQuotationForMultipartRequest: true,
+      },
+    },
+  ],
+};
