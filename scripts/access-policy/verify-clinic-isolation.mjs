@@ -200,7 +200,7 @@ async function main() {
       const cur = (await S('GET', `Encounter/${e.id}`)).json;
       const up = await S('PUT', `Encounter/${e.id}`, { ...cur, status: 'finished' });
       check(g, 'updates OWN Encounter', up.status === 200, `status ${up.status}`);
-      const ok = await S('POST', 'ServiceRequest', { resourceType: 'ServiceRequest', status: 'active', intent: 'order', code: { text: 'own' }, subject: { reference: `Patient/${s.own.Patient.id}` }, meta: { tag: [TAG] } });
+      const ok = await S('POST', 'ServiceRequest', { resourceType: 'ServiceRequest', identifier: [{ system: 'clinic', value: s.slug }], status: 'active', intent: 'order', code: { text: 'own' }, subject: { reference: `Patient/${s.own.Patient.id}` }, meta: { tag: [TAG] } });
       if (ok.status === 201 && ok.json?.resourceType === 'ServiceRequest' && ok.json.id) created.push(`ServiceRequest/${ok.json.id}`);
       check(g, 'creates ServiceRequest for OWN patient', ok.status === 201, `status ${ok.status}`);
     }
@@ -234,7 +234,7 @@ async function main() {
         Observation: { resourceType: 'Observation', status: 'final', code: { text: 'x' }, subject: subj },
       };
       for (const [type, body] of Object.entries(attempts)) {
-        const r = await S('POST', type, { ...body, meta: { tag: [TAG] } });
+        const r = await S('POST', type, { ...body, identifier: [{ system: 'clinic', value: f.slug }], meta: { tag: [TAG] } });
         if (r.json?.id && r.json.resourceType === type) created.push(`${type}/${r.json.id}`);
         check(gf, `cannot CREATE ${type} for foreign patient`, r.status === 403, `status ${r.status}`);
       }

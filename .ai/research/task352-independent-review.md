@@ -22,3 +22,5 @@ Dev server version recorded by PR is 5.2.15. This review does not establish runt
 5. MAJOR: duplicate clinic Organization identifiers can map separate Organizations onto one HealthcareService compartment; migration now refuses ambiguous Organization/account identifiers before any migration write.
 
 Units: 154/154 passed. Initial rehearsal passed, but child commands loaded the working scripts while review edits were in progress; it is a setup check, not final immutable evidence. The hardened rehearsal and final gate are recorded separately.
+
+6. MAJOR test gap: expected exit 2 was accepted regardless of cause, so authentication failures could falsely prove drift refusal. Every negative migration probe now requires its exact static ERROR reason as well as its exit status. A fresh final rehearsal is required after this fix.

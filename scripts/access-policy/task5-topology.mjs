@@ -474,6 +474,9 @@ async function rollback(f, st, sess, mode) {
   if (!cur.superAdmin && mode !== 'operator') die('need the operator session to restore superAdmin');
   // Preview and apply share the same preflight. Restoring superAdmin elevates
   // every current member, including identities absent from the snapshot.
+  for (const [name, before] of [[CLINIC_POLICY_NAME, snap.clinicPolicy], [APP_SERVER_POLICY_NAME, snap.appPolicy]]) {
+    if (before && !st.named(name).length) die('Missing backed-up policy; rollback refused');
+  }
   const savedIds = new Set(snap.memberships.map(m => m.id));
   if (st.memberships.some(m => !savedIds.has(m.id))) die('Membership inventory drift; rollback refused');
   for (const before of snap.memberships) {
@@ -502,7 +505,6 @@ async function rollback(f, st, sess, mode) {
   // Order: policies+memberships first (still scoped by the current mode), flip last.
   for (const [name, desired, before] of [[CLINIC_POLICY_NAME, clinicStaffPolicyResources(), snap.clinicPolicy], [APP_SERVER_POLICY_NAME, appServerPolicyResources(), snap.appPolicy]]) {
     const live = st.named(name)[0];
-    if (before && !live) die('Missing backed-up policy; rollback refused');
     if (live && !isDeepStrictEqual(live.resource, desired) && !isDeepStrictEqual(live.resource, before?.resource)) die('Policy drift; rollback refused');
   }
   if (!APPLY) { log('\nDRY-RUN complete. Drift checks passed; nothing was written.'); return; }

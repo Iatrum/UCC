@@ -48,13 +48,13 @@ const invite=async(pid,email,admin)=>{
   return r.json;
 };
 let cliArgs, cliEnv;
-async function cli(extra=[],expected=0){
+async function cli(extra=[],expected=0,refusal){
   const c=spawn(process.execPath,[new URL('./task5-topology.mjs',import.meta.url).pathname,...cliArgs,...extra],{env:cliEnv,stdio:['ignore','pipe','pipe']});
   // Keep output private: errors must not serialize child env or credentials.
   let output='';c.stdout.on('data',d=>output+=d);c.stderr.on('data',d=>output+=d);
   const timer=setTimeout(()=>c.kill('SIGTERM'),300000);
   const status=await new Promise(resolve=>c.on('exit',resolve));clearTimeout(timer);
-  if(status!==expected){fs.writeFileSync(dir+'/cli-failure.log',output,{mode:0o600});throw Error(`CLI exit mismatch (${status}, expected ${expected}); private status log saved`);}
+  if(status!==expected || (expected !== 0 && (!refusal || !output.includes('ERROR: '+refusal)))){fs.writeFileSync(dir+'/cli-failure.log',output,{mode:0o600});throw Error(`CLI exit mismatch (${status}, expected ${expected}); private status log saved`);}
 }
 async function main(){
   root=await login(process.env.DEV_OPERATOR_EMAIL,process.env.DEV_OPERATOR_PASSWORD);
@@ -82,14 +82,14 @@ async function main(){
   const oldPolicy=await create({resourceType:'AccessPolicy',name:CLINIC_POLICY_NAME,resource:[{resourceType:'Patient',interaction:['read','search']}]},project.id);
   const original=await get(`Project/${project.id}`);
   const duplicateClinic=await create({resourceType:'Organization',identifier:members[0].org.identifier,name:'Fake Duplicate Clinic'},project.id);
-  await cli([],2); await cli(['--apply'],2);
+  await cli([],2,'Ambiguous clinic Organization/account identifiers'); await cli(['--apply'],2,'Ambiguous clinic Organization/account identifiers');
   check((await get(`Project/${project.id}`)).superAdmin===true,'ambiguous clinic identifiers block migration before cutover');
   check((await http(root,`fhir/R4/Organization/${duplicateClinic.id}`,'DELETE')).status===200,'duplicate clinic fixture removed');
   await cli();check(isDeepStrictEqual(await get(`Project/${project.id}`),original),'default dry-run makes no project writes');
   check(!fs.existsSync(`${dir}/task5-pre-${project.id}.json`),'dry-run does not create migration snapshot');
   if (process.argv.includes('--preflight-only')) { console.log('Task 5 topology preflight PASS'); return; }
   const unrelated = await create({ resourceType: 'Project', name: opsName });
-  await cli(['--apply'], 2);
+  await cli(['--apply'], 2, 'Refusing to promote a pre-existing unowned project');
   check((await get(`Project/${unrelated.id}`)).superAdmin !== true, 'unowned same-name project is never promoted');
   check((await get(`Project/${project.id}`)).superAdmin === true, 'refused operator promotion leaves clinical topology unchanged');
   const removedCollision = await http(root, `fhir/R4/Project/${unrelated.id}`, 'DELETE');
@@ -119,21 +119,21 @@ async function main(){
   fs.writeFileSync(dir+'/isolation.log',output,{mode:0o600});check(status===0,'fresh staff tokens pass clinic isolation verifier');
   const current=await get(`ProjectMembership/${members[0].member.id}`);
   const drift=await http(root,`fhir/R4/ProjectMembership/${current.id}`,'PUT',{...current,admin:true});check(drift.status===200,'fixture grant drift installed');
-  await cli(['--rollback'],2);
-  await cli(['--rollback','--apply'],2);check((await get(`Project/${project.id}`)).superAdmin===false,'rollback refuses grant drift before cutover');
+  await cli(['--rollback'],2,'Grant drift; rollback refused before writes');
+  await cli(['--rollback','--apply'],2,'Grant drift; rollback refused before writes');check((await get(`Project/${project.id}`)).superAdmin===false,'rollback refuses grant drift before cutover');
   await http(root,`fhir/R4/ProjectMembership/${current.id}`,'PUT',current);
   const unexpected=await invite(project.id,`task5-added-${suffix}@example.invalid`,false);
-  await cli(['--rollback'],2); await cli(['--rollback','--apply'],2);
+  await cli(['--rollback'],2,'Membership inventory drift; rollback refused'); await cli(['--rollback','--apply'],2,'Membership inventory drift; rollback refused');
   check((await get(`Project/${project.id}`)).superAdmin===false,'membership inventory drift never elevates a new identity');
   check((await http(root,`fhir/R4/ProjectMembership/${unexpected.id}`,'DELETE')).status===200,'added fake membership removed');
   const topology=await get(`Project/${project.id}`);
   check((await http(root,`fhir/R4/Project/${project.id}`,'PUT',{...topology,name:'Unrelated administrator rename'})).status===200,'project topology drift installed');
-  await cli(['--rollback'],2); await cli(['--rollback','--apply'],2);
+  await cli(['--rollback'],2,'Project topology drift; rollback refused'); await cli(['--rollback','--apply'],2,'Project topology drift; rollback refused');
   check((await get(`Project/${project.id}`)).name==='Unrelated administrator rename','rollback preserves unexpected project topology');
   check((await http(root,`fhir/R4/Project/${project.id}`,'PUT',topology)).status===200,'project topology fixture restored');
   const savedPolicy=await get(`AccessPolicy/${oldPolicy.id}`);
   check((await http(root,`fhir/R4/AccessPolicy/${oldPolicy.id}`,'DELETE')).status===200,'backed-up policy removed for refusal test');
-  await cli(['--rollback'],2); await cli(['--rollback','--apply'],2);
+  await cli(['--rollback'],2,'Missing backed-up policy; rollback refused'); await cli(['--rollback','--apply'],2,'Missing backed-up policy; rollback refused');
   check((await get(`Project/${project.id}`)).superAdmin===false,'missing backed-up policy prevents rollback promotion');
   check((await http(root,`fhir/R4/AccessPolicy/${oldPolicy.id}`,'PUT',savedPolicy)).status===200,'backed-up policy fixture restored');
   await cli(['--rollback']);check((await get(`Project/${project.id}`)).superAdmin===false,'rollback defaults to dry-run');
