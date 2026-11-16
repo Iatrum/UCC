@@ -7,6 +7,8 @@
 4. [x] (Task 180, device keys: `/api/labs/receive` + imaging receive routes now fail closed without a valid per-device key; shared env keys removed) Lock `/api/labs/receive` when `POCT_API_KEY` unset; fix 500 on lab result with no status
 5. [x] (Task 355, 2026-11-16: now per-device-key auth, Device-derived clinic, 403 cross-clinic, pacs-toggle gated; was) `/api/imaging/report` (radiologist report) still fails open when `PACS_API_KEY` is unset and does no clinic check; it is not device ingress so Task 180 left it. Needs session or per-clinic auth.
 
+- Existing queue pagination limit (found during Task 5 validation): `getTriageQueueForToday` reads only the first 200 date-ascending Encounters, including finished visits. A new checked-in patient can be omitted once today's matches exceed 200. Direct staff reads still succeed. Needs a separate pagination/cap fix; Task 5 leaves application behavior unchanged and backs up/removes only its own accumulated synthetic fixtures before validation. Evidence: `.ai/research/task5-topology.md`.
+
 ## Later
 - Access policy ProjectMembership leak (work in `/workspace/iatrum-ucc-ap`)
 - `/admin` redirect loop; rate limit shown as "wrong password"; stock 500
@@ -22,4 +24,3 @@
 
 - **Resolved (Task 330, 2026-11-15): `meta.accounts` extended-header gap.** The per-request header was already supported without SDK changes: `readResource(type, id, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } })` is used by `receiveImagingStudy`, `createImagingReport`, `receiveLabResults` and `createProvenance` (commit 8792c52), so `accountRefs` is populated and `$set-accounts` fires. This note was stale. Regression coverage: `tests/unit/extended-accounts.test.ts` (fake server hides `meta.accounts` without the header; verified failing when the header is removed). Remaining caveat: any NEW read-then-reuse of `meta.accounts` must pass the header explicitly; `getAdminMedplum()` itself still sets none. **Receive-path containment (Task 180):** the clinic comes from the authenticated Device; `assertOrderInDeviceClinic` checks the order identifier and `meta.accounts` against that clinic, and `e2e/tests/clinic-isolation.spec.ts` covers account propagation through both receive paths.
 
-- Existing queue pagination limit (found during Task 5 validation): `getTriageQueueForToday` reads only the first 200 date-ascending Encounters, including finished visits. A new checked-in patient can be omitted once today's matches exceed 200. Direct staff reads still succeed. Needs a separate pagination/cap fix; Task 5 leaves application behavior unchanged and backs up/removes only its own accumulated synthetic fixtures before validation. Evidence: `.ai/research/task5-topology.md`.
