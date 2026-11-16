@@ -10,6 +10,7 @@ import { STORAGE_PATH_EXTENSION_URL } from './structure-definitions';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
 import { resolveClinicTenant, withClinicIdentifier } from './clinic-tenancy';
+import { assertPatientInClinic } from './write-containment';
 
 export interface DocumentRegistration {
   patientId: string; // FHIR Patient ID
@@ -39,6 +40,7 @@ export interface PatientDocumentSummary {
  * Register a bucket-hosted document as a DocumentReference in Medplum.
  */
 export async function createPatientDocument(medplum: MedplumClient, doc: DocumentRegistration): Promise<string> {
+  await assertPatientInClinic(medplum, doc.clinicId, doc.patientId);
   const nowIso = new Date().toISOString();
 
   const resource: DocumentReference = withClinicIdentifier<DocumentReference>({

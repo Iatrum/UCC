@@ -11,6 +11,7 @@ import {
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
+import { assertPatientInClinic } from './write-containment';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
 function patientIdFromActorReference(ref: string | undefined): string {
@@ -56,6 +57,7 @@ export async function saveAppointmentToMedplum(
   appointmentData: AppointmentData,
   clinicId: string
 ): Promise<string> {
+  await assertPatientInClinic(medplum, clinicId, appointmentData.patientId);
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
   const scheduledTime = typeof appointmentData.scheduledAt === 'string'
     ? appointmentData.scheduledAt
