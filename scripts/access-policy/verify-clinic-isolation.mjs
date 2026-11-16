@@ -179,7 +179,7 @@ async function main() {
       const up = await S('PUT', `Encounter/${e.id}`, { ...cur, status: 'finished' });
       check(g, 'updates OWN Encounter', up.status === 200, `status ${up.status}`);
       const ok = await S('POST', 'ServiceRequest', { resourceType: 'ServiceRequest', status: 'active', intent: 'order', code: { text: 'own' }, subject: { reference: `Patient/${s.own.Patient.id}` }, meta: { tag: [TAG] } });
-      if (ok.json?.id) created.push(`ServiceRequest/${ok.json.id}`);
+      if (ok.status === 201 && ok.json?.resourceType === 'ServiceRequest' && ok.json.id) created.push(`ServiceRequest/${ok.json.id}`);
       check(g, 'creates ServiceRequest for OWN patient', ok.status === 201, `status ${ok.status}`);
     }
 
@@ -201,7 +201,7 @@ async function main() {
         check(gf, `${type} untouched`, after?.meta?.versionId === before?.meta?.versionId, '');
       }
       const forged = await S('POST', 'Patient', { resourceType: 'Patient', identifier: [{ system: 'clinic', value: f.slug }], meta: { accounts: [{ reference: f.acct }], compartment: [{ reference: f.acct }] } });
-      if (forged.json?.id) created.push(`Patient/${forged.json.id}`);
+      if (forged.status === 201 && forged.json?.resourceType === 'Patient' && forged.json.id) created.push(`Patient/${forged.json.id}`);
       check(gf, 'cannot CREATE Patient with forged foreign accounts', forged.status === 403, `status ${forged.status}`);
       // Write containment: create new clinical resources pointing at the foreign patient.
       const subj = { reference: `Patient/${f.own.Patient.id}` };
@@ -269,7 +269,7 @@ try {
   const order = ['ImagingStudy', 'ServiceRequest', 'Observation', 'Encounter', 'Patient'];
   const sorted = [...new Set(created)].sort((a, b) => order.indexOf(a.split('/')[0]) - order.indexOf(b.split('/')[0]));
   let n = 0;
-  for (const ref of sorted) { const r = await http(adminTok, 'DELETE', 'fhir/R4/' + ref); if (r.status < 300) n++; }
+  for (const ref of sorted) { const r = await http(adminTok, 'DELETE', 'fhir/R4/' + ref); if ([200,204,404,410].includes(r.status)) n++; else console.error(`cleanup ${ref.split('/')[0]} failed (${r.status})`); }
   console.log(`cleanup: deleted ${n}/${sorted.length} probe resources`);
   if (n !== sorted.length) fatal ||= new Error('Probe cleanup incomplete');
 } catch { fatal ||= new Error('Probe cleanup failed'); console.error('Probe cleanup failed'); }

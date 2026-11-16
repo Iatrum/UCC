@@ -22,7 +22,7 @@ export function clinicCompartmentRules(resourceType: string): AccessPolicyResour
   // account. A direct staff Patient create has no parent from which to inherit
   // an account, so it must not accept caller-supplied clinic identifiers/meta.
   if (resourceType === 'Patient') {
-    const accountConstraint = [{ language: 'text/fhirpath', expression: "meta.accounts.exists() and meta.accounts.all(reference = '%clinicAccount' or reference.matches('%clinicWriteAccounts'))" }];
+    const accountConstraint: NonNullable<AccessPolicyResource['writeConstraint']> = [{ language: 'text/fhirpath', expression: "meta.accounts.exists() and meta.accounts.all(reference = '%clinicAccount' or reference.matches('%clinicWriteAccounts'))" }];
     return [
       { resourceType, criteria, interaction: READ },
       { resourceType, criteria, compartment: { reference: '%clinicAccount' }, interaction: ['update'], readonlyFields: ['meta'], writeConstraint: [

@@ -82,9 +82,16 @@ try{
   await cli();check(isDeepStrictEqual(await get(`Project/${project.id}`),original),'default dry-run makes no project writes');
   check(!fs.existsSync(`${dir}/task5-pre-${project.id}.json`),'dry-run does not create migration snapshot');
   const existingStaffToken = await login(members[0].email, fakePassword, project.id);
+  check((await http(existingStaffToken, `fhir/R4/ProjectMembership/${members[0].member.id}`)).status === 200, 'pre-cutover token positive control');
   await cli(['--apply']);
+  check((await http(existingStaffToken, 'auth/me')).status === 200, 'pre-cutover staff token remains authenticated');
   check([403,404].includes((await http(existingStaffToken, 'fhir/R4/ProjectMembership?_count=100')).status), 'pre-cutover staff token loses admin directory grants');
   const after=await get(`Project/${project.id}`);check(after.superAdmin===false,'clinical project is non-superAdmin after apply');
+  const clientTokenResponse=await fetch(B+'oauth2/token',{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/x-www-form-urlencoded',authorization:'Basic '+Buffer.from(client.id+':'+client.secret).toString('base64')},body:new URLSearchParams({grant_type:'client_credentials'})});
+  const clientToken=(await clientTokenResponse.json()).access_token;
+  check(Boolean(clientToken),'app client authenticates after policy installation');
+  check((await http(clientToken, 'fhir/R4/'+me.json.profile.resourceType+'/'+me.json.profile.id)).status===404,'app client cannot read operator project profile');
+  for(const type of ['Bot','ClientApplication','Login'])check((await http(clientToken,'fhir/R4/'+type+'?_count=10')).status===403,`app client has no ${type} grant`);
   const policies=await search('AccessPolicy',project.id);check(policies.length===2,'policies belong to the clinical project');
   for(const s of members){const m=await get(`ProjectMembership/${s.member.id}`);check(m.access?.length===1&&!m.accessPolicy,'legacy staff membership gains clinic access entry');}
   const snap=JSON.parse(fs.readFileSync(`${dir}/task5-pre-${project.id}.json`));check((fs.statSync(`${dir}/task5-pre-${project.id}.json`).mode&0o777)===0o600,'snapshot is private');
