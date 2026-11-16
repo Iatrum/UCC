@@ -163,6 +163,10 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     expect((await admin.post('/api/auth/login', { data: MEDPLUM_ADMIN })).status()).toBe(200);
     const email = `time-chit-${suffix}@example.invalid`, password = `Fake-only-${randomUUID()}!`;
     expect((await admin.post('/api/admin/users/invite', { data: { firstName: 'Fake', lastName: 'Time Chit', email, password, sendEmail: false, clinicId: foreignOrg.id } })).status()).toBe(200);
+    // Track the fake identity before later UI assertions can fail, so finally
+    // cannot leave an active role pointing at the deleted temporary clinic.
+    practitionerId = (await m.searchOne('Practitioner', { telecom: email }, { cache: 'no-cache' }))?.id;
+    expect(practitionerId).toBeTruthy();
     const adminBrowser = await page.context().browser()!.newContext({ storageState: await admin.storageState() });
     const adminPage = await adminBrowser.newPage();
     try {
@@ -179,7 +183,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
       await adminPage.goto(`/admin/clinics/${foreignOrg.id}`);
       await expect(adminPage.getByRole('switch', { name: 'Toggle Time Chit (Surat Masa)' })).not.toBeChecked();
     } finally { await adminBrowser.close(); }
-    await admin.dispose(); practitionerId = (await m.searchOne('Practitioner', { telecom: email }))?.id;
+    await admin.dispose();
     foreignContext = await playwright.request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
     expect((await foreignContext.post('/api/auth/login', { data: { email, password } })).status()).toBe(200);
     expect([403, 404]).toContain((await foreignContext.get(`/api/consultations?id=${consultationId}`)).status());
