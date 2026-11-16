@@ -1,6 +1,6 @@
 # Task 5 research — AccessPolicy as the primary clinic-isolation control
 
-Verified against the bundled server of the DEV Medplum container (`ucc-dev-medplum`, 5.2.15, `packages/server/dist/index.js`, copied read-only with `docker cp`) and the official docs below. Production runs its own Medplum: the runbook makes the operator re-check the version first.
+Original recovered WIP investigation verified against the bundled server of the DEV Medplum container (`ucc-dev-medplum`, 5.2.15, `packages/server/dist/index.js`, copied read-only with `docker cp`) and the official docs below. Production runs its own Medplum: the runbook makes the operator re-check the version first.
 
 Docs: https://www.medplum.com/docs/access/access-policies (criteria limits, `%profile`/custom `%name` membership parameters, `admin` flag does NOT bypass a policy, "chained searches are not allowed") · https://www.medplum.com/docs/user-management/project-admin (links to Super Admin Guide / Admin Users / Project vs Server Scoped Users) · FHIR R4 AccessPolicy is a Medplum resource, not FHIR core.
 
@@ -11,7 +11,7 @@ Server source (5.2.15):
 - Measured with `scripts/access-policy/verify-clinic-isolation.mjs` BEFORE (evidence `before.json`, 71/110, label "before"): a policied clinic-A staff token could list 17 ProjectMemberships, 22 Users, 5 Projects, 8 AccessPolicies, read another project's Practitioner, list other clinics' Practitioners, **update and delete a clinic-B Patient**, and **create** ServiceRequest/Encounter/ImagingStudy/Observation for a clinic-B patient (201).
 
 ## Why not move data to a new project
-Medplum has no supported move. `Project/$clone` (`projectclone.ts`) gives every resource a new id (breaks Firebase/PACS/device/Patient-id links), copies max 1000 per type and is super-admin only. Direct SQL on `projectId`/`meta.project` is unsupported. So the topology changes around the data: the **existing clinical project keeps its id, data, memberships and users and is demoted** (`superAdmin=false`); the Medplum operator moves to a **new** superAdmin project that holds nothing else. Rollback = flip the flag back.
+Medplum has no supported move. `Project/$clone` (`projectclone.ts`) gives every resource a new id (breaks Firebase/PACS/device/Patient-id links), copies max 1000 per type and is super-admin only. Direct SQL on `projectId`/`meta.project` is unsupported. So the topology changes around the data: the **existing clinical project keeps its id, data, memberships and users and is demoted** (`superAdmin=false`); the Medplum operator moves to a **new** superAdmin project that holds nothing else. Rollback restores project settings, backed-up grants, policies and directory account stamps. The dedicated operator is retained for recovery.
 
 ## Final topology
 | Identity | Project | Rights |
@@ -32,7 +32,7 @@ Project `link` → base "FHIR R4" project so spec SearchParameters/StructureDefi
 
 ## Residual risks (documented, not solved here)
 - The app server credential can still read/write every clinic in the project by design; per-clinic checks in code (`assertOrderClinic`, `resolveClinicTenant`, `write-containment.ts`) remain the second layer.
-- Hand-set policies are never repointed by the script (blocker or `--skip-membership`).
+- Hand-set policies are never repointed by the script; there is no skip flag. Resolve them explicitly before proceeding.
 - Resource-level `compartment` is deprecated in the policy schema; revalidate on Medplum upgrade.
 - Medplum caches project/policy state; verify with a fresh login after cut-over.
 
@@ -50,3 +50,16 @@ The existing local WIP was recovered into an isolated origin/dev worktree. Read-
 The app client is a project admin because $set-accounts and staff invitations require that capability. Its injected project-admin rights mean the clinical resource allow-list is **not** a sandbox against a compromised app server. It is a trusted, project-scoped credential; dedicated operator credentials remain separate. Do not claim it cannot reach all administrative types until verified against the pinned server implementation.
 
 The old after.json (108/108) is inherited evidence only. The original workflow run was not a pass: tests were run on :3251 although three suites require :3210, screenshot directories were missing, and composer/checkout timed out. Fresh gate required.
+
+## Patient create finding and final safeguards
+Fresh staff-membership regression found raw extended `POST Patient` could return 201 for a forged foreign clinic identifier even after project demotion. Patient has no parent from which to inherit accounts; it must not use the generic clinical create rule. The staff policy now omits Patient create, preserves protected metadata on updates and prevents clinic-identifier mutation. Registration already uses `savePatientToMedplumWithAdmin` behind `requireClinicAuth`, derives clinic server-side and assigns its account, so that authorized workflow remains available. Foreign update/delete returns 403 **or** 404; the legacy prerequisite assertion is adjusted only to accept either denial.
+
+Directory synchronization errors now propagate instead of being logged and ignored. Reassignment clears old directory accounts before changing roles/grants, refreshes the Practitioner version and then performs the existing transaction; a failed restamp hides the profile from colleagues instead of exposing stale clinic assignments. This intentionally favors confidentiality during a partial failure.
+
+New rehearsal proves existing pre-cutover staff tokens remain authenticated but lose administrative grants. App-client credential proof verifies it cannot read the operator project profile or list Bot, ClientApplication or Login. The project-admin injection remains a trusted capability, not a sandbox against a compromised server. Clinic-assigned human admins are rejected by the migration so they cannot silently bypass the staff policy.
+
+## Policy ID creation verification
+A rehearsal caught that POST replaces supplied IDs even for super-admin callers (`Repository.createResource`, `assignedId` false on the standard POST route). Manifest-backed creation therefore uses super-admin PUT to the preallocated UUID; `Repository.canSetId` and `checkExistingResource` permit this, and `fhir-router.updateResourceImpl` returns 200. Refuse any pre-existing resource at the planned ID. References:
+- https://github.com/medplum/medplum/blob/v5.2.15/packages/server/src/fhir/repo.ts
+- https://github.com/medplum/medplum/blob/v5.2.15/packages/fhir-router/src/fhirrouter.ts
+The failed POST-manifest rehearsal was fully cleaned up and is not counted as passing verification.

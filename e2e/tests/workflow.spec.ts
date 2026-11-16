@@ -208,11 +208,17 @@ test('09 billing checkout -> payment -> complete visitation', async () => {
   await page.goto('/orders');
   await page.getByRole('link', { name }).click();
   await page.waitForURL(/orders\/checkout\//, { timeout: 120_000 });
-  await page.waitForTimeout(6000); await shot(page, '15-checkout');
+  await expect(page.getByText('Loading checkout...', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Payments', { exact: true })).toBeVisible();
+  await shot(page, '15-checkout');
   const body = await page.locator('main').last().innerText(); facts.checkoutText = body.slice(0, 1500);
   const totalMatch = body.match(/Total[^\d]*RM\s*([\d.,]+)/i); facts.checkoutTotal = totalMatch?.[1];
   const paid = page.locator('#paid-amount');
-  await paid.fill((totalMatch?.[1] || '0').replace(/,/g, ''));
+  expect(totalMatch, 'loaded checkout includes a total').toBeTruthy();
+  const payment = totalMatch![1].replace(/,/g, '');
+  await paid.fill(payment);
+  await expect(paid).toHaveValue(payment);
+  await expect(page.getByRole('button', { name: /Complete visitation/ })).toBeEnabled();
   const preview = page.getByRole('button', { name: /Preview bill/ });
   if (await preview.isEnabled()) { await preview.click(); await page.waitForTimeout(2000); await shot(page, '16-bill-preview'); await page.keyboard.press('Escape'); }
   await page.getByRole('button', { name: /Complete visitation/ }).click();

@@ -77,7 +77,7 @@ try{
     await create({resourceType:'PractitionerRole',active:true,practitioner:member.profile,organization:{reference:`Organization/${org.id}`}},project.id);
   }
   cliArgs=['--project',project.id,'--app-client',client.id,'--ops-project-name',opsName,'--operator-email',`task5-ops-${suffix}@example.invalid`,'--backup-dir',dir];
-  cliEnv={...process.env,MEDPLUM_BASE_URL:B,MEDPLUM_ADMIN_EMAIL:adminEmail,MEDPLUM_ADMIN_PASSWORD:fakePassword};
+  cliEnv={PATH:process.env.PATH,HOME:process.env.HOME,NODE_OPTIONS:'--max-old-space-size=3072',MEDPLUM_BASE_URL:B,MEDPLUM_ADMIN_EMAIL:adminEmail,MEDPLUM_ADMIN_PASSWORD:fakePassword};
   const original=await get(`Project/${project.id}`);
   await cli();check(isDeepStrictEqual(await get(`Project/${project.id}`),original),'default dry-run makes no project writes');
   check(!fs.existsSync(`${dir}/task5-pre-${project.id}.json`),'dry-run does not create migration snapshot');
@@ -93,6 +93,8 @@ try{
   check((await http(clientToken, 'fhir/R4/'+me.json.profile.resourceType+'/'+me.json.profile.id)).status===404,'app client cannot read operator project profile');
   for(const type of ['Bot','ClientApplication','Login'])check((await http(clientToken,'fhir/R4/'+type+'?_count=10')).status===403,`app client has no ${type} grant`);
   const policies=await search('AccessPolicy',project.id);check(policies.length===2,'policies belong to the clinical project');
+  const manifest=JSON.parse(fs.readFileSync(`${dir}/task5-written-${project.id}.json`));
+  check(policies.every(p=>manifest.policies[p.name]===p.id),'policy identities match the pre-creation manifest');
   for(const s of members){const m=await get(`ProjectMembership/${s.member.id}`);check(m.access?.length===1&&!m.accessPolicy,'legacy staff membership gains clinic access entry');}
   const snap=JSON.parse(fs.readFileSync(`${dir}/task5-pre-${project.id}.json`));check((fs.statSync(`${dir}/task5-pre-${project.id}.json`).mode&0o777)===0o600,'snapshot is private');
   const versions=await Promise.all([`Project/${project.id}`,`ProjectMembership/${app.id}`,...members.map(s=>`ProjectMembership/${s.member.id}`),...policies.map(p=>`AccessPolicy/${p.id}`)].map(get));

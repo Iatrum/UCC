@@ -83,6 +83,7 @@ if (!ADMIN.email || !ADMIN.password) die('MEDPLUM_ADMIN_EMAIL / MEDPLUM_ADMIN_PA
 if (OPERATOR_EMAIL === ADMIN.email?.toLowerCase()) die('Operator must be a separate identity');
 const BACKUP_DIR = val('--backup-dir') || path.join(process.env.HOME || '.', 'ucc-task5-backup');
 const PRE_FILE = path.join(BACKUP_DIR, `task5-pre-${PROJECT_ID}.json`);
+const MANIFEST_FILE = path.join(BACKUP_DIR, `task5-written-${PROJECT_ID}.json`);
 const LOCK_FILE = path.join(BACKUP_DIR, 'task5.lock');
 const OPERATOR_PW_FILE = path.join(BACKUP_DIR, `operator-${crypto.createHash('sha256').update(OPERATOR_EMAIL).digest('hex').slice(0, 12)}.pw`);
 
@@ -245,6 +246,7 @@ async function main() {
   const orgs = await searchAll(f, `Organization?_project=${PROJECT_ID}&_count=100`);
   const services = await searchAll(f, `HealthcareService?_project=${PROJECT_ID}&_count=100`);
   const roles = await searchAll(f, `PractitionerRole?_project=${PROJECT_ID}&_count=100`);
+  if (st.memberships.some(m => m.admin && !isClient(m) && roles.some(r => r.active !== false && r.practitioner?.reference === m.profile?.reference))) die('Clinic-assigned human has project-admin privilege; separate platform administration before migration');
   const slug = r => (r.identifier || []).filter(i => i.system === 'clinic').map(i => i.value);
   const unresolved = [];
   for (const member of staff) {
@@ -265,6 +267,12 @@ async function main() {
       { name: 'clinicOrganization', valueReference: { reference: c.org } },
       { name: 'clinicWriteAccounts', valueString: union },
     ] })));
+  }
+  const privilegedProjects = new Set((await searchAll(f, 'Project?_count=100')).filter(p => p.superAdmin && p.id !== PROJECT_ID).map(p => `Project/${p.id}`));
+  for (const member of staff) {
+    if (!member.user?.reference) die('Staff membership has no user identity');
+    const otherMemberships = await searchAll(f, `ProjectMembership?user=${encodeURIComponent(member.user.reference)}&_count=100`);
+    if (otherMemberships.some(m => m.active !== false && privilegedProjects.has(m.project?.reference))) die('Staff identity also belongs to another superAdmin project');
   }
   const unpoliced = unresolved;
   const clinicPolicy = st.named(CLINIC_POLICY_NAME);
@@ -317,6 +325,14 @@ async function main() {
     log(`pre-change snapshot kept (never overwritten): ${PRE_FILE}`);
   }
 
+  const manifest = fs.existsSync(MANIFEST_FILE)
+    ? JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8'))
+    : { server: base.origin, projectId: PROJECT_ID, policies: {} };
+  if (manifest.server !== base.origin || manifest.projectId !== PROJECT_ID) die('Manifest target mismatch');
+  const saveManifest = () => {
+    fs.writeFileSync(MANIFEST_FILE + '.tmp', JSON.stringify(manifest), { mode: 0o600 });
+    fs.renameSync(MANIFEST_FILE + '.tmp', MANIFEST_FILE);
+  };
   // ------------------------------------------------------------ step 1 + 2
   let ops = opsProject;
   if (!ops) {
@@ -342,14 +358,22 @@ async function main() {
   }
   // ------------------------------------------------------------ step 3 + 4
   const upsertPolicy = async (existing, name, resource) => {
+    const knownId = manifest.policies[name];
+    if (existing && knownId && existing.id !== knownId) die('Policy identity drift');
+    if (!manifest.policies[name]) { manifest.policies[name] = existing?.id || crypto.randomUUID(); saveManifest(); }
     if (existing) {
       if (isDeepStrictEqual(existing.resource, resource)) return existing;
       const r = await f('PUT', `AccessPolicy/${existing.id}`, { ...existing, resource });
       if (r.status !== 200) die(`policy ${name} update failed (${r.status})${reason(r)}`);
       log(`policy "${name}" updated (${existing.id})`); return r.json;
     }
-    const r = await f('POST', 'AccessPolicy', { resourceType: 'AccessPolicy', meta: { project: PROJECT_ID }, name, resource });
-    if (r.status !== 201) die(`policy ${name} create failed (${r.status})${reason(r)}`);
+    // POST intentionally replaces client IDs. Pinned 5.2.15 repo.canSetId and
+    // fhir-router.updateResourceImpl support PUT of a new UUID for super admins.
+    const plannedId = manifest.policies[name];
+    const collision = await f('GET', `AccessPolicy/${plannedId}`);
+    if (![404,410].includes(collision.status)) die('Planned policy ID already exists; review before retry');
+    const r = await f('PUT', `AccessPolicy/${plannedId}`, { resourceType: 'AccessPolicy', id: plannedId, meta: { project: PROJECT_ID }, name, resource });
+    if (r.status !== 200 || r.json?.id !== plannedId) die(`policy ${name} create failed (${r.status})`);
     log(`policy "${name}" created (${r.json.id})`); return r.json;
   };
   for (const c of dirChanges) {
@@ -375,7 +399,11 @@ async function main() {
   // --------------------------------------------------------- verify operator
   const op = await login({ email: OPERATOR_EMAIL, password: opPw }, ops.id);
   if (op.error || !op.me?.project?.superAdmin || op.me.project.id !== ops.id) die(`operator login verification failed (${op.error || 'not superAdmin in operator project'}); NOT cutting over`);
-  log('operator login verified (superAdmin in operator project)');
+  const verifiedOperators = await searchAll(f, `ProjectMembership?project=Project/${ops.id}&_count=100`);
+  if (verifiedOperators.length !== 1 || !verifiedOperators[0].admin || !verifiedOperators[0].user?.reference) die('Operator membership is not dedicated');
+  const operatorMemberships = await searchAll(f, `ProjectMembership?user=${encodeURIComponent(verifiedOperators[0].user.reference)}&_count=100`);
+  if (operatorMemberships.length !== 1 || operatorMemberships[0].project?.reference !== `Project/${ops.id}`) die('Operator identity must belong only to the operator project');
+  log('operator login verified (superAdmin in operator project, dedicated identity)');
   // ----------------------------------------------------------- step 7: flip
   const fo = F(op); _tok = op.token;
   const cur = (await fo('GET', `Project/${PROJECT_ID}`)).json;
@@ -395,6 +423,14 @@ async function main() {
 async function rollback(f, st, sess, mode) {
   if (!fs.existsSync(PRE_FILE)) die(`no pre-change snapshot at ${PRE_FILE}`);
   const snap = JSON.parse(fs.readFileSync(PRE_FILE, 'utf8'));
+  const manifest = fs.existsSync(MANIFEST_FILE) ? JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8')) : undefined;
+  if (manifest && (manifest.server !== base.origin || manifest.projectId !== PROJECT_ID)) die('Manifest target mismatch');
+  for (const [name, before] of [[CLINIC_POLICY_NAME, snap.clinicPolicy], [APP_SERVER_POLICY_NAME, snap.appPolicy]]) {
+    const candidates = st.named(name);
+    if (candidates.length > 1) die('Ambiguous rollback policy');
+    const expectedId = before?.id || manifest?.policies[name];
+    if (candidates.length && (!expectedId || candidates[0].id !== expectedId)) die('Policy identity drift; rollback refused');
+  }
   if (snap.server !== base.origin || snap.projectId !== PROJECT_ID) die('snapshot is for another project');
   log('\nROLLBACK PLAN (from ' + PRE_FILE + ')');
   const cur = st.project;
