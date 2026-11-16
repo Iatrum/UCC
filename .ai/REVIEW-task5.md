@@ -135,3 +135,20 @@ All 11 are POCT/X-ray cases in one batch where the owned dev server died silentl
 - **Fresh checks on `18180b5`** (own worktree `/home/dev/ucc-task407`, no server started, no Medplum call): `bun test tests/unit` 254 pass / 0 fail; `bun run lint` (tsc + clinic-admin check) clean. `eslint .` reports 7 errors and 5 warnings (react-hooks rules) in `app/(routes)/login/page.tsx`, `components/labs/lab-results-view.tsx` and `components/orders/order-composer.tsx`; none of these files is touched by the PR, so they are not regressions from it.
 - **Still outstanding:** complete current-head `check-all.sh` with a final OVERALL and no new failures; live super-admin demotion/rollback rehearsal with nonempty foreign fixtures; live proof that issued access/refresh tokens fail after revocation.
 - Review-only: no merge, force-push, container, `/opt/medplum`, `/root` or secret access.
+
+## Task 416 — current-head no-new-failures gate for #251 at `ef48cf9` (16 November 2026, Claude)
+
+**Result: no failure is caused by #251; no code change made. Gate OVERALL is still FAIL by the comparator (63/68, 5 non-passing), all for environmental or baseline reasons below.** Run: `check-all.sh task416` with `UCC_E2E_BATCHED=1 UCC_E2E_WORKFLOW_FIRST=1`, one dev server on :3210 (`--max-old-space-size=3072`), dev Medplum :8113, fake data, baseline `/home/dev/ai-logs/int-360/reports/results.json`. lint 0, build 0, clinics 0; 5 batches, every spec, no retries. Evidence is private under `/home/dev/ucc-task416-evidence`.
+
+| Test | Comparator | Cause |
+|---|---|---|
+| 11 known-bug probes, Time Chit | baseline failure | Unchanged (Time Chit admin module-save timeout, Procedure-at-Sign probe). |
+| staff membership CLI | baseline failure | **Dev drift.** The shared dev "UCC Clinic Staff Policy" had been rewritten at 18:08 by another run to the pre-#251 definition (Patient `create` allowed), so the "forged foreign Patient create" got 201. After running `scripts/setup-access-policies.ts` (applies #251's definition), the spec **passes** (4.0 min). |
+| clinic-isolation phase 1 | NEW | Foreign Observation PUT returns **404, spec expects 403**. Fails identically on a clean `origin/dev` checkout (`e6c8278`) against the same Medplum, so it is not caused by #251 (Observation rules are unchanged by the PR; Medplum hides foreign rows). The spec passed in earlier gates, so the dev Medplum's behaviour or state changed. I did not loosen the assertion (the same 403/404 tolerance already exists in the staff-membership spec and could be applied as a separate test task). |
+| xray-phase3 stored DICOM | NEW | **Skipped, not failed**: `test.skip(!AUTH, 'dev PACS (infra/pacs-dev) is not set up on this machine')`. The baseline run had the PACS; starting Orthanc was out of scope on the shared VPS. |
+
+POCT/X-ray 18/18, composer/Lab-state 16/16, API/workflow 02-10 passed. The earlier "11 new failures" server-death cascade (Task 406) did not recur.
+
+- **Shared-state note:** I backed up the dev staff policy, applied #251's definition, verified, then **restored the prior policy** so other branches' runs see what they found. Anyone gating #251 must first run `bun scripts/setup-access-policies.ts`; otherwise staff-membership fails as above. A full gate was not rerun after the policy fix; the staff-membership fix was verified by a targeted run.
+- **Live super-admin rehearsal NOT attempted** (no credential supplied). It, the production-version compatibility check and token-revocation live proof remain outstanding.
+- Server process group killed, temporary worktree removed. No production container, `/opt/medplum`, `/root`, Supabase/Tradebot, real patient data, composer, Lab/POCT, nav or Firebase change.
