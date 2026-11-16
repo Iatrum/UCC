@@ -8,8 +8,9 @@
 import { NextRequest } from 'next/server';
 import { getPacsConfig, pacsServesClinic } from '@/lib/pacs/orthanc-client';
 import {
-  SESSION_TTL_SECONDS, VIEWER_COOKIE_PATH, consumeLaunchToken, mintViewerToken, verifyViewerToken, viewerCookieName,
+  SESSION_TTL_SECONDS, VIEWER_COOKIE_PATH, mintViewerToken, verifyViewerToken, viewerCookieName,
 } from '@/lib/pacs/viewer-token';
+import { consumeLaunchTokenShared, isPacsEnabledForViewer } from '@/lib/pacs/viewer-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,7 +26,10 @@ export async function GET(request: NextRequest) {
   if (request.headers.get('x-pacs-viewer-host') !== config.viewerHost) return refuse(404, 'Not found');
 
   const claims = verifyViewerToken(request.nextUrl.searchParams.get('t'), 'launch', config.viewerSecret);
-  if (!claims || !pacsServesClinic(config, claims.clinicId) || !consumeLaunchToken(claims)) return refuse(403, 'This viewer link has expired or was already used. Reopen the study from the patient record.');
+  if (!claims || !pacsServesClinic(config, claims.clinicId)) return refuse(403, 'This viewer link has expired or was already used. Reopen the study from the patient record.');
+  // Toggle OFF: refuse BEFORE consuming the token.
+  if (!(await isPacsEnabledForViewer(claims.clinicId))) return refuse(403, 'The viewer is turned off for this clinic.');
+  if (!(await consumeLaunchTokenShared(claims))) return refuse(403, 'This viewer link has expired or was already used. Reopen the study from the patient record.');
 
   const session = mintViewerToken({ kind: 'session', clinicId: claims.clinicId, studyUid: claims.studyUid }, config.viewerSecret);
   const cookie = [
