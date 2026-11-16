@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-16 — Task 355: radiology report endpoint no longer fails open
+`POST /api/imaging/report` used to accept anyone when `PACS_API_KEY` was unset and never checked the clinic. It now uses the same per-device key as `/api/imaging/receive`: a missing, malformed, unknown, revoked, inactive or wrong-type (POCT) key gets 401; a study (or its originating order) that belongs to another clinic, or a clinic with the PACS toggle off, gets 403. The clinic comes from the authenticated Device and is stamped on the DiagnosticReport; the shared `PACS_API_KEY` is no longer read. Behaviour change for callers: radiology reporting clients must send a per-device key (`Authorization: Bearer` or `X-Device-Key`). No UI change.
+
 ## 2026-11-15 — Task 300: POCT X-ray phase 1 (result link in Labs & Imaging, toggle-gated)
 X-ray ordering from the composer and device-key ingest already existed. This adds the missing result side: a study reported by an X-ray device can carry a PACS viewer link, stored as a sanitised `https://ucc.emr/xray/viewer-url` extension (http/https only, no embedded credentials) and shown as "View in PACS" only in the Labs & Imaging tab. X-ray studies are tagged `xray`; `/api/imaging/results` now requires clinic auth and hides X-ray studies and links when the clinic's `pacs` toggle is off (default off). Generic imaging orders are unaffected. Fake DICOM metadata only. Builds on PR #236 (per-device keys).
 
