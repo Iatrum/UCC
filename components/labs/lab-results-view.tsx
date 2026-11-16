@@ -223,7 +223,14 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
               <TableBody>
                 {xrayPending.map((order) => (
                   <TableRow key={order.id}>
-                    <TableCell className="font-medium">{order.display}</TableCell>
+                    <TableCell className="font-medium">
+                      {order.display}
+                      {order.accessionNumber && (
+                        <span className="block text-xs font-normal text-muted-foreground" data-testid="xray-accession">
+                          Accession # <span className="font-mono">{order.accessionNumber}</span>
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {order.authoredOn ? new Date(order.authoredOn).toLocaleString() : 'N/A'}
                     </TableCell>

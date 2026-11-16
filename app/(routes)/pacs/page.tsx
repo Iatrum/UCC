@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Image as ImageIcon, Clock, CheckCircle, AlertCircle, FileText } from "lucide-react";
 import Link from "next/link";
+import { UnmatchedStudiesCard } from "@/components/imaging/unmatched-studies-card";
 
 export default function PACSPage() {
   return (
@@ -72,6 +73,9 @@ export default function PACSPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Studies received from the PACS without a matching order (renders nothing when empty) */}
+      <UnmatchedStudiesCard />
 
       {/* Main Content */}
       <Tabs defaultValue="scheduled" className="space-y-4">

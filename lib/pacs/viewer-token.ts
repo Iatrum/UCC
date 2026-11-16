@@ -7,10 +7,11 @@
  *                read-only DICOMweb proxy for that one StudyInstanceUID.
  * The kinds use different derived keys, so one can never be replayed as the other.
  */
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const LAUNCH_TTL_SECONDS = 60;
 export const SESSION_TTL_SECONDS = 15 * 60;
+/** One cookie per open study (`ucc_pacs_viewer_<hash>`), so two studies can be open in two tabs. */
 export const VIEWER_COOKIE = 'ucc_pacs_viewer';
 /** The cookie is only ever sent to the DICOMweb proxy path on the viewer origin. */
 export const VIEWER_COOKIE_PATH = '/dicom-web';
@@ -98,6 +99,23 @@ export function consumeLaunchToken(claims: ViewerClaims, nowMs = Date.now()): bo
   if (usedLaunchTokens.has(claims.jti)) return false;
   usedLaunchTokens.set(claims.jti, claims.exp * 1000);
   return true;
+}
+
+export function viewerCookieName(studyUid: string): string {
+  return `${VIEWER_COOKIE}_${createHash('sha256').update(studyUid).digest('hex').slice(0, 16)}`;
+}
+
+/** Every valid, unexpired viewer session in a Cookie header (at most 8 are considered). */
+export function readViewerSessions(cookieHeader: string | null | undefined, secret: string, nowMs = Date.now()): ViewerClaims[] {
+  const sessions: ViewerClaims[] = [];
+  for (const part of (cookieHeader || '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0 || !part.slice(0, eq).trim().startsWith(`${VIEWER_COOKIE}_`)) continue;
+    const claims = verifyViewerToken(part.slice(eq + 1).trim(), 'session', secret, nowMs);
+    if (claims && viewerCookieName(claims.studyUid) === part.slice(0, eq).trim()) sessions.push(claims);
+    if (sessions.length >= 8) break;
+  }
+  return sessions;
 }
 
 const SEGMENT = /^[A-Za-z0-9._-]{1,128}$/;
