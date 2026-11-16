@@ -23,7 +23,9 @@ import {
   type DICOMSeries,
 } from './imaging-constants';
 import { XRAY_TAG_SYSTEM, requireOnlineXrayDevice } from './xray-device';
-import { isXrayStudy, pacsViewerUrlExtension, readPacsViewerUrl } from './pacs-link';
+import { isXrayStudy, pacsViewerUrlExtension, readPacsViewerUrl, isPacsStoredStudy, PACS_STORED_TAG } from './pacs-link';
+import { DICOM_UID_SYSTEM, XRAY_ACCESSION_SYSTEM, generateAccessionNumber, readAccessionNumber, readStudyUid } from '@/lib/pacs/accession';
+import { isDicomUid } from '@/lib/pacs/viewer-token';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
 import {
@@ -132,7 +134,11 @@ export async function createImagingOrder(
     const resource: ServiceRequest = {
       resourceType: 'ServiceRequest',
       identifier: [{ system: CLINIC_IDENTIFIER_SYSTEM, value: clinicId },
-        ...(order.xray ? [{ system: 'https://ucc.emr/xray/order-entry', value: `${clinicId}:${order.encounterId}:${order.xray.entryId}` }] : [])],
+        ...(order.xray ? [
+          { system: 'https://ucc.emr/xray/order-entry', value: `${clinicId}:${order.encounterId}:${order.xray.entryId}` },
+          // Join key for the PACS: the study's DICOM AccessionNumber must equal this (X-ray phase 3).
+          { system: XRAY_ACCESSION_SYSTEM, value: generateAccessionNumber() },
+        ] : [])],
       meta: order.xray ? { tag: [{ system: XRAY_TAG_SYSTEM, code: 'xray' }] } : undefined,
       status: 'active',
       intent: 'order',
@@ -210,7 +216,9 @@ export async function receiveImagingStudy(
   serviceRequestId: string,
   studyData: ImagingStudyData,
   medplum: MedplumClient,
-  deviceClinicId: string
+  deviceClinicId: string,
+  /** Server-decided only (never from a device payload): the pixels are held by the clinic PACS (Orthanc). */
+  options: { pacsStored?: boolean } = {}
 ): Promise<string> {
   const client = medplum;
   
@@ -233,13 +241,16 @@ export async function receiveImagingStudy(
     resourceType: 'ImagingStudy',
     identifier: [
       { system: CLINIC_IDENTIFIER_SYSTEM, value: deviceClinicId },
+      ...(isDicomUid(studyData.studyUid) ? [{ system: DICOM_UID_SYSTEM, value: `urn:oid:${studyData.studyUid}` }] : []),
       ...(studyData.accessionNumber ? [{
         system: 'accession',
         value: studyData.accessionNumber,
       }] : []),
     ],
     status: 'available',
-    meta: isXrayTaggedOrder(serviceRequest) ? { tag: [{ system: XRAY_TAG_SYSTEM, code: 'xray' }] } : undefined,
+    meta: isXrayTaggedOrder(serviceRequest)
+      ? { tag: [{ system: XRAY_TAG_SYSTEM, code: 'xray' }, ...(options.pacsStored ? [PACS_STORED_TAG] : [])] }
+      : undefined,
     extension: pacsViewerUrlExtension(studyData.pacsUrl),
     subject: {
       reference: serviceRequest.subject.reference,
@@ -454,7 +465,8 @@ export async function getPatientImagingStudies(patientId: string, medplum: Medpl
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
-        studyUid: study.identifier?.[0]?.value || '',
+        studyUid: readStudyUid(study) || study.identifier?.[0]?.value || '',
+        viewer: isPacsStoredStudy(study) && Boolean(readStudyUid(study)),
         accessionNumber: study.identifier?.find(i => i.system === 'accession')?.value,
         modality: study.modality?.[0]?.code || '',
         description: study.description,
@@ -524,7 +536,8 @@ export async function getEncounterImagingStudies(encounterId: string, medplum: M
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
-        studyUid: study.identifier?.[0]?.value || '',
+        studyUid: readStudyUid(study) || study.identifier?.[0]?.value || '',
+        viewer: isPacsStoredStudy(study) && Boolean(readStudyUid(study)),
         accessionNumber: study.identifier?.find(i => i.system === 'accession')?.value,
         modality: study.modality?.[0]?.code || '',
         description: study.description,
@@ -584,7 +597,8 @@ export async function getImagingStudy(studyId: string, medplum: MedplumClient): 
       orderedAt: study.started ? new Date(study.started) : new Date(),
       performedAt: study.started ? new Date(study.started) : undefined,
       study: {
-        studyUid: study.identifier?.[0]?.value || '',
+        studyUid: readStudyUid(study) || study.identifier?.[0]?.value || '',
+        viewer: isPacsStoredStudy(study) && Boolean(readStudyUid(study)),
         accessionNumber: study.identifier?.find(i => i.system === 'accession')?.value,
         modality: study.modality?.[0]?.code || '',
         description: study.description,
@@ -626,6 +640,8 @@ export interface PendingXrayOrder {
   priority?: ServiceRequest['priority'];
   authoredOn?: string;
   deviceId?: string;
+  /** DICOM AccessionNumber the radiographer must put on the study so the PACS can match it. */
+  accessionNumber?: string;
 }
 
 /**
@@ -651,6 +667,7 @@ export async function getPatientPendingXrayOrders(patientId: string, medplum: Me
     priority: order.priority,
     authoredOn: order.authoredOn,
     deviceId: order.performer?.[0]?.reference?.split('/')[1],
+    accessionNumber: readAccessionNumber(order),
   }));
 }
 

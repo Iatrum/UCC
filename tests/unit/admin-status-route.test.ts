@@ -12,11 +12,16 @@ const setPractitionerActiveInMedplum = mock(async (id: string, active: boolean) 
   active,
 }));
 
+// Keep every real export: a partial mock would break later test files that import other names.
+const realAuth = await import("@/lib/server/medplum-auth");
+const realAdminClient = await import("@/lib/server/medplum-admin");
 mock.module("@/lib/server/medplum-auth", () => ({
+  ...realAuth,
   requirePlatformAdmin: async () => ({ get }),
   getCurrentProfile: async () => ({ resourceType: "Practitioner", id: callerId }),
 }));
 mock.module("@/lib/server/medplum-admin", () => ({
+  ...realAdminClient,
   getAdminMedplum: async () => ({}),
 }));
 mock.module("@/lib/fhir/admin-service", () => ({
@@ -29,6 +34,8 @@ const { PATCH } = await import("../../app/api/admin/users/[id]/status/route");
 
 afterAll(() => {
   mock.module("@/lib/fhir/admin-service", () => adminService);
+  mock.module("@/lib/server/medplum-auth", () => realAuth);
+  mock.module("@/lib/server/medplum-admin", () => realAdminClient);
 });
 
 beforeEach(() => {

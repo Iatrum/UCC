@@ -50,6 +50,8 @@ export interface ImagingStudyData {
   started?: Date;
   series: DICOMSeries[];
   pacsUrl?: string;
+  /** Read-side only: the images are in the clinic PACS and can be opened through /api/pacs/viewer/link. */
+  viewer?: boolean;
 }
 
 export interface ImagingReportSummary {

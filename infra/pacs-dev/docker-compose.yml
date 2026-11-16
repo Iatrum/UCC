@@ -1,0 +1,72 @@
+# DEV-ONLY PACS for UCC (synthetic DICOM only). Compose project: ucc-pacs-dev.
+# Isolated from production: no medplum-* names, no root_default/Traefik, nothing under /opt/medplum or /root.
+# Orthanc publishes on 127.0.0.1 only and is never reached by a browser: UCC proxies DICOMweb
+# server-side behind a clinic-scoped, short-lived viewer cookie (see .ai/PLAN-xray-phase3.md).
+# Secrets come from ./.env.local (git-ignored, created by ./up.sh).
+name: ucc-pacs-dev
+services:
+  orthanc:
+    image: orthancteam/orthanc:26.11.0
+    container_name: ucc-pacs-orthanc
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    env_file: [.env.local]   # ORTHANC__REGISTERED_USERS, UCC_INGRESS_URL (device key: ./secrets/device-key)
+    environment:
+      ORTHANC__NAME: UCC-PACS-DEV
+      ORTHANC__AUTHENTICATION_ENABLED: "true"
+      ORTHANC__REMOTE_ACCESS_ALLOWED: "true" # needed for the docker bridge; the host publish below is 127.0.0.1 only
+      ORTHANC__DICOM_AET: UCCPACS
+      ORTHANC__DICOM_ALWAYS_ALLOW_STORE: "false"
+      ORTHANC__DICOM_ALWAYS_ALLOW_ECHO: "false"
+      ORTHANC__DICOM_CHECK_CALLED_AET: "true"
+      ORTHANC__DICOM_MODALITIES: '{"XRAYDEV": ["XRAYDEV", "127.0.0.1", 11112]}'
+      ORTHANC__DICOM_CHECK_MODALITY_HOST: "false"
+      ORTHANC__STABLE_AGE: "5"
+      ORTHANC__OVERWRITE_INSTANCES: "false"
+      ORTHANC__LUA_SCRIPTS: '["/etc/orthanc/ucc-webhook.lua"]'
+      ORTHANC__CONCURRENT_JOBS: "1"
+      DICOM_WEB_PLUGIN_ENABLED: "true"
+      ORTHANC__DICOM_WEB__ENABLE: "true"
+      ORTHANC__DICOM_WEB__ROOT: /dicom-web/
+      ORTHANC__DICOM_WEB__ENABLE_WADO: "false"   # WADO-URI off; OHIF uses WADO-RS only
+    ports:
+      - "127.0.0.1:8042:8042"   # REST + DICOMweb (basic auth), loopback only
+      - "127.0.0.1:4242:4242"   # DICOM C-STORE, loopback only in dev (a real X-ray device needs a LAN/VPN bind, see plan)
+    volumes:
+      - orthanc-db:/var/lib/orthanc/db
+      - ./ucc-webhook.lua:/etc/orthanc/ucc-webhook.lua:ro
+      - ./secrets:/run/ucc:ro   # device-key (git-ignored); read by the Lua hook on every event
+    networks: [pacs-net]
+
+  # OHIF static viewer served by nginx. Host network so it can reach the loopback-only UCC dev
+  # server; it listens ONLY on 127.0.0.1:3320 (viewer) and on the pacs bridge gateway
+  # 172.31.57.1:3321 (webhook relay for Orthanc -> UCC: one POST path, device-key authenticated by UCC).
+  ohif:
+    image: ohif/app:v3.13.14
+    container_name: ucc-pacs-ohif
+    restart: unless-stopped
+    depends_on: [orthanc]   # the pacs bridge (relay bind address) must exist first
+    network_mode: host
+    mem_limit: 128m
+    memswap_limit: 128m
+    environment:
+      VIEWER_BIND: "127.0.0.1:3320"
+      RELAY_BIND: "172.31.57.1:3321"
+      UCC_UPSTREAM: ${UCC_UPSTREAM:-127.0.0.1:3210}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - envsubst '$${VIEWER_BIND} $${RELAY_BIND} $${UCC_UPSTREAM}' < /etc/ohif/nginx.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'
+    volumes:
+      - ./ohif-app-config.js:/etc/ohif/app-config.js:ro
+      - ./ohif-nginx.conf.template:/etc/ohif/nginx.conf.template:ro
+
+volumes:
+  orthanc-db:
+networks:
+  pacs-net:
+    ipam:
+      config:
+        - subnet: 172.31.57.0/24
+          gateway: 172.31.57.1

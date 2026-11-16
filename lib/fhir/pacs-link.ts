@@ -30,6 +30,13 @@ export function readPacsViewerUrl(study: ImagingStudy): string | undefined {
   return sanitizePacsViewerUrl(study.extension?.find((e) => e.url === PACS_VIEWER_URL_EXTENSION)?.valueUrl);
 }
 
+/** Set only by the server-side Orthanc ingress: the study's pixels are held by the clinic PACS. */
+export const PACS_STORED_TAG = { system: 'https://ucc.emr/pacs', code: 'orthanc' } as const;
+
+export function isPacsStoredStudy(study: ImagingStudy): boolean {
+  return Boolean(study.meta?.tag?.some((t) => t.system === PACS_STORED_TAG.system && t.code === PACS_STORED_TAG.code));
+}
+
 export function isXrayStudy(study: ImagingStudy): boolean {
   return Boolean(study.meta?.tag?.some((t) => t.system === XRAY_TAG_SYSTEM && t.code === 'xray'));
 }
