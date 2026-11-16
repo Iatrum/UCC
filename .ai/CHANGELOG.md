@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-16 — Task 351 independent Task 350 review
+Closed remaining export and patient-linked create containment gaps; clinical resources retain clinic scope and own-clinic note/triage writes are positive-tested. Added export route boundary coverage and corrected a rejection test that previously stopped at input validation. Validation: unit 57/57, routes 3/3, lint pass; full workflow gate blocked by unavailable /workspace paths. Review verdict remains HOLD pending clinical workflow validation; see REVIEW-task350.md.
+
 ## 2026-11-15 — Task 300: POCT X-ray phase 1 (result link in Labs & Imaging, toggle-gated)
 X-ray ordering from the composer and device-key ingest already existed. This adds the missing result side: a study reported by an X-ray device can carry a PACS viewer link, stored as a sanitised `https://ucc.emr/xray/viewer-url` extension (http/https only, no embedded credentials) and shown as "View in PACS" only in the Labs & Imaging tab. X-ray studies are tagged `xray`; `/api/imaging/results` now requires clinic auth and hides X-ray studies and links when the clinic's `pacs` toggle is off (default off). Generic imaging orders are unaffected. Fake DICOM metadata only. Builds on PR #236 (per-device keys).
 
@@ -92,6 +95,3 @@ existing flow. Local fake-data evidence, screenshots and validation results: `.a
 ## Task 160 — Keep unsigned consultation drafts after reload
 Unsigned notes, diagnoses and treatment items now save to Medplum for the current clinic and practitioner, so doctors can recover them after reloading. Save messages distinguish confirmed saves from pending or failed writes, with Retry and a warning before leaving unsaved work. Signing clears the corresponding draft; a failed note cleanup can be retried without signing twice. Clinical text is never saved in browser storage. Firebase Storage and the existing composer, Lab and POCT flows are preserved. Depends on #234. Validation results: see `.ai/progress-u1b-draft.md`.
 Validation: lint, TypeScript, 34 unit tests, build and clinic checks passed. The single full run was 47/51; focused test corrections and replays produce combined 50/51 with only the existing known-bug summary failing. The original full-gate failure is retained in the progress notes. Existing Firestore draft migration remains a deployment prerequisite.
-
-## 2026-11-16 — Task 351 independent Task 350 review
-Closed remaining export and patient-linked create containment gaps; clinical resources retain clinic scope and own-clinic note/triage writes are positive-tested. Added export route boundary coverage and corrected a rejection test that previously stopped at input validation. Validation: unit 57/57, routes 3/3, lint pass; full workflow gate blocked by unavailable /workspace paths. Review verdict remains HOLD pending clinical workflow validation; see REVIEW-task350.md.

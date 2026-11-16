@@ -1,5 +1,7 @@
 # STATE (updated by Dev each round)
 
+- 2026-11-16 Task 351: independently reviewed Task 350 PR #247 in /home/dev/ucc-task351. Fixed export cross-clinic reads/weak account matching, raw-REST mapper boundary, absent-clinic bypass, billing Task/invoice and consultation guard gaps, triage child identifiers (two loops). Unit 57/57 + isolated route tests 3/3 + lint PASS; mutation tests prove guards/query scope matter. Full gate infrastructure FAIL (hardcoded unwritable /workspace paths; no browser/baseline results). Verdict HOLD for workflow validation, .ai/REVIEW-task350.md. Normal pushes to existing Task 350 branch explicitly authorized; no merge/force-push, no server started, existing :3210 and production untouched. Usage meter unavailable.
+
 Branch: `ai-work` (local only, from `dev` @ 85f6c4b). Never pushed.
 Pre-existing local change kept untouched (NOT committed): `.claude/worktrees/agent-a639f69d` gitlink deleted in working tree; stray untracked file `ign toggle buttons…` left as is.
 
@@ -131,5 +133,3 @@ User lifted hold ('Sambung UCC sekarang, start Task 9 POCT lab'). PRs #221/#211/
 - Task 160 publication: **https://github.com/Iatrum/UCC/pull/235**, OPEN DRAFT, ai/task-u1b-draft → dev, depends on #234. Live publication check **MERGEABLE / UNSTABLE**. Normal milestone pushes, no merge/force-push; own :3210 stopped. Validation stays original full gate FAIL (47/51) plus combined focused recovery 50/51 baseline summary only, comparator 0. Legacy Firestore draft transition remains a deployment prerequisite.
 
 - 2026-11-16 Task 341: independently reviewed Task 340 PR #246 in /home/dev/ucc-task341. Fixed two MAJOR gaps (clinic-scoped study/report reads; untagged/unsafe viewer links) and normally pushed c0f7eae to the existing branch. Unit 82/82, lint/build pass; focused browser initial 8/9 then targeted rerun 2/2. Full gate blocked by hard-coded unwritable /workspace paths and absent baseline; conditional approval only. Review: .ai/REVIEW-task340.md. Own :3341 server process group stopped; production untouched.
-
-- 2026-11-16 Task 351: independently reviewed Task 350 PR #247 in /home/dev/ucc-task351. Fixed export cross-clinic reads/weak account matching, raw-REST mapper boundary, absent-clinic bypass, billing Task/invoice and consultation guard gaps, triage child identifiers (two loops). Unit 57/57 + isolated route tests 3/3 + lint PASS; mutation tests prove guards/query scope matter. Full gate infrastructure FAIL (hardcoded unwritable /workspace paths; no browser/baseline results). Verdict HOLD for workflow validation, .ai/REVIEW-task350.md. Normal pushes to existing Task 350 branch explicitly authorized; no merge/force-push, no server started, existing :3210 and production untouched. Usage meter unavailable.
