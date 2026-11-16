@@ -13,9 +13,9 @@ class OrderComposerDocumentDialogStaticTest(unittest.TestCase):
         source = self.read_source()
         for expected in [
             "MEDICAL CERTIFICATE (MC)",
-            "Fill out information below to complete document",
+            "Save these fields as a draft. Sign treatment to issue the document.",
             "MC preview",
-            "Complete document",
+            "Save draft",
         ]:
             self.assertIn(expected, source)
 

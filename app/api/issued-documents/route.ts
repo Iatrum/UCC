@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     const id = params.get('id');
     if (id) {
-      const doc = await medplum.readResource('DocumentReference', id).catch(() => null);
+      const matches = await medplum.searchResources('DocumentReference', { _id: id, identifier: `clinic|${clinicId}`, _count: '1' });
+      const doc = matches[0];
       if (!doc || !belongsToClinic(doc, clinicId) || !doc.identifier?.some(i => i.system === ISSUED_DOCUMENT_SYSTEM)) {
         return NextResponse.json({ error: 'Document not found' }, { status: 404 });
       }

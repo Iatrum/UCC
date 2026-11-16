@@ -6,7 +6,7 @@ const context = { patientName: 'Fake <Patient>', ic: 'FAKE-IC', doctor: 'Dr Fake
 const mc = { kind: 'mc', mcDays: '2', mcStartDate: '2026-12-31', mcDiagnosis: '' };
 const encounter = { resourceType: 'Encounter' as const, id: 'fake-visit', status: 'finished' as const, class: { code: 'AMB' }, identifier: [{ system: 'clinic', value: 'fake' }], subject: { reference: 'Patient/fake-patient' } };
 const signer = { resourceType: 'Practitioner' as const, id: 'fake-doctor', name: [{ text: 'Dr Fake' }] };
-const procedures = [{ name: 'MC', category: 'documents', notes: JSON.stringify(mc) }];
+const procedures = [{ name: 'MC', category: 'documents', notes: JSON.stringify({ ...mc, status: 'draft', entryId: 'fake-entry' }) }];
 function client(clinic = 'fake') {
   return {
     readResource: async () => ({ resourceType: 'Patient', identifier: [{ system: 'clinic', value: clinic }, { system: 'nric', value: 'FAKE-IC' }], name: [{ text: 'Fake Patient' }] }),
@@ -45,6 +45,10 @@ describe('MC and referral issuance', () => {
     expect(doc.context.encounter[0].reference).toBe('Encounter/fake-visit'); expect(belongsToClinic(doc, 'fake')).toBe(true);
     expect(doc.author[0].reference).toBe('Practitioner/fake-doctor'); expect(doc.content[0].attachment.contentType).toBe('text/html');
     expect(JSON.parse(a.notes.get(0)!).status).toBe('issued');
+  });
+  it('does not retrospectively issue legacy completed procedure notes', async () => {
+    const legacy = [{ ...procedures[0], notes: JSON.stringify({ ...mc, status: 'completed' }) }];
+    expect((await prepareIssuedDocuments(client(), encounter, 'fake', legacy, signer)).entries).toHaveLength(0);
   });
   it('does not issue drafts through ordinary edit paths', async () => {
     expect((await prepareIssuedDocuments(client(), encounter, 'fake', procedures)).entries).toHaveLength(0);

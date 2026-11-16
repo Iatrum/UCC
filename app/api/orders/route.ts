@@ -1,4 +1,4 @@
-import { documentDetails } from '@/lib/fhir/issued-document-service';
+import { documentDetails, DocumentIssuanceError } from '@/lib/fhir/issued-document-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof DocumentIssuanceError) return NextResponse.json({ error: error.message }, { status: 400 });
     return handleRouteError(error, 'POST /api/orders');
   }
 }
