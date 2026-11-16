@@ -22,7 +22,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MedplumClient, OperationOutcomeError, isGone, isNotFound } from '@medplum/core';
 import {
-  MANIFEST_FORMAT, PreconditionError, SafeError, assertAllowedBaseUrl, migrate, parseExport, rollback, summarize,
+  MANIFEST_FORMAT, PreconditionError, SafeError, assertAllowedBaseUrl, migrate, parseExport, rollback, summarize, toIso,
   type FhirClient, type Manifest, type Resource,
 } from './core';
 
@@ -142,8 +142,10 @@ async function main() {
   }
   if (typeof args['--report'] === 'string') {
     const reportPath = privatePath(args['--report'], '--report');
+    // updatedAt lets the operator judge staleness (and pick --since) before applying.
+    const updatedAt = new Map(exported.drafts.map(d => [d?.id, toIso(d?.updatedAt)]));
     writePrivate(reportPath, result.outcomes.map(({ source, legacyId, action, reason, applied, ownerSource, candidateOwner }) =>
-      ({ source, legacyId, action, reason, applied, ownerSource, candidateOwner })));
+      ({ source, legacyId, updatedAt: updatedAt.get(legacyId), action, reason, applied, ownerSource, candidateOwner })));
     console.log(`Report with legacy document ids (private, delete after use): ${reportPath}`);
   }
   if (result.aborted) { console.error(`ABORTED: ${result.aborted}. Nothing further was written. See the runbook, section "If it aborts".`); process.exitCode = 3; }
