@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  adminPortalPath,
   deriveSubdomainContext,
   getHostFromNextRequest,
 } from "@/lib/server/subdomain-host";
@@ -17,7 +18,7 @@ export function proxy(req: NextRequest) {
     if (BASE_DOMAIN) {
       const redirectUrl = req.nextUrl.clone();
       redirectUrl.hostname = BASE_DOMAIN;
-      redirectUrl.pathname = pathname === "/" ? "/admin" : "/admin" + pathname;
+      redirectUrl.pathname = adminPortalPath(pathname);
       return NextResponse.redirect(redirectUrl, 308);
     }
   }

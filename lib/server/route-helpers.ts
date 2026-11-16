@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isUnauthenticated, OperationOutcomeError } from '@medplum/core';
+import { isNotFound, isUnauthenticated, OperationOutcomeError } from '@medplum/core';
 
 /**
  * Thrown when a request lacks valid authentication.
@@ -118,7 +118,7 @@ function isForbiddenLikeError(error: unknown): boolean {
  * - AuthError      → 401  (client should re-authenticate)
  * - ForbiddenError → 403  (authenticated but not allowed)
  * - Medplum 403    → 403  (raw OperationOutcome/authz failure)
- * - NotFoundError  → 404
+ * - NotFoundError / Medplum not-found OperationOutcome → 404
  * - Any other      → 500  (unexpected server failure)
  *
  * Always logs the error server-side so it is visible in logs without
@@ -165,6 +165,13 @@ export function handleRouteError(
   if (error instanceof NotFoundError) {
     console.warn(`${label} Not found:`, error.message);
     return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+
+  // A Medplum `readResource`/`readReference` of a missing (or inaccessible) id
+  // rejects with an OperationOutcomeError "Not found" — a client error, not a 500.
+  if (error instanceof OperationOutcomeError && isNotFound(error.outcome)) {
+    console.warn(`${label} Not found:`, error.message);
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
   if (error instanceof ClinicContextError) {
