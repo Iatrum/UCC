@@ -116,7 +116,10 @@ function check(group, name, ok, detail = '') {
   console.log(`${ok ? 'PASS' : 'FAIL'}  [${group}] ${name}${detail ? ' — ' + detail : ''}`);
 }
 const denied = (s) => s === 403 || s === 404;
-const ids = (bundle) => new Set((bundle?.entry || []).map((e) => `${e.resource.resourceType}/${e.resource.id}`));
+const ids = (bundle) => {
+  if (bundle?.resourceType !== 'Bundle' || !Array.isArray(bundle.entry || []) || (bundle.entry || []).some(e => !e.resource?.resourceType || !e.resource?.id)) throw Error('Malformed search bundle');
+  return new Set((bundle.entry || []).map(e => `${e.resource.resourceType}/${e.resource.id}`));
+};
 const TAG = { system: 'http://iatrum.com/seed', code: 'task5-isolation-probe' };
 
 const created = []; // admin-created probe resources for cleanup
@@ -176,6 +179,11 @@ async function main() {
   // 3. Staff-side checks.
   for (const s of staff) {
     const tok = await login({ email: s.email, password: staffPassword });
+    const context = await http(tok, 'GET', 'auth/me');
+    if (context.status !== 200 || context.json?.project?.superAdmin === true
+        || context.json?.project?.id !== s.membership.project?.reference?.replace('Project/', '')
+        || context.json?.membership?.id !== s.membership.id || context.json?.membership?.admin === true
+        || `${context.json?.profile?.resourceType}/${context.json?.profile?.id}` !== s.profile) throw Error('Unexpected staff authentication context');
     const S = (m, p, b) => http(tok, m, 'fhir/R4/' + p, b);
     const g = `staff ${s.slug}`;
     const foreign = staff.filter((o) => o !== s);
@@ -185,7 +193,7 @@ async function main() {
       const rd = await S('GET', `${type}/${r.id}`);
       check(g, `reads OWN ${type}`, rd.status === 200, `status ${rd.status}`);
       const sr = await S('GET', `${type}?_id=${r.id}`);
-      check(g, `search finds OWN ${type} by id`, ids(sr.json).has(`${type}/${r.id}`), `status ${sr.status}`);
+      check(g, `search finds OWN ${type} by id`, sr.status === 200 && ids(sr.json).has(`${type}/${r.id}`), `status ${sr.status}`);
     }
     {
       const e = s.own.Encounter;
@@ -244,14 +252,14 @@ async function main() {
     check(g, 'still lists OWN clinic Practitioners', [...mine].every((p) => seen.has(p)) && mine.size > 0, `status ${pr.status}, visible ${[...mine].filter((p) => seen.has(p)).length}/${mine.size}`);
     const pro = await S('GET', 'PractitionerRole?_count=1000');
     const roleOrgs = new Set((pro.json?.entry || []).map((e) => e.resource.organization?.reference));
-    check(g, 'PractitionerRole only OWN clinic', [...roleOrgs].every((o) => o === s.org), `orgs ${roleOrgs.size}`);
+    check(g, 'PractitionerRole only OWN clinic', pro.status === 200 && [...roleOrgs].every((o) => o === s.org), `orgs ${roleOrgs.size}`);
     const og = await S('GET', 'Organization?_count=1000');
-    check(g, 'Organization only OWN clinic', ids(og.json).size <= 1 && [...ids(og.json)].every((x) => x === s.org), `visible ${ids(og.json).size}`);
+    check(g, 'Organization only OWN clinic', og.status === 200 && ids(og.json).size <= 1 && [...ids(og.json)].every((x) => x === s.org), `visible ${ids(og.json).size}`);
     const hsr = await S('GET', 'HealthcareService?_count=1000');
-    check(g, 'HealthcareService only OWN clinic', ids(hsr.json).size <= 1 && [...ids(hsr.json)].every((x) => x === s.acct), `visible ${ids(hsr.json).size}`);
+    check(g, 'HealthcareService only OWN clinic', hsr.status === 200 && ids(hsr.json).size <= 1 && [...ids(hsr.json)].every((x) => x === s.acct), `visible ${ids(hsr.json).size}`);
     for (const type of ['ProjectMembership', 'User', 'Project', 'AccessPolicy', 'ClientApplication', 'Bot']) {
       const r = await S('GET', `${type}?_count=50`);
-      check(g, `cannot list ${type}`, denied(r.status) || ids(r.json).size === 0, `status ${r.status}, visible ${ids(r.json).size}`);
+      check(g, `cannot list ${type}`, denied(r.status) || (r.status === 200 && ids(r.json).size === 0), `status ${r.status}`);
     }
     for (const o of foreign) {
       const rd = await S('GET', o.profile);

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
+import { CLINIC_POLICY_NAME } from '../../lib/fhir/clinic-access-policy.ts';
 const B = 'http://127.0.0.1:8113/';
 const check = (ok, label) => { if (!ok) throw Error(label); console.log(`PASS ${label}`); };
 async function http(token, p, method = 'GET', body) {
@@ -78,6 +79,7 @@ try{
   }
   cliArgs=['--project',project.id,'--app-client',client.id,'--ops-project-name',opsName,'--operator-email',`task5-ops-${suffix}@example.invalid`,'--backup-dir',dir];
   cliEnv={PATH:process.env.PATH,HOME:process.env.HOME,NODE_OPTIONS:'--max-old-space-size=3072',MEDPLUM_BASE_URL:B,MEDPLUM_ADMIN_EMAIL:adminEmail,MEDPLUM_ADMIN_PASSWORD:fakePassword};
+  const oldPolicy=await create({resourceType:'AccessPolicy',name:CLINIC_POLICY_NAME,resource:[{resourceType:'Patient',interaction:['read','search']}]},project.id);
   const original=await get(`Project/${project.id}`);
   await cli();check(isDeepStrictEqual(await get(`Project/${project.id}`),original),'default dry-run makes no project writes');
   check(!fs.existsSync(`${dir}/task5-pre-${project.id}.json`),'dry-run does not create migration snapshot');
@@ -112,12 +114,28 @@ try{
   fs.writeFileSync(dir+'/isolation.log',output,{mode:0o600});check(status===0,'fresh staff tokens pass clinic isolation verifier');
   const current=await get(`ProjectMembership/${members[0].member.id}`);
   const drift=await http(root,`fhir/R4/ProjectMembership/${current.id}`,'PUT',{...current,admin:true});check(drift.status===200,'fixture grant drift installed');
+  await cli(['--rollback'],2);
   await cli(['--rollback','--apply'],2);check((await get(`Project/${project.id}`)).superAdmin===false,'rollback refuses grant drift before cutover');
   await http(root,`fhir/R4/ProjectMembership/${current.id}`,'PUT',current);
+  const unexpected=await invite(project.id,`task5-added-${suffix}@example.invalid`,false);
+  await cli(['--rollback'],2); await cli(['--rollback','--apply'],2);
+  check((await get(`Project/${project.id}`)).superAdmin===false,'membership inventory drift never elevates a new identity');
+  check((await http(root,`fhir/R4/ProjectMembership/${unexpected.id}`,'DELETE')).status===200,'added fake membership removed');
+  const topology=await get(`Project/${project.id}`);
+  check((await http(root,`fhir/R4/Project/${project.id}`,'PUT',{...topology,name:'Unrelated administrator rename'})).status===200,'project topology drift installed');
+  await cli(['--rollback'],2); await cli(['--rollback','--apply'],2);
+  check((await get(`Project/${project.id}`)).name==='Unrelated administrator rename','rollback preserves unexpected project topology');
+  check((await http(root,`fhir/R4/Project/${project.id}`,'PUT',topology)).status===200,'project topology fixture restored');
+  const savedPolicy=await get(`AccessPolicy/${oldPolicy.id}`);
+  check((await http(root,`fhir/R4/AccessPolicy/${oldPolicy.id}`,'DELETE')).status===200,'backed-up policy removed for refusal test');
+  await cli(['--rollback'],2); await cli(['--rollback','--apply'],2);
+  check((await get(`Project/${project.id}`)).superAdmin===false,'missing backed-up policy prevents rollback promotion');
+  check((await http(root,`fhir/R4/AccessPolicy/${oldPolicy.id}`,'PUT',savedPolicy)).status===200,'backed-up policy fixture restored');
   await cli(['--rollback']);check((await get(`Project/${project.id}`)).superAdmin===false,'rollback defaults to dry-run');
   await cli(['--rollback','--apply']);check((await get(`Project/${project.id}`)).superAdmin===true,'rollback restores original project mode');
   for(const m of [app,...members.map(s=>s.member)]){const now=await get(`ProjectMembership/${m.id}`);check(isDeepStrictEqual([now.access,now.accessPolicy,now.admin],[m.access,m.accessPolicy,m.admin]),'rollback restores exact original membership grants');}
-  check((await search('AccessPolicy',project.id)).length===0,'rollback removes policies created by migration');
+  const restoredPolicies=await search('AccessPolicy',project.id);
+  check(restoredPolicies.length===1&&restoredPolicies[0].id===oldPolicy.id&&isDeepStrictEqual(restoredPolicies[0].resource,oldPolicy.resource),'rollback restores pre-existing policy and removes only migration-created policy');
   for(const item of snap.directory){const p=await get(item.pr);check(isDeepStrictEqual((p.meta?.accounts||[]).map(a=>a.reference).sort(),item.before),'rollback restores directory accounts');}
   console.log('Task 5 topology rehearsal PASS');
 }catch(error){console.error('Task 5 topology rehearsal FAILED: '+error.message+'; private evidence at '+dir);process.exitCode=1;}

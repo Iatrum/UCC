@@ -462,8 +462,19 @@ async function rollback(f, st, sess, mode) {
   log(` 4. "${APP_SERVER_POLICY_NAME}": ${snap.appPolicy ? 'restore pre-change definition' : 'delete (created by this migration)'}`);
   log(' 5. operator retained for recovery; remove manually only after successful verification');
   log(` 6. restore ${(snap.directory || []).length} directory account snapshots`);
-  if (!APPLY) { log('\nDRY-RUN complete. Nothing was written.'); return; }
   if (!cur.superAdmin && mode !== 'operator') die('need the operator session to restore superAdmin');
+  // Preview and apply share the same preflight. Restoring superAdmin elevates
+  // every current member, including identities absent from the snapshot.
+  const savedIds = new Set(snap.memberships.map(m => m.id));
+  if (st.memberships.some(m => !savedIds.has(m.id))) die('Membership inventory drift; rollback refused');
+  for (const before of snap.memberships) {
+    const now = st.memberships.find(m => m.id === before.id);
+    if (!now || !isDeepStrictEqual([now.project, now.user, now.profile, now.active], [before.project, before.user, before.profile, before.active])) die('Membership identity/status drift; rollback refused');
+  }
+  const expectedLinks = [...(snap.project.link || [])];
+  if (st.baseProject && !expectedLinks.some(l => l.project?.reference === `Project/${st.baseProject.id}`)) expectedLinks.push({ project: { reference: `Project/${st.baseProject.id}` } });
+  if (![snap.project.name, RENAME].includes(cur.name)
+      || (!isDeepStrictEqual(cur.link || [], snap.project.link || []) && !isDeepStrictEqual(cur.link || [], expectedLinks))) die('Project topology drift; rollback refused');
   // Validate drift before changing any backed-up document. Operational freeze is required.
   for (const [old, action] of diffs) {
     if (!action.startsWith('restore')) die('Missing backed-up membership; rollback refused');
@@ -482,8 +493,10 @@ async function rollback(f, st, sess, mode) {
   // Order: policies+memberships first (still scoped by the current mode), flip last.
   for (const [name, desired, before] of [[CLINIC_POLICY_NAME, clinicStaffPolicyResources(), snap.clinicPolicy], [APP_SERVER_POLICY_NAME, appServerPolicyResources(), snap.appPolicy]]) {
     const live = st.named(name)[0];
+    if (before && !live) die('Missing backed-up policy; rollback refused');
     if (live && !isDeepStrictEqual(live.resource, desired) && !isDeepStrictEqual(live.resource, before?.resource)) die('Policy drift; rollback refused');
   }
+  if (!APPLY) { log('\nDRY-RUN complete. Drift checks passed; nothing was written.'); return; }
   if (snap.clinicPolicy) {
     const live = st.named(CLINIC_POLICY_NAME)[0];
     if (live && !isDeepStrictEqual(live.resource, snap.clinicPolicy.resource)) {
