@@ -25,7 +25,7 @@ async function search(page: Page, text: string) { await page.getByRole('textbox'
 
 test('Time Chit toggle, composer, checkout, historical print, validation and clinic scope', async ({ page, request, playwright }) => {
   expect(BASE).toBe('http://localhost:3210');
-  expect(MEDPLUM.replace(/\/$/, '')).toBe('http://localhost:8113');
+  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(MEDPLUM).origin);
   const m = await fhir(), suffix = randomUUID().slice(0, 8);
   const created = await request.post('/api/patients', { data: { fullName: `Time Chit Fake ${suffix}`, nric: `FAKE-TC-${suffix}`, dateOfBirth: '1990-01-01', gender: 'female', phone: '0100000000' } });
   expect(created.status()).toBe(200);

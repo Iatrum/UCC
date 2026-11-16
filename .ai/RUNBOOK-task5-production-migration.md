@@ -102,4 +102,4 @@ If drift checks refuse, compare the private snapshot with live state during main
 
 ## Dev evidence and release status
 
-See `.ai/REVIEW-task5.md` for exact results and limitations. No production migration, push, remote change, PR or merge is performed by this worktree. The root AGENTS.md explicitly prohibits pushes and PR creation; a local draft PR description is supplied for manual publication.
+See `.ai/REVIEW-task5.md` for exact results and limitations. No production migration is performed by this worktree. The user explicitly authorized milestone branch pushes and a draft PR into dev for Task 5, overriding the general AGENTS publication restriction. Never merge or force-push. Production cutover remains Hidayat’s manual responsibility.

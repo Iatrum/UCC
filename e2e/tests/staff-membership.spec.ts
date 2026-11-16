@@ -21,9 +21,9 @@ test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot:
 test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union and exact rollback', async () => {
   test.setTimeout(15 * 60_000);
   expect(BASE).toBe('http://localhost:3210');
-  expect(MEDPLUM.replace(/\/$/, '')).toBe('http://localhost:8113');
+  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(MEDPLUM).origin);
   process.loadEnvFile(new URL('../../.env.local', import.meta.url));
-  expect(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL!).origin).toBe('http://localhost:8113');
+  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL!).origin);
   // A prior spec can use the whole 5/min login budget.
   await new Promise(resolve => setTimeout(resolve, 65_000));
   const m: MedplumClient = await getAdminMedplum();
