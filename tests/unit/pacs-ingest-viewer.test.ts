@@ -123,7 +123,8 @@ const unmatched = await import("../../app/api/pacs/unmatched/route");
 
 const post = (handler: (r: NextRequest) => Promise<Response>, path: string, body: unknown, headers: Record<string, string> = {}) =>
   handler(new NextRequest(`http://localhost${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }));
-const notify = (n: number, key = KEY_A) => post(ingress, "/api/pacs/orthanc/study", { orthancStudyId: oid(n) }, { authorization: `Bearer ${key}` });
+// ?wait=1 = do the work before answering (resync mode); the default answers 202 and works after the response.
+const notify = (n: number, key = KEY_A, wait = true) => post(ingress, `/api/pacs/orthanc/study${wait ? "?wait=1" : ""}`, { orthancStudyId: oid(n) }, { authorization: `Bearer ${key}` });
 const studies = () => db.filter((r) => r.resourceType === "ImagingStudy");
 const tasks = () => db.filter((r) => r.resourceType === "Task");
 const viewerHost = { "x-pacs-viewer-host": "viewer.fake.test:3320" };
@@ -174,6 +175,18 @@ describe("POST /api/pacs/orthanc/study (PACS ingress)", () => {
     expect(study.meta.tag).toContainEqual({ system: "https://ucc.emr/pacs", code: "orthanc" });
     expect(study.extension).toBeUndefined(); // no device-supplied viewer URL
     expect(db.find((x) => x.id === "sr-a1").status).toBe("completed");
+    expect(tasks()).toHaveLength(0);
+  });
+
+  test("default (webhook) mode answers 202 without the outcome and still ingests", async () => {
+    ORTHANC[1] = { accession: "UXAAAA2222" };
+    const r = await notify(1, KEY_A, false);
+    expect(r.status).toBe(202);
+    expect(await r.json()).toEqual({ accepted: true });
+    expect(studies()).toHaveLength(1);
+    // A pointer to a study that is gone is accepted and dropped, nothing is created.
+    expect((await notify(99, KEY_A, false)).status).toBe(202);
+    expect(studies()).toHaveLength(1);
     expect(tasks()).toHaveLength(0);
   });
 
