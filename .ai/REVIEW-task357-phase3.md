@@ -1,4 +1,4 @@
-# Task 357 phase 3 continuation review
+# Task 357 phase 3 continuation self-review
 
 Scope: `/home/dev/ucc-task357`, continuation of merged #255. No production actions, deployment, navigation, Firebase Storage, or consultation composer edits. No delegates used.
 
@@ -13,7 +13,7 @@ Scope: `/home/dev/ucc-task357`, continuation of merged #255. No production actio
 
 Unit suite: 225 pass, zero failures. Regression tests prove foreign keys cause zero archive reads, existing viewer tokens fail after a clinic-binding change, foreign archive attachment fails before fetching pixels, and pending/dismissed unmatched studies never attach automatically on a later matching order.
 
-Full gate, browser evidence, final lint and cleanup: in progress; final results will be recorded before completion. Earlier phase-3 evidence is retained separately in the research notes and is not represented as a new run.
+Final lint and 68-test collection PASS. Full gate and browser evidence: pending the shared dev slot; final results will be recorded before completion. Earlier phase-3 evidence is retained separately in the research notes and is not represented as a new run.
 
 ## Deployment limits
 
