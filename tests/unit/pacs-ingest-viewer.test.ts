@@ -230,6 +230,21 @@ describe("POST /api/pacs/orthanc/study (PACS ingress)", () => {
     expect(tasks()).toHaveLength(0);
   });
 
+  test("a study in review is never auto-attached when an order appears later", async () => {
+    ORTHANC[3] = { accession: "UXLATE9999" };
+    const first = await (await notify(3)).json();
+    expect(first).toMatchObject({ outcome: "unmatched", reason: "no-order" });
+    db.push(order("sr-late", "clinic-a", "UXLATE9999"));
+    expect(await (await notify(3)).json()).toMatchObject({ outcome: "unmatched", reviewId: first.reviewId });
+    expect(studies()).toHaveLength(0);
+    expect(db.find((x) => x.id === "sr-late").status).toBe("active");
+    const dismissed = await post(unmatched.POST, "/api/pacs/unmatched", { id: first.reviewId, action: "dismiss" });
+    expect(dismissed.status).toBe(200);
+    expect(await (await notify(3)).json()).toMatchObject({ outcome: "unmatched", reviewId: first.reviewId });
+    expect(studies()).toHaveLength(0);
+    expect(tasks()[0].status).toBe("rejected");
+  });
+
   test("clinic B can ingest only when the archive is explicitly bound to clinic B", async () => {
     process.env.PACS_ORTHANC_CLINICS = "clinic-b";
     ORTHANC[8] = { accession: "UXBBBB3333" };
@@ -273,6 +288,16 @@ describe("review list /api/pacs/unmatched", () => {
     expect((await act({ id: reviewId, action: "bogus" })).status).toBe(400);
     expect(studies()).toHaveLength(0);
     expect(tasks()[0].status).toBe("requested");
+  });
+
+  test("staff attachment refuses an archive bound to another clinic before reading pixels", async () => {
+    ORTHANC[3] = { accession: "UXNOSUCH99" };
+    const { reviewId } = await (await notify(3)).json();
+    archiveReads.length = 0;
+    process.env.PACS_ORTHANC_CLINICS = "clinic-b";
+    expect((await act({ id: reviewId, action: "attach", serviceRequestId: "sr-a-open2" })).status).toBe(403);
+    expect(archiveReads).toHaveLength(0);
+    expect(studies()).toHaveLength(0);
   });
 
   test("staff attach creates the study on the chosen order and closes the entry; dismiss rejects it", async () => {
