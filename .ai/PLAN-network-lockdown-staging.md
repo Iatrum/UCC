@@ -167,12 +167,13 @@ EXT=$(ip -o -4 route show to default | awk '{print $5}')    # e.g. eth0
 sudo iptables -I DOCKER-USER -i $EXT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 sudo iptables -I DOCKER-USER 2 -i $EXT -p tcp -m conntrack --ctorigdstport 80  --ctdir ORIGINAL -j ACCEPT
 sudo iptables -I DOCKER-USER 3 -i $EXT -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j ACCEPT
-sudo iptables -A DOCKER-USER -i $EXT -j DROP
+# insert (not append): Docker's chain ends with a RETURN rule, a DROP appended after it would never run
+sudo iptables -I DOCKER-USER 4 -i $EXT -j DROP
 ```
 
 Docker's own example uses `-I DOCKER-USER -i ext_if ! -s <ip> -j DROP` and `--ctorigdst/--ctorigdstport` for original ports, with a performance warning. The `--ctdir` form above is a standard netfilter option, **not** in the fetched docs; rehearse on staging and check IPv6 separately with `ip6tables` (Docker docs give no example). Rules are lost on reboot unless persisted (`netfilter-persistent`), and a rule mistake can take **all clinics offline**, because Traefik's traffic passes through this chain. If unsure, skip this step; it's optional.
 
-Rollback: `sudo iptables -F DOCKER-USER` followed by `sudo iptables -A DOCKER-USER -j RETURN` (Docker's default chain content), or reboot if not persisted.
+Rollback: `sudo iptables -F DOCKER-USER` then check `sudo iptables -S DOCKER-USER` still ends with `-A DOCKER-USER -j RETURN` (re-add it if missing), or reboot if not persisted.
 
 ## 1.8 Step 5 (optional): Tailscale for admin and SSH
 
