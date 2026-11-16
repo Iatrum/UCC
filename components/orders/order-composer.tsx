@@ -320,7 +320,8 @@ export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | und
 
   return JSON.stringify({
     kind,
-    status: entry.meta?.documentStatus || "completed",
+    status: "draft",
+    entryId: entry.id,
     title: entry.name,
     instruction: entry.instruction || "",
     mcDays: entry.meta?.mcDays || "",
@@ -705,12 +706,12 @@ export function OrderComposer({
     setSearchQuery("");
   }
 
-  async function handleCompleteDocumentDialog(status: "draft" | "completed") {
+  async function handleCompleteDocumentDialog() {
     if (!editingDocumentEntry) return;
     await updateEntryField(editingDocumentEntry, {
       meta: {
         ...(editingDocumentEntry.meta || {}),
-        documentStatus: status,
+        documentStatus: "draft",
         ...(editingDocumentKind === "mc"
           ? { mcDays: String(mcDays), mcDiagnosis, mcStartDate, mcDoctorName }
           : {}),
@@ -718,8 +719,8 @@ export function OrderComposer({
       },
     });
     toast({
-      title: status === "completed" ? "Document completed" : "Document saved as incomplete",
-      description: `${editingDocumentEntry.name} updated.`,
+      title: "Document saved as draft",
+      description: "This document will be issued when you sign treatment.",
     });
     setEditingDocumentEntryId(null);
     setMcStartDate(new Date().toISOString().split("T")[0]);
@@ -893,7 +894,7 @@ export function OrderComposer({
           <DialogHeader>
             <DialogTitle>{editingDocumentEntry?.name ?? "Document"}</DialogTitle>
             <DialogDescription>
-              Fill out information below to complete document.
+              Save these fields as a draft. Sign treatment to issue the document.
             </DialogDescription>
           </DialogHeader>
           {editingDocumentKind === "mc" ? (
@@ -1000,8 +1001,8 @@ export function OrderComposer({
             </div>
           ) : null}
           <DialogFooter>
-            <Button type="button" onClick={() => void handleCompleteDocumentDialog("completed")}>
-              Complete document
+            <Button type="button" onClick={() => void handleCompleteDocumentDialog()}>
+              Save draft
             </Button>
           </DialogFooter>
         </DialogContent>

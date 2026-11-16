@@ -1,0 +1,9 @@
+import { defineConfig } from '@playwright/test';
+const baseURL = process.env.UCC_BASE_URL || 'http://127.0.0.1:3218';
+const url = new URL(baseURL);
+if (!['localhost', '127.0.0.1'].includes(url.hostname)) throw new Error('Document tests require a local fake-data app');
+export default defineConfig({
+  testDir: './e2e', testMatch: 'issued-documents.spec.ts', timeout: 120_000,
+  workers: 1, retries: 0, reporter: 'list', outputDir: '../test-results/documents',
+  use: { baseURL, headless: true, launchOptions: { args: ['--disable-dev-shm-usage'] } },
+});

@@ -5,6 +5,9 @@
  * All consultations are saved to and retrieved from Medplum.
  */
 
+import { prepareIssuedDocuments, documentProcedureStatus } from './issued-document-service';
+import type { BundleEntry } from '@medplum/fhirtypes';
+import type { ProfileResource } from '@medplum/core';
 import { MedplumClient } from '@medplum/core';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type { 
@@ -437,7 +440,7 @@ export async function saveConsultationToMedplum(
 
       await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
-        status: 'completed',
+        status: documentProcedureStatus(proc.notes),
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
         code: codeable,
@@ -722,7 +725,8 @@ export async function updateConsultationInMedplum(
   encounterId: string,
   updates: Partial<ConsultationData>,
   clinicId: string | undefined,
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  documentSigner?: ProfileResource
 ): Promise<void> {
   const client = medplum;
 
@@ -854,8 +858,10 @@ export async function updateConsultationInMedplum(
 
   // 6. Replace Procedures (delete old, create new)
   if (updates.procedures !== undefined) {
-    await Promise.all(procedures.map((p) => client.deleteResource('Procedure', p.id!)));
-    for (const proc of updates.procedures as any[]) {
+    const issued = await prepareIssuedDocuments(client, encounter, clinicId || '', updates.procedures, documentSigner);
+    const entries: BundleEntry[] = [...issued.entries, ...procedures.map(p => ({ request: { method: 'DELETE' as const, url: `Procedure/${p.id}` } }))];
+    for (const [index, original] of updates.procedures.entries()) {
+      const proc = { ...original, notes: issued.notes.get(index) || original.notes };
       const codeable = proc.codingCode || proc.codingDisplay || proc.codingSystem
         ? {
             coding: proc.codingCode
@@ -871,17 +877,20 @@ export async function updateConsultationInMedplum(
           }
         : { text: proc.name };
 
-      await validateAndCreate(client, withClinicIdentifiers({
+      const resource: Procedure = withClinicIdentifiers({
         resourceType: 'Procedure',
-        status: 'completed',
+        status: documentProcedureStatus(proc.notes),
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
         code: codeable,
         note: proc.notes ? [{ text: proc.notes }] : undefined,
         extension: orderExtensions(proc),
         performedDateTime: now,
-      }, clinicId));
+      }, clinicId);
+      entries.push({ resource, request: { method: 'POST', url: 'Procedure' } });
     }
+    if (documentSigner && entries.length && encounter.meta?.versionId) entries.unshift({ resource: encounter, request: { method: 'PUT', url: encounterRef, ifMatch: `W/"${encounter.meta.versionId}"` } });
+    if (entries.length) await client.executeBatch({ resourceType: 'Bundle', type: 'transaction', entry: entries });
   }
 
   // 7. Replace MedicationRequests (delete old, create new)
