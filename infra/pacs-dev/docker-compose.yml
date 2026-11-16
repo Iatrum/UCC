@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
     mem_limit: 384m
     memswap_limit: 384m
-    env_file: [.env.local]   # ORTHANC__REGISTERED_USERS, UCC_INGRESS_URL, UCC_DEVICE_KEY
+    env_file: [.env.local]   # ORTHANC__REGISTERED_USERS, UCC_INGRESS_URL (device key: ./secrets/device-key)
     environment:
       ORTHANC__NAME: UCC-PACS-DEV
       ORTHANC__AUTHENTICATION_ENABLED: "true"
@@ -36,6 +36,7 @@ services:
     volumes:
       - orthanc-db:/var/lib/orthanc/db
       - ./ucc-webhook.lua:/etc/orthanc/ucc-webhook.lua:ro
+      - ./secrets:/run/ucc:ro   # device-key (git-ignored); read by the Lua hook on every event
     networks: [pacs-net]
 
   # OHIF static viewer served by nginx. Host network so it can reach the loopback-only UCC dev
