@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 
 // This fixture is deliberately limited to the isolated local fake-data environment.
-const passwordFile = process.env.UCC_TEST_PASSWORD_FILE || '/home/dev/iatrum-ucc/e2e/.secrets/pw';
+const passwordFile = process.env.UCC_TEST_PASSWORD_FILE || resolve('e2e/.secrets/pw');
 
 test('Sign issues immutable MC and referral documents, supports retries and patient-page reprint', async ({ page, request }) => {
   const login = await request.post('/api/auth/login', { data: { email: process.env.UCC_TEST_USER || 'doctor@ucc.local', password: readFileSync(passwordFile, 'utf8').trim() } });
