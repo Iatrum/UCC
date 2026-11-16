@@ -260,6 +260,15 @@ async function main() {
   const orgs = await searchAll(f, `Organization?_project=${PROJECT_ID}&_count=100`);
   const services = await searchAll(f, `HealthcareService?_project=${PROJECT_ID}&_count=100`);
   const roles = await searchAll(f, `PractitionerRole?_project=${PROJECT_ID}&_count=100`);
+  for (const resources of [orgs, services]) {
+    const seen = new Set();
+    for (const resource of resources) {
+      const identifiers = (resource.identifier || []).filter(i => i.system === 'clinic');
+      if (!identifiers.length) continue;
+      if (identifiers.length !== 1 || !identifiers[0].value || seen.has(identifiers[0].value)) die('Ambiguous clinic Organization/account identifiers');
+      seen.add(identifiers[0].value);
+    }
+  }
   if (st.memberships.some(m => m.admin && !isClient(m) && roles.some(r => r.active !== false && r.practitioner?.reference === m.profile?.reference))) die('Clinic-assigned human has project-admin privilege; separate platform administration before migration');
   const slug = r => (r.identifier || []).filter(i => i.system === 'clinic').map(i => i.value);
   const unresolved = [];

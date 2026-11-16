@@ -18,3 +18,7 @@ Initial findings:
 4. MAJOR verification gap: several isolation assertions accept empty results from HTTP failures (e.g. identity-table 500), and staff auth/me is not bound to the expected project/membership/profile.
 
 Dev server version recorded by PR is 5.2.15. This review does not establish runtime compatibility with 5.2.8 or authorize production cutover.
+
+5. MAJOR: duplicate clinic Organization identifiers can map separate Organizations onto one HealthcareService compartment; migration now refuses ambiguous Organization/account identifiers before any migration write.
+
+Units: 154/154 passed. Initial rehearsal passed, but child commands loaded the working scripts while review edits were in progress; it is a setup check, not final immutable evidence. The hardened rehearsal and final gate are recorded separately.

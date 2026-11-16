@@ -56,7 +56,7 @@ async function cli(extra=[],expected=0){
   const status=await new Promise(resolve=>c.on('exit',resolve));clearTimeout(timer);
   if(status!==expected){fs.writeFileSync(dir+'/cli-failure.log',output,{mode:0o600});throw Error(`CLI exit mismatch (${status}, expected ${expected}); private status log saved`);}
 }
-try{
+async function main(){
   root=await login(process.env.DEV_OPERATOR_EMAIL,process.env.DEV_OPERATOR_PASSWORD);
   const me=await http(root,'auth/me');check(me.json?.project?.superAdmin===true,'dedicated dev operator authenticated');
   project=await create({resourceType:'Project',name:`Task5 Fake Clinical ${suffix}`,superAdmin:true});
@@ -81,8 +81,13 @@ try{
   cliEnv={PATH:process.env.PATH,HOME:process.env.HOME,NODE_OPTIONS:'--max-old-space-size=3072',MEDPLUM_BASE_URL:B,MEDPLUM_ADMIN_EMAIL:adminEmail,MEDPLUM_ADMIN_PASSWORD:fakePassword};
   const oldPolicy=await create({resourceType:'AccessPolicy',name:CLINIC_POLICY_NAME,resource:[{resourceType:'Patient',interaction:['read','search']}]},project.id);
   const original=await get(`Project/${project.id}`);
+  const duplicateClinic=await create({resourceType:'Organization',identifier:members[0].org.identifier,name:'Fake Duplicate Clinic'},project.id);
+  await cli([],2); await cli(['--apply'],2);
+  check((await get(`Project/${project.id}`)).superAdmin===true,'ambiguous clinic identifiers block migration before cutover');
+  check((await http(root,`fhir/R4/Organization/${duplicateClinic.id}`,'DELETE')).status===200,'duplicate clinic fixture removed');
   await cli();check(isDeepStrictEqual(await get(`Project/${project.id}`),original),'default dry-run makes no project writes');
   check(!fs.existsSync(`${dir}/task5-pre-${project.id}.json`),'dry-run does not create migration snapshot');
+  if (process.argv.includes('--preflight-only')) { console.log('Task 5 topology preflight PASS'); return; }
   const unrelated = await create({ resourceType: 'Project', name: opsName });
   await cli(['--apply'], 2);
   check((await get(`Project/${unrelated.id}`)).superAdmin !== true, 'unowned same-name project is never promoted');
@@ -138,7 +143,8 @@ try{
   check(restoredPolicies.length===1&&restoredPolicies[0].id===oldPolicy.id&&isDeepStrictEqual(restoredPolicies[0].resource,oldPolicy.resource),'rollback restores pre-existing policy and removes only migration-created policy');
   for(const item of snap.directory){const p=await get(item.pr);check(isDeepStrictEqual((p.meta?.accounts||[]).map(a=>a.reference).sort(),item.before),'rollback restores directory accounts');}
   console.log('Task 5 topology rehearsal PASS');
-}catch(error){console.error('Task 5 topology rehearsal FAILED: '+error.message+'; private evidence at '+dir);process.exitCode=1;}
+}
+try { await main(); }catch(error){console.error('Task 5 topology rehearsal FAILED: '+error.message+'; private evidence at '+dir);process.exitCode=1;}
 finally{
   if(root){
     // Also collect operator identities created by the script; all are disposable.
