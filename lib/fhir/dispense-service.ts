@@ -13,9 +13,13 @@ import { CLINIC_IDENTIFIER_SYSTEM, resourceMatchesClinicTenant } from './clinic-
 /**
  * Auto-deduct inventory at checkout (Task 358, user decision 16 Nov).
  *
- * Model: one MedicationDispense per (consultation, inventory medication), updated in the
- * same FHIR transaction as the Medication stock change, so the audit record and the stock
- * can never disagree. Stock is a clinic-scoped Medication (see inventory-service.ts).
+ * Model: one MedicationDispense per (consultation, inventory medication) plus the Medication stock
+ * change. Medplum 5.2.8 ignores `ifMatch` inside Bundle entries (verified on the dev server) and does
+ * not roll back a transaction on a failed conditional entry, so these are NOT one transaction. Instead:
+ * claim the dispense (If-Match header / conditional create) with a pending delta -> If-Match PUT of the
+ * Medication -> settle the dispense. The claim serializes reconcilers per visit/medication; a failed
+ * stock write releases the claim; a crashed claim is taken over once stale. See
+ * .ai/research/task402-checkout-consistency.md. Stock is a clinic-scoped Medication (inventory-service.ts).
  *
  * - Idempotent: the dispense records the quantity already deducted; a re-run only applies
  *   the difference (zero on retry / re-checkout with identical items).
@@ -30,6 +34,9 @@ export const DISPENSE_STOCK_AFTER_EXTENSION_URL = 'https://ucc.emr/dispense/stoc
 const INVENTORY_IDENTIFIER_SYSTEM = 'https://ucc.emr/inventory/medication';
 const INVENTORY_IDENTIFIER_VALUE = 'catalog-item';
 const MAX_ATTEMPTS = 4;
+export const STALE_CLAIM_MS = 30_000;
+const WAIT_MS = 25;
+const MAX_WAITS = 400;
 
 export type DispenseLineInput = { name: string; type?: string; quantity: number };
 
@@ -193,6 +200,15 @@ function recordedQuantity(dispense: MedicationDispense | undefined): number {
   return Number(dispense.quantity?.value ?? 0) || 0;
 }
 
+function claimTime(d: MedicationDispense): number {
+  const t = Date.parse(d.note?.[0]?.time ?? '');
+  return Number.isFinite(t) ? t : 0;
+}
+
+function hasPending(d: MedicationDispense): boolean {
+  return (intExt(d, PENDING_EXTENSION_URL) ?? 0) !== 0;
+}
+
 function medicationIdOf(dispense: MedicationDispense): string | undefined {
   return dispense.medicationReference?.reference?.replace(/^Medication\//, '');
 }
@@ -201,9 +217,24 @@ function versionMatch(resource: { meta?: { versionId?: string } }): string | und
   return resource.meta?.versionId ? `W/"${resource.meta.versionId}"` : undefined;
 }
 
+/** Real optimistic lock. Medplum 5.2.8 ignores `ifMatch` inside Bundle entries (verified against the dev
+ *  server), so every guarded write is a single-resource PUT carrying the If-Match HEADER instead. */
+function ifMatchOptions(resource: { meta?: { versionId?: string } }) {
+  const match = versionMatch(resource);
+  return match ? { headers: { 'If-Match': match } } : undefined;
+}
+
 function isConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /412|precondition|version|conflict/i.test(message);
+}
+
+const PENDING_EXTENSION_URL = 'https://ucc.emr/dispense/stock-pending';
+const TARGET_EXTENSION_URL = 'https://ucc.emr/dispense/target';
+const CLAIM_EXTENSION_URL = 'https://ucc.emr/dispense/claim';
+
+function intExt(resource: { extension?: Extension[] }, url: string): number | undefined {
+  return resource.extension?.find((e) => e.url === url)?.valueInteger;
 }
 
 /** The invoice if it is still at the version this request saved and still billable; otherwise null. */
@@ -217,7 +248,63 @@ async function currentInvoiceIfUnchanged(medplum: MedplumClient, ctx: CheckoutDi
   }
 }
 
-/** Apply `delta` (positive = deduct) to one medication together with its dispense record. */
+/**
+ * Second half of a deduction: apply a claimed (pending) stock delta to the Medication with a real
+ * If-Match PUT (retry on conflict), then mark the dispense settled. Medication stock and the dispense
+ * claim are separate resources and cannot be written atomically, so the claim (written first, under
+ * If-Match on the dispense) is the serializer and `stock-pending` is the durable recovery marker: any
+ * later checkout/void sees a pending dispense and finishes it before doing anything else.
+ */
+async function settleDispense(
+  medplum: MedplumClient,
+  clinicId: string,
+  claimed: MedicationDispense
+): Promise<{ stockAfter: number; name: string }> {
+  const pending = intExt(claimed, PENDING_EXTENSION_URL) ?? 0;
+  const target = intExt(claimed, TARGET_EXTENSION_URL) ?? 0;
+  const medicationId = medicationIdOf(claimed)!;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const medication = (await medplum.readResource('Medication', medicationId)) as FHIRMedication;
+    if (!isClinicInventory(medication, clinicId)) throw new Error('Inventory item unavailable for pending stock change');
+    const before = readStock(medication);
+    const after = before - pending;
+    try {
+      if (pending !== 0) await medplum.updateResource(withStock(medication, after), ifMatchOptions(medication));
+    } catch (error) {
+      if (attempt < MAX_ATTEMPTS - 1 && isConflict(error)) continue; // stock changed under us: re-read and retry
+      throw error;
+    }
+    const settled: MedicationDispense = {
+      ...claimed,
+      status: target > 0 ? 'completed' : 'cancelled',
+      whenHandedOver: target > 0 ? new Date().toISOString() : claimed.whenHandedOver,
+      extension: [
+        ...(claimed.extension ?? []).filter(
+          (e) =>
+            ![PENDING_EXTENSION_URL, TARGET_EXTENSION_URL, DISPENSE_STOCK_BEFORE_EXTENSION_URL, DISPENSE_STOCK_AFTER_EXTENSION_URL].includes(e.url)
+        ),
+        { url: DISPENSE_STOCK_BEFORE_EXTENSION_URL, valueInteger: before },
+        { url: DISPENSE_STOCK_AFTER_EXTENSION_URL, valueInteger: after },
+      ],
+    };
+    await medplum.updateResource(settled, ifMatchOptions(claimed));
+    return { stockAfter: after, name: medication.code?.text ?? 'Medication' };
+  }
+  throw new Error('Stock update did not settle');
+}
+
+/** Undo a claim whose stock write failed. Only valid while the claim is still unsettled. */
+async function releaseClaim(
+  medplum: MedplumClient,
+  claimed: MedicationDispense,
+  previous: MedicationDispense | undefined
+): Promise<void> {
+  if (!claimed.id) return;
+  if (previous?.id) await medplum.updateResource({ ...previous, meta: claimed.meta }, ifMatchOptions(claimed));
+  else await medplum.deleteResource('MedicationDispense', claimed.id);
+}
+
+/** Apply the difference between the recorded deduction and `targetQty` for one medication. */
 async function applyDelta(
   medplum: MedplumClient,
   ctx: CheckoutDispenseInput,
@@ -226,85 +313,98 @@ async function applyDelta(
   action: 'checkout' | 'reverse'
 ): Promise<{ delta: number; stockAfter: number; name: string } | 'superseded' | null> {
   const guarded = action === 'checkout' && Boolean(ctx.invoiceId && ctx.invoiceVersionId);
-  const invoiceIfMatch = guarded ? `W/"${ctx.invoiceVersionId}"` : undefined;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    let invoice: Invoice | null = null;
-    if (guarded) {
-      invoice = await currentInvoiceIfUnchanged(medplum, ctx);
-      if (!invoice) return 'superseded';
-    }
-    const medication = (await medplum.readResource('Medication', medicationId)) as FHIRMedication;
-    if (!isClinicInventory(medication, ctx.clinicId)) return null;
-
+  let waits = 0;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS + 2; attempt += 1) {
+    // 1. Read the dispense FIRST, then the invoice: a competing reconciler either changed the dispense
+    //    after this read (our claim below fails its If-Match) or finished before it (invoice already moved on).
     const existing = (await findDispenses(medplum, ctx.clinicId, ctx.consultationId)).find(
       (d) => medicationIdOf(d) === medicationId
     );
+    if (existing && hasPending(existing)) {
+      // Another request is settling this claim. Only the claim owner settles, so stock is never applied
+      // twice; wait for it, and take over (atomically, via If-Match) only if the claim is stale/abandoned.
+      if (Date.now() - claimTime(existing) < STALE_CLAIM_MS) {
+        waits += 1;
+        if (waits > MAX_WAITS) throw new Error('Another checkout is still updating this stock item; retry');
+        await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
+        attempt -= 1; // waiting is bounded by MAX_WAITS, not by the conflict budget
+        continue;
+      }
+      try {
+        const now = new Date().toISOString();
+        const taken = await medplum.updateResource(
+          { ...existing, note: [{ time: now, text: 'Recovered interrupted stock change.' }] },
+          ifMatchOptions(existing)
+        );
+        await settleDispense(medplum, ctx.clinicId, taken);
+      } catch (error) {
+        if (!isConflict(error)) throw error;
+      }
+      continue;
+    }
+    if (guarded && !(await currentInvoiceIfUnchanged(medplum, ctx))) return 'superseded';
+
+    const medication = (await medplum.readResource('Medication', medicationId)) as FHIRMedication;
+    if (!isClinicInventory(medication, ctx.clinicId)) return null;
     const delta = targetQty - recordedQuantity(existing);
     if (delta === 0) return null;
 
-    const before = readStock(medication);
-    const after = before - delta;
     const name = medication.code?.text ?? 'Medication';
     const now = new Date().toISOString();
-
-    const dispense: MedicationDispense = {
+    const token = `${now}:${Math.random().toString(36).slice(2)}`;
+    const key = dispenseKey(ctx.consultationId, medicationId);
+    const claim: MedicationDispense = {
       ...(existing ?? {}),
       resourceType: 'MedicationDispense',
       // Same clinic tenant (Account) as the stock item it draws from.
       meta: medication.meta?.accounts ? ({ accounts: medication.meta.accounts } as any) : undefined,
-      status: targetQty > 0 ? 'completed' : 'cancelled',
+      status: 'in-progress',
       identifier: [
-        { system: DISPENSE_IDENTIFIER_SYSTEM, value: dispenseKey(ctx.consultationId, medicationId) },
+        { system: DISPENSE_IDENTIFIER_SYSTEM, value: key },
         { system: CLINIC_IDENTIFIER_SYSTEM, value: ctx.clinicId },
       ],
       medicationReference: { reference: `Medication/${medicationId}`, display: name },
       subject: { reference: `Patient/${ctx.patientId}` },
       context: { reference: `Encounter/${ctx.consultationId}` },
       quantity: { value: targetQty > 0 ? targetQty : (existing?.quantity?.value ?? 0), unit: 'units' },
-      whenHandedOver: targetQty > 0 ? now : existing?.whenHandedOver,
       extension: [
         ...(ctx.invoiceId
           ? [{ url: DISPENSE_INVOICE_EXTENSION_URL, valueReference: { reference: `Invoice/${ctx.invoiceId}` } }]
           : []),
-        { url: DISPENSE_STOCK_BEFORE_EXTENSION_URL, valueInteger: before },
-        { url: DISPENSE_STOCK_AFTER_EXTENSION_URL, valueInteger: after },
+        { url: PENDING_EXTENSION_URL, valueInteger: delta },
+        { url: TARGET_EXTENSION_URL, valueInteger: targetQty },
+        { url: CLAIM_EXTENSION_URL, valueString: token },
       ],
       note: [{ time: now, text: action === 'reverse' ? 'Reversed: checkout voided.' : 'Auto-deducted at checkout.' }],
     };
 
-    const entries: BundleEntry[] = [
-      {
-        request: {
-          method: 'PUT',
-          url: `Medication/${medicationId}`,
-          ...(versionMatch(medication) ? { ifMatch: versionMatch(medication) } : {}),
-        },
-        resource: withStock(medication, after),
-      },
-      ...(guarded
-        ? [
-            {
-              // Fails the whole transaction (412) if the invoice moved on since this request saved it.
-              request: { method: 'PUT', url: `Invoice/${ctx.invoiceId}`, ifMatch: invoiceIfMatch },
-              resource: invoice as Invoice,
-            } as BundleEntry,
-          ]
-        : []),
-      existing?.id
-        ? { request: { method: 'PUT', url: `MedicationDispense/${existing.id}` }, resource: dispense }
-        : { request: { method: 'POST', url: 'MedicationDispense' }, resource: dispense },
-    ];
-
+    let claimed: MedicationDispense;
     try {
-      await medplum.executeBatch({ resourceType: 'Bundle', type: 'transaction', entry: entries } as Bundle);
-      return { delta, stockAfter: after, name };
+      if (existing?.id) {
+        claimed = await medplum.updateResource(claim, ifMatchOptions(existing));
+      } else {
+        claimed = await medplum.createResourceIfNoneExist(
+          claim,
+          `identifier=${DISPENSE_IDENTIFIER_SYSTEM}|${key}`
+        );
+        const winner = claimed.extension?.find((e) => e.url === CLAIM_EXTENSION_URL)?.valueString;
+        if (winner !== token) continue; // someone else created it first: re-read and recompute the delta
+      }
     } catch (error) {
-      if (guarded && !(await currentInvoiceIfUnchanged(medplum, ctx))) return 'superseded';
-      if (attempt < MAX_ATTEMPTS - 1 && isConflict(error)) continue; // stock/dispense changed under us: re-read and retry
+      if (isConflict(error)) continue;
+      throw error;
+    }
+    try {
+      const settled = await settleDispense(medplum, ctx.clinicId, claimed);
+      return { delta, stockAfter: settled.stockAfter, name: settled.name };
+    } catch (error) {
+      // Stock was not changed: release the claim so the next attempt is not blocked by a pending marker.
+      // (If this also fails, the claim is taken over once stale.)
+      await releaseClaim(medplum, claimed, existing).catch(() => undefined);
       throw error;
     }
   }
-  return null;
+  throw new Error('Stock reconciliation kept conflicting with another checkout; retry');
 }
 
 /**
@@ -346,7 +446,7 @@ export async function deductStockForCheckout(
   // Earlier deductions no longer billed are returned to stock, unless an unresolved line may bill them.
   for (const d of earlier) {
     const id = medicationIdOf(d);
-    if (!id || recordedQuantity(d) <= 0 || demand.has(id)) continue;
+    if (!id || (recordedQuantity(d) <= 0 && !hasPending(d)) || demand.has(id)) continue;
     const shown = normalizeName(d.medicationReference?.display ?? '');
     const maybeStillBilled = unresolvedLines.find(
       (u) =>
@@ -383,7 +483,7 @@ export async function reverseStockForCheckout(
   const dispenses = await findDispenses(medplum, input.clinicId, input.consultationId);
   for (const d of dispenses) {
     const id = medicationIdOf(d);
-    if (!id || recordedQuantity(d) === 0) continue;
+    if (!id || (recordedQuantity(d) === 0 && !hasPending(d))) continue;
     const patientId = input.patientId ?? d.subject?.reference?.replace(/^Patient\//, '') ?? '';
     const applied = await applyDelta(medplum, { ...input, patientId, items: [] }, id, 0, 'reverse');
     if (applied && applied !== 'superseded') result.adjusted.push({ medicationId: id, name: applied.name, delta: applied.delta, stockAfter: applied.stockAfter });

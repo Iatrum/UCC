@@ -5,6 +5,7 @@ import {
   readStock,
   reverseStockForCheckout,
 } from "../../lib/fhir/dispense-service";
+import { makeFake } from "./helpers/fake-medplum";
 
 const INV = "https://ucc.emr/inventory/medication";
 const EXT = "https://ucc.emr/inventory";
@@ -30,50 +31,6 @@ function med(id: string, name: string, stock: number, clinic = "clinic-a", stren
       },
     ],
   } as any;
-}
-
-function makeFake(initial: any[]) {
-  const db = new Map<string, any>(initial.map((r) => [`${r.resourceType}/${r.id}`, r]));
-  let seq = 0;
-  let failNextBatchWith412 = 0;
-  const api = {
-    db,
-    batches: 0,
-    failBatches(n: number) { failNextBatchWith412 = n; },
-    async readResource(type: string, id: string) {
-      const r = db.get(`${type}/${id}`);
-      if (!r) throw new Error("not found");
-      return structuredClone(r);
-    },
-    async searchResources(type: string, params: Record<string, string>) {
-      let all = [...db.values()].filter((r) => r.resourceType === type);
-      if (params.identifier && params.identifier.startsWith("clinic|")) all = all.filter((r) => r.identifier?.some((i: any) => i.system === "clinic" && i.value === params.identifier.slice(7)));
-      if (params.context) all = all.filter((r) => r.context?.reference === params.context);
-      return structuredClone(all);
-    },
-    async executeBatch(bundle: any) {
-      api.batches += 1;
-      if (failNextBatchWith412 > 0) { failNextBatchWith412 -= 1; throw new Error("412 Precondition Failed"); }
-      const staged = new Map(db);
-      for (const e of bundle.entry) {
-        if (e.request.method === "PUT") {
-          const key = e.request.url;
-          const cur = staged.get(key);
-          if (e.request.ifMatch && cur && `W/"${cur.meta?.versionId}"` !== e.request.ifMatch) {
-            throw new Error("412 Precondition Failed");
-          }
-          staged.set(key, { ...e.resource, meta: { versionId: String(Number(cur?.meta?.versionId ?? 0) + 1) } });
-        } else {
-          const id = `d${++seq}`;
-          staged.set(`${e.resource.resourceType}/${id}`, { ...e.resource, id, meta: { versionId: "1" } });
-        }
-      }
-      db.clear();
-      staged.forEach((v, k) => db.set(k, v));
-      return { resourceType: "Bundle", type: "transaction-response" };
-    },
-  };
-  return api;
 }
 
 const base = { clinicId: "clinic-a", consultationId: "enc1", patientId: "p1" };
@@ -156,7 +113,7 @@ describe("dispense-service", () => {
   });
 
   it("retries on a version conflict without double deducting", async () => {
-    fake.failBatches(2);
+    fake.failConflicts = 2;
     await deductStockForCheckout(fake as any, { ...base, items: [{ name: "Paracetamol", type: "Item", quantity: 3 }] });
     expect(stock("m1")).toBe(97);
     expect(dispenses()).toHaveLength(1);

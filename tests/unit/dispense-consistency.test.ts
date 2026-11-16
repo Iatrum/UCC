@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { deductStockForCheckout, readStock, reverseStockForCheckout } from "../../lib/fhir/dispense-service";
+import { makeFake } from "./helpers/fake-medplum";
 import { deleteInvoice, voidInvoice } from "../../lib/fhir/billing-service";
 
 // Task 402: regression tests for the Task 359 review findings on checkout stock deduction.
@@ -28,68 +29,6 @@ function invoice(version = "1", status = "balanced") {
   } as any;
 }
 
-function makeFake(initial: any[]) {
-  const db = new Map<string, any>(initial.map((r) => [`${r.resourceType}/${r.id}`, r]));
-  let seq = 0;
-  const api = {
-    db,
-    beforeBatch: undefined as undefined | (() => void),
-    failBatchAfter: Infinity, // number of successful batches before every batch fails (non-conflict error)
-    failInvoiceWrite: false,
-    failDelete: false,
-    batches: 0,
-    async readResource(type: string, id: string) {
-      const r = db.get(`${type}/${id}`);
-      if (!r) throw new Error("not found");
-      return structuredClone(r);
-    },
-    async searchResources(type: string, params: Record<string, string>) {
-      let all = [...db.values()].filter((r) => r.resourceType === type);
-      if (params.identifier?.startsWith("clinic|")) {
-        all = all.filter((r) => r.identifier?.some((i: any) => i.system === "clinic" && i.value === params.identifier.slice(7)));
-      }
-      if (params.context) all = all.filter((r) => r.context?.reference === params.context);
-      const offset = Number(params._offset ?? 0);
-      const count = Number(params._count ?? 20);
-      return structuredClone(all.slice(offset, offset + count)); // enforces paging like Medplum
-    },
-    async updateResource(resource: any, options?: any) {
-      if (api.failInvoiceWrite) throw new Error("500 boom");
-      const cur = db.get(`${resource.resourceType}/${resource.id}`);
-      const m = options?.headers?.["If-Match"];
-      if (m && cur && `W/"${cur.meta.versionId}"` !== m) throw new Error("412 Precondition Failed");
-      const saved = { ...resource, meta: { versionId: String(Number(cur?.meta?.versionId ?? 0) + 1) } };
-      db.set(`${resource.resourceType}/${resource.id}`, saved);
-      return structuredClone(saved);
-    },
-    async deleteResource(type: string, id: string) {
-      if (api.failDelete) throw new Error("500 delete failed");
-      db.delete(`${type}/${id}`);
-    },
-    async executeBatch(bundle: any) {
-      api.beforeBatch?.();
-      api.beforeBatch = undefined;
-      if (api.batches >= api.failBatchAfter) throw new Error("500 transaction failed");
-      api.batches += 1;
-      const staged = new Map(db);
-      for (const e of bundle.entry) {
-        if (e.request.method === "PUT") {
-          const cur = staged.get(e.request.url);
-          if (e.request.ifMatch && cur && `W/"${cur.meta?.versionId}"` !== e.request.ifMatch) throw new Error("412 Precondition Failed");
-          staged.set(e.request.url, { ...e.resource, meta: { versionId: String(Number(cur?.meta?.versionId ?? 0) + 1) } });
-        } else {
-          const id = `d${++seq}`;
-          staged.set(`${e.resource.resourceType}/${id}`, { ...e.resource, id, meta: { versionId: "1" } });
-        }
-      }
-      db.clear();
-      staged.forEach((v, k) => db.set(k, v));
-      return { resourceType: "Bundle", type: "transaction-response" };
-    },
-  };
-  return api;
-}
-
 const base = { clinicId: "clinic-a", consultationId: "enc1", patientId: "p1" };
 const line = (name: string, quantity: number) => ({ name, type: "Item", quantity });
 
@@ -97,10 +36,10 @@ describe("Finding 1: invoice/stock ordering", () => {
   let fake: ReturnType<typeof makeFake>;
   beforeEach(() => { fake = makeFake([med("m1", "Fake Drug", 100), invoice("1")]); });
   const stock = () => readStock(fake.db.get("Medication/m1"));
+  const dispenses = () => [...fake.db.values()].filter((x) => x.resourceType === "MedicationDispense");
 
   it("a request holding an obsolete invoice version cannot deduct (A=5 paused, B=2 wins)", async () => {
-    // A saved invoice v2 (qty 5); B then saved v3 (qty 2) and reconciled.
-    fake.db.set("Invoice/inv1", invoice("3"));
+    fake.db.set("Invoice/inv1", invoice("3")); // A saved v2, B saved v3
     const b = await deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "3", items: [line("Fake Drug", 2)] });
     expect(b.superseded).toBeUndefined();
     const a = await deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "2", items: [line("Fake Drug", 5)] });
@@ -108,12 +47,36 @@ describe("Finding 1: invoice/stock ordering", () => {
     expect(stock()).toBe(98);
   });
 
-  it("invoice changed between read and transaction fails the guard, no deduction", async () => {
-    fake.beforeBatch = () => fake.db.set("Invoice/inv1", invoice("2"));
+  it("A passes the invoice check, B moves on and reconciles first: A's claim conflicts, retries, is superseded", async () => {
+    // Competing request B wins the dispense row (and bumps the invoice) just before A's claim write.
+    fake.beforeWrite = (type) => {
+      if (type !== "MedicationDispense") return;
+      fake.db.set("Invoice/inv1", invoice("2"));
+    };
+    fake.failConflicts = 1;
+    fake.failType = "MedicationDispense";
     const r = await deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "1", items: [line("Fake Drug", 5)] });
     expect(r.superseded).toBe(true);
     expect(stock()).toBe(100);
-    expect([...fake.db.values()].filter((x) => x.resourceType === "MedicationDispense")).toHaveLength(0);
+    expect(dispenses()).toHaveLength(0);
+  });
+
+  it("two truly concurrent identical checkouts deduct exactly once", async () => {
+    const items = [line("Fake Drug", 5)];
+    const run = () => deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "1", items });
+    await Promise.all([run(), run(), run()]);
+    expect(stock()).toBe(95);
+    expect(dispenses()).toHaveLength(1);
+  });
+
+  it("two concurrent checkouts with different quantities converge on the newest invoice", async () => {
+    fake.db.set("Invoice/inv1", invoice("3"));
+    const results = await Promise.all([
+      deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "2", items: [line("Fake Drug", 5)] }),
+      deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "3", items: [line("Fake Drug", 2)] }),
+    ]);
+    expect(results[0].superseded).toBe(true);
+    expect(stock()).toBe(98);
   });
 
   it("checkout racing a void: void wins, checkout deducts nothing", async () => {
@@ -130,10 +93,35 @@ describe("Finding 1: invoice/stock ordering", () => {
     expect(stock()).toBe(100);
   });
 
-  it("current version deducts normally and the invoice guard does not bump its version", async () => {
-    const r = await deductStockForCheckout(fake as any, { ...base, invoiceId: "inv1", invoiceVersionId: "1", items: [line("Fake Drug", 5)] });
-    expect(r.superseded).toBeUndefined();
+  it("failed stock write releases the claim; the retry deducts exactly once", async () => {
+    fake.failWrites = { type: "Medication", after: 0, count: 0 };
+    await expect(deductStockForCheckout(fake as any, { ...base, items: [line("Fake Drug", 5)] })).rejects.toThrow();
+    expect(stock()).toBe(100);
+    expect(dispenses()).toHaveLength(0);
+    fake.failWrites = { type: "", after: Infinity, count: 0 };
+    await deductStockForCheckout(fake as any, { ...base, items: [line("Fake Drug", 5)] });
+    await deductStockForCheckout(fake as any, { ...base, items: [line("Fake Drug", 5)] });
     expect(stock()).toBe(95);
+    expect(dispenses()).toHaveLength(1);
+  });
+
+  it("an abandoned (crashed) claim is taken over once stale and settled exactly once", async () => {
+    fake.db.set("MedicationDispense/dx", {
+      resourceType: "MedicationDispense", id: "dx", meta: { versionId: "1" }, status: "in-progress",
+      identifier: [{ system: "https://ucc.emr/dispense/checkout", value: "enc1:m1" }, { system: "clinic", value: "clinic-a" }],
+      medicationReference: { reference: "Medication/m1", display: "Fake Drug" },
+      context: { reference: "Encounter/enc1" }, quantity: { value: 5, unit: "units" },
+      extension: [
+        { url: "https://ucc.emr/dispense/stock-pending", valueInteger: 5 },
+        { url: "https://ucc.emr/dispense/target", valueInteger: 5 },
+      ],
+      note: [{ time: "2000-01-01T00:00:00.000Z", text: "x" }],
+    });
+    await deductStockForCheckout(fake as any, { ...base, items: [line("Fake Drug", 5)] });
+    await deductStockForCheckout(fake as any, { ...base, items: [line("Fake Drug", 5)] });
+    expect(stock()).toBe(95);
+    expect(dispenses()).toHaveLength(1);
+    expect(dispenses()[0].status).toBe("completed");
   });
 });
 
@@ -204,7 +192,7 @@ describe("Finding 4: void/delete ordering and recovery", () => {
   const stock = (id: string) => readStock(fake.db.get(`Medication/${id}`));
 
   it("failed invoice void leaves stock deducted (not restored against a balanced invoice)", async () => {
-    fake.failInvoiceWrite = true;
+    fake.failWrites = { type: "Invoice", after: 0, count: 0 };
     await expect(voidInvoice(fake as any, "inv1", "clinic-a")).rejects.toThrow();
     expect(fake.db.get("Invoice/inv1").status).toBe("balanced");
     expect(stock("m1")).toBe(95);
@@ -212,12 +200,12 @@ describe("Finding 4: void/delete ordering and recovery", () => {
   });
 
   it("restore failing after the second medication leaves a cancelled invoice and a retry finishes exactly once", async () => {
-    fake.failBatchAfter = fake.batches + 1; // first reversal ok, second fails
+    fake.failWrites = { type: "Medication", after: 1, count: 0 }; // first reversal ok, second fails
     await expect(voidInvoice(fake as any, "inv1", "clinic-a")).rejects.toThrow();
     expect(fake.db.get("Invoice/inv1").status).toBe("cancelled");
     expect(stock("m1")).toBe(100);
     expect(stock("m2")).toBe(47);
-    fake.failBatchAfter = Infinity;
+    fake.failWrites = { type: "", after: Infinity, count: 0 };
     await voidInvoice(fake as any, "inv1", "clinic-a"); // retry on an already-cancelled invoice
     expect(stock("m1")).toBe(100);
     expect(stock("m2")).toBe(50);
