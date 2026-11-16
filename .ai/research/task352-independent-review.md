@@ -24,3 +24,5 @@ Dev server version recorded by PR is 5.2.15. This review does not establish runt
 Units: 154/154 passed. Initial rehearsal passed, but child commands loaded the working scripts while review edits were in progress; it is a setup check, not final immutable evidence. The hardened rehearsal and final gate are recorded separately.
 
 6. MAJOR test gap: expected exit 2 was accepted regardless of cause, so authentication failures could falsely prove drift refusal. Every negative migration probe now requires its exact static ERROR reason as well as its exit status. A fresh final rehearsal is required after this fix.
+
+Final immutable-code rehearsal (`8c486d3`) passed: 42 top-level assertions; verifier110/110, zero failures/fatal; fixture cleanup completed; snapshot/manifest0600. Runtime capability response confirms 5.2.15-4d86215. Full check-all gate is recorded in the appended Task352 review verdict.
