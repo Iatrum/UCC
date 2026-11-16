@@ -2,7 +2,7 @@
  * Appointment Service - Medplum FHIR as Source of Truth
  */
 
-import { MedplumClient, OperationOutcomeError, getStatus } from '@medplum/core';
+import { MedplumClient, OperationOutcomeError, getStatus, isGone } from '@medplum/core';
 import type { Appointment as FHIRAppointment } from '@medplum/fhirtypes';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
@@ -13,7 +13,7 @@ import {
   withClinicIdentifier,
 } from './clinic-tenancy';
 import { assertPatientInClinic } from './write-containment';
-import { ForbiddenError } from '@/lib/server/route-helpers';
+import { ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
 function patientIdFromActorReference(ref: string | undefined): string {
@@ -272,14 +272,27 @@ async function readAppointmentForMutation(
   clinicId: string
 ): Promise<FHIRAppointment> {
   if (!clinicId) throw new ForbiddenError('Appointment unavailable in current clinic');
-  const appointment = await medplum.readResource('Appointment', appointmentId, {
-    cache: 'no-cache',
-    headers: { 'X-Medplum': 'extended' },
-  });
+  let appointment: FHIRAppointment;
+  try {
+    appointment = await medplum.readResource('Appointment', appointmentId, {
+      cache: 'no-cache',
+      headers: { 'X-Medplum': 'extended' },
+    });
+  } catch (error) {
+    if (error instanceof OperationOutcomeError && isGone(error.outcome)) {
+      throw new NotFoundError('Appointment not found');
+    }
+    throw error;
+  }
+  // Appointment mutations require an explicit clinic tag; generic compartment
+  // matching alone does not establish the resource's owning clinic.
+  const ownClinic = appointment.identifier?.some(
+    identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
+  );
   const conflictingClinic = appointment.identifier?.some(
     identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value !== clinicId
   );
-  if (conflictingClinic || !resourceMatchesClinicTenant(appointment, clinicId)) {
+  if (!ownClinic || conflictingClinic) {
     throw new ForbiddenError('Appointment unavailable in current clinic');
   }
   const accounts = getResourceAccountReferences(appointment);
