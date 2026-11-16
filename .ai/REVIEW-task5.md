@@ -20,7 +20,7 @@ Never copy resources with `$clone` to move clinics: resource IDs and external Fi
 
 ## Safety and evidence provenance
 
-Only API access to dev Medplum at 127.0.0.1:8113 and a read-only inspect of `ucc-dev-medplum` (compose `ucc-medplum-dev`) were used. Actual server is 5.2.15; official tagged 5.2.8 and 5.2.15 source was reviewed. No production containers, /opt/medplum, /root, Supabase, Tradebot, real patients, remote git operations, push, PR or merge.
+Only API access to dev Medplum at 127.0.0.1:8113 and a read-only inspect of `ucc-dev-medplum` (compose `ucc-medplum-dev`) were used. Actual server is 5.2.15; official tagged 5.2.8 and 5.2.15 source was reviewed. No production containers, /opt/medplum, /root, Supabase, Tradebot or real patients were accessed. Original recovery was local; subsequent milestone pushes and draft PR publication follow the user’s explicit Task 5 authorization. No merge or force-push.
 
 Recovered the prior Task 5 local WIP commits into a new origin/dev worktree. Original worktree and its unrelated image/test changes were left alone. Stopped the prior task's orphan background test and extra :3251 dev server, then used the sole :3210 dev server in this worktree with a 3072 MB heap cap.
 
@@ -44,3 +44,15 @@ The first full-gate attempt was interrupted after a fake Playwright cookie was a
 - Dev server cleanup: pending.
 
 Production remains a manual Hidayat operation under `.ai/RUNBOOK-task5-production-migration.md`; no production readiness claim until all pending items are resolved and the pinned production version is separately rehearsed.
+
+## Resumed verification (16 November, Codex)
+- WIP checkpoint and subsequent milestones normally pushed; draft PR https://github.com/Iatrum/UCC/pull/251 targets dev. New dev Task 330/355 changes cherry-picked, retaining report-ingress authentication; no merge or history rewrite. Shared status notes moved to `progress-task5.md` so the PR has a clean conflict preview.
+- Built gate `task5-policy-built`: 41/64, FAIL. Six POCT failures came from the unchanged production-only rejection of simulated Devices; later workflow/X-ray failures followed loss of the built server and auth throttling. Do not relax the production guard or count this gate as a pass.
+- Focused development-mode POCT (`resume-poct.log`): **8/8 PASS**, including online/offline ordering, Lab ingestion, disabled-module mutation, subscription notifications/polling/unmount cleanup, and per-device cross-clinic denials.
+- Integrated units after newer dev commits (`unit-resumed-integrated.log`): **154/154 PASS**.
+- Full gate `task5-policy-resumed-final`: lint/build PASS; browser/clinic results pending. Sole Next server uses development mode with webpack on :3210, 3072 MB cap; orchestration owns and cleans its process group.
+- Disposable topology/rollback rehearsal `rehearsal-resumed.log`: **PASS**, including dry-run, no-op apply, fresh-token 110/110 isolation, drift refusal, exact rollback and complete fixture cleanup.
+- A saved failed Playwright request exposed a fake session cookie during resumed inspection. Its exact Login was revoked (200), built-run artifacts redacted, and subsequent inspection prints only status/boolean summaries. No credential is committed.
+
+- `task5-policy-resumed-final` was interrupted deliberately when another task started a second dev server on :3218. The sole Task 5 :3210 process group was stopped; the other task was left alone. Retained result: 16 passed, 2 failed (both fixture admin logins hit Medplum 429 because the rehearsal overlapped), 1 interrupted, remaining tests unrun; gate FAIL. Twenty exact synthetic fixtures created during the interrupted membership test were identified by its recorded time window and exact fake names/links, privately backed up, and removed. No historical fixtures or ordinary staff were removed.
+- Other task’s server exited. Replacement gate `task5-policy-resumed-clean` runs with no parallel migration/auth rehearsal, preflights both synthetic NRIC patterns, and keeps separate evidence; pending.
