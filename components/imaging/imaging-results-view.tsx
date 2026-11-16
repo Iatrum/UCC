@@ -148,7 +148,7 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
                         variant="outline"
                         size="sm"
                         className="h-8"
-                        onClick={() => window.open(study.study?.pacsUrl, '_blank')}
+                        onClick={() => window.open(study.study?.pacsUrl, '_blank', 'noopener,noreferrer')}
                       >
                         <ExternalLink className="h-4 w-4 mr-1" />
                         View in PACS

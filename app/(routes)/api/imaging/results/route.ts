@@ -7,13 +7,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getPatientImagingStudies, getEncounterImagingStudies } from '@/lib/fhir/imaging-service';
-import { getMedplumForRequest } from '@/lib/server/medplum-auth';
+import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { gateXrayStudies } from '@/lib/fhir/pacs-link';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const medplum = await getMedplumForRequest(request);
+    const { medplum, clinicId } = await requireClinicAuth(request);
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
     const encounterId = searchParams.get('encounterId');
@@ -32,9 +34,10 @@ export async function GET(request: NextRequest) {
       studies = await getPatientImagingStudies(patientId, medplum);
     }
 
+    const pacsEnabled = await isModuleEnabledForClinic('pacs', clinicId);
     return NextResponse.json({
       success: true,
-      studies,
+      studies: gateXrayStudies(studies || [], pacsEnabled),
     });
 
   } catch (error: any) {
