@@ -5,7 +5,7 @@ import { CLINIC_IDENTIFIER_SYSTEM } from "../../lib/fhir/clinic-tenancy";
 
 // Fake Medplum server semantics (Task 330): meta.accounts is only returned
 // when the request carries `X-Medplum: extended`. Fake data only.
-const ACCOUNT = { reference: "Organization/fake-account-a" };
+const ACCOUNT = { reference: "HealthcareService/fake-account-a" };
 type Call = { method: string; url: string };
 
 function fakeClient(serviceRequest: Record<string, any>) {
@@ -34,6 +34,11 @@ function fakeClient(serviceRequest: Record<string, any>) {
     async updateResource(resource: any) { return resource; },
     async post(url: string) { calls.push({ method: "POST", url }); return {}; },
     async searchResources() { return []; },
+    async searchOne(type: string) {
+      if (type === "Organization") return { resourceType: type, id: "fake-org-a" };
+      if (type === "HealthcareService") return { resourceType: type, id: "fake-account-a" };
+      return undefined;
+    },
     async getProfileAsync() { return { resourceType: "ClientApplication", id: "fake-app" }; },
   };
   return { client, calls };
@@ -62,7 +67,7 @@ describe("extended-mode account propagation", () => {
     const { client, calls } = fakeClient(serviceRequest("36643-5"));
     await receiveImagingStudy("sr-1", {
       studyUid: "1.2.3", series: [], numberOfSeries: 0, numberOfInstances: 0, modality: "DX",
-    } as any, client);
+    } as any, client, "fake-clinic-a");
     expect(calls.some(c => /ImagingStudy\/fake-\d+\/\$set-accounts$/.test(c.url))).toBe(true);
   });
 
@@ -70,7 +75,7 @@ describe("extended-mode account propagation", () => {
     const { client, calls } = fakeClient(serviceRequest("718-7"));
     await receiveLabResults("sr-1", [
       { testCode: "718-7", testName: "Hemoglobin", value: 13.5, unit: "g/dL", status: "final" },
-    ] as any, undefined, client);
+    ] as any, undefined, client, "fake-clinic-a");
     expect(calls.some(c => /Observation\/.*\/\$set-accounts$/.test(c.url))).toBe(true);
     expect(calls.some(c => /DiagnosticReport\/.*\/\$set-accounts$/.test(c.url))).toBe(true);
   });
