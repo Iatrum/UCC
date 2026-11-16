@@ -11,9 +11,15 @@ step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c"
 step lint bun run lint
 # Node 22 for build: undici needs markAsUncloneable (Node >=22.10); box default is Node 20
 step build env PATH="$HOME/.local/node22/bin:$PATH" bun run build:ci
+# Optional foreground orchestration: after this build, the caller starts the
+# local built app in its own process group and creates this readiness file.
+if [ -n "${UCC_SERVER_READY_FILE:-}" ]; then
+  [ "$FAIL" -eq 0 ] || { echo "OVERALL: FAIL" | tee -a "$OUT/summary.txt"; exit 1; }
+  step server-ready timeout 3m bash -c 'while [ ! -f "$UCC_SERVER_READY_FILE" ]; do sleep 1; done'
+fi
 cd "$REPO/e2e"; timeout 20m node scripts/warmup.mjs > "$OUT/warmup.log" 2>&1   # cold dev server -> non-hydrated forms
 RES=${UCC_REPORTS:-/workspace/ai-logs/e2e-reports}/results.json; rm -f "$RES"
-timeout 20m npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1; echo "e2e-exit: $? (baseline has expected failures)" | tee -a "$OUT/summary.txt"
+timeout "${UCC_E2E_TIMEOUT:-20m}" npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1; echo "e2e-exit: $? (baseline has expected failures)" | tee -a "$OUT/summary.txt"
 cp "$RES" "$OUT/results.json" 2>/dev/null || { echo "no results.json" | tee -a "$OUT/summary.txt"; FAIL=1; }
 node scripts/compare.mjs "$OUT/results.json" "$BASE" | tee -a "$OUT/summary.txt"; [ "${PIPESTATUS[0]}" -eq 0 ] || FAIL=1
 step clinics npx tsx scripts/clinic-check.ts
