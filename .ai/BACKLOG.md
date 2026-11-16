@@ -10,7 +10,7 @@
 ## Later
 - Access policy ProjectMembership leak (work in `/workspace/iatrum-ucc-ap`)
 - `/admin` redirect loop; rate limit shown as "wrong password"; stock 500
-- Network lockdown plan; staging plan
+- [x] (Task 385, plan only: `.ai/PLAN-network-lockdown-staging.md`; user runs the runbook, build tasks 385a-e not started) Network lockdown plan; staging plan
 - UX audit
 - POCT labs phases 1-3
 - POCT X-ray

@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-16 — Task 385: network lockdown + staging plan (docs only)
+A step-by-step runbook for Hidayat to close the production server (firewall, SSH, optional Tailscale, Docker port check, Traefik hygiene) with rollback at every step, plus a plan for a fake-data staging environment and dev → staging → prod promotion. Key finding: ufw does not protect Docker-published ports, so the plan verifies from outside. Staging does not fit in RAM next to dev and production; time-box it or use a second small server. Nothing on the VPS was changed.
+
 ## 2026-11-16 — Task 357: X-ray phase 3 (real DICOM storage + viewer, dev only)
 A dev-only PACS (Orthanc for storage, OHIF as viewer; compose project `ucc-pacs-dev` in `infra/pacs-dev/`) now feeds UCC. When Orthanc has a complete study it notifies UCC with the clinic's per-device key; UCC reads the study back from Orthanc and attaches it to an X-ray order only when the study's accession number matches exactly one open X-ray order of that clinic. Anything else goes to a "Studies needing review" list on the PACS page, where staff attach or dismiss it; nothing is attached automatically. New X-ray orders get an accession number, shown with the pending order in the Lab tab. In Labs & Imaging, "Open images" asks the server for a 60-second single-use link bound to the clinic and that one study; the viewer then reads images only through UCC, so Orthanc's address and password never reach the browser. Another clinic's study gets 403. All behind the default-off `pacs` toggle, synthetic images only, no composer or navigation change. Setup and production notes (storage sizing, S3 later): `.ai/PLAN-xray-phase3.md`.
 
