@@ -48,7 +48,7 @@ Date: 2026-11-16. **Docs only.** Nothing here was run on the VPS. Every command 
 From **a machine outside the VPS** (your laptop on mobile data, not the VPS itself). `VPS_IP` and `API_HOST`, `APP_HOST` are placeholders:
 
 ```bash
-# A. Only 80/443 (+22) should answer. Expect: 80,443 open (22 until step 1.5 closes it). Nothing else.
+# A. Only 80/443 (+22) should answer. Expect: 80,443 open (22 stays open until the optional Tailscale step 1.8 closes it; 1.5 only hardens SSH). Nothing else.
 nmap -Pn -p 22,80,443,3000,5000,5432,6379,8080,8042,4242,8103,8113,3210 VPS_IP
 # IPv6 too (ufw/docker treat it separately)
 nmap -6 -Pn -p 22,80,443,5432,6379,8080 VPS_IPV6        # if the VPS has a public IPv6
@@ -159,7 +159,13 @@ Why: ufw does not filter published container ports (Docker docs). Today only Tra
 
 Preferred control: **never add `ports:` without `127.0.0.1:`** and keep `docker ps` as the audit (probe A from outside). Review compose files for any `0.0.0.0` or bare `5432:5432`.
 
-Optional hard backstop (only if you want it; test in the maintenance window with the timer from 1.4):
+Optional hard backstop (only if you want it; maintenance window only). **The 1.4 timer does NOT cover this**: it only runs `ufw disable`, which leaves `DOCKER-USER` rules in place. Arm a separate timer first, and cancel it only after probes B/D pass:
+
+```bash
+# undo exactly the rules added below (does not touch any pre-existing DOCKER-USER rules)
+echo 'for i in 1 2 3 4; do iptables -D DOCKER-USER 1; done' | sudo at now + 10 minutes   # only valid if DOCKER-USER was empty before; otherwise write the matching -D lines yourself
+```
+
 
 ```bash
 EXT=$(ip -o -4 route show to default | awk '{print $5}')    # e.g. eth0
