@@ -202,6 +202,20 @@ describe("POST /api/pacs/orthanc/study (PACS ingress)", () => {
     expect(studies()[0].numberOfInstances).toBe(3);
   });
 
+  test("pixels arriving for a phase-2 study enable the viewer without creating another study", async () => {
+    ORTHANC[1] = { accession: "UXAAAA2222", images: 1 };
+    const first = await (await notify(1)).json();
+    const existing = studies()[0];
+    existing.meta.tag = existing.meta.tag.filter((t: any) => t.system !== "https://ucc.emr/pacs");
+    ORTHANC[1].images = 2;
+    expect(await (await notify(1)).json()).toMatchObject({ imagingStudyId: first.imagingStudyId, created: false });
+    expect(studies()).toHaveLength(1);
+    expect(studies()[0].meta.tag).toContainEqual({ system: "https://ucc.emr/pacs", code: "orthanc" });
+    expect(studies()[0].numberOfInstances).toBe(2);
+    const response = await post(link, "/api/pacs/viewer/link", { imagingStudyId: first.imagingStudyId });
+    expect(response.status).toBe(200);
+  });
+
   test("unmatched studies go to the device clinic's review list and are never attached", async () => {
     const cases: [number, string | undefined, string][] = [
       [2, undefined, "no-accession"], [3, "UXNOSUCH99", "no-order"], [4, "UXDUPE6666", "ambiguous"],
