@@ -1,6 +1,6 @@
 # X-ray phase 3: real DICOM storage + viewer (Task 357)
 
-Status: implementation merged in #255; continuation validation in #256. Previously built and tested on the VPS **dev** stack only, behind the existing default-off `pacs` clinic toggle. Synthetic DICOM only. Nothing here touches production containers (`medplum-*`, `root-traefik-1`), `/opt/medplum` or `/root`.
+Status: implementation merged in #255; clinic/logging corrections merged in #256; final review/validation in #257. Previously built and tested on the VPS **dev** stack only, behind the existing default-off `pacs` clinic toggle. Synthetic DICOM only. Nothing here touches production containers (`medplum-*`, `root-traefik-1`), `/opt/medplum` or `/root`.
 
 ## What it does
 
