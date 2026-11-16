@@ -5,7 +5,7 @@
 2. [x] Realistic dummy-data seed for 4 clinics (fake patients, encounters, orders, results)
 3. [ ] Composer bug: items roll back when `/api/consultations/plan` fails ("Unable to detect a Project Id") but UI still says "autosaved"
 4. [x] (Task 180, device keys: `/api/labs/receive` + imaging receive routes now fail closed without a valid per-device key; shared env keys removed) Lock `/api/labs/receive` when `POCT_API_KEY` unset; fix 500 on lab result with no status
-5. [ ] `/api/imaging/report` (radiologist report) still fails open when `PACS_API_KEY` is unset and does no clinic check; it is not device ingress so Task 180 left it. Needs session or per-clinic auth.
+5. [x] (Task 355, 2026-11-16: now per-device-key auth, Device-derived clinic, 403 cross-clinic, pacs-toggle gated; was) `/api/imaging/report` (radiologist report) still fails open when `PACS_API_KEY` is unset and does no clinic check; it is not device ingress so Task 180 left it. Needs session or per-clinic auth.
 
 ## Later
 - Access policy ProjectMembership leak (work in `/workspace/iatrum-ucc-ap`)

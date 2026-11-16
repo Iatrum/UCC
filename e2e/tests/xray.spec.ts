@@ -1,5 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import type { Device, Organization, ServiceRequest } from '@medplum/fhirtypes';
+import type { Device, ImagingStudy, Organization, ServiceRequest } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
 import { newDeviceKey, bearer } from '../lib/device-key';
@@ -363,6 +363,71 @@ test('Per-device keys: X-ray ingress fails closed without a valid key; a clinic-
     expect(ok.ok(), await ok.text()).toBeTruthy();
     const stored = await f.m.readResource('ImagingStudy', (await ok.json()).imagingStudyId);
     expect(stored.identifier).toContainEqual({ system: 'clinic', value: f.clinicId });
+  } finally {
+    for (const r of created.reverse()) await f.m.deleteResource(r.type, r.id).catch(() => {});
+    await f.m.deleteResource('Device', f.device.id!);
+    await f.restorePacsModule();
+  }
+});
+
+test('Radiology report ingress (/api/imaging/report) is device-key authenticated, clinic-scoped and toggle-gated', async ({ request, page }) => {
+  const f = await fixture(request, page, true);
+  const otherClinic = f.clinicId === 'demo' ? 'clinicb' : 'demo';
+  const created: { type: 'Device' | 'ServiceRequest' | 'ImagingStudy' | 'DiagnosticReport'; id: string }[] = [];
+  const make = async <T extends Device | ServiceRequest | ImagingStudy>(resource: T) => { const r = await f.m.createResource<T>(resource); created.push({ type: r.resourceType as 'Device', id: r.id! }); return r; };
+  // R4 DiagnosticReport has no imaging-study search parameter: list the patient's reports and filter.
+  const reportsFor = async (studyId: string) => (await f.m.searchResources('DiagnosticReport', { subject: `Patient/${f.patientId}` }, { cache: 'no-cache' }))
+    .filter((r) => r.imagingStudy?.some((ref) => ref.reference === `ImagingStudy/${studyId}`));
+  const report = (imagingStudyId: string, extra: Record<string, unknown> = {}) => ({ imagingStudyId, findings: 'Fake findings', impression: 'Fake impression', ...extra });
+  try {
+    const orderIn = (clinic: string): ServiceRequest => ({ resourceType: 'ServiceRequest', status: 'active', intent: 'order',
+      subject: { reference: `Patient/${f.patientId}` }, meta: { tag: [{ system: tagSystem, code: 'xray' }] },
+      code: { coding: [{ system: 'http://loinc.org', code: STUDY.code, display: STUDY.name }] }, identifier: [{ system: 'clinic', value: clinic }] });
+    const studyFor = (clinic: string, order: ServiceRequest): ImagingStudy => ({ resourceType: 'ImagingStudy', status: 'available',
+      subject: { reference: `Patient/${f.patientId}` }, identifier: [{ system: 'clinic', value: clinic }], basedOn: [{ reference: `ServiceRequest/${order.id}` }] });
+    const ownOrder = await make(orderIn(f.clinicId));
+    const foreignOrder = await make(orderIn(otherClinic));
+    const own = await make(studyFor(f.clinicId, ownOrder));
+    const foreign = await make(studyFor(otherClinic, foreignOrder));
+    const mixed = await make(studyFor(f.clinicId, foreignOrder)); // study stamped ours, order is another clinic's
+
+    // 401: no key / malformed / unknown (the route used to fail open when PACS_API_KEY was unset).
+    for (const headers of [{}, bearer('not-a-device-key'), bearer(`ucc_dk_${randomUUID()}`)]) {
+      expect((await request.post('/api/imaging/report', { headers, data: report(own.id!) })).status()).toBe(401);
+    }
+    expect((await request.post('/api/imaging/report', { data: report(own.id!, { apiKey: 'any-shared-legacy-key' }) })).status()).toBe(401);
+
+    // 401: POCT analyser key is the wrong device type; inactive and revoked devices are refused.
+    const analyser = newDeviceKey();
+    await make<Device>({ resourceType: 'Device', status: 'active', identifier: [{ system: 'clinic', value: f.clinicId }, analyser.identifier],
+      meta: { tag: [{ system: 'https://ucc.emr/poct', code: 'simulated' }] }, type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
+    expect((await request.post('/api/imaging/report', { headers: bearer(analyser.key), data: report(own.id!) })).status()).toBe(401);
+    await f.m.updateResource({ ...f.device, status: 'inactive' as const });
+    expect((await request.post('/api/imaging/report', { headers: bearer(f.deviceKey), data: report(own.id!) })).status()).toBe(401);
+    await f.m.updateResource({ ...f.device, status: 'active' as const, identifier: f.device.identifier!.filter((id) => !id.system?.includes('api-key')) });
+    expect((await request.post('/api/imaging/report', { headers: bearer(f.deviceKey), data: report(own.id!) })).status()).toBe(401);
+    await f.m.updateResource(f.device);
+
+    // 403: a clinic-A key cannot report on a clinic-B study, or on a study whose order is clinic-B's.
+    for (const target of [foreign, mixed]) {
+      expect((await request.post('/api/imaging/report', { headers: bearer(f.deviceKey), data: report(target.id!) })).status()).toBe(403);
+      expect((await request.post('/api/imaging/report', { headers: { 'X-Device-Key': f.deviceKey }, data: report(target.id!) })).status()).toBe(403);
+    }
+
+    // 403: the PACS toggle off for the device's clinic gates the route.
+    const disable = await setPacsModuleEnabled(f.m, f.clinicId, false);
+    try { expect((await request.post('/api/imaging/report', { headers: bearer(f.deviceKey), data: report(own.id!) })).status()).toBe(403); } finally { await disable(); }
+
+    for (const s of [own, foreign, mixed]) expect(await reportsFor(s.id!)).toHaveLength(0);
+
+    // The device's own clinic works; the clinic identifier is stamped from the Device.
+    const ok = await request.post('/api/imaging/report', { headers: bearer(f.deviceKey), data: report(own.id!, { status: 'preliminary' }) });
+    expect(ok.ok(), await ok.text()).toBeTruthy();
+    const { diagnosticReportId } = await ok.json();
+    created.push({ type: 'DiagnosticReport', id: diagnosticReportId });
+    const stored = await f.m.readResource('DiagnosticReport', diagnosticReportId);
+    expect(stored.identifier).toContainEqual({ system: 'clinic', value: f.clinicId });
+    expect(stored.status).toBe('preliminary');
   } finally {
     for (const r of created.reverse()) await f.m.deleteResource(r.type, r.id).catch(() => {});
     await f.m.deleteResource('Device', f.device.id!);
