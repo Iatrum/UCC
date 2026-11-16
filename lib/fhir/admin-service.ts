@@ -62,6 +62,46 @@ async function getClinicPolicyParameters(
   ];
 }
 
+/**
+ * Keep Practitioner.meta.accounts equal to the clinic accounts of the
+ * practitioner's active PractitionerRoles. The clinic staff AccessPolicy lists
+ * Practitioners with `_compartment=%clinicAccount`, so this is what stops one
+ * clinic from enumerating another clinic's staff. Fail-closed: a practitioner
+ * that is not stamped is simply invisible to clinic staff (platform admins and
+ * the app server still see it); the Task 5 migration script re-syncs all.
+ */
+export async function syncPractitionerClinicAccounts(
+  medplum: MedplumClient,
+  practitionerId: string
+): Promise<void> {
+  const orgIds = new Set<string>();
+  for await (const page of medplum.searchResourcePages("PractitionerRole", {
+    practitioner: `Practitioner/${practitionerId}`, _count: "100",
+  })) {
+    for (const role of page) {
+      const orgId = getIdFromReference(role.organization?.reference);
+      if (orgId && role.active !== false) orgIds.add(orgId);
+    }
+  }
+  const accounts: string[] = [];
+  for (const orgId of orgIds) {
+    const parameters = await getClinicPolicyParameters(medplum, orgId);
+    const reference = parameters?.find((p) => p.name === "clinicAccount")?.valueReference?.reference;
+    if (reference) accounts.push(reference);
+  }
+  try {
+    await medplum.post(`fhir/R4/Practitioner/${practitionerId}/$set-accounts`, {
+      resourceType: "Parameters",
+      parameter: [
+        ...accounts.map((reference) => ({ name: "accounts", valueReference: { reference } })),
+        { name: "propagate", valueBoolean: false },
+      ],
+    });
+  } catch (error) {
+    console.error("[syncPractitionerClinicAccounts] could not stamp Practitioner", practitionerId, error instanceof Error ? error.message : error);
+  }
+}
+
 async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<string> {
   const configured = process.env.MEDPLUM_POLICY_CLINIC_STAFF;
   if (configured) return `AccessPolicy/${configured}`;
@@ -697,6 +737,7 @@ export async function updatePractitionerInMedplum(
     });
   }
   await medplum.executeBatch({ resourceType: "Bundle", type: "transaction", entry: entries });
+  await syncPractitionerClinicAccounts(medplum, id);
 
   const detail = await getPractitionerFromMedplum(id);
   if (!detail) {
@@ -976,4 +1017,5 @@ export async function invitePractitionerToMedplum(
       organization: { reference: clinicRef },
     });
   }
+  await syncPractitionerClinicAccounts(medplum, practitionerId);
 }

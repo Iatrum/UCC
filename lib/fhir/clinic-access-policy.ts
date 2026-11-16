@@ -59,3 +59,67 @@ export function clinicProvenanceRules(): AccessPolicyResource[] {
   // after checking every target using the acting client's permissions.
   return [{ resourceType: 'Provenance', criteria: 'Provenance?_compartment=%clinicAccount', interaction: READ }];
 }
+
+export const CLINIC_POLICY_NAME = 'UCC Clinic Staff Policy';
+export const APP_SERVER_POLICY_NAME = 'UCC App Server Policy';
+
+/** Resource types whose rows are partitioned by clinic through meta.accounts. */
+export const CLINIC_COMPARTMENT_TYPES = [
+  'Patient', 'Encounter', 'Observation', 'Condition', 'Procedure', 'MedicationRequest',
+  'MedicationStatement', 'AllergyIntolerance', 'ServiceRequest', 'DiagnosticReport',
+  'ImagingStudy', 'DocumentReference', 'Appointment', 'Invoice', 'Task', 'Basic',
+  'ChargeItemDefinition', 'Medication', 'Communication', 'QuestionnaireResponse',
+  'Schedule', 'Slot',
+] as const;
+
+/**
+ * Staff directory rules. Practitioner is partitioned by meta.accounts (one
+ * clinic HealthcareService per active PractitionerRole, kept in sync by
+ * admin-service `syncPractitionerClinicAccounts` and by the Task 5 migration),
+ * plus the caller's own profile, so a clinic cannot enumerate another clinic's
+ * staff. Medplum forbids `_has` in policy criteria (axp-3), so a reverse chain
+ * through PractitionerRole is not possible. See .ai/research/task5-topology.md.
+ */
+export function clinicDirectoryRules(): AccessPolicyResource[] {
+  return [
+    {
+      resourceType: 'Practitioner',
+      criteria: 'Practitioner?_compartment=%clinicAccount',
+      interaction: READ,
+    },
+    { resourceType: 'Practitioner', criteria: 'Practitioner?_id=%profile.id', interaction: READ },
+    { resourceType: 'PractitionerRole', criteria: 'PractitionerRole?organization=%clinicOrganization', interaction: READ },
+    { resourceType: 'Organization', criteria: 'Organization?_id=%clinicOrganization', interaction: READ },
+    { resourceType: 'HealthcareService', criteria: 'HealthcareService?_id=%clinicAccount', interaction: READ },
+  ];
+}
+
+/** The complete "UCC Clinic Staff Policy" resource list (single source of truth). */
+export function clinicStaffPolicyResources(): AccessPolicyResource[] {
+  return [
+    ...CLINIC_COMPARTMENT_TYPES.flatMap((type) => clinicCompartmentRules(type)),
+    ...clinicProvenanceRules(),
+    ...clinicDirectoryRules(),
+  ];
+}
+
+const ALL: AccessPolicyResource['interaction'] = ['create', 'read', 'update', 'delete', 'search', 'history', 'vread'];
+
+/**
+ * Least-privilege policy for the app server's ClientApplication (project
+ * admin membership in the clinic project). Only the clinical, scheduling and
+ * configuration types the app actually touches; NOT "*". Medplum adds the
+ * project-admin grants (ProjectMembership/User/AccessPolicy/Project, all scoped
+ * to the member's own project) because the membership is admin; it can never
+ * reach other projects, Bot, ClientApplication, Login, Agent, etc.
+ */
+export function appServerPolicyResources(): AccessPolicyResource[] {
+  const full = (resourceType: string): AccessPolicyResource => ({ resourceType, interaction: ALL });
+  const readOnly = (resourceType: string): AccessPolicyResource => ({ resourceType, interaction: READ });
+  return [
+    ...CLINIC_COMPARTMENT_TYPES.map(full),
+    ...['Provenance', 'AuditEvent', 'Questionnaire', 'Organization', 'HealthcareService', 'Location',
+      'Practitioner', 'PractitionerRole', 'Device', 'Subscription', 'Binary', 'StructureDefinition'].map(full),
+    ...['SearchParameter', 'ValueSet', 'CodeSystem'].map(readOnly),
+  ];
+}

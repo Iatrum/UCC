@@ -94,9 +94,6 @@ async function main() {
   // 1. Discover each staff member's clinic from their membership (admin view).
   const staff = [];
   for (const email of STAFF) {
-    const users = (await A('GET', `User?email=${encodeURIComponent(email)}`)).json;
-    const user = users?.entry?.[0]?.resource;
-    // Fallback: ProjectMembership search by user email chained param.
     const ms = (await A('GET', `ProjectMembership?user:User.email=${encodeURIComponent(email)}`)).json;
     const m = ms?.entry?.[0]?.resource;
     const param = (m?.access || []).flatMap((a) => a.parameter || []);
@@ -105,7 +102,7 @@ async function main() {
     if (!m || !acct || !org) throw new Error(`staff ${email}: no clinic access[] on membership (run staff migration first)`);
     const hs = (await A('GET', acct)).json;
     const slug = (hs?.identifier || []).find((i) => i.system === 'clinic')?.value;
-    staff.push({ email, userId: user?.id, membership: m, acct, org, slug, profile: m.profile?.reference });
+    staff.push({ email, userId: m.user?.reference?.replace('User/', ''), membership: m, acct, org, slug, profile: m.profile?.reference });
   }
   const slugs = new Set(staff.map((s) => s.slug));
   if (slugs.size !== staff.length) throw new Error('staff must belong to distinct clinics');
