@@ -23,6 +23,9 @@ for (const file of files) {
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const exited = child => new Promise(resolve => { child.once('exit', code => resolve(code)); child.once('error', () => resolve(null)); });
+// Next forks the real server (next-server) which inherits NODE_OPTIONS (3072), not the launcher's flag: it reached
+// 3.9 GB RSS and tripped the RAM guard. Give the server process tree the heap cap explicitly.
+const heapMb = Number(process.env.UCC_DEV_HEAP_MB) || 2048;
 let server, browserTest, cancelled = false;
 fs.mkdirSync(reports, { recursive: true });
 const memoryLog = path.join(reports, 'memory-kib.log');
@@ -75,7 +78,7 @@ try {
     const batch = path.join(reports, `batch-${index + 1}`);
     fs.mkdirSync(batch, { recursive: true });
     const log = fs.openSync(path.join(batch, 'server.log'), 'w', 0o600);
-    server = spawn(process.execPath, [`--max-old-space-size=${process.env.UCC_DEV_HEAP_MB || 2048}`, path.join(repo, 'node_modules/next/dist/bin/next'), 'dev', '--webpack', '-H', '127.0.0.1', '-p', '3210'], { cwd: repo, env, detached: true, stdio: ['ignore', log, log] });
+    server = spawn(process.execPath, [`--max-old-space-size=${heapMb}`, path.join(repo, 'node_modules/next/dist/bin/next'), 'dev', '--webpack', '-H', '127.0.0.1', '-p', '3210'], { cwd: repo, env: { ...env, NODE_OPTIONS: `--max-old-space-size=${heapMb}` }, detached: true, stdio: ['ignore', log, log] });
     fs.closeSync(log);
     try {
       let ready = false;
