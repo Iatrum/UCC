@@ -44,7 +44,11 @@ fs.rmSync(path.join(reports, 'results.json'), { force: true });
 const completed = [];
 let failed = false;
 try {
-  for (const [index, group] of groups.entries()) {
+  // On a shared fake dataset, run the patient journey before other suites add
+  // fixtures to the legacy 200-Encounter queue page. Every group still runs once.
+  const order = process.env.UCC_E2E_WORKFLOW_FIRST === '1' ? [4, 0, 1, 2, 3, 5] : [0, 1, 2, 3, 4, 5];
+  for (const index of order) {
+    const group = groups[index];
     if (!group.length) continue;
     if (cancelled) throw Error('Gate interrupted');
     await availablePort();
