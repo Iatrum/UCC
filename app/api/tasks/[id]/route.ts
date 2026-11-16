@@ -31,7 +31,7 @@ export async function PATCH(
       throw new ForbiddenError("Task does not belong to the current clinic.");
     }
 
-    const task = await updateBillingExceptionTaskStatus(medplum, id, status, note);
+    const task = await updateBillingExceptionTaskStatus(medplum, id, status, note, clinicId);
     return NextResponse.json({ success: true, task });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Invalid status transition")) {

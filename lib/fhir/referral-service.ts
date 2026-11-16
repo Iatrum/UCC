@@ -10,7 +10,7 @@ import {
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
-import { assertPatientInClinic } from './write-containment';
+import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
 
 export interface ReferralData {
   patientId: string;
@@ -150,10 +150,8 @@ export async function updateReferralInMedplum(
   updates: Partial<Pick<ReferralData, 'urgency' | 'reason' | 'clinicalInfo' | 'doctorName'>> & { status?: SavedReferral['status'] },
   clinicId?: string
 ): Promise<void> {
-  const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
-  if (clinicId && !resourceMatchesClinicTenant(serviceRequest as any, clinicId)) {
-    throw new Error('Referral not found');
-  }
+  const serviceRequest = await medplum.readResource('ServiceRequest', referralId, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } });
+  assertResourceInClinic(serviceRequest, clinicId);
 
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;

@@ -42,10 +42,10 @@ export async function PATCH(
 
     const followUp =
       action === "open"
-        ? await markFollowUpOpened(medplum, id)
+        ? await markFollowUpOpened(medplum, id, clinicId)
         : action === "send-twilio"
-          ? await sendFollowUpWithTwilio(medplum, id)
-          : await updateFollowUpStatus(medplum, id, status!);
+          ? await sendFollowUpWithTwilio(medplum, id, clinicId)
+          : await updateFollowUpStatus(medplum, id, status!, clinicId);
     return NextResponse.json({ success: true, followUp });
   } catch (error) {
     return handleRouteError(error, "PATCH /api/follow-up/[id]");
