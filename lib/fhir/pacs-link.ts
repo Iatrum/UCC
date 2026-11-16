@@ -41,3 +41,10 @@ export function isXrayStudy(study: ImagingStudy): boolean {
 export function gateXrayStudies<T extends { xray?: boolean }>(studies: T[], pacsEnabled: boolean): T[] {
   return pacsEnabled ? studies : studies.filter((s) => !s.xray);
 }
+
+/** DICOM modalities treated as plain X-ray for the viewer link (CT/MR/US etc. never get it). */
+export const XRAY_MODALITIES = ['DX', 'CR', 'RG'] as const;
+
+export function isXrayModality(modality: unknown): boolean {
+  return typeof modality === 'string' && (XRAY_MODALITIES as readonly string[]).includes(modality.toUpperCase());
+}
