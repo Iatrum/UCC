@@ -34,6 +34,25 @@ async function login(tokenResponse: () => Promise<Response>) {
 }
 
 describe("POST /api/auth/login token-exchange failures", () => {
+  test.each([429, 500, 502, 503])("classifies login HTTP %s before token exchange", async (status) => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, {
+      status, headers: { "Retry-After": "23" },
+    }));
+    const response = await POST(new NextRequest("http://localhost:3210/api/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "fake@ucc.invalid", password: "fake-password" }),
+    }));
+    const payload = await response.json();
+    const limited = status === 429;
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(limited ? 429 : 503);
+    expect(payload.code).toBe(limited ? "AUTH_RATE_LIMITED" : "AUTH_UNAVAILABLE");
+    expect(response.headers.get("Retry-After")).toBe(limited ? "23" : null);
+    expect(response.headers.has("set-cookie")).toBe(false);
+    expect(classifyAuthError(new Error(`${payload.code}:${payload.retryAfterSeconds ?? ""}: ${payload.error}`)).message)
+      .toStartWith(`${payload.code}:`);
+  });
+
   test.each([
     new TypeError("fetch failed"),
     new Error("connect ECONNREFUSED"),
