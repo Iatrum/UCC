@@ -13,3 +13,11 @@
 ## Validation plan
 
 Fake-server unit cases for each helper: foreign clinic => ForbiddenError/HTTP 403 and zero writes; own clinic => expected write with existing fields preserved. Include absent clinic, untagged/mixed ownership and account-conflict cases. Temporarily remove the guard and verify targeted regression tests fail, then restore. Run unit tests and tsc --noEmit only, per task override of AGENTS check-all requirement. No dev server, Playwright, real records, or container access.
+
+## Results
+
+- Implemented the local read/authorize helper, required clinicId on all three mutation signatures, and forwarded the authenticated clinicId from PATCH/DELETE. Removed the redundant patient-based mutation precheck so foreign appointments reach the service guard and map to 403. GET retains its existing read behavior.
+- Targeted fake-server suite: 24/24 pass (118 assertions). Entire unit suite: 259/259 pass, 23 files, 1339 assertions.
+- Mutation proof: independently replaced each helper's guarded read with an unchecked read. Each helper's 8 targeted tests failed, including its foreign-clinic ForbiddenError/403 assertion (the unchecked fake server allowed the write). Restored the guard after each mutation; final targeted suite returns 24/24 pass. Initial overly narrow test filter selected no tests and was discarded; reported mutation evidence uses actual failing assertions.
+- No dev server, Playwright, Medplum connection, container operation or patient data used. Unit fixture uses only fake values and an unrestricted in-memory server.
+- TypeScript: `NODE_OPTIONS=--max-old-space-size=3072 node node_modules/typescript/bin/tsc --noEmit --incremental false` PASS (exit 0). `git diff --check` PASS. The shared dependency directory was linked read-only in practice (no installs/updates); no secrets or environment files copied.

@@ -6,12 +6,14 @@ import { MedplumClient, OperationOutcomeError, getStatus } from '@medplum/core';
 import type { Appointment as FHIRAppointment } from '@medplum/fhirtypes';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
+  getResourceAccountReferences,
   assignResourceToClinicTenant,
   resolveClinicTenant,
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
 import { assertPatientInClinic } from './write-containment';
+import { ForbiddenError } from '@/lib/server/route-helpers';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
 function patientIdFromActorReference(ref: string | undefined): string {
@@ -263,15 +265,43 @@ export async function getUpcomingAppointmentsForClinic(
     });
 }
 
+/** Read and authorize the stored Appointment before any mutation, including delete. */
+async function readAppointmentForMutation(
+  medplum: MedplumClient,
+  appointmentId: string,
+  clinicId: string
+): Promise<FHIRAppointment> {
+  if (!clinicId) throw new ForbiddenError('Appointment unavailable in current clinic');
+  const appointment = await medplum.readResource('Appointment', appointmentId, {
+    cache: 'no-cache',
+    headers: { 'X-Medplum': 'extended' },
+  });
+  const conflictingClinic = appointment.identifier?.some(
+    identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value !== clinicId
+  );
+  if (conflictingClinic || !resourceMatchesClinicTenant(appointment, clinicId)) {
+    throw new ForbiddenError('Appointment unavailable in current clinic');
+  }
+  const accounts = getResourceAccountReferences(appointment);
+  if (accounts.length) {
+    const tenant = await resolveClinicTenant(medplum, clinicId);
+    if (!tenant || accounts.some(account => account.reference !== tenant.accountReference)) {
+      throw new ForbiddenError('Appointment unavailable in current clinic');
+    }
+  }
+  return appointment;
+}
+
 /**
  * Update appointment status
  */
 export async function updateAppointmentStatus(
   medplum: MedplumClient,
   appointmentId: string,
-  status: 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow'
+  status: 'proposed' | 'pending' | 'booked' | 'arrived' | 'fulfilled' | 'cancelled' | 'noshow',
+  clinicId: string
 ): Promise<void> {
-  const appointment = await medplum.readResource('Appointment', appointmentId);
+  const appointment = await readAppointmentForMutation(medplum, appointmentId, clinicId);
 
   const timestampExtUrl =
     status === 'arrived'   ? EXT_CHECKIN :
@@ -297,7 +327,8 @@ export async function updateAppointmentStatus(
 /**
  * Delete an appointment from Medplum.
  */
-export async function deleteAppointment(medplum: MedplumClient, appointmentId: string): Promise<void> {
+export async function deleteAppointment(medplum: MedplumClient, appointmentId: string, clinicId: string): Promise<void> {
+  await readAppointmentForMutation(medplum, appointmentId, clinicId);
   await medplum.deleteResource('Appointment', appointmentId);
   console.log(`✅ Deleted Appointment ${appointmentId}`);
 }
@@ -308,9 +339,10 @@ export async function deleteAppointment(medplum: MedplumClient, appointmentId: s
 export async function rescheduleAppointment(
   medplum: MedplumClient,
   appointmentId: string,
-  scheduledAt: Date | string
+  scheduledAt: Date | string,
+  clinicId: string
 ): Promise<void> {
-  const appointment = await medplum.readResource('Appointment', appointmentId);
+  const appointment = await readAppointmentForMutation(medplum, appointmentId, clinicId);
   const startIso = typeof scheduledAt === 'string' ? new Date(scheduledAt).toISOString() : scheduledAt.toISOString();
   const duration = appointment.minutesDuration ?? 30;
   const end = new Date(startIso);
