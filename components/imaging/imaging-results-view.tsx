@@ -17,6 +17,8 @@ interface ImagingResultsViewProps {
 export function ImagingResultsView({ patientId, encounterId }: ImagingResultsViewProps) {
   const [studies, setStudies] = useState<ImagingReportSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [viewerError, setViewerError] = useState<{ id: string; message: string } | null>(null);
 
   const loadImagingStudies = useCallback(async () => {
     try {
@@ -42,6 +44,34 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
       void loadImagingStudies();
     });
   }, [loadImagingStudies]);
+
+  // Stored X-ray images: ask the server for a short-lived, clinic- and study-scoped viewer link.
+  // The tab is opened synchronously (inside the click) so popup blockers allow it, then navigated.
+  const openViewer = async (imagingStudyId: string) => {
+    setViewerError(null);
+    setOpeningId(imagingStudyId);
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const response = await fetch('/api/pacs/viewer/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imagingStudyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || typeof data.url !== 'string') throw new Error(data.error || 'Viewer unavailable');
+      if (tab) {
+        tab.opener = null;
+        tab.location.replace(data.url);
+      } else {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (error) {
+      tab?.close();
+      setViewerError({ id: imagingStudyId, message: error instanceof Error ? error.message : 'Viewer unavailable' });
+    } finally {
+      setOpeningId(null);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -142,6 +172,24 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
                     <p className="text-muted-foreground">Images</p>
                     <p className="font-medium">{study.study.numberOfInstances}</p>
                   </div>
+                  {study.study.viewer && (
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        data-testid="xray-open-viewer"
+                        disabled={openingId === study.id}
+                        onClick={() => void openViewer(study.id)}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-1" />
+                        {openingId === study.id ? 'Opening…' : 'Open images'}
+                      </Button>
+                      {viewerError?.id === study.id && (
+                        <p role="alert" className="mt-1 text-xs text-destructive">{viewerError.message}</p>
+                      )}
+                    </div>
+                  )}
                   {study.study.pacsUrl && (
                     <div>
                       <Button variant="outline" size="sm" className="h-8" asChild>

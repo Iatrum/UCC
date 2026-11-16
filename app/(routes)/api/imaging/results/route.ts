@@ -56,6 +56,8 @@ export async function GET(request: NextRequest) {
         study: {
           ...s.study,
           pacsUrl: link,
+          // Stored images (phase 3) open through /api/pacs/viewer/link, which re-checks clinic and module.
+          viewer: Boolean(pacsEnabled && xray && s.study.viewer),
           series: s.study.series.map((x) => ({
             ...x,
             endpoint: xray

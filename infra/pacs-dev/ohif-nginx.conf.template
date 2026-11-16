@@ -1,0 +1,68 @@
+# OHIF static viewer + narrow pass-throughs to UCC. ${VIEWER_BIND}, ${RELAY_BIND} and ${UCC_UPSTREAM}
+# are substituted at container start (envsubst with an explicit list); nginx $vars are left untouched.
+
+# 1) Viewer origin (browser-facing; loopback in dev, behind TLS in production).
+server {
+  listen ${VIEWER_BIND} default_server;
+  server_tokens off;
+  gzip_static always;
+  gunzip on;
+  root /usr/share/nginx/html;
+
+  # Launch: UCC validates the one-time token, sets the HttpOnly viewer cookie on THIS origin and
+  # redirects to /viewer. The token never reaches Orthanc.
+  location = /launch {
+    access_log off; # launch query contains a short-lived bearer capability
+    limit_except GET { deny all; }
+    proxy_pass http://${UCC_UPSTREAM}/api/pacs/viewer/launch$is_args$args;
+    proxy_set_header Host localhost;
+    proxy_set_header X-Pacs-Viewer-Host $http_host;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Cookie "";
+  }
+
+  # DICOMweb: only to UCC's study-scoped proxy (read-only). Only the viewer cookie matters;
+  # no Orthanc credential exists in this container.
+  location /dicom-web/ {
+    limit_except GET { deny all; }
+    proxy_pass http://${UCC_UPSTREAM}/api/pacs/dicomweb/;
+    proxy_set_header Host localhost;
+    proxy_set_header X-Pacs-Viewer-Host $http_host;
+    proxy_set_header Authorization "";
+    proxy_buffering off;
+    proxy_read_timeout 120s;
+  }
+
+  # Our config, never the image's pre-gzipped default one.
+  location = /app-config.js {
+    gzip_static off;
+    alias /etc/ohif/app-config.js;
+    add_header Cache-Control no-store always;
+    add_header X-Content-Type-Options nosniff always;
+  }
+
+  location / {
+    index index.html;
+    try_files $uri $uri/ /index.html;
+    add_header Cross-Origin-Resource-Policy same-origin always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+  }
+}
+
+# 2) Webhook relay for Orthanc (docker bridge gateway only, not reachable from outside the host):
+#    exactly one POST path; UCC authenticates the per-device key.
+server {
+  listen ${RELAY_BIND};
+  server_tokens off;
+  client_max_body_size 4k;
+  location = /api/pacs/orthanc/study {
+    limit_except POST { deny all; }
+    proxy_pass http://${UCC_UPSTREAM}/api/pacs/orthanc/study;
+    proxy_set_header Host localhost;
+    proxy_set_header Cookie "";
+  }
+  location / { return 404; }
+}

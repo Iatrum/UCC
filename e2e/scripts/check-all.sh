@@ -3,8 +3,10 @@
 # Usage: e2e/scripts/check-all.sh <label> [baseline-results.json]
 # Exits non-zero if any step fails or any test fails that passed in the baseline.
 set -u
-LABEL=${1:-run}; BASE=${2:-/workspace/ai-logs/baseline/results.json}
-REPO=$(cd "$(dirname "$0")/../.." && pwd); OUT=${UCC_LOG_ROOT:-/workspace/ai-logs}/$LABEL; mkdir -p "$OUT"; FAIL=0
+LOG_ROOT=${UCC_LOG_ROOT:-/workspace/ai-logs}
+LABEL=${1:-run}; BASE=${2:-$LOG_ROOT/baseline/results.json}
+REPO=$(cd "$(dirname "$0")/../.." && pwd); OUT=$LOG_ROOT/$LABEL; mkdir -p "$OUT"; FAIL=0
+export UCC_REPORTS=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}
 export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=1536}
 step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c" | tee -a "$OUT/summary.txt"; [ $c -eq 0 ] || FAIL=1; }
 : > "$OUT/summary.txt"; cd "$REPO"
@@ -18,7 +20,7 @@ if [ "${UCC_E2E_BATCHED:-0}" != "1" ] && [ -n "${UCC_SERVER_READY_FILE:-}" ]; th
   step server-ready timeout 3m bash -c 'while [ ! -f "$UCC_SERVER_READY_FILE" ]; do sleep 1; done'
 fi
 cd "$REPO/e2e"
-RES=${UCC_REPORTS:-/workspace/ai-logs/e2e-reports}/results.json; rm -f "$RES"
+RES=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}/results.json; rm -f "$RES"
 if [ "${UCC_E2E_BATCHED:-0}" = "1" ]; then
   timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-40m}" node scripts/run-batched.mjs > "$OUT/e2e.log" 2>&1
 else

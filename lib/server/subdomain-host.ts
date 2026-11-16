@@ -67,3 +67,13 @@ export function resolvePortalPresentation(args: {
   const fromCookie = args.clinicCookieValue?.trim() || null;
   return { isAdminShell: false, clinicIdForValidation: fromCookie };
 }
+
+/**
+ * Canonical path-based admin URL for a request that arrived on the admin
+ * subdomain. Idempotent: a path already under `/admin` is kept as-is so the
+ * redirect never produces `/admin/admin/...`.
+ */
+export function adminPortalPath(pathname: string): string {
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return pathname;
+  return pathname === "/" ? "/admin" : "/admin" + pathname;
+}

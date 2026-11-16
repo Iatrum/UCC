@@ -3,6 +3,8 @@ const medplumOrigin = new URL(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http:
 const medplumSocketOrigin = medplumOrigin.replace(/^http/, 'ws');
 
 const nextConfig = {
+  // Viewer launch URLs carry a bearer capability; keep them out of the dev request log.
+  logging: { incomingRequests: { ignore: [/\/api\/pacs\/viewer\/launch(?:\?|$)/] } },
   transpilePackages: [
     '@tiptap/react',
     '@tiptap/core',
