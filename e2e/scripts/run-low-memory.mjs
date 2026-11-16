@@ -75,7 +75,7 @@ try {
     const batch = path.join(reports, `batch-${index + 1}`);
     fs.mkdirSync(batch, { recursive: true });
     const log = fs.openSync(path.join(batch, 'server.log'), 'w', 0o600);
-    server = spawn(process.execPath, ['--max-old-space-size=2048', path.join(repo, 'node_modules/next/dist/bin/next'), 'dev', '--webpack', '-H', '127.0.0.1', '-p', '3210'], { cwd: repo, env, detached: true, stdio: ['ignore', log, log] });
+    server = spawn(process.execPath, [`--max-old-space-size=${process.env.UCC_DEV_HEAP_MB || 2048}`, path.join(repo, 'node_modules/next/dist/bin/next'), 'dev', '--webpack', '-H', '127.0.0.1', '-p', '3210'], { cwd: repo, env, detached: true, stdio: ['ignore', log, log] });
     fs.closeSync(log);
     try {
       let ready = false;
