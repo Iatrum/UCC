@@ -299,3 +299,12 @@ Prod rollback: Vercel → promote the previous deployment (instant); Medplum →
 4. Is the production clinic project non-superAdmin? (D20; the single biggest authorization risk, independent of ports.)
 5. Staging: stay on this VPS (time-boxed) or approve a second small VPS?
 6. Does your Hostinger plan have a browser console and snapshot restore? (needed for safe rollback)
+
+## Owner decisions (Hidayat, 16 Nov 2026 21:57 MYT)
+
+1. UCC app: still hosted on Vercel.
+2. Admin access to the VPS: SSH tunnel only (no Tailscale for now).
+3. Medplum self-registration: not needed, close it.
+4. Production clinic project already non-superAdmin? Unknown; must be verified (read-only) before any lockdown step that depends on it.
+5. Staging: on this VPS for now (no second server yet).
+6. Hostinger browser console and snapshot restore: unknown; confirm in the Hostinger panel before any firewall change, so there is a recovery path if SSH gets locked out.
