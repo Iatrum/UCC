@@ -1,4 +1,5 @@
-import type { MedplumClient } from '@medplum/core';
+import { isNotFound, OperationOutcomeError, type MedplumClient } from '@medplum/core';
+import { NotFoundError } from '@/lib/server/route-helpers';
 import type { Extension, Medication as FHIRMedication } from '@medplum/fhirtypes';
 import { INVENTORY_EXTENSION_URL } from './structure-definitions';
 import {
@@ -155,7 +156,7 @@ export async function getInventoryMedicationByIdFromMedplum(
   id: string,
   clinicId: string
 ): Promise<SavedInventoryMedication | null> {
-  const resource = await medplum.readResource('Medication', id);
+  const resource = await readMedicationOrNotFound(medplum, id);
   if (!isInventoryMedication(resource as FHIRMedication, clinicId)) {
     return null;
   }
@@ -179,6 +180,17 @@ export async function createInventoryMedicationInMedplum(
   return created.id;
 }
 
+async function readMedicationOrNotFound(medplum: MedplumClient, id: string) {
+  try {
+    return await medplum.readResource('Medication', id);
+  } catch (error) {
+    if (error instanceof OperationOutcomeError && isNotFound(error.outcome)) {
+      throw new NotFoundError('Medication not found for this clinic');
+    }
+    throw error;
+  }
+}
+
 export async function updateInventoryMedicationInMedplum(
   medplum: MedplumClient,
   id: string,
@@ -186,9 +198,9 @@ export async function updateInventoryMedicationInMedplum(
   clinicId: string
 ): Promise<void> {
   const clinicTenant = await resolveClinicTenant(medplum, clinicId);
-  const existing = await medplum.readResource('Medication', id);
+  const existing = await readMedicationOrNotFound(medplum, id);
   if (!isInventoryMedication(existing as FHIRMedication, clinicId)) {
-    throw new Error('Medication not found for this clinic');
+    throw new NotFoundError('Medication not found for this clinic');
   }
 
   const current = mapFhirMedication(existing as FHIRMedication);
@@ -216,9 +228,9 @@ export async function deleteInventoryMedicationInMedplum(
   id: string,
   clinicId: string
 ): Promise<void> {
-  const resource = await medplum.readResource('Medication', id);
+  const resource = await readMedicationOrNotFound(medplum, id);
   if (!isInventoryMedication(resource as FHIRMedication, clinicId)) {
-    throw new Error('Medication not found for this clinic');
+    throw new NotFoundError('Medication not found for this clinic');
   }
   await medplum.deleteResource('Medication', id);
 }
