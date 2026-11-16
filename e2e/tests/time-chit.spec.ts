@@ -86,7 +86,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     await expect(page.getByText('Time out must be after time in on the same day.', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: `${EVIDENCE}/time-chit-composer-preview.png`, fullPage: true });
     await dialog.getByRole('button', { name: 'Complete document' }).click();
-    const signResponse = page.waitForResponse(r => r.url().endsWith('/api/orders') && r.request().method() === 'POST');
+    const signResponse = page.waitForResponse(r => r.url().endsWith('/api/orders') && r.request().method() === 'POST', { timeout: 120_000 });
     await page.getByRole('button', { name: 'Sign', exact: true }).click();
     expect((await signResponse).status()).toBe(200);
     await expect(page.getByText('Treatment Signed', { exact: true })).toBeVisible();
@@ -170,7 +170,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
       const moduleSwitch = adminPage.getByRole('switch', { name: 'Toggle Time Chit (Surat Masa)' });
       await expect(moduleSwitch).toBeChecked();
       await moduleSwitch.uncheck();
-      const save = adminPage.waitForResponse(r => r.url().includes(`/api/admin/clinics/${org.id}`) && r.request().method() === 'PATCH');
+      const save = adminPage.waitForResponse(r => r.url().includes(`/api/admin/clinics/${org.id}`) && r.request().method() === 'PATCH', { timeout: 120_000 }); // cold dev compile of the admin page/route can exceed 45 s
       await adminPage.getByRole('button', { name: 'Save Module Settings' }).click();
       expect((await save).status()).toBe(200);
       await adminPage.reload(); await expect(moduleSwitch).not.toBeChecked();

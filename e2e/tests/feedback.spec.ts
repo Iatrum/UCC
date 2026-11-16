@@ -74,6 +74,8 @@ test.describe('Feedback module', () => {
       expect(again.status()).toBe(201);
       expect((await again.json()).result.status).toBe('already-counted');
 
+      // Medplum search indexing can lag a write by a moment under load.
+      await expect.poll(async () => (await feedbackRecords(m, clinicId, title)).length, { timeout: 15_000 }).toBe(1);
       const rows = await feedbackRecords(m, clinicId, title);
       expect(rows).toHaveLength(1);
       const json = JSON.stringify(rows[0]);

@@ -18,6 +18,8 @@ step lint bun run lint
 step build env PATH="$HOME/.local/node22/bin:$PATH" bun run build:ci
 cd "$REPO/e2e"
 RES=$UCC_REPORTS/results.json; rm -f "$RES"
+# Dev data hygiene: /api/queue caps at 200 encounters/day; leftover fake fixtures would hide the workflow test patient.
+UCC_EVIDENCE=$UCC_EVIDENCE timeout 10m npx tsx scripts/prune-fake-queue.ts > "$OUT/prune.log" 2>&1 || echo "prune-fake-queue failed (see prune.log)" | tee -a "$OUT/summary.txt"
 if [ "${UCC_LOW_MEMORY_GATE:-0}" = 1 ]; then
   # Driver owns one dev server at a time and reclaims its compiler heap between groups.
   timeout --kill-after=30s 40m node scripts/run-low-memory.mjs > "$OUT/e2e.log" 2>&1
