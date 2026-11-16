@@ -47,3 +47,5 @@ This is a create/link-containment review, not a claim that every legacy read/del
 - PR CI at milestone `1d55cd3`: lint-and-build SUCCESS; other checks SUCCESS; MERGEABLE/CLEAN. Final live head/state is reported in the task response after the last push.
 
 No `components/`, composer effects, navigation/sidebar, Lab display, POCT online requirement/manual-entry logic or Firebase Storage implementation changed. This limits UI regression risk; it does **not** replace browser signing/draft/checkout verification. No server started; none to kill. Existing :3210 left alone. No Docker/container operations, protected directories, Supabase, Tradebot, real patient data, merge or force-push. All test data/credentials synthetic; no .env.local or e2e/.secrets staged.
+
+Publication note: the second milestone exposed append conflicts in STATE.md and CHANGELOG.md with newer dev history. Copied the fetched dev versions and appended the Task 351 entries, preserving both histories via a normal documentation commit; no merge/rebase or third implementation loop.
