@@ -177,10 +177,35 @@ describe('legacy Firestore draft migration: refusals', () => {
     await check({ identifier: [{ system: 'clinic', value: 'fake-clinic-b' }] }, 'encounter-clinic-mismatch');
     await check({ identifier: [] }, 'encounter-clinic-mismatch');
     await check({ participant: [] }, 'owner-unresolved');
+    await check({ participant: [{ individual: { reference: 'RelatedPerson/fake-relative' } }] }, 'owner-unresolved');
     const two = [{ individual: { reference: `Practitioner/${DOCTOR}` } }, { individual: { reference: 'Practitioner/fake-doctor-2' } }];
     await check({ participant: two }, 'owner-ambiguous');
     const server = await check({ participant: two }, 'new', { [LEGACY_ID]: 'fake-doctor-2' });
     expect(server.drafts()[0].author).toEqual([{ reference: 'Practitioner/fake-doctor-2' }]);
+  });
+
+  test('encounter without a practitioner: last-writer fallback is opt-in and otherwise only a reviewed candidate', async () => {
+    const setup = (author?: string) => {
+      const server = fakeServer();
+      const encounter = server.store.get(`Encounter/${ENCOUNTER}`)!;
+      server.put({ ...encounter, participant: undefined, meta: { ...encounter.meta, author: author ? { reference: author } : undefined } });
+      return server;
+    };
+    const plain = await run(setup(`Practitioner/${DOCTOR}`), [legacy()]);
+    expect(plain.outcomes[0]).toMatchObject({ action: 'skip', reason: 'owner-unresolved', candidateOwner: DOCTOR });
+    const server = setup(`Practitioner/${DOCTOR}`);
+    const opted = await run(server, [legacy()], { ownerFromEncounterAuthor: true });
+    expect(opted.outcomes[0]).toMatchObject({ action: 'create', applied: true, ownerSource: 'encounter-author' });
+    expect(draftValue<any[]>(await readDraft(server.appScope()), [])).toHaveLength(1);
+    // A server-side writer (ClientApplication) is never an owner.
+    const bot = await run(setup('ClientApplication/fake-app'), [legacy()], { ownerFromEncounterAuthor: true });
+    expect(bot.outcomes[0]).toMatchObject({ action: 'skip', reason: 'owner-unresolved' });
+    expect(bot.outcomes[0].candidateOwner).toBeUndefined();
+    // The owners file and an Encounter participant both take precedence over the fallback.
+    const mapped = setup(`Practitioner/${DOCTOR}`);
+    expect((await run(mapped, [legacy()], { ownerFromEncounterAuthor: true, owners: { [LEGACY_ID]: 'fake-doctor-2' } })).outcomes[0].ownerSource).toBe('owners-file');
+    expect(mapped.drafts()[0].author).toEqual([{ reference: 'Practitioner/fake-doctor-2' }]);
+    expect((await run(fakeServer(), [legacy()], { ownerFromEncounterAuthor: true })).outcomes[0].ownerSource).toBe('encounter-participant');
   });
 
   test('--since skips older and undated drafts; --limit caps writes', async () => {

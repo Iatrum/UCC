@@ -10,6 +10,7 @@
 //   bun scripts/firestore-draft-migration/migrate.ts --rollback --manifest <manifest.json> --clinic <clinicId> [--apply]
 //
 // Options: --since <ISO date>  --owners <owners.json>  --limit <n>  --report <path>  --manifest <path>
+//          --owner-from-encounter-author    (opt-in owner fallback, see the plan section 4)
 //          --allow-remote-host <hostname>   (required for anything other than localhost:8113)
 // Env: MEDPLUM_BASE_URL, MEDPLUM_CLIENT_ID, MEDPLUM_CLIENT_SECRET (a project-admin client; never printed).
 //
@@ -29,7 +30,7 @@ const fail = (message: string): never => { throw new SafeError(message); };
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function parseArgs(argv: string[]) {
-  const flags = new Set(['--apply', '--rollback']);
+  const flags = new Set(['--apply', '--rollback', '--owner-from-encounter-author']);
   const values = new Set(['--input', '--clinic', '--since', '--owners', '--limit', '--report', '--manifest', '--allow-remote-host']);
   const out: Record<string, string | true> = {};
   for (let i = 0; i < argv.length; i++) {
@@ -129,9 +130,10 @@ async function main() {
   if (apply && fs.existsSync(manifestPath)) fail('Manifest path already exists; choose a new one');
 
   console.log(`Export: ${exported.count} legacy documents, exported ${exported.exportedAt}`);
-  const result = await migrate(client, exported.drafts, { clinicId, since, owners, apply, limit });
+  const result = await migrate(client, exported.drafts, { clinicId, since, owners, apply, limit,
+    ownerFromEncounterAuthor: args['--owner-from-encounter-author'] === true });
   for (const o of result.outcomes) {
-    if (o.action !== 'skip') console.log(`${o.source.slice(0, 12)}  ${o.action}:${o.reason}${o.applied ? ' (written)' : ''}`);
+    if (o.action !== 'skip') console.log(`${o.source.slice(0, 12)}  ${o.action}:${o.reason}${o.ownerSource ? `  owner:${o.ownerSource}` : ''}${o.applied ? ' (written)' : ''}`);
   }
   console.log(JSON.stringify(summarize(result.outcomes), null, 2));
   if (apply && result.manifest.length) {
@@ -140,7 +142,8 @@ async function main() {
   }
   if (typeof args['--report'] === 'string') {
     const reportPath = privatePath(args['--report'], '--report');
-    writePrivate(reportPath, result.outcomes.map(({ source, legacyId, action, reason, applied }) => ({ source, legacyId, action, reason, applied })));
+    writePrivate(reportPath, result.outcomes.map(({ source, legacyId, action, reason, applied, ownerSource, candidateOwner }) =>
+      ({ source, legacyId, action, reason, applied, ownerSource, candidateOwner })));
     console.log(`Report with legacy document ids (private, delete after use): ${reportPath}`);
   }
   if (result.aborted) { console.error(`ABORTED: ${result.aborted}. Nothing further was written. See the runbook, section "If it aborts".`); process.exitCode = 3; }

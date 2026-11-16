@@ -30,7 +30,7 @@ type Identifier = { system?: string; value?: string };
 type Ref = { reference?: string };
 export type Resource = {
   resourceType: string; id?: string; status?: string; active?: boolean;
-  meta?: { versionId?: string; accounts?: Ref[]; account?: Ref | Ref[] };
+  meta?: { versionId?: string; accounts?: Ref[]; account?: Ref | Ref[]; author?: Ref };
   identifier?: Identifier[]; subject?: Ref; author?: Ref[];
   participant?: { individual?: Ref }[];
   content?: { attachment: { contentType?: string; data?: string } }[];
@@ -55,6 +55,11 @@ export type Options = {
   since?: Date;
   /** Operator-reviewed owners for drafts whose owner cannot be derived: legacy document id -> Practitioner id. */
   owners?: Record<string, string>;
+  /**
+   * Opt-in fallback when the Encounter lists no practitioner: use the Practitioner who last wrote the Encounter
+   * (Medplum meta.author). Usually the signing doctor, but it can be whoever touched the visit last.
+   */
+  ownerFromEncounterAuthor?: boolean;
   apply?: boolean;
   limit?: number;
   now?: () => Date;
@@ -67,7 +72,12 @@ export type Outcome = {
   reason: string;
   applied?: boolean;
   documentReferenceId?: string; versionId?: string; key?: string;
+  /** How the owning practitioner was chosen, for created/restored drafts. */
+  ownerSource?: OwnerSource;
+  /** For owner-unresolved skips: the Practitioner id the operator may review and copy into the owners file. */
+  candidateOwner?: string;
 };
+export type OwnerSource = 'owners-file' | 'encounter-participant' | 'encounter-author';
 export type ManifestEntry = { source: string; key: string; documentReferenceId: string; versionId: string };
 export type Manifest = { format: string; clinicId: string; createdAt: string; entries: ManifestEntry[] };
 
@@ -140,8 +150,8 @@ export function sanitizeEntries(entries: unknown, fallbackIso: string): Record<s
 }
 
 type Planned =
-  | { action: 'skip' | 'error'; reason: string }
-  | { action: 'create' | 'restore'; reason: string; key: string; resource: Resource; existing?: Resource; patientAccounts: string[] };
+  | { action: 'skip' | 'error'; reason: string; candidateOwner?: string }
+  | { action: 'create' | 'restore'; reason: string; key: string; resource: Resource; existing?: Resource; patientAccounts: string[]; ownerSource: OwnerSource };
 
 function buildResource(o: { clinicId: string; key: string; source: string; patientId: string; practitioner: string;
   consultationId?: string; date: string; entries: unknown }): Resource {
@@ -186,21 +196,27 @@ export async function planDraft(client: FhirClient, legacy: LegacyDraft, options
   if (!hasIdentifier(patient, CLINIC_SYSTEM, options.clinicId)) {
     return skip(legacy.clinicId ? 'patient-clinic-mismatch' : 'other-clinic');
   }
-  let derivedOwner: string | undefined;
+  const practitionerRef = /^Practitioner\/[A-Za-z0-9.-]{1,64}$/;
+  let derivedOwner: string | undefined, authorCandidate: string | undefined;
   if (consultationId) {
     const encounter = await client.read('Encounter', consultationId);
     if (!encounter) return skip('encounter-missing');
     if (encounter.subject?.reference !== `Patient/${patientId}`) return skip('encounter-patient-mismatch');
     if (!hasIdentifier(encounter, CLINIC_SYSTEM, options.clinicId)) return skip('encounter-clinic-mismatch');
     const practitioners = [...new Set((encounter.participant ?? []).map(p => p.individual?.reference)
-      .filter((ref): ref is string => !!ref && /^Practitioner\/[A-Za-z0-9.-]{1,64}$/.test(ref)))];
+      .filter((ref): ref is string => !!ref && practitionerRef.test(ref)))];
     if (practitioners.length > 1 && !options.owners?.[legacy.id]) return skip('owner-ambiguous');
     derivedOwner = practitioners[0];
+    const author = encounter.meta?.author?.reference;
+    if (author && practitionerRef.test(author)) authorCandidate = author;
   }
   const mapped = options.owners?.[legacy.id];
   if (mapped !== undefined && !ID.test(mapped)) return skip('invalid-owner-map-entry');
-  const practitioner = mapped ? `Practitioner/${mapped}` : derivedOwner;
-  if (!practitioner) return skip('owner-unresolved');
+  const [practitioner, ownerSource]: [string | undefined, OwnerSource] =
+    mapped ? [`Practitioner/${mapped}`, 'owners-file']
+    : derivedOwner ? [derivedOwner, 'encounter-participant']
+    : [options.ownerFromEncounterAuthor ? authorCandidate : undefined, 'encounter-author'];
+  if (!practitioner) return { action: 'skip', reason: 'owner-unresolved', candidateOwner: authorCandidate?.split('/')[1] };
   const owner = await client.read('Practitioner', practitioner.split('/')[1]);
   if (!owner || owner.active === false) return skip('owner-missing-or-inactive');
 
@@ -212,13 +228,13 @@ export async function planDraft(client: FhirClient, legacy: LegacyDraft, options
   const targets = await client.search('DocumentReference', { identifier: `${KEY_SYSTEM}|${key}` });
   if (targets.length > 1) return skip('target-ambiguous');
   const target = targets[0];
-  if (!target) return { action: 'create', reason: 'new', key, resource, patientAccounts };
+  if (!target) return { action: 'create', reason: 'new', key, resource, patientAccounts, ownerSource };
   if (target.subject?.reference !== resource.subject?.reference || target.author?.length !== 1 ||
       target.author[0].reference !== practitioner || !hasIdentifier(target, CLINIC_SYSTEM, options.clinicId)) {
     return skip('target-conflict');
   }
   if (hasIdentifier(target, ROLLED_BACK_SYSTEM, source) && target.status === 'superseded') {
-    return { action: 'restore', reason: 'previously-rolled-back', key, resource, existing: target, patientAccounts };
+    return { action: 'restore', reason: 'previously-rolled-back', key, resource, existing: target, patientAccounts, ownerSource };
   }
   if (hasIdentifier(target, MIGRATED_SYSTEM, source)) {
     return skip(target.status === 'current' ? 'already-migrated' : 'target-cleared-by-user');
@@ -257,7 +273,7 @@ export async function migrate(client: FhirClient, drafts: LegacyDraft[], options
     const planned: Planned = await planDraft(client, legacy, options)
       .catch(() => ({ action: 'error' as const, reason: 'lookup-failed' }));
     if (!('resource' in planned)) { outcomes.push({ ...base, ...planned }); continue; }
-    const outcome: Outcome = { ...base, action: planned.action, reason: planned.reason, key: planned.key, applied: false };
+    const outcome: Outcome = { ...base, action: planned.action, reason: planned.reason, key: planned.key, ownerSource: planned.ownerSource, applied: false };
     outcomes.push(outcome);
     if (!options.apply) continue;
     if (options.limit !== undefined && written >= options.limit) { outcome.reason = 'limit-reached'; continue; }
