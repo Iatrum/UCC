@@ -262,7 +262,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
       expect((await staff!.readResource(resource.resourceType, resource.id, {cache:'no-cache'})).id).toBe(resource.id);
     };
     const labReceiveOrder = await receiveOrder();
-    const labReportId = await receiveLabResults(labReceiveOrder.id, [{testCode:'2345-7', testName:'Fake glucose', value:5, unit:'mmol/L', status:'final'}], undefined, plain);
+    const labReportId = await receiveLabResults(labReceiveOrder.id, [{testCode:'2345-7', testName:'Fake glucose', value:5, unit:'mmol/L', status:'final'}], undefined, plain, clinics[1].slug);
     const labReport = await m.readResource('DiagnosticReport', labReportId, extended);
     owned.push({resourceType:'DiagnosticReport', id:labReportId});
     await verifyResult(labReport);
@@ -276,7 +276,7 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     const studyId = await receiveImagingStudy(imagingReceiveOrder.id, {
       studyUid:`2.25.${BigInt('0x' + randomUUID().replace(/-/g, ''))}`, modality:'DX',
       numberOfSeries:0, numberOfInstances:0, series:[],
-    }, plain);
+    }, plain, clinics[1].slug);
     const study = await m.readResource('ImagingStudy', studyId, extended);
     owned.push({resourceType:'ImagingStudy', id:studyId});
     await verifyResult(study);

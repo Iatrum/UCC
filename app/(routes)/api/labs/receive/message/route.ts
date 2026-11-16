@@ -12,7 +12,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestAnalyserMessage, type AnalyserMessageFormat } from '@/lib/poct/analyser-bot';
-import { ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
+import { AuthError, ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
+import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
 export const runtime = 'nodejs';
@@ -20,21 +21,15 @@ export const runtime = 'nodejs';
 interface ReceiveAnalyserMessageRequest {
   format: AnalyserMessageFormat;
   message: string;
-  apiKey?: string;
+  apiKey?: string; // legacy body field; prefer the `Authorization: Bearer` / `X-Device-Key` header
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: ReceiveAnalyserMessageRequest = await request.json();
 
-    // Device ingress must fail closed when its key has not been configured.
-    const expectedApiKey = process.env.POCT_API_KEY;
-    if (!expectedApiKey) {
-      return NextResponse.json({ error: 'Analyser ingestion is not configured' }, { status: 503 });
-    }
-    if (body.apiKey !== expectedApiKey) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid API key' }, { status: 401 });
-    }
+    // Fail closed: the calling Device is authenticated by its own key; its clinic scopes every write.
+    const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'poct');
 
     if (body.format !== 'hl7' && body.format !== 'astm') {
       return NextResponse.json({ error: "format must be 'hl7' or 'astm'" }, { status: 400 });
@@ -44,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const medplum = await getAdminMedplum();
-    const result = await ingestAnalyserMessage({ format: body.format, message: body.message }, medplum);
+    const result = await ingestAnalyserMessage({ format: body.format, message: body.message }, medplum, device.clinicId);
 
     return NextResponse.json({
       success: true,
@@ -53,6 +48,7 @@ export async function POST(request: NextRequest) {
       message: 'Analyser message received and stored successfully',
     });
   } catch (error: any) {
+    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
     if (error instanceof ForbiddenError || error instanceof ConflictError) {
       return NextResponse.json({ error: error.message }, { status: error instanceof ForbiddenError ? 403 : 409 });
     }

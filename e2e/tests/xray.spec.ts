@@ -2,7 +2,7 @@ import { test, expect, type Page, type APIRequestContext } from '@playwright/tes
 import type { Device, Organization, ServiceRequest } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
-import { PACS_API_KEY } from '../lib/env';
+import { newDeviceKey, bearer } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
 
 // Device requests contain a runtime secret; exclude them from trace artifacts.
@@ -59,8 +59,9 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   const consult = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake X-ray test visit', diagnosis: 'Fake test', procedures: [], prescriptions: [] } });
   expect(consult.ok()).toBeTruthy();
   const { consultationId } = await consult.json();
+  const { key: deviceKey, identifier: keyHash } = newDeviceKey();
   const device = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
-    identifier: [{ system: 'clinic', value: clinicId }],
+    identifier: [{ system: 'clinic', value: clinicId }, keyHash],
     meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
     deviceName: [{ name: `Fake X-ray ${suffix}`, type: 'user-friendly-name' }],
     type: { coding: [{ system: typeSystem, code: 'xray' }] },
@@ -71,7 +72,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   await page.goto(`/patients/${patientId}`);
   await page.getByRole('tab', { name: 'Treatment', exact: true }).click();
   await expect(page.getByRole('region', { name: 'X-ray', exact: true })).toBeVisible();
-  return { m, patientId, patientName: `Xray Fake ${suffix}`, consultationId, clinicId, device, restorePacsModule };
+  return { m, patientId, patientName: `Xray Fake ${suffix}`, consultationId, clinicId, device, deviceKey, restorePacsModule };
 }
 
 test('X-ray offline device cannot be added; auth, clinic and server guard fail closed', async ({ request, page, playwright, baseURL }) => {
@@ -205,21 +206,21 @@ test('Simulated X-ray device study reaches the Lab tab pending card and clears i
       identifier: [{ system: 'clinic', value: f.clinicId! }],
     });
     const rejected = await request.post('/api/imaging/receive/message', {
-      data: { serviceRequestId: plainSr.id, study: { studyUid: `1.2.3.${randomUUID()}`, modality: 'US', numberOfSeries: 1, numberOfInstances: 1, series: [] }, apiKey: PACS_API_KEY },
+      data: { serviceRequestId: plainSr.id, study: { studyUid: `1.2.3.${randomUUID()}`, modality: 'US', numberOfSeries: 1, numberOfInstances: 1, series: [] }, apiKey: f.deviceKey },
     });
     expect(rejected.status()).toBe(400);
 
     const studyUid = `1.2.3.${randomUUID()}`;
     const ingested = await request.post('/api/imaging/receive/message', {
       data: { serviceRequestId: sr.id, study: { studyUid, modality: 'DX', description: 'Chest PA', numberOfSeries: 1, numberOfInstances: 2,
-        series: [{ uid: `${studyUid}.1`, number: 1, modality: 'DX', numberOfInstances: 2 }] }, apiKey: PACS_API_KEY },
+        series: [{ uid: `${studyUid}.1`, number: 1, modality: 'DX', numberOfInstances: 2 }] }, apiKey: f.deviceKey },
     });
     expect(ingested.ok()).toBeTruthy();
     const ingestResult = await ingested.json();
     expect(ingestResult.serviceRequestId).toBe(sr.id);
     const replay = await request.post('/api/imaging/receive/message', {
       data: { serviceRequestId: sr.id, study: { studyUid, modality: 'DX', numberOfSeries: 1, numberOfInstances: 2,
-        series: [{ uid: `${studyUid}.1`, number: 1, modality: 'DX', numberOfInstances: 2 }] }, apiKey: PACS_API_KEY },
+        series: [{ uid: `${studyUid}.1`, number: 1, modality: 'DX', numberOfInstances: 2 }] }, apiKey: f.deviceKey },
     });
     expect(replay.ok()).toBeTruthy();
     expect((await replay.json()).imagingStudyId).toBe(ingestResult.imagingStudyId);
@@ -256,7 +257,7 @@ test('X-ray module disabled after an order exists blocks PATCH/DELETE of that or
     const disable = await setPacsModuleEnabled(f.m, f.clinicId, false);
     try {
       const blockedStudy = await request.post('/api/imaging/receive/message', {
-        data: { serviceRequestId: xrayServiceRequestId, study: { studyUid: `1.2.3.${randomUUID()}`, modality: 'DX', numberOfSeries: 1, numberOfInstances: 1, series: [] }, apiKey: PACS_API_KEY },
+        data: { serviceRequestId: xrayServiceRequestId, study: { studyUid: `1.2.3.${randomUUID()}`, modality: 'DX', numberOfSeries: 1, numberOfInstances: 1, series: [] }, apiKey: f.deviceKey },
       });
       expect(blockedStudy.status()).toBe(403);
       expect((await f.m.readResource('ServiceRequest', xrayServiceRequestId)).status).toBe('active');
@@ -281,6 +282,64 @@ test('X-ray module disabled after an order exists blocks PATCH/DELETE of that or
     const deleteGeneric = await request.delete('/api/imaging/order', { data: { serviceRequestId: genericServiceRequestId } });
     expect(deleteGeneric.ok()).toBeTruthy();
   } finally {
+    await f.m.deleteResource('Device', f.device.id!);
+    await f.restorePacsModule();
+  }
+});
+
+test('Per-device keys: X-ray ingress fails closed without a valid key; a clinic-A key cannot write into a clinic-B order', async ({ request, page }) => {
+  const f = await fixture(request, page, true);
+  const otherClinic = f.clinicId === 'demo' ? 'clinicb' : 'demo';
+  const created: { type: 'Device' | 'ServiceRequest'; id: string }[] = [];
+  const make = async <T extends Device | ServiceRequest>(resource: T) => { const r = await f.m.createResource<T>(resource); created.push({ type: r.resourceType as 'Device', id: r.id! }); return r; };
+  try {
+    const orderIn = (clinic: string, xray: boolean): ServiceRequest => ({ resourceType: 'ServiceRequest', status: 'active', intent: 'order',
+      subject: { reference: `Patient/${f.patientId}` },
+      ...(xray ? { meta: { tag: [{ system: tagSystem, code: 'xray' }] } } : {}),
+      code: { coding: [{ system: 'http://loinc.org', code: xray ? STUDY.code : '24638-9', display: xray ? STUDY.name : 'Pelvis Ultrasound' }] },
+      identifier: [{ system: 'clinic', value: clinic }] });
+    const own = await make(orderIn(f.clinicId, true));
+    const foreignXray = await make(orderIn(otherClinic, true));
+    const foreignPlain = await make(orderIn(otherClinic, false));
+    const study = () => ({ studyUid: `1.2.3.${randomUUID()}`, modality: 'DX', numberOfSeries: 1, numberOfInstances: 1, series: [] });
+    const studiesFor = (id: string) => f.m.searchResources('ImagingStudy', { basedon: `ServiceRequest/${id}` }, { cache: 'no-cache' });
+
+    // No key / malformed / unknown -> 401 on both imaging ingress routes (JSON route no longer fails open).
+    for (const headers of [{}, bearer('not-a-device-key'), bearer(`ucc_dk_${randomUUID()}`)]) {
+      expect((await request.post('/api/imaging/receive', { headers, data: { serviceRequestId: own.id, study: study() } })).status()).toBe(401);
+      expect((await request.post('/api/imaging/receive/message', { headers, data: { serviceRequestId: own.id, study: study() } })).status()).toBe(401);
+    }
+
+    // A clinic-A key cannot write into a clinic-B order on either route.
+    expect((await request.post('/api/imaging/receive/message', { headers: bearer(f.deviceKey), data: { serviceRequestId: foreignXray.id, study: study() } })).status()).toBe(403);
+    expect((await request.post('/api/imaging/receive', { headers: { 'X-Device-Key': f.deviceKey }, data: { serviceRequestId: foreignPlain.id, study: study() } })).status()).toBe(403);
+    expect((await request.post('/api/imaging/receive', { headers: bearer(f.deviceKey), data: { serviceRequestId: foreignXray.id, study: study() } })).status()).toBe(403);
+    for (const sr of [foreignXray, foreignPlain]) {
+      expect(await studiesFor(sr.id!)).toHaveLength(0);
+      expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('active');
+    }
+
+    // A POCT analyser key is the wrong device type for imaging ingress.
+    const analyser = newDeviceKey();
+    await make<Device>({ resourceType: 'Device', status: 'active', identifier: [{ system: 'clinic', value: f.clinicId }, analyser.identifier],
+      meta: { tag: [{ system: 'https://ucc.emr/poct', code: 'simulated' }] }, type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
+    expect((await request.post('/api/imaging/receive/message', { headers: bearer(analyser.key), data: { serviceRequestId: own.id, study: study() } })).status()).toBe(401);
+
+    // Inactive / revoked devices are refused.
+    await f.m.updateResource({ ...f.device, status: 'inactive' as const });
+    expect((await request.post('/api/imaging/receive/message', { headers: bearer(f.deviceKey), data: { serviceRequestId: own.id, study: study() } })).status()).toBe(401);
+    await f.m.updateResource({ ...f.device, status: 'active' as const, identifier: f.device.identifier!.filter((id) => !id.system?.includes('api-key')) });
+    expect((await request.post('/api/imaging/receive/message', { headers: bearer(f.deviceKey), data: { serviceRequestId: own.id, study: study() } })).status()).toBe(401);
+    await f.m.updateResource(f.device);
+    expect(await studiesFor(own.id!)).toHaveLength(0);
+
+    // The device's own clinic works; the clinic identifier is stamped from the Device.
+    const ok = await request.post('/api/imaging/receive', { headers: bearer(f.deviceKey), data: { serviceRequestId: own.id, study: study() } });
+    expect(ok.ok(), await ok.text()).toBeTruthy();
+    const stored = await f.m.readResource('ImagingStudy', (await ok.json()).imagingStudyId);
+    expect(stored.identifier).toContainEqual({ system: 'clinic', value: f.clinicId });
+  } finally {
+    for (const r of created.reverse()) await f.m.deleteResource(r.type, r.id).catch(() => {});
     await f.m.deleteResource('Device', f.device.id!);
     await f.restorePacsModule();
   }

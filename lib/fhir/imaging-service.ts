@@ -30,6 +30,7 @@ import {
   assignResourceToAccountReferences,
   assignResourceToClinicTenant,
   getResourceAccountReferences,
+  assertOrderInDeviceClinic,
   getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
@@ -207,7 +208,8 @@ export async function createImagingOrder(
 export async function receiveImagingStudy(
   serviceRequestId: string,
   studyData: ImagingStudyData,
-  medplum: MedplumClient
+  medplum: MedplumClient,
+  deviceClinicId: string
 ): Promise<string> {
   const client = medplum;
   
@@ -217,6 +219,8 @@ export async function receiveImagingStudy(
   const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
     cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
   });
+  // Never write a study into another clinic's order: the clinic comes from the authenticated Device.
+  await assertOrderInDeviceClinic(client, serviceRequest, deviceClinicId);
   const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
@@ -227,6 +231,7 @@ export async function receiveImagingStudy(
   const imagingStudy = await validateAndCreate<ImagingStudy>(client, {
     resourceType: 'ImagingStudy',
     identifier: [
+      { system: CLINIC_IDENTIFIER_SYSTEM, value: deviceClinicId },
       ...(studyData.accessionNumber ? [{
         system: 'accession',
         value: studyData.accessionNumber,

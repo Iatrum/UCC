@@ -10,27 +10,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { receiveImagingStudy, type ImagingStudyData } from '@/lib/fhir/imaging-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
+import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
 
 interface ReceiveImagingStudyRequest {
   serviceRequestId: string;
   study: ImagingStudyData;
-  apiKey?: string; // For authentication from external PACS
+  apiKey?: string; // Per-device key (prefer the `Authorization: Bearer` / `X-Device-Key` header)
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: ReceiveImagingStudyRequest = await request.json();
 
-    // Validate API key if provided (optional - implement your own auth)
-    const expectedApiKey = process.env.PACS_API_KEY;
-    if (expectedApiKey && body.apiKey !== expectedApiKey) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Invalid API key' },
-        { status: 401 }
-      );
-    }
+    // Fail closed: the calling X-ray Device is authenticated by its own key; its clinic scopes every write.
+    const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'pacs');
 
     // Validate required fields
     if (!body.serviceRequestId) {
@@ -59,7 +55,8 @@ export async function POST(request: NextRequest) {
     const studyId = await receiveImagingStudy(
       body.serviceRequestId,
       body.study,
-      medplum
+      medplum,
+      device.clinicId
     );
 
     return NextResponse.json({
@@ -69,6 +66,8 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
+    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
+    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
     console.error('Error receiving imaging study:', error);
     
     return NextResponse.json(
@@ -87,7 +86,7 @@ curl -X POST http://localhost:3000/api/imaging/receive \
   -H "Content-Type: application/json" \
   -d '{
     "serviceRequestId": "service-request-456",
-    "apiKey": "your-api-key",
+    "apiKey": "<per-device key>",
     "study": {
       "studyUid": "1.2.840.113619.2.55.3.2831196886.123.1234567890",
       "accessionNumber": "ACC-2024-001",

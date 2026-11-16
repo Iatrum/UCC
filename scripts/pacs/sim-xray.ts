@@ -12,8 +12,12 @@
  * like the ones the composer/Lab tab already expect. Only allowed outside
  * production, in the same fake demo clinics as POCT's simulated analysers.
  *
+ * Ingress is authenticated per Device: issue a key for the Device, keep it OUTSIDE git (e.g. e2e/.secrets/),
+ * and pass it with --key-file <path> or the UCC_DEVICE_KEY env var when sending. The key is never printed.
+ *
  * Usage:
  *   bun scripts/pacs/sim-xray.ts device <clinicId> [--name "Fake X-ray"]
+ *   bun scripts/pacs/sim-xray.ts issue-key <deviceId> --key-file <path>   # per-device key; hash stored on the Device, plaintext only in <path> (0600)
  *   bun scripts/pacs/sim-xray.ts heartbeat <deviceId> [--once] [--offline] [--interval 30000]
  *   bun scripts/pacs/sim-xray.ts send-study <serviceRequestId> --study-uid <uid> \
  *     [--modality DX] [--description "Chest PA"] [--series 1] [--instances 2] \
@@ -22,6 +26,8 @@
 
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { XRAY_TYPE_SYSTEM, XRAY_PROPERTY_SYSTEM, XRAY_TAG_SYSTEM, XRAY_HEARTBEAT_MAX_AGE } from '@/lib/fhir/xray-device';
+import { issueDeviceKey } from '@/lib/fhir/device-keys';
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { Device } from '@medplum/fhirtypes';
 import type { ImagingStudyData } from '@/lib/fhir/imaging-constants';
 
@@ -128,12 +134,26 @@ async function cmdSendStudy(serviceRequestId: string, flags: Record<string, stri
   const url = `${baseUrl || process.env.UCC_BASE_URL || 'http://localhost:3210'}/api/imaging/receive/message`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ serviceRequestId, study, apiKey: process.env.PACS_API_KEY }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${loadDeviceKey(flags['key-file'])}` },
+    body: JSON.stringify({ serviceRequestId, study }),
   });
   const body = await response.json();
   if (!response.ok) throw new Error(`send-study failed (${response.status}): ${JSON.stringify(body)}`);
   console.log(`Sent study for ServiceRequest/${serviceRequestId}:`, body);
+}
+
+async function cmdIssueKey(deviceId: string, flags: Record<string, string>) {
+  const keyFile = flags['key-file'];
+  if (!deviceId || !keyFile || keyFile === 'true') throw new Error('issue-key requires <deviceId> and --key-file <path> (the key is never printed)');
+  const key = await issueDeviceKey(deviceId);
+  writeFileSync(keyFile, `${key}\n`, { mode: 0o600 });
+  console.log(`Issued a new API key for Device/${deviceId}; written to ${keyFile} (previous key, if any, is now invalid)`);
+}
+
+function loadDeviceKey(keyFile?: string): string {
+  const key = keyFile ? readFileSync(keyFile, 'utf8').trim() : process.env.UCC_DEVICE_KEY;
+  if (!key) throw new Error('Device API key required: pass --key-file <path> or set UCC_DEVICE_KEY');
+  return key;
 }
 
 async function main() {
@@ -144,6 +164,9 @@ async function main() {
     case 'device':
       await cmdDevice(positional[0], flags.name);
       break;
+    case 'issue-key':
+      await cmdIssueKey(positional[0], flags);
+      break;
     case 'heartbeat':
       await cmdHeartbeat(positional[0], flags);
       break;
@@ -151,7 +174,7 @@ async function main() {
       await cmdSendStudy(positional[0], flags);
       break;
     default:
-      console.error('Usage: sim-xray.ts <device|heartbeat|send-study> ...');
+      console.error('Usage: sim-xray.ts <device|issue-key|heartbeat|send-study> ...');
       process.exit(1);
   }
 }

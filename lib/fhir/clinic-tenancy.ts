@@ -2,6 +2,7 @@ import { OperationOutcomeError, forbidden, isNotFound, isGone } from "@medplum/c
 import type { HealthcareService, Organization, Parameters, Patient, Reference } from "@medplum/fhirtypes";
 import type { MedplumClient } from "@medplum/core";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
+import { ForbiddenError } from "@/lib/server/route-helpers";
 
 export const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 
@@ -268,6 +269,28 @@ export async function assertOrderClinic(
     const encounter = await read('Encounter', encounterId) as import('@medplum/fhirtypes').Encounter;
     if (!belongs(encounter) || encounter.subject?.reference !== `Patient/${patientId}`) {
       throw new OperationOutcomeError(forbidden);
+    }
+  }
+}
+
+/**
+ * Device ingress guard: the order must belong to the authenticated device's clinic. Checks the clinic
+ * identifier and, when the order carries `meta.accounts` (read with `X-Medplum: extended`), that every
+ * account is the device clinic's tenant account. The device's clinic comes from the authenticated Device.
+ */
+export async function assertOrderInDeviceClinic(
+  medplum: MedplumClient,
+  serviceRequest: { identifier?: { system?: string; value?: string }[]; meta?: Patient["meta"] },
+  deviceClinicId: string
+): Promise<void> {
+  const orderClinic = getClinicIdentifierValue(serviceRequest);
+  if (!deviceClinicId || !orderClinic) throw new ForbiddenError("Order has no clinic identifier");
+  if (orderClinic !== deviceClinicId) throw new ForbiddenError("Order does not belong to this device's clinic");
+  const accounts = getResourceAccountReferences(serviceRequest);
+  if (accounts.length) {
+    const tenant = await resolveClinicTenant(medplum, deviceClinicId);
+    if (!tenant || !accounts.every((account) => account.reference === tenant.accountReference)) {
+      throw new ForbiddenError("Order does not belong to this device's clinic");
     }
   }
 }

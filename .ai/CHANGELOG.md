@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-15 — Task 180: per-device keys for analysers and X-ray devices
+Each analyser or X-ray device now has its own API key (only a hash is stored on the device record). The four result-receiving routes check that key, work out the clinic from the device itself, and refuse to save a result into another clinic's order. Without a valid key they refuse (401), and they also refuse when the clinic has switched the POCT or X-ray module off (403). The shared `POCT_API_KEY`/`PACS_API_KEY` for these routes is gone, so the JSON routes no longer accept unauthenticated calls. The device simulators gained an `issue-key` command that writes the key to a private file instead of printing it. The radiologist-report route is unchanged and logged in the backlog.
+
 ## 2026-11-14 — Task 130: clinic isolation Phase 2 (staff membership migration, local-validated)
 Added a one-membership-at-a-time migration script (`scripts/access-policy/migrate-staff-membership.mjs`) that moves an existing staff login with no access policy onto the clinic staff policy, for exactly the clinics that staff member is assigned to. It is dry-run by default, only talks to local Medplum on :8113, writes a private backup before every change, and can roll back exactly. It refuses anything ambiguous (no clinic role, unknown clinic, already-customised grants) instead of guessing.
 
