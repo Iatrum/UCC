@@ -359,3 +359,15 @@ test('Per-device keys: X-ray ingress fails closed without a valid key; a clinic-
     await f.restorePacsModule();
   }
 });
+
+test('Imaging results API is clinic-scoped: a patient/encounter of another clinic is refused', async ({ request, page }) => {
+  const f = await fixture(request, page, true);
+  const otherClinic = f.clinicId === 'demo' ? 'clinicb' : 'demo';
+  const foreign = await f.m.createResource<import('@medplum/fhirtypes').Patient>({ resourceType: 'Patient', name: [{ given: ['Fake'], family: `Foreign ${randomUUID().slice(0, 6)}` }],
+    identifier: [{ system: 'clinic', value: otherClinic }] });
+  try {
+    expect((await request.get(`/api/imaging/results?patientId=${foreign.id}`)).status()).toBe(403);
+    expect((await request.get(`/api/imaging/results?encounterId=${foreign.id}`)).status()).toBe(403);
+    expect((await request.get(`/api/imaging/results?patientId=${f.patientId}`)).status()).toBe(200);
+  } finally { await f.m.deleteResource('Patient', foreign.id!); await f.m.deleteResource('Device', f.device.id!); await f.restorePacsModule(); }
+});

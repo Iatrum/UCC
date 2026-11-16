@@ -10,6 +10,7 @@ import { getPatientImagingStudies, getEncounterImagingStudies } from '@/lib/fhir
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { gateXrayStudies } from '@/lib/fhir/pacs-link';
+import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Clinic scope: the patient/encounter must belong to the caller's clinic (same check as /api/labs/results).
+    const target = await medplum.searchOne(encounterId ? 'Encounter' : 'Patient', {
+      _id: (encounterId || patientId)!, identifier: `clinic|${clinicId}`,
+    }, { cache: 'no-cache' });
+    if (!target) throw new ForbiddenError('Imaging results unavailable in current clinic');
+
     let studies;
     if (encounterId) {
       studies = await getEncounterImagingStudies(encounterId, medplum);
@@ -41,15 +48,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Error getting imaging studies:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to get imaging studies',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+    return handleRouteError(error, 'imaging/results');
   }
 }
 
