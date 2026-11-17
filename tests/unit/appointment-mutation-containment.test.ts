@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { OperationOutcomeError, gone, notFound, forbidden, type MedplumClient } from '@medplum/core';
 import type { Appointment } from '@medplum/fhirtypes';
 import { deleteAppointment, rescheduleAppointment, updateAppointmentStatus } from '../../lib/fhir/appointment-service';
-import { ForbiddenError, handleRouteError } from '../../lib/server/route-helpers';
+import { ForbiddenError, NotFoundError, handleRouteError } from '../../lib/server/route-helpers';
 
 const clinicId = 'fake-clinic-a';
 const ownIdentifier = { system: 'clinic', value: clinicId };
@@ -18,7 +18,7 @@ const initial: Appointment = {
 
 // Fake server with an unrestricted client: no AccessPolicy can mask a missing service guard.
 // It hides extended accounts unless explicitly requested, like Medplum.
-function fakeServer(overrides: Partial<Appointment> = {}, readError?: Error) {
+function fakeServer(overrides: Partial<Appointment> = {}, readError?: Error, patients: Record<string, any> = { 'fake-patient': { identifier: [ownIdentifier] } }) {
   let stored: Appointment | undefined = structuredClone({ ...initial, ...overrides });
   const reads: { type: string; id: string; options: any }[] = [];
   const writes: { method: string; resource?: Appointment; type?: string; id?: string }[] = [];
@@ -26,6 +26,10 @@ function fakeServer(overrides: Partial<Appointment> = {}, readError?: Error) {
     async readResource(type: string, id: string, options: any) {
       reads.push({ type, id, options });
       if (type === 'Organization') return { resourceType: type, id };
+      if (type === 'Patient') {
+        if (!patients[id]) throw new OperationOutcomeError(notFound);
+        return { resourceType: type, id, ...structuredClone(patients[id]) };
+      }
       if (readError) throw readError;
       if (!stored) throw new OperationOutcomeError(gone);
       const result = structuredClone(stored);
@@ -55,31 +59,51 @@ const cases = [
 ];
 
 for (const c of cases) describe(c.name, () => {
-  for (const [name, overrides, caller] of [
-    ['foreign clinic', { identifier: [foreignIdentifier] }, clinicId],
-    ['missing clinic', {}, ''],
-    ['untagged appointment', { identifier: [] }, clinicId],
-    ['absent identifier and meta', { identifier: undefined, meta: undefined }, clinicId],
-    ['untagged with matching compartment', { identifier: undefined, meta: { compartment: [{ reference: `Organization/${clinicId}` }] } }, clinicId],
-    ['undefined clinic', {}, undefined],
-    ['null clinic', {}, null],
-    ['empty clinic identifier', { identifier: [{ system: 'clinic' }] }, clinicId],
-    ['foreign singular account', { meta: { account: foreignAccount } }, clinicId],
-    ['foreign singular account array', { meta: { account: [foreignAccount] } }, clinicId],
-    ['conflicting clinic identifiers', { identifier: [ownIdentifier, foreignIdentifier] }, clinicId],
-    ['foreign account despite own identifier', { meta: { accounts: [foreignAccount] } }, clinicId],
-    ['mixed accounts despite own identifier', { meta: { accounts: [account, foreignAccount] } }, clinicId],
+  // Task 482 (Task 422 rule): an id the caller cannot prove is its own is indistinguishable from
+  // a missing one => 404. A missing caller clinic is an authorization failure => 403.
+  for (const [name, overrides, caller, expected] of [
+    ['foreign clinic', { identifier: [foreignIdentifier] }, clinicId, 404],
+    ['missing clinic', {}, '', 403],
+    ['untagged appointment', { identifier: [] }, clinicId, 404],
+    ['absent identifier and meta', { identifier: undefined, meta: undefined }, clinicId, 404],
+    ['untagged with matching compartment', { identifier: undefined, meta: { compartment: [{ reference: `Organization/${clinicId}` }] } }, clinicId, 404],
+    ['undefined clinic', {}, undefined, 403],
+    ['null clinic', {}, null, 403],
+    ['empty clinic identifier', { identifier: [{ system: 'clinic' }] }, clinicId, 404],
+    ['foreign singular account', { meta: { account: foreignAccount } }, clinicId, 404],
+    ['foreign singular account array', { meta: { account: [foreignAccount] } }, clinicId, 404],
+    ['conflicting clinic identifiers', { identifier: [ownIdentifier, foreignIdentifier] }, clinicId, 404],
+    ['foreign account despite own identifier', { meta: { accounts: [foreignAccount] } }, clinicId, 404],
+    ['mixed accounts despite own identifier', { meta: { accounts: [account, foreignAccount] } }, clinicId, 404],
   ] as const) {
-    it(`${name} => ForbiddenError / 403 and zero writes`, async () => {
+    it(`${name} => ${expected} and zero writes`, async () => {
       const server = fakeServer(overrides as Partial<Appointment>);
       const before = structuredClone(server.stored());
       let error: unknown;
       try { await c.run(server.client, caller as string); } catch (caught) { error = caught; }
-      expect(error).toBeInstanceOf(ForbiddenError);
-      expect(handleRouteError(error, 'fake appointment containment')).toHaveProperty('status', 403);
+      expect(error).toBeInstanceOf(expected === 404 ? NotFoundError : ForbiddenError);
+      expect(handleRouteError(error, 'fake appointment containment')).toHaveProperty('status', expected);
       expect(server.writes).toHaveLength(0);
       expect(server.stored()).toEqual(before);
       if (!caller) expect(server.reads).toHaveLength(0);
+    });
+  }
+
+  // Own appointment whose stored patient reference is foreign or dangling => 403, zero writes.
+  for (const [name, patients] of [
+    ['foreign patient reference', { 'fake-patient': { identifier: [foreignIdentifier] } }],
+    ['dangling patient reference', {}],
+    ['foreign patient account', { 'fake-patient': { identifier: [ownIdentifier], meta: { accounts: [foreignAccount] } } }],
+  ] as const) {
+    it(`${name} => 403 and zero writes`, async () => {
+      const server = fakeServer({}, undefined, patients as any);
+      const before = structuredClone(server.stored());
+      let error: unknown;
+      try { await c.run(server.client, clinicId); } catch (caught) { error = caught; }
+      expect(error).toBeInstanceOf(OperationOutcomeError);
+      expect(handleRouteError(error, 'fake appointment patient containment')).toHaveProperty('status', 403);
+      expect(server.writes).toHaveLength(0);
+      expect(server.stored()).toEqual(before);
     });
   }
 

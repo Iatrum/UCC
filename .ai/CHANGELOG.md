@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 482: order and appointment changes re-check the clinic before saving
+Cancelling, rescheduling or deleting an appointment, and changing or deleting a lab or imaging order, now explicitly confirm the saved record belongs to the signed-in clinic before anything is written. A record from another clinic (or one that is missing or untagged) now answers "not found" instead of "forbidden", the same as every other record opened by its id, so nothing reveals whether it exists. An appointment whose patient belongs to another clinic is still refused (forbidden). Tests also now pin the order in which the documents delete route checks access before deleting anything, and the "not found" answers from the document, appointment and lab order routes. No screens changed.
+
 ## 2026-11-17 — Task 452: dashboard queue keeps its list while refreshing
 The dashboard queue used to swap the whole list for "Loading queue..." on every refresh (including the 30-second auto refresh), and if you clicked away while it was loading, the interrupted request showed up as a "Failed to load" error. Now "Loading queue..." only appears the first time; later refreshes keep the current list on screen. If a refresh fails, the list stays and the "Queue could not be refreshed" banner appears; the full error panel with Retry only shows when there is no list yet. Requests cancelled by leaving the page (or replaced by a newer refresh) no longer show errors; a real 10-second timeout still does. The same quiet handling applies to Appointments and Billing. Left for Hidayat: the nav label that reads "Login" instead of "Logout" while the session loads (no sidebar/nav changes in this task). Tests: extended `e2e/tests/dashboard-load-errors.spec.ts`.
 
