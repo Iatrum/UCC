@@ -3,7 +3,7 @@ import type { Appointment, Communication, Extension, Organization, Patient } fro
 import { env } from "@/lib/env";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
-import { assertPatientInClinic } from './write-containment';
+import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
 
 const FOLLOW_UP_CATEGORY_SYSTEM = "https://ucc.emr/communication-category";
 const FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM = "https://ucc.emr/follow-up/source";
@@ -392,7 +392,7 @@ export async function createFollowUp(
   const dueAt = followUp.dueDate ? new Date(followUp.dueDate).getTime() : 0;
   const dueNow = !followUp.dueDate || (Number.isFinite(dueAt) && dueAt <= Date.now());
   if (followUp.deliveryMode === "twilio" && dueNow && followUp.patientPhone) {
-    return sendFollowUpWithTwilio(medplum, followUp.id);
+    return sendFollowUpWithTwilio(medplum, followUp.id, input.clinicId);
   }
   return followUp;
 }
@@ -434,9 +434,11 @@ export async function getAllFollowUpsWithOperationalClient(clinicId?: string): P
 export async function updateFollowUpStatus(
   medplum: MedplumClient,
   id: string,
-  status: FollowUpStatus
+  status: FollowUpStatus,
+  clinicId?: string
 ): Promise<FollowUp> {
-  const comm = (await medplum.readResource("Communication", id)) as Communication;
+  const comm = (await medplum.readResource("Communication", id, { cache: "no-cache", headers: { "X-Medplum": "extended" } })) as Communication;
+  assertResourceInClinic(comm, clinicId);
   const updates: Extension[] = [
     {
       url: DELIVERY_STATUS_EXTENSION_URL,
@@ -457,9 +459,11 @@ export async function updateFollowUpStatus(
 
 export async function markFollowUpOpened(
   medplum: MedplumClient,
-  id: string
+  id: string,
+  clinicId?: string
 ): Promise<FollowUp> {
-  const comm = (await medplum.readResource("Communication", id)) as Communication;
+  const comm = (await medplum.readResource("Communication", id, { cache: "no-cache", headers: { "X-Medplum": "extended" } })) as Communication;
+  assertResourceInClinic(comm, clinicId);
   const updates: Extension[] = [
     { url: DELIVERY_STATUS_EXTENSION_URL, valueString: "opened" },
     { url: OPENED_AT_EXTENSION_URL, valueDateTime: new Date().toISOString() },
@@ -509,7 +513,9 @@ export async function updateTwilioDeliveryStatus(
   return mapCommunicationToFollowUp(updated as Communication);
 }
 
-export async function deleteFollowUp(medplum: MedplumClient, id: string): Promise<void> {
+export async function deleteFollowUp(medplum: MedplumClient, id: string, clinicId?: string): Promise<void> {
+  const comm = await medplum.readResource("Communication", id, { cache: "no-cache", headers: { "X-Medplum": "extended" } }) as Communication;
+  assertResourceInClinic(comm, clinicId);
   await medplum.deleteResource("Communication", id);
 }
 
@@ -642,11 +648,13 @@ async function postTwilioMessage(params: {
   return { sid: String(payload.sid || ""), status: String(payload.status || "queued") };
 }
 
-export async function sendFollowUpWithTwilio(medplum: MedplumClient, id: string): Promise<FollowUp> {
-  const comm = await medplum.readResource("Communication", id) as Communication;
+export async function sendFollowUpWithTwilio(medplum: MedplumClient, id: string, clinicId?: string): Promise<FollowUp> {
+  const comm = await medplum.readResource("Communication", id, { cache: "no-cache", headers: { "X-Medplum": "extended" } }) as Communication;
+  assertResourceInClinic(comm, clinicId);
   const followUp = mapCommunicationToFollowUp(comm);
   if (!followUp.patientPhone) throw new Error("Patient phone is required");
-  const settings = await getFollowUpSettings(medplum, followUp.clinicId);
+  // Settings must use the authorized clinic, not a redundant legacy extension.
+  const settings = await getFollowUpSettings(medplum, clinicId);
 
   try {
     const result = await postTwilioMessage({
