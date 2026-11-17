@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Search, Clock, CheckCircle2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
-import { getAllPatients, type Patient } from "@/lib/fhir/patient-client";
+import { getPatientsPage, getPatientStats, searchPatientsPage, type Patient } from "@/lib/fhir/patient-client";
 import {
   Table,
   TableBody,
@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/card";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 
+const PAGE_SIZE = 25;
+
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -37,39 +39,67 @@ export default function PatientsPage() {
   const [error, setError] = useState<string | null>(null);
   const { loading: authLoading } = useMedplumAuth();
 
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState<number | null>(null);
+  const [capped, setCapped] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = searchQuery.trim();
+      setDebouncedQuery((prev) => {
+        if (prev !== next) setPage(1);
+        return next;
+      });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Real clinic-scoped counts (server: _summary=count + _total=accurate)
+  useEffect(() => {
+    if (authLoading) return;
+    getPatientStats()
+      .then((s) => setStats((prev) => ({ ...prev, total: s.total ?? -1, new: s.newThisMonth ?? -1 })))
+      .catch((err) => console.error('Error loading patient stats:', err));
+  }, [authLoading]);
+
   useEffect(() => {
     if (authLoading) {
       return;
     }
 
+    let cancelled = false;
     async function loadPatients() {
       setLoading(true);
       setError(null);
       try {
-        // 🎯 LOAD FROM MEDPLUM (FHIR) - Source of Truth
-        const data = await getAllPatients(200);
-        const activePatients = data.filter((p) => p.active !== false);
-        console.log(`✅ Loaded ${activePatients.length} active patients from Medplum FHIR`);
+        let active: Patient[];
+        if (debouncedQuery) {
+          const res = await searchPatientsPage(debouncedQuery, page, PAGE_SIZE);
+          active = res.patients;
+          setTotal(res.total);
+          setCapped(res.capped);
+        } else {
+          const res = await getPatientsPage(page, PAGE_SIZE);
+          active = res.patients;
+          setTotal(res.total);
+          setCapped(false);
+        }
+        if (cancelled) return;
+        setPatients(active);
 
-        setPatients(activePatients);
-        
         const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
-        
-        setStats({
-          total: activePatients.length,
-          new: activePatients.filter((p) => {
-            const createdAt = p.createdAt ? new Date(p.createdAt) : null;
-            return createdAt && createdAt >= monthStart;
-          }).length,
-          followUps: activePatients.filter((p) => {
+        const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+        setStats((prev) => ({
+          ...prev,
+          followUps: active.filter((p) => {
             const lastVisit = (p as any).lastVisit ? new Date((p as any).lastVisit) : null;
             return lastVisit && lastVisit >= weekStart;
           }).length,
-          inQueue: activePatients.filter((p) => ['arrived', 'waiting', 'in_consultation'].includes((p as any).queueStatus)).length
-        });
+          inQueue: active.filter((p) => ['arrived', 'waiting', 'in_consultation'].includes((p as any).queueStatus)).length,
+        }));
       } catch (err) {
+        if (cancelled) return;
         console.error('Error loading patients from Medplum:', err);
         const message =
           err instanceof Error ? err.message : 'Failed to load patient data from FHIR.';
@@ -79,26 +109,21 @@ export default function PatientsPage() {
             : message
         );
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     loadPatients();
-  }, [authLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, page, debouncedQuery]);
 
-  const filteredPatients = useMemo(() => {
-    if (!searchQuery) {
-      return patients;
-    }
-    const searchLower = searchQuery.toLowerCase();
-    return patients.filter((patient) => {
-      return (
-        (patient.fullName && patient.fullName.toLowerCase().includes(searchLower)) ||
-        (patient.nric && patient.nric.includes(searchQuery)) ||
-        (patient.phone && patient.phone.includes(searchQuery))
-      );
-    });
-  }, [patients, searchQuery]);
+  // Search is server-side; the list is already filtered.
+  const filteredPatients = patients;
+  const totalPages = total != null ? Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), Math.floor(10000 / PAGE_SIZE) + 1) /* Medplum _offset ceiling */ : null;
+  const hasNext = totalPages != null ? page < totalPages : false;
+  const fmt = (n: number) => (n < 0 ? "—" : n.toLocaleString());
 
   return (
     <div className="space-y-6">
@@ -126,8 +151,8 @@ export default function PatientsPage() {
             <UserRound className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">Current active patients</p>
+            <div className="text-2xl font-bold">{fmt(stats.total)}</div>
+            <p className="text-xs text-muted-foreground">Active patients in this clinic</p>
           </CardContent>
         </Card>
         <Card>
@@ -135,7 +160,7 @@ export default function PatientsPage() {
             <CardTitle className="text-sm font-medium">New Patients</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.new}</div>
+            <div className="text-2xl font-bold">{fmt(stats.new)}</div>
             <p className="text-xs text-muted-foreground">This month</p>
           </CardContent>
         </Card>
@@ -249,6 +274,21 @@ export default function PatientsPage() {
                   )}
                 </TableBody>
               </Table>
+              {totalPages != null && (
+                <div className="flex items-center justify-between border-t px-4 py-3 text-sm" data-testid="patients-pagination">
+                  <span className="text-muted-foreground">
+                    Page {page} of {totalPages} · {total?.toLocaleString()}{capped ? "+" : ""} {debouncedQuery ? "matches" : "patients"}{capped ? " — refine your search to narrow results" : ""}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                      Previous
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!hasNext} onClick={() => setPage((p) => p + 1)}>
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
