@@ -30,3 +30,11 @@ export function resolveCheckoutPatientId(
   if (requestedPatientId && requestedPatientId !== own) return null;
   return own;
 }
+
+export const INVOICE_NUMBER_PLACEHOLDER = "Assigned on completion";
+
+/** Invoice number to show: only a saved invoice has one; otherwise a stable placeholder (Task 519). */
+export function displayInvoiceNumber(savedInvoiceNumber: string | null | undefined): string {
+  const cleaned = (savedInvoiceNumber ?? "").trim();
+  return cleaned || INVOICE_NUMBER_PLACEHOLDER;
+}
