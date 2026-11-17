@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 478: patient search covers the whole clinic again (name, NRIC, phone)
+After server paging (Task 434), typing in the Patients search only filtered the page on screen, and phone numbers could not be found. Search now runs on the server across all of the clinic's patients by name, NRIC/IC or phone number, and its results are paged (Previous/Next) like the normal list. Starting a new search goes back to page 1. Only the caller's own clinic is ever searched or returned. Tests: `tests/unit/task478-patient-search.test.ts` (match on page 3, phone and NRIC search, other clinic never appears, no-clinic fails closed). Note: phone search relies on Medplum's `phone:contains`, checked against a fake server only, not live dev Medplum.
+
 ## 2026-11-17 — Task 482: order and appointment changes re-check the clinic before saving
 Cancelling, rescheduling or deleting an appointment, and changing or deleting a lab or imaging order, now explicitly confirm the saved record belongs to the signed-in clinic before anything is written. A record from another clinic (or one that is missing or untagged) now answers "not found" instead of "forbidden", the same as every other record opened by its id, so nothing reveals whether it exists. An appointment whose patient belongs to another clinic is still refused (forbidden). Tests also now pin the order in which the documents delete route checks access before deleting anything, and the "not found" answers from the document, appointment and lab order routes. No screens changed.
 ## 2026-11-17 — Task 474: edits and deletes of documents, referrals, follow-ups and billing tasks are checked against your clinic
@@ -130,6 +133,12 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - Task 357 evidence: real synthetic DICOM-to-OHIF and clinic/study security checks pass; 226 unit tests pass. Trusted Orthanc refresh enables the stored viewer on an existing tagged study with the same UID. Full gate is still HOLD due shared-slot/RAM and fixture failures; updated opt-in low-memory driver/retry/path fixes require one exclusive final run. Nothing deployed to production.
 
+## Task 434 — Patients page shows the real patient count
+- The Patients page used to show "Total Patients 200 / New Patients 200 this month" because it counted only the first 200 patients it had loaded, while Analytics said 300 for the same clinic. Both numbers were just page-size caps.
+- Now the cards show the true number of active patients in *your clinic* (and how many were added this month), asked of Medplum directly (FHIR `_summary=count` + `_total=accurate`). Analytics' "Total patients" uses the same exact count.
+- The patient list is now paged on the server (25 per page, Previous/Next, "Page X of Y"), so patients beyond the first page can be reached. Search is also done on the server (name / NRIC, up to 50 matches) instead of filtering only what was loaded. Search by phone number no longer works in the list.
+- Counts are filtered by the clinic identifier, so other clinics' patients are never counted. Covered by a unit test with four clinics.
+- Not changed: "Follow-ups" and "In Queue" cards still reflect the patients on the current page; Analytics charts still sample the 300 most recent patients.
 - Task 358: stock is auto-deducted at checkout (no dispense step). `lib/fhir/dispense-service.ts` writes one clinic-scoped `MedicationDispense` per visit+medication in the same FHIR transaction as the `Medication` stock change (If-Match), idempotent by recorded quantity, reversed on invoice void/delete, negative stock allowed and flagged in the Items table. `MedicationDispense` added to the clinic staff AccessPolicy (re-run `scripts/setup-access-policies.ts` per environment). Notes: `.ai/research/task358-dispense-checkout.md`.
 
 - Task 410: checkout no longer adopts a newer invoice version written by a concurrent checkout (only the clinic-assignment bump is accepted) and first-time invoice creation is an idempotent conditional create per visit. Notes: `.ai/research/task410-checkout-races.md`.

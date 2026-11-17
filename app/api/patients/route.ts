@@ -10,7 +10,11 @@ import {
   savePatientToMedplumWithAdmin,
   getPatientFromMedplum,
   getAllPatientsFromMedplum,
+  getPatientsPageFromMedplum,
+  countPatientsInMedplum,
+  countNewPatientsThisMonth,
   searchPatientsInMedplum,
+  searchPatientsPageInMedplum,
   updatePatientInMedplum,
   archivePatientInMedplum,
 } from '@/lib/fhir/patient-service';
@@ -69,12 +73,42 @@ export async function GET(request: NextRequest) {
 
     // Search patients
     if (searchQuery) {
+      if (searchParams.get('page')) {
+        const result = await searchPatientsPageInMedplum(
+          searchQuery,
+          parseInt(searchParams.get('page') || '1', 10),
+          parseInt(searchParams.get('pageSize') || '25', 10),
+          clinicId,
+          medplum
+        );
+        return NextResponse.json({ success: true, count: result.patients.length, ...result });
+      }
       const patients = await searchPatientsInMedplum(searchQuery, clinicId, medplum);
       return NextResponse.json({
         success: true,
         count: patients.length,
         patients,
       });
+    }
+
+    // Clinic-scoped real counts (not capped by page size)
+    if (searchParams.get('stats') === '1') {
+      const [total, newThisMonth] = await Promise.all([
+        countPatientsInMedplum(clinicId, medplum),
+        countNewPatientsThisMonth(clinicId, medplum),
+      ]);
+      return NextResponse.json({ success: true, total, newThisMonth });
+    }
+
+    // Server-side pagination
+    if (searchParams.get('page')) {
+      const result = await getPatientsPageFromMedplum(
+        parseInt(searchParams.get('page') || '1', 10),
+        parseInt(searchParams.get('pageSize') || '25', 10),
+        clinicId,
+        medplum
+      );
+      return NextResponse.json({ success: true, count: result.patients.length, ...result });
     }
 
     // Get all patients
