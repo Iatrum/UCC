@@ -10,7 +10,7 @@ type PatientLike = {
 /** Pure aggregation for the Analytics page (moved verbatim from the page in Task 502). */
 export function computeAnalytics(
   patients: PatientLike[],
-  consultations: Pick<SavedConsultation, "patientId" | "date" | "diagnosis" | "prescriptions" | "procedures">[],
+  consultations: Pick<SavedConsultation, "patientId" | "date" | "diagnosis" | "prescriptions" | "procedures" | "billingItems">[],
   exactTotal: number | null,
   now: Date = new Date()
 ) {
@@ -21,12 +21,16 @@ export function computeAnalytics(
   thisMonth.setDate(1);
   const consultationsThisMonth = consultations.filter(c => c.date && new Date(c.date) >= thisMonth).length;
 
-  // Revenue (sum of prices from prescriptions + procedures)
-  const sumItems = (arr?: Array<{ price?: number }>) => (arr || []).reduce((s, it) => s + (it?.price ?? 0), 0);
-  const revenueAllTime = consultations.reduce((s, c) => s + sumItems(c.prescriptions) + sumItems(c.procedures), 0);
+  // Revenue: order prices are UNIT prices (ORDER_PRICE_EXTENSION_URL "unit-price"), so a line is price x quantity
+  // (default 1), the same way checkout totals it. Lab/imaging lines live in billingItems (Task 558).
+  const lineTotal = (it?: { price?: number; quantity?: number }) => (it?.price ?? 0) * (it?.quantity ?? 1);
+  const sumItems = (arr?: Array<{ price?: number; quantity?: number }>) => (arr || []).reduce((s, it) => s + lineTotal(it), 0);
+  const consultationRevenue = (c: { prescriptions?: any[]; procedures?: any[]; billingItems?: any[] }) =>
+    sumItems(c.prescriptions) + sumItems(c.procedures) + sumItems(c.billingItems);
+  const revenueAllTime = consultations.reduce((s, c) => s + consultationRevenue(c), 0);
   const revenueThisMonth = consultations
     .filter(c => c.date && new Date(c.date) >= thisMonth)
-    .reduce((s, c) => s + sumItems(c.prescriptions) + sumItems(c.procedures), 0);
+    .reduce((s, c) => s + consultationRevenue(c), 0);
 
   // Compute wait time from queueAddedAt -> first consultation date per patient (if available)
   const waitTimes: number[] = patients
@@ -89,7 +93,7 @@ export function computeAnalytics(
   const revenueMonthly = months.map(({ name, year, month }) => {
     const monthlyRevenue = consultations
       .filter(c => c.date && new Date(c.date).getFullYear() === year && new Date(c.date).getMonth() === month)
-      .reduce((s, c) => s + sumItems(c.prescriptions) + sumItems(c.procedures), 0);
+      .reduce((s, c) => s + consultationRevenue(c), 0);
     return { name: `${name} ${String(year).slice(2)}`, value: Number(monthlyRevenue.toFixed(2)) };
   });
 

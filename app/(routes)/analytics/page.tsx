@@ -39,10 +39,10 @@ async function AnalyticsBody() {
     countPatientsInMedplum(clinicId, medplum).catch(() => null),
     clinicId ? getClinicConsultationsFromMedplum(clinicId, medplum) : Promise.resolve(null),
   ]);
-  const patientIds = new Set(patients.map((p) => p.id));
+  // Task 558: the batched read is already clinic-scoped (identifier + matchesClinic), so do NOT intersect it with
+  // the 300 most-recently-updated patients: that dropped every visit of older/archived patients (225 shown vs ~1478).
   const consultations = clinicConsultations
-    ? clinicConsultations.filter((c) => patientIds.has(c.patientId))
-    : (await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, clinicId, medplum)))).flat();
+    ?? (await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, clinicId, medplum)))).flat();
 
   const {
     totalPatients, consultationsThisMonth, avgWait, waitSamples, revenueThisMonth, revenueAllTime,
