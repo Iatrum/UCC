@@ -87,8 +87,8 @@ export function verifyViewerToken(
 }
 
 /**
- * Single-use guard for launch tokens. In-memory (per server process): with several app instances a
- * token could be redeemed once per instance within its 60 s life; see .ai/PLAN-xray-phase3.md.
+ * Per-process single-use guard (fast first check). Cross-instance enforcement is
+ * `consumeLaunchTokenShared` in ./viewer-guard (Medplum conditional create); routes use that one.
  */
 const usedLaunchTokens: Map<string, number> =
   ((globalThis as Record<string, unknown>).__uccPacsUsedLaunch as Map<string, number> | undefined) ??

@@ -170,7 +170,11 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
     };
     await putAsStaff({ ...ownObservation, status: 'amended' }, 200);
     await putAsStaff({ ...ownObservation, subject: observationFor(1).subject }, 403);
-    await putAsStaff({ ...clinics[1].observation, subject: observationFor(0).subject }, 403);
+    // Task 422 status rule: a foreign resource addressed BY ID is invisible to
+    // the caller's AccessPolicy, so Medplum answers 404 exactly as for a read
+    // (see visible() above) and leaks nothing. 403 is for a payload that names a
+    // foreign patient (the line above and the creates below).
+    await putAsStaff({ ...clinics[1].observation, subject: observationFor(0).subject }, 404);
     await postAsStaff({ ...observationFor(0), performer: [{ reference: `Patient/${clinics[1].patient.id}` }] }, 403);
     await postAsStaff({ resourceType: 'Observation', status: 'final', code: { text: 'Fake unattached' }, meta: { accounts: [{reference:`HealthcareService/${clinics[0].account.id}`}] } }, 403);
     // Reproduces Phase 0 exactly. Forged app identifiers and protected metadata
