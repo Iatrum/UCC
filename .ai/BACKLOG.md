@@ -8,6 +8,7 @@
 5. [x] (Task 355, 2026-11-16: now per-device-key auth, Device-derived clinic, 403 cross-clinic, pacs-toggle gated; was) `/api/imaging/report` (radiologist report) still fails open when `PACS_API_KEY` is unset and does no clinic check; it is not device ingress so Task 180 left it. Needs session or per-clinic auth.
 
 - Existing queue pagination limit (found during Task 5 validation): `getTriageQueueForToday` reads only the first 200 date-ascending Encounters, including finished visits. A new checked-in patient can be omitted once today's matches exceed 200. Direct staff reads still succeed. Needs a separate pagination/cap fix; Task 5 leaves application behavior unchanged and backs up/removes only its own accumulated synthetic fixtures before validation. Evidence: `.ai/research/task5-topology.md`.
+- [x] **Task 400 (2026-11-16, follow-up to Task 396 / #264): remaining UPDATE-by-id containment.** Document, billing exception status, communication status/open/send and referral updates read stored ownership and reject foreign/missing clinic context with ForbiddenError (403), zero writes. Own-clinic edits preserved; Task 398 appointment helpers untouched. Unit tests + tsc only per task; research/evidence `.ai/research/task-400.md`. SID-search Twilio callback authentication remains outside this UPDATE-by-id task.
 
 ## Later
 - Access policy ProjectMembership leak (work in `/workspace/iatrum-ucc-ap`)
