@@ -9,8 +9,26 @@ describe("classifyAuthError", () => {
     const e = classifyAuthError(new Error("AUTH_RATE_LIMITED:30: Too many sign-in attempts."));
     expect(e.message.startsWith("AUTH_RATE_LIMITED:30:")).toBe(true);
   });
-  test("raw HTTP 429 is a rate limit", () => {
-    expect(code("Request failed with 429")).toBe("AUTH_RATE_LIMITED");
+  test.each([
+    "Request failed with 429",
+    "Too many requests in unrelated text",
+    "Trace id 14290",
+    "upstream AUTH_RATE_LIMITED:30: mentioned in diagnostics",
+    "AUTH_RATE_LIMITED_EXTRA:30: unrelated code",
+    "AUTH_RATE_LIMITEDNESS: unrelated code",
+  ])("only the exact leading rate-limit code is classified: %s", (message) => {
+    expect(code(message)).toBe("AUTH_UNKNOWN");
+  });
+  test.each([
+    ["AUTH_RATE_LIMITED", 60],
+    ["AUTH_RATE_LIMITED: Too many attempts", 60],
+    ["auth_rate_limited:15: Too many attempts", 15],
+    ["AUTH_RATE_LIMITED:0: Too many attempts", 1],
+    ["AUTH_RATE_LIMITED:999: Too many attempts", 600],
+  ])("rate-limit prefix preserves defaults and retry bounds: %s", (message, seconds) => {
+    expect(classifyAuthError(new Error(String(message))).message).toBe(
+      `AUTH_RATE_LIMITED:${seconds}: Too many sign-in attempts.`
+    );
   });
   test("coded non-rate-limit messages mentioning 429 are not rate limits", () => {
     expect(code("AUTH_CONFIG: upstream said 429 in a trace id")).toBe("AUTH_UNKNOWN");

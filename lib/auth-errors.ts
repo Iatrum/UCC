@@ -10,13 +10,9 @@ export function classifyAuthError(error: unknown): Error {
     error instanceof Error ? error.message : String(error ?? '');
   const lower = msg.toLowerCase();
 
-  // Anchor on the code prefix so e.g. a "429" inside an unrelated message is
-  // not mistaken for a rate limit. HTTP-status / phrase fallbacks stay for raw errors.
+  // Match the complete leading code, never status numbers or phrases in error text.
   const isCoded = /^AUTH_[A-Z_]+/.test(msg);
-  if (
-    lower.startsWith('auth_rate_limited') ||
-    (!isCoded && (/\b429\b/.test(msg) || lower.includes('too many requests')))
-  ) {
+  if (/^AUTH_RATE_LIMITED(?=:|$)/i.test(msg)) {
     const retrySeconds = msg.match(/^AUTH_RATE_LIMITED:(\d+):/i);
     const seconds = retrySeconds ? Math.min(600, Math.max(1, Number(retrySeconds[1]))) : 60;
     return new Error(`AUTH_RATE_LIMITED:${seconds}: Too many sign-in attempts.`);
