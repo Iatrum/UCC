@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fetchWithTimeout } from '../../lib/fetch-with-timeout';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import QueueState from '../../components/dashboard/queue-state';
@@ -46,5 +49,26 @@ describe('Task 480 queue loading -> loaded / error -> retry', () => {
     const flaky = (async () => (n++ === 0 ? new Response('', { status: 401 }) : new Response(JSON.stringify({ patients: [] }), { status: 200 }))) as unknown as typeof fetch;
     expect((await loadQueueOnce(flaky, new AbortController())).ok).toBe(false);
     expect((await loadQueueOnce(flaky, new AbortController())).ok).toBe(true);
+  });
+});
+
+describe('Review 481 follow-ups', () => {
+  test('fetchWithTimeout aborts a hung auth request so the spinner falls through', async () => {
+    const hang = ((_u: string, init: RequestInit) =>
+      new Promise((_r, rej) => init.signal!.addEventListener('abort', () => rej(new Error('abort'))))) as unknown as typeof fetch;
+    await expect(fetchWithTimeout('/api/auth/me', {}, 20, hang)).rejects.toThrow('abort');
+    expect((await fetchWithTimeout('/x', {}, 20, res(200))).status).toBe(200);
+  });
+  test('auth provider uses the timeout for both dashboard auth requests', () => {
+    const src = readFileSync(join(__dirname, '../../lib/auth-medplum.tsx'), 'utf8');
+    expect(src).toContain("fetchWithTimeout('/api/auth/medplum-session'");
+    expect(src).toContain("fetchWithTimeout('/api/auth/me'");
+  });
+  test('dashboard session-ready gate: queue fetch waits for auth and spinner covers it', () => {
+    const src = readFileSync(join(__dirname, '../../app/(routes)/dashboard/page.tsx'), 'utf8');
+    expect(src).toContain('const authReady = !authLoading;');
+    expect(src).toMatch(/if \(!authReady\) return;[\s\S]{0,200}void loadQueue\(\)/);
+    expect(src).toContain('}, [authReady]);');
+    expect(src).toContain('loading={loading || !authReady}');
   });
 });

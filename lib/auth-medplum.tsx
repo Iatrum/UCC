@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { classifyAuthError } from '@/lib/auth-errors';
 import { MedplumClient, type IClientStorage } from '@medplum/core';
@@ -108,8 +109,8 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
 
   const refreshAuthState = async (): Promise<AuthMeResponse> => {
     const [sessionRes, authMeRes] = await Promise.all([
-      fetch('/api/auth/medplum-session', { credentials: 'include' }),
-      fetch('/api/auth/me', { credentials: 'include' }),
+      fetchWithTimeout('/api/auth/medplum-session', { credentials: 'include' }),
+      fetchWithTimeout('/api/auth/me', { credentials: 'include' }),
     ]);
 
     const sessionPayload = sessionRes.ok

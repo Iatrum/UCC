@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 489 (Review 481 follow-up): dashboard sign-in checks time out after 15 seconds
+If the session or profile check hung, the dashboard queue kept spinning. Both auth requests now give up after 15 seconds, so the queue shows its error message with Retry. A unit test also fails if the dashboard stops waiting for the session before loading the queue.
+
 ## 2026-11-17 — Task 480: dashboard queue waits for the session, then loads (or shows Retry)
 Right after check-in the queue could sit on "Loading queue..." on first paint. Cause: the dashboard fired its queue request immediately on mount, racing the session/clinic cookie that the auth provider is still resolving. If that first request failed or hung (session not ready, or the dev server still compiling the route), nothing re-ran it until the 30-second poll. Now the dashboard waits until the session has resolved, then loads the queue (and appointments/billing) automatically; a 401/403 says "Your session is not ready yet. Retry in a moment." with a Retry button, timeouts and network errors show their message plus Retry, so there is never an endless spinner. The list is still kept while refreshing. Left for Hidayat: the nav "Login"/"Logout" flash (no sidebar/nav changes here). Tests: `tests/unit/task480-dashboard-queue.test.ts` (loading, loaded, error, Retry recovery, timeout, abort). No composer, Lab/POCT or navigation change.
 
