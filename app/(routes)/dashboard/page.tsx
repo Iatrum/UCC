@@ -17,6 +17,9 @@ import UpcomingAppointmentsTable, { normalizeAppointmentStatus } from "@/modules
 import type { UpcomingAppointment } from "@/modules/appointments/components/upcoming-appointments-table";
 import BillingTable from "@/components/billing/billing-table";
 import { BillableConsultation } from "@/lib/types";
+import { useMedplumAuth } from "@/lib/auth-medplum";
+import { loadQueueOnce } from "@/lib/dashboard/queue-load";
+import QueueState from "@/components/dashboard/queue-state";
 
 interface RawAppointment {
   id: string;
@@ -33,6 +36,8 @@ export default function Dashboard() {
   const [queue, setQueue] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<UpcomingAppointment[]>([]);
   const [consultations, setConsultations] = useState<BillableConsultation[]>([]);
+  const { loading: authLoading } = useMedplumAuth();
+  const authReady = !authLoading;
   const [loading, setLoading] = useState(true);
   const [apptLoading, setApptLoading] = useState(true);
   const [apptError, setApptError] = useState<string | null>(null);
@@ -53,33 +58,18 @@ export default function Dashboard() {
     const isCurrentRequest = () => mountedRef.current && queueControllerRef.current === controller;
     setLoading(true);
     setError(null);
-    let timedOut = false;
-    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 10000);
-    try {
-      const response = await fetch('/api/queue', { signal: controller.signal });
-      if (!response.ok) throw new Error(`Failed to fetch queue: ${response.statusText}`);
-      const result = await response.json();
-      if (isCurrentRequest() && !controller.signal.aborted) {
-        setQueue(result.patients || []);
-        setQueueLoaded(true);
-      }
-    } catch (err) {
-      if (!isCurrentRequest()) return;
-      // Navigation/reload interrupts the fetch; that is not a real failure.
-      if (unloadingRef.current || (controller.signal.aborted && !timedOut)) return;
-      console.error('Error loading queue:', err);
-      if (timedOut) {
-        setError('Queue is taking too long to load.');
-      } else {
-        setError('Failed to load queue data.');
-      }
-    } finally {
-      clearTimeout(timeoutId);
-      if (isCurrentRequest()) {
-        queueControllerRef.current = null;
-        setLoading(false);
-      }
+    const result = await loadQueueOnce(fetch, controller);
+    if (!isCurrentRequest()) return;
+    queueControllerRef.current = null;
+    if (result.ok) {
+      setQueue(result.patients);
+      setQueueLoaded(true);
+    } else if (result.kind !== 'aborted' && !unloadingRef.current) {
+      // Navigation/reload interrupts the fetch (aborted); that is not a real failure.
+      console.error('Error loading queue:', result.kind);
+      setError(result.message);
     }
+    setLoading(false);
   };
 
   const loadAppointments = async () => {
@@ -130,6 +120,20 @@ export default function Dashboard() {
     const onPageHide = () => { unloadingRef.current = true; };
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('beforeunload', onPageHide);
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onPageHide);
+      queueControllerRef.current?.abort();
+      queueControllerRef.current = null;
+    };
+  }, []);
+
+  // Fetch only once the session has resolved (Task 480). Firing on first paint raced
+  // the session/clinic cookie: the request failed or hung and nothing re-ran it until
+  // the 30s poll. Re-runs automatically when authReady flips to true.
+  useEffect(() => {
+    if (!authReady) return;
     let disposed = false;
     queueMicrotask(() => {
       if (disposed) return;
@@ -140,14 +144,9 @@ export default function Dashboard() {
     const interval = setInterval(loadQueue, 30000);
     return () => {
       disposed = true;
-      mountedRef.current = false;
       clearInterval(interval);
-      window.removeEventListener('pagehide', onPageHide);
-      window.removeEventListener('beforeunload', onPageHide);
-      queueControllerRef.current?.abort();
-      queueControllerRef.current = null;
     };
-  }, []);
+  }, [authReady]);
 
   const upcomingAppointments = useMemo(() => {
     const now = new Date();
@@ -211,23 +210,11 @@ export default function Dashboard() {
               </Button>
             </CardHeader>
             <CardContent>
-              {loading && !queueLoaded ? (
-                <div role="status" aria-live="polite" className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-10 text-center text-sm text-muted-foreground">
-                  Loading queue...
-                </div>
-              ) : error && !queueLoaded ? (
-                <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
-                  <p>{error}</p>
-                  <Button variant="outline" size="sm" onClick={loadQueue} className="gap-2">
-                    <RefreshCw className="h-4 w-4" />
-                    Retry
-                  </Button>
-                </div>
-              ) : (
+              <QueueState loading={loading || !authReady} loaded={queueLoaded} error={error} onRetry={loadQueue}>
                 <div className="overflow-hidden rounded-2xl border border-slate-200/80">
                   <QueueTable patients={queue} onQueueUpdate={loadQueue} />
                 </div>
-              )}
+              </QueueState>
             </CardContent>
           </Card>
         </TabsContent>
