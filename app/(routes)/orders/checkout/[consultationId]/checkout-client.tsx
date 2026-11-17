@@ -1,5 +1,13 @@
 "use client";
 
+import { checkoutSubtotal, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
+import {
+  buildStockNotice,
+  CHECKOUT_NOTICE_STORAGE_KEY,
+  computeLineStock,
+  type LineStock,
+  type StockCatalogItem,
+} from "@/lib/billing/checkout-stock";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -460,13 +468,15 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const [printingDocument, setPrintingDocument] = useState(false);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [confirmComplete, setConfirmComplete] = useState(false);
+  const [effectivePatientId, setEffectivePatientId] = useState(patientId);
+  const [stockCatalog, setStockCatalog] = useState<StockCatalogItem[]>([]);
 
   useEffect(() => {
     let active = true;
 
     async function loadDetails() {
-      if (!consultationId || !patientId) {
-        setError("Missing checkout patient or consultation reference.");
+      if (!consultationId) {
+        setError("Missing checkout consultation reference.");
         setLoading(false);
         return;
       }
@@ -475,28 +485,37 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       setError(null);
 
       try {
-        const [orderResponse, invoiceResponse, draftResponse] = await Promise.all([
-          fetch(
-            `/api/orders?consultationId=${encodeURIComponent(consultationId)}&patientId=${encodeURIComponent(patientId)}`
-          ),
+        // The patient comes from the consultation (clinic-scoped on the server),
+        // so the link works without ?patientId=.
+        const orderResponse = await fetch(
+          `/api/orders?consultationId=${encodeURIComponent(consultationId)}${
+            patientId ? `&patientId=${encodeURIComponent(patientId)}` : ""
+          }`
+        );
+        const payload = await orderResponse.json().catch(() => ({}));
+        if (!orderResponse.ok || !payload.patient || !payload.consultation) {
+          throw new Error(
+            orderResponse.status === 404
+              ? "Consultation not found."
+              : payload.error || "Failed to load checkout details."
+          );
+        }
+        const resolvedPatientId = String(payload.consultation.patientId || payload.patient.id || patientId);
+        const [invoiceResponse, draftResponse] = await Promise.all([
           fetch(
             `/api/billing?consultationId=${encodeURIComponent(consultationId)}&previewNumber=true`,
             { cache: "no-store" }
           ),
           fetch(
-            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${patientId}-${consultationId}`)}&patientId=${encodeURIComponent(patientId)}&consultationId=${encodeURIComponent(consultationId)}`,
+            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${resolvedPatientId}-${consultationId}`)}&patientId=${encodeURIComponent(resolvedPatientId)}&consultationId=${encodeURIComponent(consultationId)}`,
             { cache: "no-store" }
           ),
         ]);
-        const payload = await orderResponse.json().catch(() => ({}));
         const invoicePayload = await invoiceResponse.json().catch(() => ({}));
         const draftPayload = await draftResponse.json().catch(() => ({}));
 
-        if (!orderResponse.ok || !payload.patient || !payload.consultation) {
-          throw new Error(payload.error || "Failed to load checkout details.");
-        }
-
         if (active) {
+          setEffectivePatientId(resolvedPatientId);
           setDetails({
             patient: payload.patient,
             consultation: payload.consultation,
@@ -526,6 +545,29 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     };
   }, [consultationId, patientId]);
 
+  // Read-only stock preview (Task 504). Best effort: checkout works without it.
+  useEffect(() => {
+    let active = true;
+    fetch("/api/inventory", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!active || !Array.isArray(payload?.medications)) return;
+        setStockCatalog(
+          payload.medications.map((m: { id: string; name: string; strengths?: string[]; stock?: number; unit?: string }) => ({
+            id: String(m.id),
+            name: String(m.name ?? ""),
+            strengths: Array.isArray(m.strengths) ? m.strengths : [],
+            stock: Number(m.stock) || 0,
+            unit: m.unit,
+          }))
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     let active = true;
     fetchOrganizationDetails().then((info) => {
@@ -543,11 +585,15 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     },
     [details?.consultation, details?.draftEntries]
   );
-  const subtotal = checkoutItems.reduce((total, item) => total + item.quantity * item.price, 0);
+  const stockByLine = useMemo(() => computeLineStock(checkoutItems, stockCatalog), [checkoutItems, stockCatalog]);
+  const lowStockNames = checkoutItems.filter((item) => stockByLine.get(item.id)?.low).map((item) => item.name);
+  const stockItemCount = checkoutItems.filter((item) => item.type === "Item" && item.quantity > 0).length;
+  const subtotal = checkoutSubtotal(checkoutItems);
+  const billable = hasBillableItems(checkoutItems);
   const paid = Number.parseFloat(paidAmount) || 0;
   const balance = subtotal - paid;
   const handleCompleteVisitation = async () => {
-    if (!details || completing || balance > 0) return;
+    if (!details || completing || balance > 0 || !billable) return;
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
@@ -560,7 +606,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           consultationId,
-          patientId,
+          patientId: effectivePatientId,
           items: checkoutItems,
           paymentMethod,
           paidAmount: paid,
@@ -574,6 +620,12 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         throw new Error(payload.error || "Failed to complete checkout.");
       }
 
+      const notice = buildStockNotice(payload);
+      try {
+        if (notice) window.sessionStorage.setItem(CHECKOUT_NOTICE_STORAGE_KEY, JSON.stringify(notice));
+      } catch {
+        // storage unavailable: the invoice is saved either way
+      }
       const params = new URLSearchParams({ checkout: "completed" });
       if (payload.invoiceId) params.set("invoiceId", payload.invoiceId);
       if (payload.invoiceNumber) params.set("invoiceNumber", payload.invoiceNumber);
@@ -753,8 +805,9 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
             <CardContent className="pt-6">
               <div className="mb-4 grid gap-3 rounded-md border bg-muted/20 px-4 py-3 text-sm sm:grid-cols-2">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Invoice No.</p>
+                  <p className="text-xs font-medium text-muted-foreground">Preview number</p>
                   <p className="mt-1 font-semibold">{invoiceNumber || "Generating..."}</p>
+                  <p className="text-xs text-muted-foreground">Confirmed when the invoice is saved.</p>
                 </div>
                 <div className="sm:text-right">
                   <p className="text-xs font-medium text-muted-foreground">Date</p>
@@ -770,10 +823,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
                   <TabsTrigger value="documents">Documents</TabsTrigger>
                 </TabsList>
                 <TabsContent value="all">
-                  <TreatmentRows items={checkoutItems} />
+                  <TreatmentRows items={checkoutItems} stockByLine={stockByLine} />
                 </TabsContent>
                 <TabsContent value="items">
-                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "items")} emptyText="No items added." />
+                  <TreatmentRows items={checkoutItems.filter((item) => item.category === "items")} emptyText="No items added." stockByLine={stockByLine} />
                 </TabsContent>
                 <TabsContent value="services">
                   <TreatmentRows items={checkoutItems.filter((item) => item.category === "services")} emptyText="No services added." />
@@ -892,24 +945,55 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
                   <span>{completionError}</span>
                 </div>
               ) : null}
-              <Button
-                variant="outline"
-                className="w-full"
-                type="button"
-                onClick={() => setCompletionError("e-Invoice submission is not connected yet. Complete visitation records this checkout invoice.")}
+              <span
+                className="block"
+                title="e-Invoice submission is not available yet. Complete visitation saves the invoice."
               >
-                <FileText className="mr-2 h-4 w-4" />
-                Submit e-Invoice
-              </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  type="button"
+                  disabled
+                  aria-describedby="e-invoice-unavailable"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Submit e-Invoice
+                </Button>
+              </span>
+              <p id="e-invoice-unavailable" className="text-xs text-muted-foreground">
+                e-Invoice is not available yet.
+              </p>
+              {lowStockNames.length > 0 ? (
+                <div
+                  role="status"
+                  data-testid="low-stock-warning"
+                  className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Stock is below the billed quantity for {lowStockNames.join(", ")}. You can still complete; stock will go negative.
+                  </span>
+                </div>
+              ) : null}
               <Button
                 className="w-full"
-                disabled={balance > 0 || completing || checkoutItems.length === 0}
+                disabled={balance > 0 || completing || !billable}
                 onClick={() => setConfirmComplete(true)}
               >
                 <CheckCircle2 className="mr-2 h-4 w-4" />
                 {completing ? "Completing..." : "Complete visitation"}
               </Button>
-              {balance > 0 ? (
+              {!billable ? (
+                <div
+                  role="alert"
+                  data-testid="no-billable-items-warning"
+                  className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{NO_BILLABLE_ITEMS_MESSAGE}</span>
+                </div>
+              ) : null}
+              {billable && balance > 0 ? (
                 <p className="text-xs text-muted-foreground">
                   Collect the full total to enable completion.
                 </p>
@@ -924,7 +1008,10 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           <AlertDialogHeader>
             <AlertDialogTitle>Complete Visitation</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to complete this visitation? This action is irreversible and cannot be undone.
+              {stockItemCount > 0
+                ? `This saves the invoice and deducts stock for ${stockItemCount} item${stockItemCount === 1 ? "" : "s"}.`
+                : "This saves the invoice."}{" "}
+              Continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1013,10 +1100,12 @@ function TreatmentRows({
   items,
   emptyText = "No billable items added.",
   onPreviewDocument,
+  stockByLine,
 }: {
   items: CheckoutItem[];
   emptyText?: string;
   onPreviewDocument?: (item: CheckoutItem) => void;
+  stockByLine?: Map<string, LineStock>;
 }) {
   if (items.length === 0) {
     return <EmptyPanel text={emptyText} />;
@@ -1051,6 +1140,7 @@ function TreatmentRows({
             {item.description ? (
               <p className="mt-1 truncate text-xs text-muted-foreground">{item.description}</p>
             ) : null}
+            <StockHint stock={stockByLine?.get(item.id)} quantity={item.quantity} />
           </div>
           <span className="text-right">{item.quantity}</span>
           <span className="text-right font-medium">{currency(item.quantity * item.price)}</span>
@@ -1175,5 +1265,28 @@ function EmptyPanel({ text }: { text: string }) {
     <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
       {text}
     </div>
+  );
+}
+
+function StockHint({ stock, quantity }: { stock?: LineStock; quantity: number }) {
+  if (!stock) return null;
+  if (stock.match !== "matched") {
+    return (
+      <p className="mt-1 text-xs text-amber-700" data-testid="stock-hint">
+        {stock.match === "ambiguous"
+          ? "Matches several stock items: stock will not be deducted."
+          : "Not in inventory: stock will not be deducted."}
+      </p>
+    );
+  }
+  const unit = stock.unit || "units";
+  return (
+    <p
+      className={`mt-1 text-xs ${stock.low ? "font-medium text-amber-700" : "text-muted-foreground"}`}
+      data-testid="stock-hint"
+    >
+      {quantity} {unit} · stock {stock.onHand}
+      {stock.low ? ` (below billed ${stock.needed})` : ""}
+    </p>
   );
 }

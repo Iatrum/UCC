@@ -122,3 +122,27 @@ export async function assertStoredResourceInClinic(
     if (!tenant || accounts.some(account => account.reference !== tenant.accountReference)) throw notFound();
   }
 }
+
+/**
+ * Task 504: before a checkout writes anything, prove the posted consultation is this clinic's AND
+ * belongs to the posted patient. Task 422 status rule: a missing, foreign, untagged or
+ * patient-mismatched consultation is indistinguishable from a missing one => NotFoundError (404);
+ * a caller with no clinic context => ForbiddenError (403). Reads only; throws before any write.
+ */
+export async function assertCheckoutConsultationPatient(
+  medplum: MedplumClient,
+  clinicId: string | undefined | null,
+  consultationId: string,
+  patientId: string
+): Promise<void> {
+  if (!clinicId) throw new ForbiddenError('Clinic context is required.');
+  const notFound = () => new NotFoundError('Consultation not found.');
+  let ownerPatientId: string;
+  try {
+    ownerPatientId = await assertEncounterInClinic(medplum, clinicId, consultationId);
+  } catch (error) {
+    if (error instanceof OperationOutcomeError) throw notFound();
+    throw error;
+  }
+  if (ownerPatientId !== patientId) throw notFound();
+}
