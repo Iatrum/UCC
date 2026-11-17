@@ -45,6 +45,8 @@ describe("analytics exact age/gender + dispense window", () => {
     const has = (bd: string[]) => gendered.some((p) => p.gender === "male" && JSON.stringify(p.birthdate) === JSON.stringify(bd));
     expect(has(["gt2008-11-17"])).toBe(true);
     expect(has(["le1961-11-17"])).toBe(true);
+    expect(has(["gt1986-11-17", "le2008-11-17"])).toBe(true); // 18-39
+    expect(has(["gt1961-11-17", "le1986-11-17"])).toBe(true); // 40-64
   });
 
   it("filters most-dispensed by whenhandedover, not _lastUpdated", async () => {
