@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 430: dashboard Billing and Appointments tabs show loading and errors
+The dashboard Billing tab used to say "No billable consultations found" when the billable list failed to load (and while it was still loading), even though /orders listed a billable patient. It now shows "Loading billable consultations..." while fetching, and "Failed to load billable consultations." with a Retry button if the request fails; the empty text only appears after a successful fetch that returned nothing. The dashboard Appointments tab got the same treatment ("Failed to load appointments." + Retry). Same pattern as the queue. No composer, sidebar or navigation change. Test: `e2e/tests/dashboard-load-errors.spec.ts` (mocked failure, then Retry shows the list).
+
 ## 2026-11-16 — Task 385: network lockdown + staging plan (docs only)
 A step-by-step runbook for Hidayat to close the production server (firewall, SSH, optional Tailscale, Docker port check, Traefik hygiene) with rollback at every step, plus a plan for a fake-data staging environment and dev → staging → prod promotion. Key finding: ufw does not protect Docker-published ports, so the plan verifies from outside. Staging does not fit in RAM next to dev and production; time-box it or use a second small server. Nothing on the VPS was changed.
 

@@ -34,7 +34,10 @@ export default function Dashboard() {
   const [appointments, setAppointments] = useState<UpcomingAppointment[]>([]);
   const [consultations, setConsultations] = useState<BillableConsultation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [apptLoading, setApptLoading] = useState(false);
+  const [apptLoading, setApptLoading] = useState(true);
+  const [apptError, setApptError] = useState<string | null>(null);
+  const [consultationsLoading, setConsultationsLoading] = useState(true);
+  const [consultationsError, setConsultationsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
   const queueControllerRef = useRef<AbortController | null>(null);
@@ -75,6 +78,7 @@ export default function Dashboard() {
 
   const loadAppointments = async () => {
     setApptLoading(true);
+    setApptError(null);
     try {
       const response = await fetch('/api/appointments');
       if (!response.ok) throw new Error(`Failed to fetch appointments`);
@@ -92,12 +96,15 @@ export default function Dashboard() {
       setAppointments(mapped);
     } catch (err) {
       console.error('Error loading appointments:', err);
+      if (mountedRef.current) setApptError('Failed to load appointments.');
     } finally {
-      setApptLoading(false);
+      if (mountedRef.current) setApptLoading(false);
     }
   };
 
   const loadConsultations = async () => {
+    setConsultationsLoading(true);
+    setConsultationsError(null);
     try {
       const response = await fetch('/api/orders/billable');
       if (!response.ok) throw new Error('Failed to fetch consultations');
@@ -105,6 +112,9 @@ export default function Dashboard() {
       setConsultations(result.consultations || []);
     } catch (err) {
       console.error('Error loading consultations:', err);
+      if (mountedRef.current) setConsultationsError('Failed to load billable consultations.');
+    } finally {
+      if (mountedRef.current) setConsultationsLoading(false);
     }
   };
 
@@ -225,6 +235,7 @@ export default function Dashboard() {
               <UpcomingAppointmentsTable
                 appointments={upcomingAppointments}
                 loading={apptLoading}
+                error={apptError}
                 onRefresh={loadAppointments}
               />
             </CardContent>
@@ -243,7 +254,12 @@ export default function Dashboard() {
               </Button>
             </CardHeader>
             <CardContent>
-              <BillingTable consultations={consultations} />
+              <BillingTable
+                consultations={consultations}
+                loading={consultationsLoading}
+                error={consultationsError}
+                onRetry={loadConsultations}
+              />
             </CardContent>
           </Card>
         </TabsContent>
