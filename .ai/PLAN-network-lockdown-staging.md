@@ -279,8 +279,26 @@ Prod rollback: Vercel → promote the previous deployment (instant); Medplum →
 1. [x] (repo files, Task 525; never started, server bring-up untested) **385a** staging compose + `.env.staging.example` (no secrets) + start/stop scripts with the memory limits and the stop condition. Mirrors `infra/pacs-dev/`. Files: `infra/staging/`, `.env.staging.example`, `scripts/staging/`, checklist `.ai/PLAN-staging-promotion-checklist.md`.
 2. [x] (repo files + unit test, Task 525; the empty staging DB bootstrap was automated in Task 533: `scripts/staging/bootstrap.ts`, run by `bun run staging:seed`, idempotent, refuses non-staging clients; untested against a real staging server) **385b** safe-target preflight (positive allowlist of staging hosts/projects, fails closed on anything else) and a staging seed runner. Do not weaken the localhost guards in existing seed/admin spec.
 3. [x] (repo side, Task 533; unit-tested, never run against a real staging stack) **385c** staging gate adapter for `check-all.sh` with baseline identity check (Task 8: `compare.mjs` used to accept a missing baseline). Now: `e2e/scripts/check-staging.sh <label> <baseline>` runs the preflight, requires a baseline with an identity sidecar (`node e2e/scripts/lib/baseline.mjs write <results.json> staging`) and sets `UCC_GATE_TARGET=staging`, under which `compare.mjs` FAILS on a missing, malformed, foreign-target or hash-mismatched baseline. Local runs are unchanged. Not yet done: exact-approved-exception list and skip classification from the Task 8 note.
-4. [ ] **385d** rehearse Part 1 steps 1.4-1.9 on a staging Traefik-equivalent (loopback) before touching production.
-5. [ ] **385e** (decision) second VPS.
+4. [ ] **385d** (needs Hidayat, not doable from the repo; see "385d checklist for Hidayat" below) rehearse Part 1 steps 1.4-1.9 on a staging Traefik-equivalent (loopback) before touching production.
+5. [x] **385e** (decision) second VPS: decided 16 Nov 2026, staging stays on this VPS for now (Owner decision 5). Revisit when staging needs a public hostname.
+
+## 385d checklist for Hidayat (Task 543)
+
+Status of 385a-385e: a, b, c done in the repo (never run against a real staging stack); e decided (stay on this VPS). Only 385d remains, and every part of it touches the VPS, so agents must not do it.
+
+Important limit: ufw (1.4), sshd (1.5) and `DOCKER-USER` (1.7) are **host-global**. They cannot be rehearsed on a loopback staging copy on this same VPS; running them *is* the production change. Only 1.6 (Medplum config) and 1.9 (Traefik hygiene) can be rehearsed on a copy. Tailscale (1.8) is skipped (Owner decision 2: SSH tunnel only).
+
+Run in this order, one item at a time, with the 1.1 rules and the 1.2 probe kit from outside the VPS:
+
+1. [ ] In the Hostinger panel confirm a browser console (hPanel terminal/VNC) and snapshot restore exist (Owner decision 6). If either is missing, stop; do not change ufw or sshd.
+2. [ ] Take a Hostinger snapshot and write down its date.
+3. [ ] Run 1.3 (read-only inventory) and paste the **redacted** output (no IPs of staff homes, no secrets) into a PR comment or `.ai/` note, so the Traefik/DOCKER-USER steps can be tailored to what is really there.
+4. [ ] Verify read-only that the production clinic project is non-superAdmin (Owner decision 4). Required before any step that relies on it.
+5. [ ] Bring up staging only if you want to rehearse 1.6/1.9 on a copy: `infra/staging/README.md`, then `bun run staging:seed`, then `e2e/scripts/check-staging.sh <label> <baseline>`. Stop if free RAM (with production running) drops below the 2.3 budget.
+6. [ ] Production window (off-hours, clinics told): 1.4 ufw (with its 10-minute auto-rollback timer), then 1.2 probes; 1.5 SSH; 1.6 (`registerEnabled=false`, Owner decision 3); 1.7; 1.9. Never change Traefik/Medplum config in the same window as the firewall steps.
+7. [ ] Report back which probes passed. Then an agent can update this plan and tick 385d.
+
+Optional repo-only follow-up (not blocking): the "exact-approved-exception list and skip classification" left open in 385c.
 
 ## 2.6 Staging risks
 
