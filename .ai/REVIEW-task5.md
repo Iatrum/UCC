@@ -164,3 +164,23 @@ Reviewed PR #251 at `d8ea0ec` in `/home/dev/ucc-task417` (from the PR head; no s
 - **Fresh checks:** `bun test tests/unit` 254 pass / 0 fail; `bun run lint` (tsc + clinic-admin check) exit 0; `eslint .` 7 errors / 5 warnings, the same pre-existing react-hooks findings in files the PR does not touch.
 - **Still required before approval:** full current-head gate with no new failures (decide phase-1 403/404 as a separate test task or confirm Medplum behaviour; provide dev PACS for xray-phase3); live super-admin demotion/rollback rehearsal with foreign fixtures; live token-revocation proof; production-version compatibility.
 - Review-only: no merge/force-push; no container, `/opt/medplum`, `/root`, Supabase/Tradebot, secrets, patient data, composer, Lab/POCT, nav or Firebase change.
+
+## Task 424 — complete current-head gate for #251 at `8f46dec` (17 November 2026, Claude)
+
+**Result: a full `check-all.sh` run reached its final line: `OVERALL: FAIL`, 64/68 passed. No failure is caused by #251; no code change made.** Run: `check-all.sh task424` with `UCC_E2E_BATCHED=1 UCC_E2E_WORKFLOW_FIRST=1 UCC_NO_TRACE=1`, ONE dev server (:3210, `--max-old-space-size=3072`, owned and cleaned by the batched driver), dev Medplum :8113, fake data, baseline `/home/dev/ai-logs/int-360/reports/results.json`. Started only after available RAM exceeded 3.5 GB (waited ~7 min for another lane's :3418 server to exit). lint 0, build 0, clinics 0; 5 batches, every spec, no retries. Evidence (private): `/home/dev/ucc-task424-evidence`.
+
+**Policy:** before the run the shared dev "UCC Clinic Staff Policy" was again the pre-#251 definition (58 rules, Patient `create` allowed). Backed it up, ran `bun scripts/setup-access-policies.ts` (60 rules, no Patient `create`), ran the gate, then **restored the backed-up pre-#251 definition** (58 rules). Anyone gating #251 must apply the script first.
+
+| Test | Result | Cause |
+|---|---|---|
+| staff membership CLI | **PASS** (was failing in Task 416's gate) | Passing with #251's policy applied; confirms the earlier failure was dev policy drift. |
+| 11 known-bug probes summary | fail, also in baseline | Unchanged (Procedure written at Sign). |
+| Time Chit toggle/checkout/... | fail, also in baseline | Unchanged (`waitForResponse` timeout at admin module save). |
+| clinic-isolation phase 1 (`Observation update authorization`) | comparator "NEW" | Pre-existing on `origin/dev` (foreign Observation PUT returns 404, spec expects 403); fails the same on clean dev (Task 416), handled by Task 422. Not #251. |
+| xray-phase3 stored DICOM | comparator "NEW" | **Skipped**, not failed: dev PACS (`infra/pacs-dev`) is not running on this machine. |
+
+So the only comparator "NEW" entries are one pre-existing dev failure (Task 422) and one environmental skip. POCT/X-ray 18/18, composer/Lab-state/save-state 16/16, API/workflow 02-10 pass. The gate still prints OVERALL FAIL, so this is not a clean pass.
+
+- **Not attempted (no credential supplied):** live super-admin demotion/rollback rehearsal, token-revocation live proof. Production-version compatibility is also still outstanding.
+- Gate side effect: two tracked `.ai/ux-shots/task340` PNGs were modified by a test; reverted, not committed.
+- Server process group stopped (verified no next/chrome processes left). No production container, `/opt/medplum`, `/root`, Supabase/Tradebot, real patient data, composer, Lab/POCT, nav or Firebase change; no force-push or merge.
