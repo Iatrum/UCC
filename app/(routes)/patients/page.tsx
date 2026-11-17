@@ -44,13 +44,15 @@ export default function PatientsPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
+    const t = setTimeout(() => {
+      const next = searchQuery.trim();
+      setDebouncedQuery((prev) => {
+        if (prev !== next) setPage(1);
+        return next;
+      });
+    }, 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedQuery]);
 
   // Real clinic-scoped counts (server: _summary=count + _total=accurate)
   useEffect(() => {
