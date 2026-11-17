@@ -15,6 +15,7 @@ import type { SerializedPatient } from "@/components/patients/patient-card";
 import { notFound, redirect } from 'next/navigation';
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import { isModuleEnabledForClinic } from "@/lib/module-registry";
+import { consultSummary as summarizeConsults } from "@/lib/patients/profile-history";
 import PatientProfileWorkspace from "./patient-profile-workspace";
 
 function getCurrentTimestamp(): number {
@@ -101,6 +102,8 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
     date: safeToISOString(consultation.date),
   }));
 
+  const consultSummary = summarizeConsults(consultations);
+
   const realAllergies = (medicalHistory.allergies ?? []).filter(
     (a) => !/^no known/i.test(a.trim())
   );
@@ -180,14 +183,14 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
           {/* Stat row */}
           <div className="mt-4 border-t border-border pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <p className="text-xs text-muted-foreground">Last completed visit</p>
+              <p className="text-xs text-muted-foreground">Last consult</p>
               <p className="mt-0.5 font-medium">
-                {patient.lastVisit ? formatDisplayDate(patient.lastVisit) : "No visits yet"}
+                {consultSummary.lastDate ? formatDisplayDate(consultSummary.lastDate) : "No consults yet"}
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Total visits</p>
-              <p className="mt-0.5 font-medium">{consultations.length}</p>
+              <p className="text-xs text-muted-foreground">Total consults</p>
+              <p className="mt-0.5 font-medium">{consultSummary.total}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Upcoming appointment</p>
