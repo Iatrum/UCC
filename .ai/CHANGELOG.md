@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 545: re-checked every open UX finding against current dev; none of the Medium/High items is still open
+The findings list was out of date. Fixed items are now marked with the file and line that proves it. Only three Low items remain (dead purchasing panels, raw-HTML templates, long branch list) plus sidebar polish, which is out of scope. Docs only, no app code changed.
+
 ## 2026-11-17 — Task 508: merged latest dev into the queue and UX-small-fixes PRs; UX items #6, #7, #19 confirmed already fixed
 Resolved changelog-only conflicts in both PRs. The patient-profile items (history refresh after Sign, hidden Start consult while the drawer is open, scrollable history table, consistent "Last consult / Total consults" header) were already fixed by Task 446 on dev, so no app code changed; UX-FINDINGS now marks them fixed.
 
