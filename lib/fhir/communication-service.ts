@@ -651,7 +651,8 @@ export async function sendFollowUpWithTwilio(medplum: MedplumClient, id: string,
   assertResourceInClinic(comm, clinicId);
   const followUp = mapCommunicationToFollowUp(comm);
   if (!followUp.patientPhone) throw new Error("Patient phone is required");
-  const settings = await getFollowUpSettings(medplum, followUp.clinicId);
+  // Settings must use the authorized clinic, not a redundant legacy extension.
+  const settings = await getFollowUpSettings(medplum, clinicId);
 
   try {
     const result = await postTwilioMessage({
