@@ -119,3 +119,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 357 evidence: real synthetic DICOM-to-OHIF and clinic/study security checks pass; 226 unit tests pass. Trusted Orthanc refresh enables the stored viewer on an existing tagged study with the same UID. Full gate is still HOLD due shared-slot/RAM and fixture failures; updated opt-in low-memory driver/retry/path fixes require one exclusive final run. Nothing deployed to production.
 
 - 2026-11-17 Task 432 (UX audit 418 #4/#5): Billing list rows now open checkout when clicked (patient name link stretched over the row, keyboard focus ring, hover pointer) and each row has an explicit "Open checkout" button. The status badge text "Meds & Bills" is now "Ready to bill" (display only; stored status unchanged).
+
+- 2026-11-17 Task 460 (UX audit 418 #11): The Analytics page now shows a grey placeholder layout (cards and charts) while its figures load, instead of a blank wait. The charts also have more room on the right, so the number after the longest bar (for example the age bar "30") is no longer cut off at the card edge. Counts and totals are unchanged.
