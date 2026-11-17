@@ -11,7 +11,7 @@
 
 ## Later
 - Access policy ProjectMembership leak (work in `/workspace/iatrum-ucc-ap`)
-- `/admin` redirect loop; rate limit shown as "wrong password"; stock 500
+- [x] (Task 412, 2026-11-16: all three already fixed on dev, verified, no code change; was) `/admin` redirect loop; rate limit shown as "wrong password"; stock 500. (a) Task 310 `lib/login-redirect.ts` loop guard + Task 380 `adminPortalPath`; (b) `lib/auth-errors.ts` + `AUTH_RATE_LIMITED` 429 in `app/api/auth/login/route.ts`; (c) Task 310 inventory validation + Task 380 not-found->404 in `handleRouteError`. Tests: `tests/unit/{auth-errors,inventory-validation,task380-admin-stock}.test.ts` (27 pass). Details `.ai/research/task-412.md`.
 - [x] (Task 385, plan only: `.ai/PLAN-network-lockdown-staging.md`; user runs the runbook, build tasks 385a-e not started) Network lockdown plan; staging plan
 - [x] (Task 418, 2026-11-17: walked on origin/dev with one dev server; 19 findings, 3 High, in `.ai/UX-FINDINGS.md`; docs only, no code changed; dispensing, purchases, MC/referral and admin screens not covered, see file) UX audit
 - POCT labs phases 1-3
