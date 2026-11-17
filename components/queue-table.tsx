@@ -69,6 +69,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
   const router = useRouter();
   const [loadingSet, setLoadingSet] = useState<Set<string>>(new Set());
   const [pendingRemovePatient, setPendingRemovePatient] = useState<Patient | null>(null);
+  const [pendingCompletePatient, setPendingCompletePatient] = useState<Patient | null>(null);
 
   const handleAddToQueue = async (patient: Patient) => {
     if (loadingSet.has(patient.id)) return;
@@ -272,6 +273,32 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <AlertDialog
+      open={pendingCompletePatient !== null}
+      onOpenChange={(open) => { if (!open) setPendingCompletePatient(null); }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mark as Complete</AlertDialogTitle>
+          <AlertDialogDescription>
+            Mark {pendingCompletePatient?.fullName} as complete? They will leave the active queue.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (pendingCompletePatient) {
+                void handleCompleteConsultation(pendingCompletePatient);
+              }
+              setPendingCompletePatient(null);
+            }}
+          >
+            Mark as Complete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <div className="rounded-md border">
       <Table>
         <TableHeader>
@@ -359,7 +386,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
                     {(patient.queueStatus === 'waiting' || patient.queueStatus === 'in_consultation' || patient.queueStatus === 'meds_and_bills') && (
                       <DropdownMenuItem
                         disabled={loadingSet.has(patient.id)}
-                        onClick={() => handleCompleteConsultation(patient)}
+                        onClick={() => setPendingCompletePatient(patient)}
                       >
                         Mark as Complete
                       </DropdownMenuItem>

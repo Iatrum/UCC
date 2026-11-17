@@ -33,10 +33,13 @@ Severity: **High** = can mislead staff on money or clinical flow; **Med** = conf
 12. **POCT rows in the composer can show "No analyser" next to "Checking…".** While analyser status is loading, an unmatched test reads as both. The Add button is correctly disabled, and "Only online, connected analysers can be ordered. No manual results." is clear. Fix: hide the device name until loading ends. File: `components/orders/poct-section.tsx:64-65`. No new POCT features suggested.
 13. **POCT page lists pending tests as "ACTIVE" and some rows have a blank date ("—").** Staff expect "Pending"/"Waiting for analyser". File: `app/(routes)/poct/page.tsx:50`.
 14. **Labs & Imaging: `/api/labs/subscription` returned 503** (live results feed unavailable in dev). The page works but there is no "live updates off" hint; staff must press Refresh. Files: `app/(routes)/api/labs/subscription/route.ts`, `lib/poct/live-results.ts`.
+    **DONE (Task 476):** quiet "Live updates off – press Refresh" hint in the Lab tab status line.
 15. **Queue row menu has "Mark as Complete" and "Remove from Queue" next to "Start Consultation" with no confirmation seen.** Easy to hit by mistake. Fix: confirm dialog for Remove. File: dashboard queue table.
+    **DONE (Task 476):** Remove already had a confirm on dev; added one for Mark as Complete.
 16. **Checkout with no items.** An empty invoice (RM 0.00) still shows "Submit e-Invoice" and "Complete visitation". Not confirmed whether they are enabled. Check whether Complete should warn "no billable items". File: `app/(routes)/orders/checkout/[consultationId]` client.
 17. **Checkout needs `?patientId=` in the URL.** Opening `/orders/checkout/<id>` alone shows "Missing checkout patient or consultation reference." (bookmarks and shared links break). Fix: look the patient up from the consultation. File: `app/(routes)/orders/checkout/[consultationId]/page.tsx:15-20`.
 18. **`/api/consultations?recent=` returns rows with empty `patientId`, `chiefComplaint` and `diagnosis`.** Probably thin summaries or old fake consultations, so check before any UI relies on it.
+    **DONE (Task 476):** two real mapping bugs fixed (patientId fallback to subject; child searches truncated at 20). See `.ai/research/task-476.md`.
 19. **Sidebar polish.** "Appointments" label touches the collapse arrow, and the dev-only Next badge overlaps "Logout" (dev only, ignore). "Tasks" and "Records" show "not enabled for this clinic yet" with a Back button, which is fine.
 
 ## Working well

@@ -597,6 +597,9 @@ export async function getConsultationFromMedplum(
   }
 }
 
+/** Medplum pages at 20 by default; child lookups for several encounters at once must not truncate. */
+const BULK_CHILD_COUNT = '1000';
+
 function groupByEncounter<T extends { encounter?: { reference?: string } }>(items: T[]): Map<string, T[]> {
   const map = new Map<string, T[]>();
   for (const item of items) {
@@ -609,16 +612,19 @@ function groupByEncounter<T extends { encounter?: { reference?: string } }>(item
   return map;
 }
 
-function buildSavedConsultation(
+export function buildSavedConsultation(
   encounter: Encounter,
   conditions: Condition[],
   observations: Observation[],
   procedures: Procedure[],
   medications: MedicationRequest[],
 ): SavedConsultation {
+  // Encounters not created by saveConsultationToMedplum (e.g. check-in) have no
+  // 'firebase-patient' identifier; fall back to the Patient the encounter points at.
+  const subjectPatientId = encounter.subject?.reference?.match(/^Patient\/([^/]+)$/)?.[1];
   const firebasePatientId = encounter.identifier?.find(
     (id) => id.system === 'firebase-patient'
-  )?.value || '';
+  )?.value || subjectPatientId || '';
 
   const chiefComplaint = observations.find((obs) => (obs as any).code?.text === 'Chief Complaint');
   const clinicalNotes = observations.find((obs) => (obs as any).code?.text === 'Clinical Notes');
@@ -693,10 +699,10 @@ export async function getPatientConsultationsFromMedplum(
     const encounterRefs = filtered.map((e) => `Encounter/${e.id}`).join(',');
 
     const [conditions, observations, procedures, medications] = await Promise.all([
-      client.searchResources('Condition', { encounter: encounterRefs }),
-      client.searchResources('Observation', { encounter: encounterRefs }),
-      client.searchResources('Procedure', { encounter: encounterRefs }),
-      client.searchResources('MedicationRequest', { encounter: encounterRefs }),
+      client.searchResources('Condition', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      client.searchResources('Observation', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      client.searchResources('Procedure', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      client.searchResources('MedicationRequest', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
     ]);
 
     const conditionsByEncounter = groupByEncounter(conditions);
@@ -966,10 +972,10 @@ export async function getRecentConsultationsFromMedplum(
     const encounterRefs = filtered.map((e) => `Encounter/${e.id}`).join(',');
 
     const [conditions, observations, procedures, medications] = await Promise.all([
-      client.searchResources('Condition', { encounter: encounterRefs }),
-      client.searchResources('Observation', { encounter: encounterRefs }),
-      client.searchResources('Procedure', { encounter: encounterRefs }),
-      client.searchResources('MedicationRequest', { encounter: encounterRefs }),
+      client.searchResources('Condition', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      client.searchResources('Observation', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      client.searchResources('Procedure', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      client.searchResources('MedicationRequest', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
     ]);
 
     const conditionsByEncounter = groupByEncounter(conditions);

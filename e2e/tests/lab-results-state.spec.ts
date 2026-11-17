@@ -119,3 +119,14 @@ test('lab results never render in the consultation composer', async ({ page, req
   await expect(page.getByText('7.1 mmol/L')).toHaveCount(0);
   await expect(page.getByTestId('lab-last-updated')).toHaveCount(0);
 });
+
+// Task 476 (UX #14): subscription 503 -> quiet "Live updates off" hint next to the timestamp; results unaffected.
+test('subscription unavailable shows a quiet "Live updates off - press Refresh" hint', async ({ page, request }) => {
+  const id = await fixture(request);
+  await mockResults(page, id, 'ok-empty'); // mock already answers /api/labs/subscription with 503
+  await goto(page, id);
+  await expect(emptyText(page)).toBeVisible();
+  await expect(page.getByTestId('lab-live-off')).toContainText('Live updates off');
+  await expect(page.getByTestId('lab-live-off')).toContainText('Refresh');
+  await expect(page.getByTestId('lab-load-error')).toHaveCount(0);
+});
