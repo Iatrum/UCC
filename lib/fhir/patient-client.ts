@@ -235,8 +235,32 @@ export async function getPatientStats(clinicId?: string): Promise<{ total: numbe
   };
 }
 
+/** One server-side page of search results (name/NRIC/phone) across the whole clinic. */
+export async function searchPatientsPage(
+  query: string,
+  page: number,
+  pageSize = 25,
+  clinicId?: string
+): Promise<PatientsPage & { capped: boolean }> {
+  const response = await fetch(
+    `/api/patients?search=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`,
+    { credentials: 'include', headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined }
+  );
+  const data = await readJson(response);
+  if (!response.ok || !data.success) {
+    throw new Error(typeof data.error === 'string' ? data.error : `Failed to search patients (${response.status})`);
+  }
+  return {
+    patients: mapPatientRows(Array.isArray(data.patients) ? data.patients : []),
+    total: typeof data.total === 'number' ? data.total : null,
+    page: typeof data.page === 'number' ? data.page : page,
+    pageSize: typeof data.pageSize === 'number' ? data.pageSize : pageSize,
+    capped: data.capped === true,
+  };
+}
+
 /**
- * Search patients by name or NRIC
+ * Search patients by name, NRIC or phone
  */
 export async function searchPatients(query: string, clinicId?: string): Promise<Patient[]> {
   const response = await fetch(`/api/patients?search=${encodeURIComponent(query)}`, {

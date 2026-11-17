@@ -653,8 +653,68 @@ export async function updateQueueStatusInMedplum(patientId: string, status: Queu
   });
 }
 
+export const PATIENT_SEARCH_WINDOW = 500; // max rows pulled per sub-query before paging the merged set
+
 /**
- * Search patients by name or NRIC
+ * Server-side patient search across the caller's whole clinic (name, NRIC/IC, phone),
+ * paged over the merged result set. Every sub-query carries the clinic identifier
+ * filter where FHIR allows (name/phone) and all rows are post-filtered with matchesClinic.
+ * `total` is the exact merged count unless a sub-query hit PATIENT_SEARCH_WINDOW (`capped`).
+ */
+export async function searchPatientsPageInMedplum(
+  query: string,
+  page: number,
+  pageSize: number,
+  clinicId: string | null | undefined,
+  medplum: MedplumClient
+): Promise<{ patients: SavedPatient[]; total: number; page: number; pageSize: number; capped: boolean }> {
+  const size = Math.min(Math.max(Math.floor(pageSize) || 25, 1), PATIENT_PAGE_MAX_SIZE);
+  const pg = Math.max(Math.floor(page) || 1, 1);
+  const trimmed = query.trim();
+  if (!trimmed) return { patients: [], total: 0, page: pg, pageSize: size, capped: false };
+  const clinicParams = clinicPatientParams(clinicId); // fails closed without a clinic
+  await resolveClinicTenant(medplum, clinicId);
+
+  const base = { _count: String(PATIENT_SEARCH_WINDOW), _sort: '-_lastUpdated' };
+  const queries: Record<string, string>[] = [
+    { ...base, ...clinicParams, 'name:contains': trimmed },
+    { ...base, identifier: `nric|${trimmed}` },
+    { ...base, identifier: `ic|${trimmed}` },
+  ];
+  // Phone: match as typed and as digits only (stored values may or may not contain separators).
+  const digits = trimmed.replace(/[^\d+]/g, '');
+  const phoneTerms = new Set<string>();
+  if (digits.replace(/\D/g, '').length >= 3) phoneTerms.add(digits);
+  if (/^[\d\s()+-]+$/.test(trimmed)) phoneTerms.add(trimmed);
+  for (const term of phoneTerms) queries.push({ ...base, ...clinicParams, 'phone:contains': term });
+
+  const results = await Promise.all(queries.map((q) => medplum.searchResources('Patient', q as any)));
+  const capped = results.some((r) => r.length >= PATIENT_SEARCH_WINDOW);
+
+  const seen = new Set<string>();
+  const merged: FHIRPatient[] = [];
+  for (const patient of results.flat()) {
+    if (patient.id && !seen.has(patient.id)) {
+      seen.add(patient.id);
+      merged.push(patient);
+    }
+  }
+  const all = merged
+    .filter((r) => matchesClinic(r as any, clinicId))
+    .filter((r) => r.active !== false)
+    .sort((x, y) => String(y.meta?.lastUpdated ?? '').localeCompare(String(x.meta?.lastUpdated ?? '')));
+  const offset = (pg - 1) * size;
+  return {
+    patients: all.slice(offset, offset + size).map((r) => fhirPatientToPatientData(r)),
+    total: all.length,
+    page: pg,
+    pageSize: size,
+    capped,
+  };
+}
+
+/**
+ * Search patients by name, NRIC or phone (first page, up to 50).
  */
 export async function searchPatientsInMedplum(
   query: string,
@@ -662,48 +722,7 @@ export async function searchPatientsInMedplum(
   medplum: MedplumClient
 ): Promise<SavedPatient[]> {
   try {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      return [];
-    }
-    await resolveClinicTenant(medplum, clinicId);
-
-    // Run server-side searches in parallel: name contains, NRIC (nric|), NRIC (ic|).
-    // Phase 1 clinic scoping is enforced by the app-level clinic identifier
-    // post-filter so exact NRIC identifier searches can still work.
-    const [nameResults, nricResults, icResults] = await Promise.all([
-      medplum.searchResources('Patient', {
-        'name:contains': trimmed,
-        active: 'true',
-        // Server-side clinic filter so other clinics' matches cannot crowd out the 50-row cap.
-        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
-        _count: '50',
-      }),
-      medplum.searchResources('Patient', {
-        identifier: `nric|${trimmed}`,
-        _count: '50',
-      }),
-      medplum.searchResources('Patient', {
-        identifier: `ic|${trimmed}`,
-        _count: '50',
-      }),
-    ]);
-
-    // Merge and deduplicate by patient ID
-    const seen = new Set<string>();
-    const merged: FHIRPatient[] = [];
-    for (const patient of [...nameResults, ...nricResults, ...icResults]) {
-      if (patient.id && !seen.has(patient.id)) {
-        seen.add(patient.id);
-        merged.push(patient);
-      }
-    }
-
-    return merged
-      .filter((patient) => matchesClinic(patient as any, clinicId))
-      .filter((patient) => patient.active !== false)
-      .map((patient) => fhirPatientToPatientData(patient))
-      .slice(0, 50);
+    return (await searchPatientsPageInMedplum(query, 1, 50, clinicId, medplum)).patients;
   } catch (error) {
     console.error('Failed to search patients in Medplum:', error);
     return [];

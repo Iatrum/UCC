@@ -14,3 +14,9 @@ Problem: Patients page showed `patients.length` of a `_count=200` fetch as "Tota
 - Pages: `GET /api/patients?page=N&pageSize=M` (`_count`, `_offset`, `_total=accurate`, clamp pageSize<=100, offset<=10000).
 - Search: server-side via existing `?search=` (name/NRIC/IC, clinic post-filter), debounced in UI.
 - "New this month" counts `_lastUpdated>=month start` (createdAt in this app already maps to `meta.lastUpdated`).
+
+## Task 478 — search regression fix
+- Task 470 found list search filtered only the loaded page and phone search was missing.
+- `GET /api/patients?search=q&page=N&pageSize=M` -> `searchPatientsPageInMedplum`: sub-queries `name:contains`, `identifier=nric|q`, `identifier=ic|q`, `phone:contains` (as typed + digits only); name/phone carry the clinic identifier filter, all rows post-filtered by `matchesClinic`; merged, deduped, sorted `-_lastUpdated`, paged in-memory. Each sub-query pulls up to 500 rows (`capped` flag if hit). Fails closed without a clinic.
+- UI resets to page 1 when the debounced query changes; pagination shown for search too.
+- Caveat: Medplum docs (search-modifiers / advanced-search pages) do not state `:contains` support for token params such as Patient `phone`; used per Medplum search behaviour, covered by fake-server tests only, not verified against live dev Medplum.

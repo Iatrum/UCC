@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 478: patient search covers the whole clinic again (name, NRIC, phone)
+After server paging (Task 434), typing in the Patients search only filtered the page on screen, and phone numbers could not be found. Search now runs on the server across all of the clinic's patients by name, NRIC/IC or phone number, and its results are paged (Previous/Next) like the normal list. Starting a new search goes back to page 1. Only the caller's own clinic is ever searched or returned. Tests: `tests/unit/task478-patient-search.test.ts` (match on page 3, phone and NRIC search, other clinic never appears, no-clinic fails closed). Note: phone search relies on Medplum's `phone:contains`, checked against a fake server only, not live dev Medplum.
+
 ## 2026-11-17 — Task 452: dashboard queue keeps its list while refreshing
 The dashboard queue used to swap the whole list for "Loading queue..." on every refresh (including the 30-second auto refresh), and if you clicked away while it was loading, the interrupted request showed up as a "Failed to load" error. Now "Loading queue..." only appears the first time; later refreshes keep the current list on screen. If a refresh fails, the list stays and the "Queue could not be refreshed" banner appears; the full error panel with Retry only shows when there is no list yet. Requests cancelled by leaving the page (or replaced by a newer refresh) no longer show errors; a real 10-second timeout still does. The same quiet handling applies to Appointments and Billing. Left for Hidayat: the nav label that reads "Login" instead of "Logout" while the session loads (no sidebar/nav changes in this task). Tests: extended `e2e/tests/dashboard-load-errors.spec.ts`.
 

@@ -14,6 +14,7 @@ import {
   countPatientsInMedplum,
   countNewPatientsThisMonth,
   searchPatientsInMedplum,
+  searchPatientsPageInMedplum,
   updatePatientInMedplum,
   archivePatientInMedplum,
 } from '@/lib/fhir/patient-service';
@@ -72,6 +73,16 @@ export async function GET(request: NextRequest) {
 
     // Search patients
     if (searchQuery) {
+      if (searchParams.get('page')) {
+        const result = await searchPatientsPageInMedplum(
+          searchQuery,
+          parseInt(searchParams.get('page') || '1', 10),
+          parseInt(searchParams.get('pageSize') || '25', 10),
+          clinicId,
+          medplum
+        );
+        return NextResponse.json({ success: true, count: result.patients.length, ...result });
+      }
       const patients = await searchPatientsInMedplum(searchQuery, clinicId, medplum);
       return NextResponse.json({
         success: true,

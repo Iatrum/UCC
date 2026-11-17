@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Search, Clock, CheckCircle2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
-import { getPatientsPage, getPatientStats, searchPatients, type Patient } from "@/lib/fhir/patient-client";
+import { getPatientsPage, getPatientStats, searchPatientsPage, type Patient } from "@/lib/fhir/patient-client";
 import {
   Table,
   TableBody,
@@ -74,8 +74,9 @@ export default function PatientsPage() {
       try {
         let active: Patient[];
         if (debouncedQuery) {
-          active = (await searchPatients(debouncedQuery)).filter((p) => p.active !== false);
-          setTotal(active.length);
+          const res = await searchPatientsPage(debouncedQuery, page, PAGE_SIZE);
+          active = res.patients;
+          setTotal(res.total);
         } else {
           const res = await getPatientsPage(page, PAGE_SIZE);
           active = res.patients;
@@ -117,7 +118,7 @@ export default function PatientsPage() {
 
   // Search is server-side; the list is already filtered.
   const filteredPatients = patients;
-  const totalPages = total != null && !debouncedQuery ? Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), Math.floor(10000 / PAGE_SIZE) + 1) /* Medplum _offset ceiling */ : null;
+  const totalPages = total != null ? Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), Math.floor(10000 / PAGE_SIZE) + 1) /* Medplum _offset ceiling */ : null;
   const hasNext = totalPages != null ? page < totalPages : false;
   const fmt = (n: number) => (n < 0 ? "—" : n.toLocaleString());
 
@@ -270,10 +271,10 @@ export default function PatientsPage() {
                   )}
                 </TableBody>
               </Table>
-              {!debouncedQuery && totalPages != null && (
+              {totalPages != null && (
                 <div className="flex items-center justify-between border-t px-4 py-3 text-sm" data-testid="patients-pagination">
                   <span className="text-muted-foreground">
-                    Page {page} of {totalPages} · {total?.toLocaleString()} patients
+                    Page {page} of {totalPages} · {total?.toLocaleString()} {debouncedQuery ? "matches" : "patients"}
                   </span>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
@@ -284,11 +285,6 @@ export default function PatientsPage() {
                     </Button>
                   </div>
                 </div>
-              )}
-              {debouncedQuery && (
-                <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-                  Showing up to 50 matches for “{debouncedQuery}”. Refine the search to narrow results.
-                </p>
               )}
             </div>
           )}
