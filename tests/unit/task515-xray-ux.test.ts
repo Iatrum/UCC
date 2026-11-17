@@ -19,13 +19,32 @@ let pacsEnabled = true;
 let lookupFails = false;
 let intercept = true; // outside this file the mock delegates to the real service (bun mocks can leak)
 const createCalls: any[] = [];
+// Fake only the Medplum admin client so the REAL module-registry lookups can be exercised (Task 518).
+const admin = await import('@/lib/server/medplum-admin');
+let medplumMode: 'fail' | 'pacs-on' | 'no-org' = 'fail';
+mock.module('@/lib/server/medplum-admin', () => ({
+  ...admin,
+  getAdminMedplum: async () => {
+    if (!intercept) return (admin as any).getAdminMedplum();
+    return {
+      searchResources: async () => {
+        if (medplumMode === 'fail') throw new Error('medplum down');
+        if (medplumMode === 'no-org') return [];
+        return [{ resourceType: 'Organization', extension: [{
+          url: 'https://ucc.emr/organization-enabled-module-ids', valueString: JSON.stringify(['pacs']) }] }];
+      },
+    };
+  },
+}));
 const registry = await import('@/lib/module-registry');
+const realLenient = registry.isModuleEnabledForClinic;
+const realStrict = registry.isModuleEnabledForClinicStrict;
 const auth = await import('@/lib/server/medplum-auth');
 const svc = await import('@/lib/fhir/imaging-service');
 const realCreateImagingOrder = svc.createImagingOrder;
 mock.module('@/lib/module-registry', () => ({
   ...registry,
-  isModuleEnabledForClinic: async () => { if (lookupFails) throw new Error('lookup failed'); return pacsEnabled; },
+  isModuleEnabledForClinicStrict: async () => { if (lookupFails) throw new Error('lookup failed'); return pacsEnabled; },
 }));
 mock.module('@/lib/server/medplum-auth', () => ({
   ...auth,
@@ -49,6 +68,7 @@ const base = { patientId: 'p-1', procedures: ['XR-CHEST'], clinicalIndication: '
 beforeEach(() => { pacsEnabled = true; lookupFails = false; createCalls.length = 0; });
 afterAll(() => {
   intercept = false;
+  mock.module('@/lib/server/medplum-admin', () => admin);
   mock.module('@/lib/module-registry', () => registry);
   mock.module('@/lib/server/medplum-auth', () => auth);
   mock.module('@/lib/fhir/imaging-service', () => svc);
@@ -86,4 +106,19 @@ test('POST /api/imaging/order: module lookup error fails closed for standalone o
   const res = await post(base);
   expect(res.status).toBeGreaterThanOrEqual(500);
   expect(createCalls).toHaveLength(0);
+});
+
+test('real lookups: lenient swallows a Medplum failure as "pacs off"; strict throws (so the guard fails closed)', async () => {
+  medplumMode = 'fail';
+  expect(await realLenient('pacs', 'clinic-a')).toBe(false);
+  await expect(realStrict('pacs', 'clinic-a')).rejects.toThrow('medplum down');
+});
+
+test('real strict lookup: returns the saved setting; missing org = defaults (pacs off)', async () => {
+  medplumMode = 'pacs-on';
+  expect(await realStrict('pacs', 'clinic-a')).toBe(true);
+  expect(await realStrict('poct', 'clinic-a')).toBe(false);
+  medplumMode = 'no-org';
+  expect(await realStrict('pacs', 'clinic-a')).toBe(false);
+  expect(await realStrict('inventory', 'clinic-a')).toBe(true);
 });

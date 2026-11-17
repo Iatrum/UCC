@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TestTube2, Camera } from 'lucide-react';
-import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { isModuleEnabledForClinicStrict } from '@/lib/module-registry';
 import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
 import { resolveImagingOrderEntryMode } from '@/lib/imaging/order-entry';
 
@@ -26,7 +26,7 @@ export default async function PatientLabsImagingPage({ params }: Props) {
   const patientId = resolvedParams.id;
   const clinicId = await resolveClinicIdFromServerScope();
   // Fails closed: a failed module lookup shows the Treatment-panel pointer, not the old form.
-  const orderMode = await resolveImagingOrderEntryMode(() => isModuleEnabledForClinic('pacs', clinicId));
+  const orderMode = await resolveImagingOrderEntryMode(() => isModuleEnabledForClinicStrict('pacs', clinicId));
 
   return (
     <div className="container mx-auto p-6 space-y-6">

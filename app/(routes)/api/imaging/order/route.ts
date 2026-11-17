@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createImagingOrder, updateImagingOrder, deleteImagingOrder, type ImagingOrderRequest } from '@/lib/fhir/imaging-service';
 import { handleRouteError } from '@/lib/server/route-helpers';
-import { isModuleEnabledForClinic } from '@/lib/module-registry';
+import { isModuleEnabledForClinicStrict } from '@/lib/module-registry';
 import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth';
 
 export const runtime = 'nodejs';
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     // `xray` block would be created with no accession number, so incoming DICOM could never match it.
     // Reject it (the composer always sends `xray` or an encounterId). Module off: unchanged.
     // A failed module lookup propagates to handleRouteError (fail closed, 5xx).
-    if (!body.xray && !body.encounterId && (await isModuleEnabledForClinic('pacs', clinicId))) {
+    if (!body.xray && !body.encounterId && (await isModuleEnabledForClinicStrict('pacs', clinicId))) {
       return NextResponse.json(
         { error: 'X-ray is enabled for this clinic: order imaging from the Treatment panel in a consultation so an accession number is assigned.' },
         { status: 409 }
