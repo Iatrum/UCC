@@ -34,11 +34,16 @@ export default function Dashboard() {
   const [appointments, setAppointments] = useState<UpcomingAppointment[]>([]);
   const [consultations, setConsultations] = useState<BillableConsultation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [apptLoading, setApptLoading] = useState(false);
+  const [apptLoading, setApptLoading] = useState(true);
+  const [apptError, setApptError] = useState<string | null>(null);
+  const [consultationsLoading, setConsultationsLoading] = useState(true);
+  const [consultationsError, setConsultationsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
   const queueControllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(false);
+  const unloadingRef = useRef(false);
+  const [queueLoaded, setQueueLoaded] = useState(false);
 
   const loadQueue = async () => {
     if (!mountedRef.current) return;
@@ -48,18 +53,22 @@ export default function Dashboard() {
     const isCurrentRequest = () => mountedRef.current && queueControllerRef.current === controller;
     setLoading(true);
     setError(null);
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let timedOut = false;
+    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 10000);
     try {
       const response = await fetch('/api/queue', { signal: controller.signal });
       if (!response.ok) throw new Error(`Failed to fetch queue: ${response.statusText}`);
       const result = await response.json();
       if (isCurrentRequest() && !controller.signal.aborted) {
         setQueue(result.patients || []);
+        setQueueLoaded(true);
       }
     } catch (err) {
       if (!isCurrentRequest()) return;
+      // Navigation/reload interrupts the fetch; that is not a real failure.
+      if (unloadingRef.current || (controller.signal.aborted && !timedOut)) return;
       console.error('Error loading queue:', err);
-      if (controller.signal.aborted) {
+      if (timedOut) {
         setError('Queue is taking too long to load.');
       } else {
         setError('Failed to load queue data.');
@@ -75,6 +84,7 @@ export default function Dashboard() {
 
   const loadAppointments = async () => {
     setApptLoading(true);
+    setApptError(null);
     try {
       const response = await fetch('/api/appointments');
       if (!response.ok) throw new Error(`Failed to fetch appointments`);
@@ -92,12 +102,15 @@ export default function Dashboard() {
       setAppointments(mapped);
     } catch (err) {
       console.error('Error loading appointments:', err);
+      if (mountedRef.current && !unloadingRef.current) setApptError('Failed to load appointments.');
     } finally {
-      setApptLoading(false);
+      if (mountedRef.current) setApptLoading(false);
     }
   };
 
   const loadConsultations = async () => {
+    setConsultationsLoading(true);
+    setConsultationsError(null);
     try {
       const response = await fetch('/api/orders/billable');
       if (!response.ok) throw new Error('Failed to fetch consultations');
@@ -105,11 +118,18 @@ export default function Dashboard() {
       setConsultations(result.consultations || []);
     } catch (err) {
       console.error('Error loading consultations:', err);
+      if (mountedRef.current && !unloadingRef.current) setConsultationsError('Failed to load billable consultations.');
+    } finally {
+      if (mountedRef.current) setConsultationsLoading(false);
     }
   };
 
   useEffect(() => {
     mountedRef.current = true;
+    unloadingRef.current = false;
+    const onPageHide = () => { unloadingRef.current = true; };
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onPageHide);
     let disposed = false;
     queueMicrotask(() => {
       if (disposed) return;
@@ -122,6 +142,8 @@ export default function Dashboard() {
       disposed = true;
       mountedRef.current = false;
       clearInterval(interval);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onPageHide);
       queueControllerRef.current?.abort();
       queueControllerRef.current = null;
     };
@@ -189,11 +211,11 @@ export default function Dashboard() {
               </Button>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {loading && !queueLoaded ? (
                 <div role="status" aria-live="polite" className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-10 text-center text-sm text-muted-foreground">
                   Loading queue...
                 </div>
-              ) : error ? (
+              ) : error && !queueLoaded ? (
                 <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
                   <p>{error}</p>
                   <Button variant="outline" size="sm" onClick={loadQueue} className="gap-2">
@@ -225,6 +247,7 @@ export default function Dashboard() {
               <UpcomingAppointmentsTable
                 appointments={upcomingAppointments}
                 loading={apptLoading}
+                error={apptError}
                 onRefresh={loadAppointments}
               />
             </CardContent>
@@ -243,7 +266,12 @@ export default function Dashboard() {
               </Button>
             </CardHeader>
             <CardContent>
-              <BillingTable consultations={consultations} />
+              <BillingTable
+                consultations={consultations}
+                loading={consultationsLoading}
+                error={consultationsError}
+                onRetry={loadConsultations}
+              />
             </CardContent>
           </Card>
         </TabsContent>

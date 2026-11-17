@@ -24,6 +24,8 @@ if [ "${UCC_E2E_BATCHED:-0}" != "1" ] && [ -z "${UCC_LOW_MEMORY_GATE:-}" ] && [ 
 fi
 cd "$REPO/e2e"
 RES=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}/results.json; rm -f "$RES"
+# Dev data hygiene: /api/queue caps at 200 encounters/day; leftover fake fixtures would hide the workflow test patient.
+UCC_EVIDENCE=$UCC_EVIDENCE timeout 10m npx tsx scripts/prune-fake-queue.ts > "$OUT/prune.log" 2>&1 || echo "prune-fake-queue failed (see prune.log)" | tee -a "$OUT/summary.txt"
 if [ "${UCC_E2E_BATCHED:-0}" = "1" ]; then
   timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-40m}" node scripts/run-batched.mjs > "$OUT/e2e.log" 2>&1
 elif [ "${UCC_LOW_MEMORY_GATE:-0}" = 1 ]; then
