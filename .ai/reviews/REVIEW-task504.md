@@ -5,7 +5,7 @@ Reviewed commit f634428 (local branch `ai/task-504`, built on `origin/ai/task-45
 **Verdict: APPROVE**
 
 ## Findings
-- **Branch/PR mismatch (process, not code):** Task 504 was not on `origin/ai/task-458`; the remote head held only Task 458. The 504 commits are pushed to that branch together with this review (fast-forward). PR #279 is also not a draft (title and body still describe Task 458 only); update the PR body to mention Task 504 before merging.
+- **Process:** when this review started, `origin/ai/task-458` held only Task 458 and Task 504 was local (`ai/task-504`). The 504 commits reached the remote while the review ran (f634428), and this review is a fast-forward on top. PR #279 is not a draft and its title/body still describe Task 458 only; update the body to mention Task 504 before merging.
 - **Merge with origin/dev:** `origin/dev` (3bf71a6) is an ancestor. `git diff origin/dev HEAD` equals the three-dot diff (14 files, all Task 458/504). Nothing from dev was lost; CHANGELOG and UX-FINDINGS conflicts kept both sides.
 - **Stock fields:** `/api/billing` returns `stockNegative`, `stockUnresolved` (from `result.stock.unresolved`) and `stockError` (from `dispenseError`). Types match `billing-service.ts` / `dispense-service.ts`. `buildStockNotice` shows them on `/orders` after redirect (sessionStorage), severe when deduction failed or a line was ambiguous.
 - **No separate dispense step:** none added; deduction stays inside the single POST /api/billing. The stock preview (`GET /api/inventory`) is read-only; the checkout UI only shows hints and a warning.
