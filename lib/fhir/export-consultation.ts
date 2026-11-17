@@ -8,6 +8,7 @@ import type { Observation } from '@medplum/fhirtypes';
 import type { Consultation } from '@/lib/models';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { makeClinicStamper } from '@/lib/fhir/write-containment';
+import { withRegistrationTag } from '@/lib/fhir/patient-registration';
 
 async function getMedplumClient(): Promise<MedplumClient | null> {
   try {
@@ -57,7 +58,7 @@ export async function exportConsultationToMedplum(
     }
 
     if (!patient) {
-      patient = await medplum.createResource(stamp({
+      patient = await medplum.createResource(withRegistrationTag(stamp({
         resourceType: 'Patient',
         identifier: patientData.ic
           ? [{ system: 'urn:ic', value: patientData.ic }]
@@ -75,7 +76,7 @@ export async function exportConsultationToMedplum(
           ? [{ system: 'phone', value: patientData.phone }]
           : undefined,
         address: patientData.address ? [{ text: patientData.address }] : undefined,
-      }));
+      })));
       console.log(`✅ Created Patient: ${(patient as any).id}`);
     } else {
       console.log(`✅ Found existing Patient: ${(patient as any).id}`);

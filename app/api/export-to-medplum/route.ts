@@ -1,3 +1,4 @@
+import { withRegistrationTag } from '@/lib/fhir/patient-registration';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getAdminMedplum } from '@/lib/server/medplum-auth';
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
         // Re-use only a Patient owned by this clinic; otherwise create one in this clinic.
         let patient: any = matches.find((candidate) => isOwn(candidate));
         if (!patient) {
-          patient = await medplum.createResource(stamp({
+          patient = await medplum.createResource(withRegistrationTag(stamp({
             resourceType: 'Patient',
             identifier: [
               {
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
             address: consultation.patientAddress
               ? [{ text: consultation.patientAddress }]
               : undefined,
-          }));
+          })));
           console.log(`✅ Created Patient: ${(patient as any).id}`);
         }
 
