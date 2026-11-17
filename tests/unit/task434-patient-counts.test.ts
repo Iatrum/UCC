@@ -102,4 +102,11 @@ describe("task 434: clinic-scoped patient counts", () => {
     const noTotal: any = { ...fake, search: async () => ({ resourceType: "Bundle", entry: [] }) };
     expect(await countPatientsInMedplum("clinic-b", noTotal)).toBeNull();
   });
+
+  it("fails closed without a clinic and returns empty past the offset ceiling", async () => {
+    await expect(countPatientsInMedplum(undefined, fake)).rejects.toThrow();
+    await expect(getPatientsPageFromMedplum(1, 25, null, fake)).rejects.toThrow();
+    const far = await getPatientsPageFromMedplum(500, 25, "clinic-a", fake);
+    expect(far.patients).toHaveLength(0);
+  });
 });

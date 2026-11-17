@@ -115,7 +115,7 @@ export default function PatientsPage() {
 
   // Search is server-side; the list is already filtered.
   const filteredPatients = patients;
-  const totalPages = total != null && !debouncedQuery ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : null;
+  const totalPages = total != null && !debouncedQuery ? Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), Math.floor(10000 / PAGE_SIZE) + 1) /* Medplum _offset ceiling */ : null;
   const hasNext = totalPages != null ? page < totalPages : false;
   const fmt = (n: number) => (n < 0 ? "—" : n.toLocaleString());
 

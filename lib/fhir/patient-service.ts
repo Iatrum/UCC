@@ -675,6 +675,8 @@ export async function searchPatientsInMedplum(
       medplum.searchResources('Patient', {
         'name:contains': trimmed,
         active: 'true',
+        // Server-side clinic filter so other clinics' matches cannot crowd out the 50-row cap.
+        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
         _count: '50',
       }),
       medplum.searchResources('Patient', {
@@ -793,9 +795,11 @@ export const PATIENT_PAGE_MAX_SIZE = 100;
 export const PATIENT_MAX_OFFSET = 10000; // Medplum _offset ceiling
 
 function clinicPatientParams(clinicId: string | null | undefined): Record<string, string> {
+  // Fail closed: counts/pages must never be computed without a clinic filter.
+  if (!clinicId) throw new Error('Clinic context required for patient counts/pages.');
   return {
     active: 'true',
-    ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
   };
 }
 
@@ -836,10 +840,13 @@ export async function getPatientsPageFromMedplum(
 ): Promise<{ patients: SavedPatient[]; total: number | null; page: number; pageSize: number }> {
   const size = Math.min(Math.max(Math.floor(pageSize) || 25, 1), PATIENT_PAGE_MAX_SIZE);
   const pg = Math.max(Math.floor(page) || 1, 1);
-  const offset = Math.min((pg - 1) * size, PATIENT_MAX_OFFSET);
+  const offset = (pg - 1) * size;
+  const params = clinicPatientParams(clinicId);
   await resolveClinicTenant(medplum, clinicId);
+  // Beyond Medplum's _offset ceiling, return an empty page instead of repeating the last reachable one.
+  if (offset > PATIENT_MAX_OFFSET) return { patients: [], total: null, page: pg, pageSize: size };
   const bundle = await medplum.search('Patient', {
-    ...clinicPatientParams(clinicId),
+    ...params,
     _sort: '-_lastUpdated',
     _count: String(size),
     _offset: String(offset),
