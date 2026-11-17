@@ -1,5 +1,7 @@
 # STATE (updated by Dev each round)
 
+Task 5 (16 Nov): dev AccessPolicy topology applied; focused POCT 8/8 and integrated unit 154/154. Draft PR [#251](https://github.com/Iatrum/UCC/pull/251); final full gate pending. Details and retained checkpoints: `.ai/progress-task5.md`. Production is manual only.
+
 - 2026-11-16 Task 351: independently reviewed Task 350 PR #247 in /home/dev/ucc-task351. Fixed export cross-clinic reads/weak account matching, raw-REST mapper boundary, absent-clinic bypass, billing Task/invoice and consultation guard gaps, triage child identifiers (two loops). Unit 57/57 + isolated route tests 3/3 + lint PASS; mutation tests prove guards/query scope matter. Full gate infrastructure FAIL (hardcoded unwritable /workspace paths; no browser/baseline results). Verdict HOLD for workflow validation, .ai/REVIEW-task350.md. Normal pushes to existing Task 350 branch explicitly authorized; no merge/force-push, no server started, existing :3210 and production untouched. Usage meter unavailable.
 
 Branch: `ai-work` (local only, from `dev` @ 85f6c4b). Never pushed.
@@ -133,6 +135,8 @@ User lifted hold ('Sambung UCC sekarang, start Task 9 POCT lab'). PRs #221/#211/
 - Task 160 publication: **https://github.com/Iatrum/UCC/pull/235**, OPEN DRAFT, ai/task-u1b-draft → dev, depends on #234. Live publication check **MERGEABLE / UNSTABLE**. Normal milestone pushes, no merge/force-push; own :3210 stopped. Validation stays original full gate FAIL (47/51) plus combined focused recovery 50/51 baseline summary only, comparator 0. Legacy Firestore draft transition remains a deployment prerequisite.
 
 - 2026-11-16 Task 341: independently reviewed Task 340 PR #246 in /home/dev/ucc-task341. Fixed two MAJOR gaps (clinic-scoped study/report reads; untagged/unsafe viewer links) and normally pushed c0f7eae to the existing branch. Unit 82/82, lint/build pass; focused browser initial 8/9 then targeted rerun 2/2. Full gate blocked by hard-coded unwritable /workspace paths and absent baseline; conditional approval only. Review: .ai/REVIEW-task340.md. Own :3341 server process group stopped; production untouched.
+
+- 2026-11-16 Task 375: merged dev `52c2554` into PR #245 head `deaa129` using a merge commit, preserving Task 330 regression coverage and dev Task 180 Device clinic containment notes in the sole BACKLOG conflict. Unit 145/145, standalone tsc and repository lint PASS; no full gate/server/Medplum access. Research/evidence: `.ai/research/task-375.md`. Normal push to existing PR branch authorized by task; no PR merge or force-push.
 - 2026-11-16 Task 365: legacy Firestore treatment-draft migration plan, runbook and script on `ai/task-365-firestore-draft-migration` (clone `/home/dev/ucc-extra`). Not run on production; Hidayat runs it per the runbook after deploying #235.
 - Task 365 publication: **https://github.com/Iatrum/UCC/pull/248**, OPEN DRAFT, ai/task-365-firestore-draft-migration → dev. Live `gh pr view` (2026-11-16): MERGEABLE / UNSTABLE while checks were pending, then **MERGEABLE / CLEAN** at head dfc4046 with all four checks passing (lint-and-build, Vercel, preview comments, live routes). Later commits are docs-only. Not merged.
 

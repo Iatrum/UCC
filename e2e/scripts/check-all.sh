@@ -16,16 +16,24 @@ step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c"
 step lint bun run lint
 # Node 22 for build: undici needs markAsUncloneable (Node >=22.10); box default is Node 20
 step build env PATH="$HOME/.local/node22/bin:$PATH" bun run build:ci
+# Optional foreground orchestration: after this build, the caller starts the
+# local built app in its own process group and creates this readiness file.
+if [ "${UCC_E2E_BATCHED:-0}" != "1" ] && [ -z "${UCC_LOW_MEMORY_GATE:-}" ] && [ -n "${UCC_SERVER_READY_FILE:-}" ]; then
+  [ "$FAIL" -eq 0 ] || { echo "OVERALL: FAIL" | tee -a "$OUT/summary.txt"; exit 1; }
+  step server-ready timeout 3m bash -c 'while [ ! -f "$UCC_SERVER_READY_FILE" ]; do sleep 1; done'
+fi
 cd "$REPO/e2e"
-RES=$UCC_REPORTS/results.json; rm -f "$RES"
+RES=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}/results.json; rm -f "$RES"
 # Dev data hygiene: /api/queue caps at 200 encounters/day; leftover fake fixtures would hide the workflow test patient.
 UCC_EVIDENCE=$UCC_EVIDENCE timeout 10m npx tsx scripts/prune-fake-queue.ts > "$OUT/prune.log" 2>&1 || echo "prune-fake-queue failed (see prune.log)" | tee -a "$OUT/summary.txt"
-if [ "${UCC_LOW_MEMORY_GATE:-0}" = 1 ]; then
+if [ "${UCC_E2E_BATCHED:-0}" = "1" ]; then
+  timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-40m}" node scripts/run-batched.mjs > "$OUT/e2e.log" 2>&1
+elif [ "${UCC_LOW_MEMORY_GATE:-0}" = 1 ]; then
   # Driver owns one dev server at a time and reclaims its compiler heap between groups.
   timeout --kill-after=30s 40m node scripts/run-low-memory.mjs > "$OUT/e2e.log" 2>&1
 else
   timeout 20m node scripts/warmup.mjs > "$OUT/warmup.log" 2>&1
-  timeout 20m npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1
+  timeout "${UCC_E2E_TIMEOUT:-20m}" npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1
 fi
 echo "e2e-exit: $? (baseline has expected failures)" | tee -a "$OUT/summary.txt"
 cp "$RES" "$OUT/results.json" 2>/dev/null || { echo "no results.json" | tee -a "$OUT/summary.txt"; FAIL=1; }

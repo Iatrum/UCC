@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 // Phase 2: per-clinic PACS viewer host allowlist (default deny) gating the Lab-tab viewer link.
 test.use({ trace: 'off' });
 
-const SHOTS = path.join(import.meta.dirname, '../../.ai/ux-shots/task340');
+const SHOTS = process.env.UCC_XRAY_SHOTS || path.join(import.meta.dirname, '../../.ai/ux-shots/task340');
 const moduleExt = 'https://ucc.emr/organization-enabled-module-ids';
 const hostsExt = 'https://ucc.emr/organization-pacs-viewer-hosts';
 const typeSystem = 'https://ucc.emr/xray/device-type';

@@ -13,7 +13,7 @@ export default defineConfig({
     storageState: path.join(import.meta.dirname, '.secrets/state.json'),
     baseURL: process.env.UCC_BASE_URL || 'http://localhost:3210',
     viewport: { width: 1440, height: 900 }, navigationTimeout: 240_000, actionTimeout: 45_000,
-    screenshot: 'only-on-failure', trace: 'retain-on-failure', headless: true,
+    screenshot: 'only-on-failure', trace: process.env.UCC_NO_TRACE === '1' ? 'off' : 'retain-on-failure', headless: true,
     launchOptions: process.env.PW_CHROME ? { executablePath: process.env.PW_CHROME } : {},
   },
 });
