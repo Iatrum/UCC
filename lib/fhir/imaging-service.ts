@@ -28,6 +28,7 @@ import { DICOM_UID_SYSTEM, XRAY_ACCESSION_SYSTEM, generateAccessionNumber, readA
 import { isDicomUid } from '@/lib/pacs/viewer-token';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
+import { assertStoredResourceInClinic } from './write-containment';
 import {
   assertOrderClinic,
   assignResourceToAccountReferences,
@@ -687,6 +688,20 @@ async function assertXrayOrderMutable(serviceRequest: ServiceRequest, clinicId: 
 }
 
 /**
+ * Task 482: authorize the STORED order against the caller's clinic before any write or
+ * delete (explicit assert, in addition to the module gate and the Medplum AccessPolicy).
+ * Foreign/untagged id => NotFoundError (404); missing clinic => ForbiddenError (403).
+ */
+async function readOrderForMutation(medplum: MedplumClient, serviceRequestId: string, clinicId: string): Promise<ServiceRequest> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId, {
+    cache: 'no-cache',
+    headers: { 'X-Medplum': 'extended' },
+  });
+  await assertStoredResourceInClinic(medplum, serviceRequest, clinicId, 'Imaging order');
+  return serviceRequest;
+}
+
+/**
  * Update an imaging order (e.g. cancel or change priority)
  */
 export async function updateImagingOrder(
@@ -695,7 +710,7 @@ export async function updateImagingOrder(
   medplum: MedplumClient,
   clinicId: string
 ): Promise<void> {
-  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await readOrderForMutation(medplum, serviceRequestId, clinicId);
   await assertXrayOrderMutable(serviceRequest, clinicId);
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;
@@ -711,7 +726,7 @@ export async function updateImagingOrder(
  * Delete an imaging order
  */
 export async function deleteImagingOrder(serviceRequestId: string, medplum: MedplumClient, clinicId: string): Promise<void> {
-  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await readOrderForMutation(medplum, serviceRequestId, clinicId);
   await assertXrayOrderMutable(serviceRequest, clinicId);
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ImagingOrder ServiceRequest ${serviceRequestId}`);

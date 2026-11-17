@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
-import { ForbiddenError, handleRouteError } from "@/lib/server/route-helpers";
+import { NotFoundError, handleRouteError } from "@/lib/server/route-helpers";
 import {
   getFollowUpClinicId,
   markFollowUpOpened,
@@ -37,15 +37,15 @@ export async function PATCH(
 
     const comm = await medplum.readResource("Communication", id);
     if (getFollowUpClinicId(comm) !== clinicId) {
-      throw new ForbiddenError("Follow up does not belong to this clinic.");
+      throw new NotFoundError("Follow up not found.");
     }
 
     const followUp =
       action === "open"
-        ? await markFollowUpOpened(medplum, id)
+        ? await markFollowUpOpened(medplum, id, clinicId)
         : action === "send-twilio"
-          ? await sendFollowUpWithTwilio(medplum, id)
-          : await updateFollowUpStatus(medplum, id, status!);
+          ? await sendFollowUpWithTwilio(medplum, id, clinicId)
+          : await updateFollowUpStatus(medplum, id, status!, clinicId);
     return NextResponse.json({ success: true, followUp });
   } catch (error) {
     return handleRouteError(error, "PATCH /api/follow-up/[id]");
@@ -67,11 +67,11 @@ export async function DELETE(
 
     const comm = await medplum.readResource("Communication", id);
     if (getFollowUpClinicId(comm) !== clinicId) {
-      throw new ForbiddenError("Follow up does not belong to this clinic.");
+      throw new NotFoundError("Follow up not found.");
     }
 
     try {
-      await deleteFollowUp(medplum, id);
+      await deleteFollowUp(medplum, id, clinicId);
     } catch (deleteError) {
       const msg = deleteError instanceof Error ? deleteError.message : String(deleteError);
       const isGone = msg.includes("Gone") || msg.includes("410");

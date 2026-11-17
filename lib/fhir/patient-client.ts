@@ -194,8 +194,73 @@ export async function getAllPatients(limit = 100, clinicId?: string): Promise<Pa
   return mapPatientRows(rows);
 }
 
+export interface PatientsPage {
+  patients: Patient[];
+  total: number | null;
+  page: number;
+  pageSize: number;
+}
+
+/** One server-side page of the clinic's patients, with exact total when available. */
+export async function getPatientsPage(page: number, pageSize = 25, clinicId?: string): Promise<PatientsPage> {
+  const response = await fetch(`/api/patients?page=${page}&pageSize=${pageSize}`, {
+    credentials: 'include',
+    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+  });
+  const data = await readJson(response);
+  if (!response.ok || !data.success) {
+    throw new Error(typeof data.error === 'string' ? data.error : `Failed to get patients (${response.status})`);
+  }
+  return {
+    patients: mapPatientRows(Array.isArray(data.patients) ? data.patients : []),
+    total: typeof data.total === 'number' ? data.total : null,
+    page: typeof data.page === 'number' ? data.page : page,
+    pageSize: typeof data.pageSize === 'number' ? data.pageSize : pageSize,
+  };
+}
+
+/** Clinic-scoped real patient counts. `null` = server gave no exact total. */
+export async function getPatientStats(clinicId?: string): Promise<{ total: number | null; newThisMonth: number | null }> {
+  const response = await fetch('/api/patients?stats=1', {
+    credentials: 'include',
+    headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
+  });
+  const data = await readJson(response);
+  if (!response.ok || !data.success) {
+    throw new Error(typeof data.error === 'string' ? data.error : `Failed to get patient stats (${response.status})`);
+  }
+  return {
+    total: typeof data.total === 'number' ? data.total : null,
+    newThisMonth: typeof data.newThisMonth === 'number' ? data.newThisMonth : null,
+  };
+}
+
+/** One server-side page of search results (name/NRIC/phone) across the whole clinic. */
+export async function searchPatientsPage(
+  query: string,
+  page: number,
+  pageSize = 25,
+  clinicId?: string
+): Promise<PatientsPage & { capped: boolean }> {
+  const response = await fetch(
+    `/api/patients?search=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`,
+    { credentials: 'include', headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined }
+  );
+  const data = await readJson(response);
+  if (!response.ok || !data.success) {
+    throw new Error(typeof data.error === 'string' ? data.error : `Failed to search patients (${response.status})`);
+  }
+  return {
+    patients: mapPatientRows(Array.isArray(data.patients) ? data.patients : []),
+    total: typeof data.total === 'number' ? data.total : null,
+    page: typeof data.page === 'number' ? data.page : page,
+    pageSize: typeof data.pageSize === 'number' ? data.pageSize : pageSize,
+    capped: data.capped === true,
+  };
+}
+
 /**
- * Search patients by name or NRIC
+ * Search patients by name, NRIC or phone
  */
 export async function searchPatients(query: string, clinicId?: string): Promise<Patient[]> {
   const response = await fetch(`/api/patients?search=${encodeURIComponent(query)}`, {
