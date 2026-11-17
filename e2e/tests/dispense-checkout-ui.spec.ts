@@ -83,5 +83,6 @@ test.skip('RM 0 / no-item checkout is blocked (needs #279)', async () => {});
 test.afterAll(async ({ request }) => {
   if (invoiceId) await request.delete('/api/billing', { data: { invoiceId } });
   if (medId) await request.delete(`/api/inventory?id=${medId}`);
+  if (encounterId) await (await fhir()).deleteResource('Encounter', encounterId).catch(() => undefined); // fixture was created directly in beforeAll
   if (patientId) await request.delete(`/api/patients?patientId=${patientId}`);
 });
