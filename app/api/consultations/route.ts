@@ -14,6 +14,7 @@ import {
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getTriageForPatient, updateQueueStatusForPatient } from '@/lib/fhir/triage-service';
+import { clampRecentLimit } from '@/lib/fhir/recent-limit';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
  * Query params:
  * - patientId: Get consultations for specific patient
  * - id: Get specific consultation by ID
- * - recent: Get recent consultations (limit)
+ * - recent: Get recent consultations (limit, clamped to 1-50)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -127,7 +128,7 @@ export async function GET(request: NextRequest) {
 
     // Get recent consultations
     if (recent) {
-      const limit = parseInt(recent) || 10;
+      const limit = clampRecentLimit(recent);
       const consultations = await getRecentConsultationsFromMedplum(limit, clinicId, medplum);
       return NextResponse.json({
         success: true,
