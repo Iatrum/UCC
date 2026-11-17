@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 480: dashboard queue waits for the session, then loads (or shows Retry)
+Right after check-in the queue could sit on "Loading queue..." on first paint. Cause: the dashboard fired its queue request immediately on mount, racing the session/clinic cookie that the auth provider is still resolving. If that first request failed or hung (session not ready, or the dev server still compiling the route), nothing re-ran it until the 30-second poll. Now the dashboard waits until the session has resolved, then loads the queue (and appointments/billing) automatically; a 401/403 says "Your session is not ready yet. Retry in a moment." with a Retry button, timeouts and network errors show their message plus Retry, so there is never an endless spinner. The list is still kept while refreshing. Left for Hidayat: the nav "Login"/"Logout" flash (no sidebar/nav changes here). Tests: `tests/unit/task480-dashboard-queue.test.ts` (loading, loaded, error, Retry recovery, timeout, abort). No composer, Lab/POCT or navigation change.
+
 ## 2026-11-17 — Task 472: dashboard queue no longer misses new patients on busy days
 The dashboard queue only read the first 200 of today's visits (finished ones included), so on a very busy day a newly checked-in patient could be missing. It now keeps reading further pages until it has all of today's visits for the clinic, then shows the ones still in the queue. Another clinic's visits are still never shown. A safety limit of 50 pages writes an error to the server log if ever reached. Tests: `tests/unit/triage-queue-pagination.test.ts` (250 finished + 1 new check-in shows the new one; clinic B never appears). No composer, Lab/POCT or navigation change.
 
