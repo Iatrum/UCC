@@ -182,3 +182,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - 2026-11-17 Task 506: MC/referral Documents fixes (UX-FINDINGS Part 2 #3, #4, #9, #10, #11, #18): delete confirm dialog, referral default text no longer asserts absence, empty 'Referral to' blocks completion, clearer row text and loading text.
 
 - Task 527: Patients "New this month" now counts by a registration tag stamped on create (`meta.tag`, searched via `_tag`), not `_lastUpdated`. Legacy untagged patients are not counted.
+
+- 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.

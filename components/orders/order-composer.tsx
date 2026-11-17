@@ -65,7 +65,6 @@ interface OrderComposerProps {
   submitLabel?: string;
   submitting?: boolean;
   patient?: { id: string; fullName: string; nric: string; medicalHistory?: { allergies?: string[]; medications?: string[] } | null } | null;
-  timeChitEnabled?: boolean;
   poctEnabled?: boolean;
   pacsEnabled?: boolean;
 }
@@ -386,7 +385,6 @@ export function OrderComposer({
   submitLabel = "Sign Order",
   submitting = false,
   patient = null,
-  timeChitEnabled = false,
   poctEnabled = false,
   pacsEnabled = false,
 }: OrderComposerProps) {
@@ -428,9 +426,9 @@ export function OrderComposer({
   const [tcDetails, setTcDetails] = React.useState({ tcDate: new Date().toLocaleDateString("en-CA"), tcTimeIn: "", tcTimeOut: "", tcDoctorName: "" });
   const [tcTemplate, setTcTemplate] = React.useState(DEFAULT_TIME_CHIT_TEMPLATE);
   React.useEffect(() => {
-    if (timeChitEnabled) fetch("/api/document-templates?type=time-chit")
+    fetch("/api/document-templates?type=time-chit")
       .then(r => r.ok ? r.json() : null).then(data => { if (data?.html) setTcTemplate(data.html); }).catch(() => {});
-  }, [timeChitEnabled]);
+  }, []);
   const [mcDays, setMcDays] = React.useState(1);
   const [mcDiagnosis, setMcDiagnosis] = React.useState("");
   const [mcStartDate, setMcStartDate] = React.useState(() => new Date().toISOString().split("T")[0]);
@@ -459,9 +457,9 @@ export function OrderComposer({
       items,
       services,
       packages,
-      documents: documents.filter(item => timeChitEnabled || documentKind(item) !== "time-chit"),
+      documents,
     }),
-    [items, services, packages, documents, timeChitEnabled]
+    [items, services, packages, documents]
   );
 
   const unifiedCatalogRows = React.useMemo(
@@ -866,8 +864,8 @@ export function OrderComposer({
     }
     if (editingDocumentKind === "time-chit") {
       const error = timeChitError(tcDetails);
-      if (!timeChitEnabled || error) {
-        toast({ title: error || "Time Chit is disabled for this clinic", variant: "destructive" });
+      if (error) {
+        toast({ title: error, variant: "destructive" });
         return;
       }
     }
@@ -996,7 +994,6 @@ export function OrderComposer({
                   if (entry.meta?.kind === "poct" || entry.meta?.kind === "xray") return;
                   const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
                   if (entry.tab === "documents" && kind !== null) {
-                    if (kind === "time-chit" && !timeChitEnabled) return;
                     setTcDetails({ tcDate: entry.meta?.tcDate || new Date().toLocaleDateString("en-CA"),
                       tcTimeIn: entry.meta?.tcTimeIn || "", tcTimeOut: entry.meta?.tcTimeOut || "", tcDoctorName: entry.meta?.tcDoctorName || "" });
                     setMcDays(Number(entry.meta?.mcDays || 1));
@@ -1117,7 +1114,7 @@ export function OrderComposer({
               Fill out information below to complete document.
             </DialogDescription>
           </DialogHeader>
-          {editingDocumentKind === "time-chit" && timeChitEnabled && (
+          {editingDocumentKind === "time-chit" && (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-3">
                 {([ ["tcDate", "Attendance date", "date"], ["tcTimeIn", "Time in", "time"], ["tcTimeOut", "Time out", "time"], ["tcDoctorName", "Doctor's name", "text"] ] as const).map(([field, label, type]) => (
