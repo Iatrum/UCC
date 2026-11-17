@@ -2,13 +2,10 @@
 
 Reviewer: Task 481. Reviewed commit `6dcf03a` (branch `ai/task-480-local`, merged as `0cee299`).
 
-## Verdict: APPROVE (code) — with a process blocker
+## Verdict: APPROVE
 
-**Blocker (not a code defect):** `6dcf03a` is NOT on `origin/ai/task-472` / PR #281. The remote branch
-is still `7d6ae24` (Task 472 only). Task 480 exists only in the local worktree `/home/dev/wt-task-480`
-(`0cee299`, which also contains the unpushed Task 473 review `507786b`). I reviewed it there, read-only,
-and did not push it. The owner must push `ai/task-480-local` into `ai/task-472` (this review commit
-sits on top of `7d6ae24`, so a merge/rebase of one into the other is needed) before the PR contains the fix.
+At review start `6dcf03a` was only local; during the review it was pushed (`origin/ai/task-472` = `0cee299`),
+so this review now sits on top of the commit it covers. Findings below are non-blocking.
 
 ## Verified
 - **No endless Loading:** `loadQueueOnce` never throws; every outcome (ok / 401-403 / http / network / timeout / aborted)
