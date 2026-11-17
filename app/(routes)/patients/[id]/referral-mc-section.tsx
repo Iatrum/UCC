@@ -1,5 +1,6 @@
 "use client";
 
+import { fillDocumentTemplate, mcDiagnosisBlock, mcDiagnosisVisible, mmcLine, escapeHtmlText } from "@/lib/clinical-documents";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -136,6 +137,13 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
   );
 }
 
+function multilineToHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((p) => `<p style="margin: 0 0 12px; line-height: 1.65;">${escapeHtmlText(p.trim()).replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
 function fillPlaceholders(html: string, data: Record<string, string>): string {
   return Object.entries(data).reduce((acc, [k, v]) => acc.replaceAll(k, v), html);
 }
@@ -216,6 +224,9 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       mcStartDate: doc.details.mcStartDate || new Date().toISOString().slice(0, 10),
       mcDiagnosis: doc.details.mcDiagnosis || "",
       mcDoctorName: doc.details.mcDoctorName || "",
+      mcDoctorMmc: doc.details.mcDoctorMmc || "",
+      referralDoctorName: doc.details.referralDoctorName || "",
+      referralDoctorMmc: doc.details.referralDoctorMmc || "",
       referralTo: doc.details.referralTo || "",
       referralDiagnosis: doc.details.referralDiagnosis || "",
       referralContent: doc.details.referralContent || "",
@@ -350,44 +361,39 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       year: "numeric",
     });
     const issuedDate = formatDateLabel(doc.date) || today;
-    const data: Record<string, string> =
-      doc.kind === "mc"
-        ? {
-            "{{clinicName}}": organization?.name || "",
-            "{{clinicAddress}}": organization?.address || "",
-            "{{clinicPhone}}": organization?.phone || "",
-            "{{patientName}}": patient.fullName || "",
-            "{{patientNric}}": patient.nric || "",
-            "{{patientDob}}": formatDateLabel(patient.dateOfBirth) || "",
-            "{{mcDays}}": doc.details.mcDays || "1",
-            "{{mcStartDate}}": formatDateLabel(doc.details.mcStartDate) || issuedDate,
-            "{{mcEndDate}}": calcMcEndDate(
-              doc.details.mcStartDate,
-              Number(doc.details.mcDays || 1)
-            ),
-            "{{diagnosis}}": doc.details.mcDiagnosis || "",
-            "{{doctorName}}": doc.details.mcDoctorName || "",
-            "{{date}}": today,
-          }
-        : {
-            "{{clinicName}}": organization?.name || "",
-            "{{clinicAddress}}": organization?.address || "",
-            "{{clinicPhone}}": organization?.phone || "",
-            "{{patientName}}": patient.fullName || "",
-            "{{patientNric}}": patient.nric || "",
-            "{{patientAge}}": calcAge(patient.dateOfBirth),
-            "{{referralTo}}": doc.details.referralTo || "",
-            "{{referralFrom}}":
-              doc.details.referralFrom ||
-              doc.details.mcDoctorName ||
-              organization?.name ||
-              "",
-            "{{referralBody}}": doc.details.referralContent || "",
-            "{{diagnosis}}": doc.details.referralDiagnosis || "",
-            "{{doctorName}}": doc.details.mcDoctorName || "",
-            "{{date}}": today,
-          };
-    return fillPlaceholders(html, data);
+    const common = {
+      clinicName: organization?.name || "",
+      clinicAddress: organization?.address || "",
+      clinicPhone: organization?.phone || "",
+      patientName: patient.fullName || "",
+      patientNric: patient.nric || "",
+      date: today,
+    };
+    if (doc.kind === "mc") {
+      const showDx = mcDiagnosisVisible(doc.details);
+      return fillDocumentTemplate(html, {
+        ...common,
+        patientDob: formatDateLabel(patient.dateOfBirth) || "",
+        mcDays: doc.details.mcDays || "1",
+        mcStartDate: formatDateLabel(doc.details.mcStartDate) || issuedDate,
+        mcEndDate: calcMcEndDate(doc.details.mcStartDate, Number(doc.details.mcDays || 1)),
+        diagnosis: showDx ? doc.details.mcDiagnosis || "" : "",
+        diagnosisBlock: mcDiagnosisBlock(doc.details.mcDiagnosis, showDx),
+        doctorName: doc.details.mcDoctorName || "",
+        mmcLine: mmcLine(doc.details.mcDoctorMmc),
+      }, { rawKeys: ["diagnosisBlock", "mmcLine"], hideMcDiagnosis: !showDx });
+    }
+    const referralDoctor = doc.details.referralDoctorName || doc.details.mcDoctorName || "";
+    return fillDocumentTemplate(html, {
+      ...common,
+      patientAge: calcAge(patient.dateOfBirth),
+      referralTo: doc.details.referralTo || "",
+      referralFrom: referralDoctor || doc.details.referralFrom || organization?.name || "",
+      referralBody: multilineToHtml(doc.details.referralContent || ""),
+      diagnosis: doc.details.referralDiagnosis || "",
+      doctorName: referralDoctor,
+      mmcLine: mmcLine(doc.details.referralDoctorMmc),
+    }, { rawKeys: ["referralBody", "mmcLine"] });
   }
 
   async function buildLegacyReferralHtml(r: Referral): Promise<string> {
@@ -685,11 +691,53 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                   }
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="mc-mmc">MMC registration no.</Label>
+                <Input
+                  id="mc-mmc"
+                  value={editForm.mcDoctorMmc || ""}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({ ...prev, mcDoctorMmc: event.target.value }))
+                  }
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={mcDiagnosisVisible({ mcIncludeDiagnosis: editForm.mcIncludeDiagnosis })}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({ ...prev, mcIncludeDiagnosis: event.target.checked ? "true" : "" }))
+                  }
+                />
+                Show diagnosis on the MC (hidden by default)
+              </label>
             </div>
           )}
 
           {editingSigned?.kind === "referral" && (
             <div className="grid gap-4">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="referral-doctor">Doctor name</Label>
+                  <Input
+                    id="referral-doctor"
+                    value={editForm.referralDoctorName || ""}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, referralDoctorName: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="referral-mmc">MMC registration no.</Label>
+                  <Input
+                    id="referral-mmc"
+                    value={editForm.referralDoctorMmc || ""}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, referralDoctorMmc: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="referral-to">Referral to</Label>
                 <Input

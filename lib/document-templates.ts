@@ -3,7 +3,7 @@
 // MC:       {{clinicName}} {{clinicAddress}} {{clinicPhone}}
 //           {{patientName}} {{patientNric}} {{patientDob}}
 //           {{mcDays}} {{mcStartDate}} {{mcEndDate}}
-//           {{diagnosis}} {{doctorName}} {{date}}
+//           {{diagnosisBlock}} (empty unless doctor opts in) {{doctorName}} {{mmcLine}} {{date}}
 //
 // Referral: {{clinicName}} {{clinicAddress}} {{clinicPhone}}
 //           {{patientName}} {{patientNric}} {{patientAge}}
@@ -102,13 +102,14 @@ export const DEFAULT_MC_TEMPLATE = `<!DOCTYPE html>
     medically unfit for work/school from <strong>{{mcStartDate}}</strong> to
     <strong>{{mcEndDate}}</strong> ({{mcDays}} day(s)).
   </p>
-  <p class="cert-para">Diagnosis: {{diagnosis}}</p>
+  {{diagnosisBlock}}
 </div>
 <div class="sig-block">
   <div>
     <div class="sig-line"></div>
     <div class="sig-name">{{doctorName}}</div>
     <div class="sig-subtitle">Medical Practitioner</div>
+    <div class="sig-subtitle">{{mmcLine}}</div>
     <div class="sig-subtitle">Date: {{date}}</div>
   </div>
   <div class="stamp-box">Clinic<br>Stamp</div>
@@ -183,6 +184,7 @@ export const DEFAULT_REFERRAL_TEMPLATE = `<!DOCTYPE html>
 <div class="sig-block">
   <div class="sig-line"></div>
   <div class="sig-name">{{referralFrom}}</div>
+  <div class="sig-clinic">{{mmcLine}}</div>
   <div class="sig-clinic">{{clinicName}}</div>
 </div>
 </body>
@@ -209,6 +211,8 @@ export function fillPreviewData(html: string): string {
     '{{mcEndDate}}': '24 May 2026',
     '{{diagnosis}}': 'Acute Upper Respiratory Tract Infection',
     '{{doctorName}}': 'Dr. Demo Klinik',
+    '{{mmcLine}}': 'MMC No: 00000',
+    '{{diagnosisBlock}}': '',
     '{{date}}': today,
     '{{referralTo}}': 'Pakar Perubatan Dalaman, Hospital Kuala Lumpur',
     '{{referralFrom}}': 'Dr. Demo Klinik, Iatrum Clinic',
