@@ -14,7 +14,7 @@ import { formatDisplayDate, calculateAge, safeToISOString } from "@/lib/utils";
 import type { SerializedPatient } from "@/components/patients/patient-card";
 import { notFound, redirect } from 'next/navigation';
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
-import { isModuleEnabledForClinic } from "@/lib/module-registry";
+import { getEnabledModuleIdsForClinic } from "@/lib/module-registry";
 import { consultSummary as summarizeConsults } from "@/lib/patients/profile-history";
 import PatientProfileWorkspace from "./patient-profile-workspace";
 
@@ -36,15 +36,17 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
   }
   const clinicId = await resolveClinicIdFromServerScope();
   // Fetch data in parallel from Medplum FHIR (source of truth)
-  const [patientData, consultationsData, triageData, appointmentsData, poctEnabled, pacsEnabled, timeChitEnabled] = await Promise.all([
+  // One Organization lookup for all module flags (was 3 identical searches).
+  const [patientData, consultationsData, triageData, appointmentsData, enabledModuleIds] = await Promise.all([
     getPatientFromMedplum(id, clinicId, medplum),
     getPatientConsultationsFromMedplum(id, clinicId, medplum),
     getTriageForPatient(id, medplum, clinicId),
     getPatientAppointmentsFromMedplum(medplum, id),
-    isModuleEnabledForClinic("poct", clinicId),
-    isModuleEnabledForClinic("pacs", clinicId),
-    isModuleEnabledForClinic("time-chit", clinicId),
+    getEnabledModuleIdsForClinic(clinicId),
   ]);
+  const poctEnabled = enabledModuleIds.includes("poct");
+  const pacsEnabled = enabledModuleIds.includes("pacs");
+  const timeChitEnabled = enabledModuleIds.includes("time-chit");
 
   if (!patientData) {
     notFound();

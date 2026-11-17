@@ -22,6 +22,7 @@ import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignPatientToClinicTenant,
   resolveClinicTenant,
+  resolveClinicTenantMemo,
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
@@ -538,9 +539,11 @@ export async function getPatientFromMedplum(
 ): Promise<SavedPatient | null> {
   try {
     const client = medplum ?? (await getAdminMedplum());
-    await resolveClinicTenant(client, clinicId);
-
-    const fhirPatient = await client.readResource('Patient', patientId);
+    // Tenant lookup and Patient read are independent: run them concurrently (Task 537).
+    const [, fhirPatient] = await Promise.all([
+      resolveClinicTenantMemo(client, clinicId),
+      client.readResource('Patient', patientId),
+    ]);
     if (!matchesClinic(fhirPatient, clinicId)) {
       return null;
     }
