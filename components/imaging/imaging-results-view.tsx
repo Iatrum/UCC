@@ -157,27 +157,28 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
             {study.study && (
               <div className="space-y-3">
                 <h4 className="text-sm font-semibold">Study Information</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
                   {study.study.accessionNumber && (
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-muted-foreground">Accession #</p>
-                      <p className="font-medium">{study.study.accessionNumber}</p>
+                      <p className="truncate font-medium" title={study.study.accessionNumber}>{study.study.accessionNumber}</p>
                     </div>
                   )}
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">Series</p>
                     <p className="font-medium">{study.study.numberOfSeries}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">Images</p>
                     <p className="font-medium">{study.study.numberOfInstances}</p>
                   </div>
                   {study.study.viewer && (
-                    <div>
+                    <div className="col-span-full min-w-0">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8"
+                        className="h-8 max-w-full"
+                        title="Open images in the viewer"
                         data-testid="xray-open-viewer"
                         disabled={openingId === study.id}
                         onClick={() => void openViewer(study.id)}
@@ -191,8 +192,8 @@ export function ImagingResultsView({ patientId, encounterId }: ImagingResultsVie
                     </div>
                   )}
                   {study.study.pacsUrl && (
-                    <div>
-                      <Button variant="outline" size="sm" className="h-8" asChild>
+                    <div className="col-span-full min-w-0">
+                      <Button variant="outline" size="sm" className="h-8 max-w-full" asChild>
                         <a
                           href={study.study.pacsUrl}
                           target="_blank"
