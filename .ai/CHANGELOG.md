@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 472: dashboard queue no longer misses new patients on busy days
+The dashboard queue only read the first 200 of today's visits (finished ones included), so on a very busy day a newly checked-in patient could be missing. It now keeps reading further pages until it has all of today's visits for the clinic, then shows the ones still in the queue. Another clinic's visits are still never shown. A safety limit of 50 pages writes an error to the server log if ever reached. Tests: `tests/unit/triage-queue-pagination.test.ts` (250 finished + 1 new check-in shows the new one; clinic B never appears). No composer, Lab/POCT or navigation change.
+
 ## 2026-11-17 — Task 452: dashboard queue keeps its list while refreshing
 The dashboard queue used to swap the whole list for "Loading queue..." on every refresh (including the 30-second auto refresh), and if you clicked away while it was loading, the interrupted request showed up as a "Failed to load" error. Now "Loading queue..." only appears the first time; later refreshes keep the current list on screen. If a refresh fails, the list stays and the "Queue could not be refreshed" banner appears; the full error panel with Retry only shows when there is no list yet. Requests cancelled by leaving the page (or replaced by a newer refresh) no longer show errors; a real 10-second timeout still does. The same quiet handling applies to Appointments and Billing. Left for Hidayat: the nav label that reads "Login" instead of "Logout" while the session loads (no sidebar/nav changes in this task). Tests: extended `e2e/tests/dashboard-load-errors.spec.ts`.
 
