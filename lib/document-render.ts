@@ -150,6 +150,9 @@ export function renderDocumentHtml(input: RenderDocumentInput): string {
     }, { rawKeys: ["clinicLogo", "referralBody", "mmcLine"] });
   }
 
+  // A custom template may use a placeholder we do not know: never print a raw {{token}}.
+  out = out.replace(/\{\{\w+\}\}/g, "");
+
   if (details.status === SIGNED_DOCUMENT_STATUS_VOIDED) {
     const when = details.voidedAt ? ` · ${escapeHtmlText(formatClinicDate(details.voidedAt))}` : "";
     out = out.replace(/<body[^>]*>/i, (m) => `${m}<div class="void-banner">VOID${when}</div>`);

@@ -134,3 +134,14 @@ describe('signed document family', () => {
     expect(signedDocumentMutationError([{ notes: voided }], [{ notes: voided }])).toBeNull();
   });
 });
+
+describe('renderDocumentHtml: unknown placeholders', () => {
+  test('a custom template never prints a raw {{token}}', () => {
+    const html = renderDocumentHtml({
+      kind: 'mc', template: '<html><body>{{patientName}} {{notAKnownField}}</body></html>',
+      details: { kind: 'mc', mcDays: '1' }, patient: { fullName: 'Test Patient' }, organization: null, issuedDate: '2026-11-17',
+    });
+    expect(html).toContain('Test Patient');
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
+  });
+});
