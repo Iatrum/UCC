@@ -11,7 +11,11 @@ import { ImagingOrderForm } from '@/components/imaging/imaging-order-form';
 import { ImagingResultsView } from '@/components/imaging/imaging-results-view';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TestTube2, Camera } from 'lucide-react';
+import { isModuleEnabledForClinicStrict } from '@/lib/module-registry';
+import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
+import { resolveImagingOrderEntryMode } from '@/lib/imaging/order-entry';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -20,6 +24,9 @@ type Props = {
 export default async function PatientLabsImagingPage({ params }: Props) {
   const resolvedParams = await params;
   const patientId = resolvedParams.id;
+  const clinicId = await resolveClinicIdFromServerScope();
+  // Fails closed: a failed module lookup shows the Treatment-panel pointer, not the old form.
+  const orderMode = await resolveImagingOrderEntryMode(() => isModuleEnabledForClinicStrict('pacs', clinicId));
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -63,9 +70,22 @@ export default async function PatientLabsImagingPage({ params }: Props) {
           <div className="grid lg:grid-cols-2 gap-6">
             {/* Order Imaging */}
             <div>
-              <Suspense fallback={<Skeleton className="h-96" />}>
-                <ImagingOrderForm patientId={patientId} />
-              </Suspense>
+              {orderMode === 'treatment-panel-only' ? (
+                <Card data-testid="xray-order-from-treatment">
+                  <CardHeader>
+                    <CardTitle>Order imaging</CardTitle>
+                    <CardDescription>X-ray is ordered from the Treatment panel</CardDescription>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">
+                    Open the patient profile, start a consult, add the X-ray in the Treatment panel and sign.
+                    This links the order to the accession number so incoming images match automatically.
+                  </CardContent>
+                </Card>
+              ) : (
+                <Suspense fallback={<Skeleton className="h-96" />}>
+                  <ImagingOrderForm patientId={patientId} />
+                </Suspense>
+              )}
             </div>
 
             {/* Imaging Results */}

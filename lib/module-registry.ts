@@ -136,6 +136,27 @@ export async function getEnabledModuleIdsForClinic(clinicId?: string | null): Pr
   }
 }
 
+/**
+ * Like isModuleEnabledForClinic, but a Medplum lookup failure THROWS instead of falling back to
+ * the defaults. Use where "unknown" must not be read as "module off" (e.g. accession guard).
+ */
+export async function isModuleEnabledForClinicStrict(
+  moduleId: string,
+  clinicId?: string | null
+): Promise<boolean> {
+  if (!clinicId) {
+    return (DEFAULT_BRANCH_ENABLED_MODULE_IDS as readonly string[]).includes(moduleId);
+  }
+  const medplum = await getAdminMedplum();
+  const orgs = await medplum.searchResources("Organization", {
+    identifier: `clinic|${clinicId}`,
+    _count: "1",
+  });
+  const org = orgs?.[0];
+  const ids = org ? getEnabledModuleIdsFromOrganization(org) : [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
+  return ids.includes(moduleId);
+}
+
 export async function isModuleEnabledForClinic(
   moduleId: string,
   clinicId?: string | null
