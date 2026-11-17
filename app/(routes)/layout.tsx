@@ -63,16 +63,21 @@ export default async function AppRoutesLayout({
     redirect("/login");
   }
 
+  // Auth, nav modules and the feedback flag are independent of each other: run them concurrently
+  // so the page below is not blocked behind a serial chain of lookups (Task 537). The module
+  // lookups already swallow their own errors; requireClinicPageAuth still redirects on failure.
+  const modulesPromise = listNavigationModulesForClinic(clinicId).catch(() => []);
+  const showFeedbackPromise: Promise<boolean> =
+    Boolean(clinicId) && !isPublicPath
+      ? isModuleEnabledForClinic("feedback", clinicId).catch(() => false)
+      : Promise.resolve(false);
+
   if (!skipAuth && sessionToken && !isPublicPath) {
     await requireClinicPageAuth(pathname || "/dashboard");
   }
 
-  const modules = await listNavigationModulesForClinic(clinicId).catch(() => []);
-  // Default-off clinic module; when off the chrome below is exactly the original markup.
-  const showFeedback =
-    Boolean(clinicId) &&
-    !isPublicPath &&
-    (await isModuleEnabledForClinic("feedback", clinicId).catch(() => false));
+  // showFeedback: default-off clinic module; when off the chrome below is exactly the original markup.
+  const [modules, showFeedback] = await Promise.all([modulesPromise, showFeedbackPromise]);
 
   return (
     <div className="flex h-screen flex-col">

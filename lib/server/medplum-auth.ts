@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server';
 import { REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import { AuthError, ClinicContextError, ForbiddenError } from '@/lib/server/route-helpers';
 import { env } from '@/lib/env';
+import { authMemo } from '@/lib/server/auth-memo';
 // Re-export so callers can import getAdminMedplum from either file.
 export { getAdminMedplum } from './medplum-admin';
 
@@ -177,24 +178,44 @@ export async function getMedplumForRequest(req?: NextRequest): Promise<MedplumCl
   return medplum;
 }
 
+type MeDetails = { profile: ProfileResource | undefined; admin: boolean };
+
 /**
- * Get the current user's Medplum profile.
- * Makes exactly one API call (GET /auth/me) and only when the profile is
- * explicitly needed — not on every request.
+ * One GET /auth/me per access token (shared via authMemo, failures not cached). It carries both
+ * the profile and the platform-admin flag, which used to cost two separate round trips.
  */
-export async function getCurrentProfile(req?: NextRequest): Promise<ProfileResource> {
-  const medplum = await getMedplumForRequest(req);
-  const profile = await medplum.getProfileAsync();
+export function loadMe(medplum: MedplumClient): Promise<MeDetails> {
+  const token = medplum.getAccessToken();
+  const load = async (): Promise<MeDetails> => {
+    const me = await medplum.get('auth/me');
+    return {
+      profile: (me?.profile as ProfileResource | undefined) ?? undefined,
+      admin: me?.membership?.admin === true,
+    };
+  };
+  return token ? authMemo.get(token, 'me', load) : load();
+}
+
+async function profileFor(medplum: MedplumClient): Promise<ProfileResource> {
+  const { profile } = await loadMe(medplum);
   if (!profile) {
     throw new Error('No Medplum profile available');
   }
-  return profile as ProfileResource;
+  return profile;
+}
+
+/**
+ * Get the current user's Medplum profile.
+ * Shares the single (memoised) GET /auth/me with the platform-admin check.
+ */
+export async function getCurrentProfile(req?: NextRequest): Promise<ProfileResource> {
+  const medplum = await getMedplumForRequest(req);
+  return profileFor(medplum);
 }
 
 async function isPlatformAdmin(medplum: MedplumClient): Promise<boolean> {
   try {
-    const me = await medplum.get('auth/me');
-    return me?.membership?.admin === true;
+    return (await loadMe(medplum)).admin;
   } catch {
     return false;
   }
@@ -222,7 +243,7 @@ async function resolveClinicOrganizationIds(
   return ids;
 }
 
-async function assertClinicAssignment(
+async function checkClinicAssignment(
   medplum: MedplumClient,
   profile: ProfileResource,
   clinicId: string
@@ -235,11 +256,14 @@ async function assertClinicAssignment(
     throw new AuthError('Clinic access is only available to assigned staff users.');
   }
 
-  const allowedOrganizationIds = await resolveClinicOrganizationIds(medplum, clinicId);
-  const roles = await medplum.searchResources('PractitionerRole', {
-    practitioner: `Practitioner/${profile.id}`,
-    _count: '100',
-  });
+  // Independent lookups: run them together instead of one after the other.
+  const [allowedOrganizationIds, roles] = await Promise.all([
+    resolveClinicOrganizationIds(medplum, clinicId),
+    medplum.searchResources('PractitionerRole', {
+      practitioner: `Practitioner/${profile.id}`,
+      _count: '100',
+    }),
+  ]);
 
   const hasMatchingRole = (roles ?? []).some((role) => {
     const orgRef = role.organization?.reference;
@@ -255,6 +279,24 @@ async function assertClinicAssignment(
   }
 }
 
+/**
+ * Throws unless the caller may use `clinicId`. A successful check is shared for a few seconds per
+ * (access token, clinic); denials and errors are never cached, so a newly granted role works at
+ * once and a clinic can never be reached with another clinic's cached approval.
+ */
+export async function assertClinicAssignment(
+  medplum: MedplumClient,
+  profile: ProfileResource,
+  clinicId: string
+): Promise<void> {
+  const token = medplum.getAccessToken();
+  const run = () => checkClinicAssignment(medplum, profile, clinicId);
+  if (!token) return run();
+  await authMemo.get(token, `assign|${clinicId}`, async () => {
+    await run();
+    return true;
+  });
+}
 
 /**
  * Check if user has a specific role.
@@ -330,10 +372,8 @@ export async function requireClinicPageAuth(
   let medplum: MedplumClient;
   let profile: ProfileResource;
   try {
-    [medplum, profile] = await Promise.all([
-      getMedplumForRequest(),
-      getCurrentProfile(),
-    ]);
+    medplum = await getMedplumForRequest();
+    profile = await profileFor(medplum);
   } catch {
     redirect(`/login?next=${encodeURIComponent(nextPath)}`);
   }
@@ -387,10 +427,9 @@ export async function requireClinicAuth(
     };
   }
 
-  const [medplum, clinicId, profile] = await Promise.all([
+  const [medplum, clinicId] = await Promise.all([
     getMedplumForRequest(req),
     getClinicIdFromRequest(req),
-    getCurrentProfile(req),
   ]);
 
   if (!clinicId) {
@@ -399,6 +438,7 @@ export async function requireClinicAuth(
     );
   }
 
+  const profile = await profileFor(medplum);
   await assertClinicAssignment(medplum, profile, clinicId);
   return { medplum, clinicId };
 }

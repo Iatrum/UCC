@@ -475,6 +475,26 @@ export async function markFollowUpOpened(
   return mapCommunicationToFollowUp(updated as Communication);
 }
 
+function normalizeTwilioStatus(status: string): FollowUpDeliveryStatus | null {
+  switch (status) {
+    case "delivered":
+    case "read":
+      return "delivered";
+    case "sent":
+      return "sent";
+    case "failed":
+    case "undelivered":
+      return "failed";
+    case "accepted":
+    case "scheduled":
+    case "queued":
+    case "sending":
+      return "queued";
+    default:
+      return null;
+  }
+}
+
 export async function updateTwilioDeliveryStatus(
   medplum: MedplumClient,
   messageSid: string,
@@ -490,11 +510,14 @@ export async function updateTwilioDeliveryStatus(
   );
   if (!comm) return null;
 
-  const normalized: FollowUpDeliveryStatus =
-    status === "delivered" ? "delivered" :
-    status === "sent" ? "sent" :
-    status === "failed" || status === "undelivered" ? "failed" :
-    "queued";
+  // Only documented Twilio message statuses are accepted; anything else is not written.
+  const normalized = normalizeTwilioStatus(status);
+  if (!normalized) return null;
+  // Terminal delivery states are never overwritten by a late/out-of-order callback.
+  const current = getExtensionString(comm, DELIVERY_STATUS_EXTENSION_URL);
+  if ((current === "delivered" || current === "failed") && current !== normalized) {
+    return mapCommunicationToFollowUp(comm);
+  }
   const communicationStatus: FollowUpStatus =
     normalized === "delivered" ? "completed" :
     normalized === "failed" ? "stopped" :

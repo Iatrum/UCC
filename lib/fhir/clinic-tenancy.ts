@@ -96,6 +96,12 @@ export async function resolveClinicTenant(
 ): Promise<ClinicTenant | null> {
   if (!clinicId) return null;
 
+  // Organization and account lookups are independent: start both together (Task 537) but keep
+  // the original error precedence (a missing/failed Organization is reported first).
+  const accountSettled = findClinicAccount(medplum, clinicId).then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
   let organization = await findClinicOrganization(medplum, clinicId);
 
   if (!organization?.id) {
@@ -107,7 +113,9 @@ export async function resolveClinicTenant(
     throw new Error(`Clinic Organization not found for clinic '${clinicId}'.`);
   }
 
-  const account = await findClinicAccount(medplum, clinicId);
+  const accountResult = await accountSettled;
+  if (!accountResult.ok) throw accountResult.error;
+  const account = accountResult.value;
   if (!account?.id) {
     throw new Error(`Clinic account HealthcareService not found for clinic '${clinicId}'.`);
   }
@@ -121,6 +129,36 @@ export async function resolveClinicTenant(
     accountId: account.id,
     accountReference: `HealthcareService/${account.id}`,
   };
+}
+
+const TENANT_MEMO_TTL_MS = 5000;
+const tenantMemo = new WeakMap<MedplumClient, Map<string, { at: number; promise: Promise<ClinicTenant | null> }>>();
+
+/**
+ * resolveClinicTenant with a short per-client memo (Task 537). A patient page resolves the same
+ * tenant from several services (patient, triage); this collapses them into one set of lookups.
+ * The memo is keyed by client instance (request-scoped for staff clients), expires after 5 s so
+ * a long-lived admin client never serves a stale tenant, and failures are never cached.
+ */
+export function resolveClinicTenantMemo(
+  medplum: MedplumClient,
+  clinicId: string | undefined | null
+): Promise<ClinicTenant | null> {
+  if (!clinicId) return Promise.resolve(null);
+  let perClient = tenantMemo.get(medplum);
+  if (!perClient) {
+    perClient = new Map();
+    tenantMemo.set(medplum, perClient);
+  }
+  const hit = perClient.get(clinicId);
+  if (hit && Date.now() - hit.at < TENANT_MEMO_TTL_MS) return hit.promise;
+  const promise = resolveClinicTenant(medplum, clinicId);
+  const entry = { at: Date.now(), promise };
+  perClient.set(clinicId, entry);
+  promise.catch(() => {
+    if (perClient!.get(clinicId) === entry) perClient!.delete(clinicId);
+  });
+  return promise;
 }
 
 export function resourceMatchesClinicTenant(

@@ -2,6 +2,8 @@
 # Full gate after every task: lint+types, build, Playwright (1 worker), 4-clinic check.
 # Usage: e2e/scripts/check-all.sh <label> [baseline-results.json]
 # Exits non-zero if any step fails or any test fails that passed in the baseline.
+# Strict targets (UCC_GATE_TARGET=staging, set by e2e/scripts/check-staging.sh): the baseline must exist and be
+# attested for that target (e2e/scripts/lib/baseline.mjs); a missing/foreign baseline FAILS the gate (Task 533).
 set -u
 LOG_ROOT=${UCC_LOG_ROOT:-/workspace/ai-logs}
 LABEL=${1:-run}; BASE=${2:-$LOG_ROOT/baseline/results.json}
@@ -11,6 +13,9 @@ export UCC_EVIDENCE=${UCC_EVIDENCE:-$OUT/evidence}
 export UCC_SAVE_SHOTS=${UCC_SAVE_SHOTS:-$OUT/save-state-shots}
 export UCC_REPORTS=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}
 export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=1536}
+if [ -n "${UCC_GATE_TARGET:-}" ] && [ "$UCC_GATE_TARGET" != local ]; then
+  node "$REPO/e2e/scripts/lib/baseline.mjs" check "$BASE" "$UCC_GATE_TARGET" || { echo "OVERALL: FAIL (baseline not trusted for $UCC_GATE_TARGET)"; exit 1; }
+fi
 step() { local n=$1; shift; "$@" > "$OUT/$n.log" 2>&1; local c=$?; echo "$n: $c" | tee -a "$OUT/summary.txt"; [ $c -eq 0 ] || FAIL=1; }
 : > "$OUT/summary.txt"; cd "$REPO"
 step lint bun run lint

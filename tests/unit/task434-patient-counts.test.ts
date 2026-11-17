@@ -6,6 +6,7 @@ import {
 } from "../../lib/fhir/patient-service";
 import {
   REGISTERED_TAG_SYSTEM,
+  clinicYmd,
   getRegistrationDate,
   registeredThisMonthTagParam,
   withRegistrationTag,
@@ -19,10 +20,7 @@ const SIZES: Record<string, number> = { "clinic-a": 230, "clinic-b": 7, "clinic-
 const ident = (c: string) => ({ system: CLINIC_IDENTIFIER_SYSTEM, value: c });
 const clinicOf = (r: any) => r.identifier?.find((i: any) => i.system === CLINIC_IDENTIFIER_SYSTEM)?.value;
 
-const ymdToday = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-})();
+const ymdToday = clinicYmd(new Date());
 const patients: any[] = [];
 let n = 0;
 for (const c of CLINICS) {
@@ -132,16 +130,32 @@ describe("task 527: registration date tag", () => {
   });
 
   it("stamps a registration tag once and keeps existing tags", () => {
-    const now = new Date(2026, 10, 5);
+    const now = new Date(Date.UTC(2026, 10, 5, 4));
     const p = withRegistrationTag({ meta: { tag: [{ system: "x", code: "y" }] } } as any, now);
     expect(p.meta!.tag).toEqual([{ system: "x", code: "y" }, { system: REGISTERED_TAG_SYSTEM, code: "2026-11-05" }]);
-    expect(withRegistrationTag(p, new Date(2027, 0, 1))).toBe(p);
+    expect(withRegistrationTag(p, new Date(Date.UTC(2027, 0, 1, 4)))).toBe(p);
     expect(getRegistrationDate(p)).toBe("2026-11-05");
     expect(getRegistrationDate({})).toBeUndefined();
   });
 
   it("month param covers day 1..today only", () => {
-    const parts = registeredThisMonthTagParam(new Date(2026, 1, 3)).split(",");
+    const parts = registeredThisMonthTagParam(new Date(Date.UTC(2026, 1, 3, 4))).split(",");
+    expect(parts).toEqual([1, 2, 3].map((d) => `${REGISTERED_TAG_SYSTEM}|2026-02-0${d}`));
+  });
+
+  it("uses the Asia/Kuala_Lumpur date, not server-local, around midnight MYT", () => {
+    // 2026-11-30T16:30Z is 2026-12-01 00:30 MYT; a UTC server would say Nov 30.
+    const justAfterMidnightMyt = new Date("2026-11-30T16:30:00Z");
+    expect(clinicYmd(justAfterMidnightMyt)).toBe("2026-12-01");
+    expect(getRegistrationDate(withRegistrationTag({} as any, justAfterMidnightMyt))).toBe("2026-12-01");
+    // 2026-11-30T15:59Z is still Nov 30, 23:59 MYT
+    expect(clinicYmd(new Date("2026-11-30T15:59:00Z"))).toBe("2026-11-30");
+    // New MYT month: only Dec 1 counts, no November days leak in
+    expect(registeredThisMonthTagParam(justAfterMidnightMyt)).toBe(`${REGISTERED_TAG_SYSTEM}|2026-12-01`);
+    // Late UTC on the 31st of a month is already the 1st in MYT (year rollover)
+    expect(clinicYmd(new Date("2026-12-31T20:00:00Z"))).toBe("2027-01-01");
+    // Earlier in the MYT day (still previous UTC day) month range spans the full MYT month so far
+    const parts = registeredThisMonthTagParam(new Date("2026-02-02T17:00:00Z")).split(",");
     expect(parts).toEqual([1, 2, 3].map((d) => `${REGISTERED_TAG_SYSTEM}|2026-02-0${d}`));
   });
 });

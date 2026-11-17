@@ -9,6 +9,7 @@ import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
   resolveClinicTenant,
+  resolveClinicTenantMemo,
   resourceMatchesClinicTenant,
   type ClinicTenant,
   withClinicIdentifier,
@@ -707,17 +708,19 @@ export async function getActiveTriageEncounter(
   clinicId?: string | null
 ): Promise<TriageSummary & { id: string } | null> {
   const client = medplum;
-  const clinicTenant = await resolveClinicTenant(client, clinicId);
   // Fetch a small batch so we can skip consultation Encounters (status=finished,
   // no triage extension) that sort ahead of the real triage Encounter after a
-  // consultation is saved.
-  const encounters = await client.searchResources('Encounter', {
-    subject: `Patient/${patientId}`,
-    status: 'arrived,triaged,in-progress,finished',
-    _count: '10',
-    _sort: '-_lastUpdated',
-    ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
-  });
+  // consultation is saved. Tenant lookup runs concurrently with the search (Task 537).
+  const [clinicTenant, encounters] = await Promise.all([
+    resolveClinicTenantMemo(client, clinicId),
+    client.searchResources('Encounter', {
+      subject: `Patient/${patientId}`,
+      status: 'arrived,triaged,in-progress,finished',
+      _count: '10',
+      _sort: '-_lastUpdated',
+      ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+    }),
+  ]);
 
   if (!encounters?.length) return null;
   const encounter: any = (encounters as any[]).find((enc: any) =>

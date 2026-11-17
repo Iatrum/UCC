@@ -22,3 +22,22 @@ export default function AnalyticsSkeleton() {
     </div>
   );
 }
+
+/** Cards + charts placeholder only (the heading is already on screen), for the page-level Suspense. */
+export function AnalyticsBodySkeleton() {
+  return (
+    <div className="space-y-6" role="status" aria-busy="true" aria-label="Loading analytics">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="analytics-skeleton-metrics">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[104px] rounded-xl" />
+        ))}
+      </div>
+      <div className="grid gap-6 md:grid-cols-2" data-testid="analytics-skeleton-charts">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[280px] rounded-2xl" />
+        ))}
+        <Skeleton className="h-[300px] rounded-2xl md:col-span-2" />
+      </div>
+    </div>
+  );
+}

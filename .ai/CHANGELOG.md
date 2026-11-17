@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 545: re-checked every open UX finding against current dev; none of the Medium/High items is still open
+The findings list was out of date. Fixed items are now marked with the file and line that proves it. Only three Low items remain (dead purchasing panels, raw-HTML templates, long branch list) plus sidebar polish, which is out of scope. Docs only, no app code changed.
+
 ## 2026-11-17 — Task 508: merged latest dev into the queue and UX-small-fixes PRs; UX items #6, #7, #19 confirmed already fixed
 Resolved changelog-only conflicts in both PRs. The patient-profile items (history refresh after Sign, hidden Start consult while the drawer is open, scrollable history table, consistent "Last consult / Total consults" header) were already fixed by Task 446 on dev, so no app code changed; UX-FINDINGS now marks them fixed.
 
@@ -184,3 +187,7 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 527: Patients "New this month" now counts by a registration tag stamped on create (`meta.tag`, searched via `_tag`), not `_lastUpdated`. Legacy untagged patients are not counted.
 
 - 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
+
+## Task 533 (staging prep continuation, repo-side only)
+- 385c: `e2e/scripts/lib/baseline.mjs` (baseline identity sidecar: target + sha256), `compare.mjs` fails closed under `UCC_GATE_TARGET=staging`, `check-all.sh` pre-checks it, new `e2e/scripts/check-staging.sh` adapter (preflight + attested baseline). Unit tests: `tests/unit/staging-gate.test.ts`.
+- 385b gap: `scripts/staging/bootstrap.ts` creates the fake `demo` Organization and fake doctor Practitioner on an empty staging project, called from `staging:seed` after the preflight (`--no-bootstrap` to skip, `--dry-run` contacts nothing). No server/container started; nothing run against staging.

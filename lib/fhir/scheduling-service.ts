@@ -5,6 +5,7 @@ import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
   resolveClinicTenant,
+  resolveClinicTenantMemo,
   resourceMatchesClinicTenant,
   withClinicIdentifier,
   type ClinicTenant,
@@ -122,7 +123,7 @@ export async function listClinicSchedules(
   medplum: MedplumClient,
   clinicId: string
 ): Promise<ScheduleSummary[]> {
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
+  const clinicTenant = await resolveClinicTenantMemo(medplum, clinicId);
   if (!clinicTenant) {
     throw new Error("Clinic tenant is required for scheduling");
   }
