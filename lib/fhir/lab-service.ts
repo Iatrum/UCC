@@ -22,6 +22,7 @@ import { POCT_TESTS } from './lab-constants';
 import { POCT_TAG_SYSTEM, requireOnlineAnalyser } from './poct-device';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
+import { assertStoredResourceInClinic } from './write-containment';
 import { LAB_TESTS, type LabTestCode, type LabReportSummary, type LabResult } from './lab-constants';
 import {
   assertOrderClinic,
@@ -511,6 +512,20 @@ async function assertPoctOrderMutable(serviceRequest: ServiceRequest, clinicId: 
 }
 
 /**
+ * Task 482: authorize the STORED order against the caller's clinic before any write or
+ * delete (explicit assert, in addition to the module gate and the Medplum AccessPolicy).
+ * Foreign/untagged id => NotFoundError (404); missing clinic => ForbiddenError (403).
+ */
+async function readOrderForMutation(medplum: MedplumClient, serviceRequestId: string, clinicId: string): Promise<ServiceRequest> {
+  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId, {
+    cache: 'no-cache',
+    headers: { 'X-Medplum': 'extended' },
+  });
+  await assertStoredResourceInClinic(medplum, serviceRequest, clinicId, 'Lab order');
+  return serviceRequest;
+}
+
+/**
  * Update a lab order (e.g. cancel or change priority)
  */
 export async function updateLabOrder(
@@ -519,7 +534,7 @@ export async function updateLabOrder(
   medplum: MedplumClient,
   clinicId: string
 ): Promise<void> {
-  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await readOrderForMutation(medplum, serviceRequestId, clinicId);
   await assertPoctOrderMutable(serviceRequest, clinicId);
   const updated: ServiceRequest = { ...serviceRequest };
   if (updates.status) updated.status = updates.status;
@@ -533,7 +548,7 @@ export async function updateLabOrder(
  * Delete a lab order
  */
 export async function deleteLabOrder(serviceRequestId: string, medplum: MedplumClient, clinicId: string): Promise<void> {
-  const serviceRequest = await medplum.readResource('ServiceRequest', serviceRequestId);
+  const serviceRequest = await readOrderForMutation(medplum, serviceRequestId, clinicId);
   await assertPoctOrderMutable(serviceRequest, clinicId);
   await medplum.deleteResource('ServiceRequest', serviceRequestId);
   console.log(`✅ Deleted ServiceRequest ${serviceRequestId}`);

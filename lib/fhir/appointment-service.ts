@@ -12,7 +12,7 @@ import {
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
-import { assertPatientInClinic } from './write-containment';
+import { assertPatientInClinic, assertStoredResourceInClinic } from './write-containment';
 import { ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
 
 /** Relative `Patient/id` or absolute server URL ending with `Patient/id`. */
@@ -284,24 +284,11 @@ async function readAppointmentForMutation(
     }
     throw error;
   }
-  // Appointment mutations require an explicit clinic tag; generic compartment
-  // matching alone does not establish the resource's owning clinic.
-  const ownClinic = appointment.identifier?.some(
-    identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
-  );
-  const conflictingClinic = appointment.identifier?.some(
-    identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value !== clinicId
-  );
-  if (!ownClinic || conflictingClinic) {
-    throw new ForbiddenError('Appointment unavailable in current clinic');
-  }
-  const accounts = getResourceAccountReferences(appointment);
-  if (accounts.length) {
-    const tenant = await resolveClinicTenant(medplum, clinicId);
-    if (!tenant || accounts.some(account => account.reference !== tenant.accountReference)) {
-      throw new ForbiddenError('Appointment unavailable in current clinic');
-    }
-  }
+  // Task 482 / Task 422 rule: foreign id => 404 (NotFoundError), zero writes.
+  await assertStoredResourceInClinic(medplum, appointment, clinicId, 'Appointment');
+  // Foreign (or missing) stored patient reference => 403, zero writes.
+  const patientRef = appointment.participant?.map(p => p.actor?.reference).find(isPatientParticipantReference);
+  if (patientRef) await assertPatientInClinic(medplum, clinicId, patientIdFromActorReference(patientRef));
   return appointment;
 }
 
