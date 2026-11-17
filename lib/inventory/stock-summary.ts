@@ -17,11 +17,15 @@ export function formatItemCount(n: number): string {
 export function summarizeLowStock<T extends StockLevel>(items: T[]) {
   const orderSoon = items.filter(isOrderSoon);
   const outOfStock = items.filter(isOutOfStock);
+  // Banner covers everything at/below threshold, out-of-stock first, so an all-empty clinic still gets alerted.
+  const attention = [...outOfStock, ...orderSoon];
   return {
     orderSoon,
     outOfStock,
     inStock: items.length - outOfStock.length,
-    bannerNames: orderSoon.slice(0, BANNER_NAME_LIMIT).map((m) => m.name),
-    moreCount: Math.max(0, orderSoon.length - BANNER_NAME_LIMIT),
+    attention,
+    bannerNames: attention.slice(0, BANNER_NAME_LIMIT).map((m) => m.name),
+    moreCount: Math.max(0, attention.length - BANNER_NAME_LIMIT),
+    moreFilter: (outOfStock.length > BANNER_NAME_LIMIT ? "Out of stock" : "Order soon") as "Out of stock" | "Order soon",
   };
 }

@@ -70,7 +70,7 @@ export default function InventoryPage() {
   const stockSummary = summarizeLowStock(medications);
   const lowStockItems = stockSummary.orderSoon;
   const outOfStockItems = stockSummary.outOfStock;
-  const selectedMedication = lowStockItems[0] ?? medications[0] ?? null;
+  const selectedMedication = stockSummary.attention[0] ?? medications[0] ?? null;
   const overviewMedications = React.useMemo(() => {
     if (overviewFilter === "All") return medications;
     if (overviewFilter === "Out of stock") return medications.filter(isOutOfStock);
@@ -161,7 +161,7 @@ export default function InventoryPage() {
         </p>
       </div>
 
-      {lowStockItems.length > 0 ? (
+      {stockSummary.attention.length > 0 ? (
         <Alert className="border-amber-200 bg-amber-50 text-amber-950">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Low stock attention</AlertTitle>
@@ -176,14 +176,14 @@ export default function InventoryPage() {
                   className="font-medium underline underline-offset-2"
                   onClick={() => {
                     setActiveTab("overview");
-                    setOverviewFilter("Order soon");
+                    setOverviewFilter(stockSummary.moreFilter);
                   }}
                 >
                   {stockSummary.moreCount} more
                 </button>
               </>
             ) : null}{" "}
-            {lowStockItems.length === 1 ? "is" : "are"} at or below the minimum stock threshold.
+            {stockSummary.attention.length === 1 ? "is" : "are"} at or below the minimum stock threshold.
             </span>
           </AlertDescription>
         </Alert>

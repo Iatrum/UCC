@@ -43,3 +43,10 @@ test('date of birth is required and validated', () => {
   expect(f.dateOfBirth.safeParse('').success).toBe(false);
   expect(f.dateOfBirth.safeParse('1988-07-05').success).toBe(true);
 });
+
+test('banner still alerts when only out-of-stock items exist (review fix)', () => {
+  const s = summarizeLowStock([med('A', 0), med('B', 50)]);
+  expect(s.orderSoon).toEqual([]);
+  expect(s.bannerNames).toEqual(['A']);
+  expect(s.moreCount).toBe(0);
+});
