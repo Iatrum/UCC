@@ -13,7 +13,7 @@
 - Access policy ProjectMembership leak (work in `/workspace/iatrum-ucc-ap`)
 - `/admin` redirect loop; rate limit shown as "wrong password"; stock 500
 - [x] (Task 385, plan only: `.ai/PLAN-network-lockdown-staging.md`; user runs the runbook, build tasks 385a-e not started) Network lockdown plan; staging plan
-- UX audit
+- [x] (Task 418, 2026-11-17: walked on origin/dev with one dev server; 19 findings, 3 High, in `.ai/UX-FINDINGS.md`; docs only, no code changed; dispensing, purchases, MC/referral and admin screens not covered, see file) UX audit
 - POCT labs phases 1-3
 - POCT X-ray
 - Dispensing; MC/referral docs
