@@ -76,8 +76,8 @@ export default async function AppRoutesLayout({
     await requireClinicPageAuth(pathname || "/dashboard");
   }
 
+  // showFeedback: default-off clinic module; when off the chrome below is exactly the original markup.
   const [modules, showFeedback] = await Promise.all([modulesPromise, showFeedbackPromise]);
-  // Default-off clinic module; when off the chrome below is exactly the original markup.
 
   return (
     <div className="flex h-screen flex-col">
