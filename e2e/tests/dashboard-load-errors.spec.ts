@@ -24,7 +24,7 @@ test('dashboard Billing tab: loading, error, Retry, list', async ({ page }) => {
   await expect(empty).toHaveCount(0);
   await page.screenshot({ path: process.env.UCC_SHOT_DIR ? `${process.env.UCC_SHOT_DIR}/billing-error.png` : undefined });
   await page.getByRole('button', { name: 'Retry' }).click();
-  await expect(page.getByRole('link', { name: 'Fake Billable Patient' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Fake Billable Patient' }).first()).toBeVisible();
   await expect(empty).toHaveCount(0);
 });
 
@@ -45,7 +45,7 @@ test('dashboard Appointments tab: error then Retry', async ({ page }) => {
 });
 
 // Task 452 (UX audit High #2): keep the previous queue while refetching; no error on interrupted fetch.
-const fakeQueue = (name: string) => json({ patients: [{ id: 'fake-pat-q', name, queueStatus: 'waiting', queueNumber: 1 }] });
+const fakeQueue = (name: string) => json({ patients: [{ id: 'fake-pat-q', fullName: name, queueStatus: 'waiting', queueNumber: 1 }] });
 
 test('dashboard queue keeps previous list while refetching', async ({ page }) => {
   let calls = 0;
@@ -83,9 +83,11 @@ test('dashboard queue keeps list and shows banner when a refetch fails', async (
 test('navigating away mid-fetch does not surface an error', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.route('**/api/queue', async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.abort('failed').catch(() => {}); });
+  // Queue request hangs; a real page unload then cancels it. That must not log/show a load error.
+  await page.route('**/api/queue', () => new Promise<void>(() => {}));
   await page.goto('/dashboard');
-  await page.getByRole('link', { name: /patients/i }).first().click().catch(() => {});
-  await page.waitForTimeout(2000);
+  await expect(page.getByText('Loading queue...')).toBeVisible();
+  await page.goto('/patients');
+  await page.waitForTimeout(1500);
   expect(errors.filter((e) => /Error loading (queue|appointments|consultations)/.test(e))).toHaveLength(0);
 });

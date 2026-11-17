@@ -101,7 +101,7 @@ export default function Dashboard() {
       }));
       setAppointments(mapped);
     } catch (err) {
-      console.error('Error loading appointments:', err);
+      if (!unloadingRef.current) console.error('Error loading appointments:', err);
       if (mountedRef.current && !unloadingRef.current) setApptError('Failed to load appointments.');
     } finally {
       if (mountedRef.current) setApptLoading(false);
@@ -117,7 +117,7 @@ export default function Dashboard() {
       const result = await response.json();
       setConsultations(result.consultations || []);
     } catch (err) {
-      console.error('Error loading consultations:', err);
+      if (!unloadingRef.current) console.error('Error loading consultations:', err);
       if (mountedRef.current && !unloadingRef.current) setConsultationsError('Failed to load billable consultations.');
     } finally {
       if (mountedRef.current) setConsultationsLoading(false);
