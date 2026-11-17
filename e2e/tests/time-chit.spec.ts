@@ -1,6 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
 import { MedplumClient } from '@medplum/core';
 import { fhir } from '../lib/fhir';
 import { BASE, MEDPLUM, MEDPLUM_ADMIN, EVIDENCE } from '../lib/env';
@@ -101,26 +100,13 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     await expect(page.getByText(/7\.00/).first()).toBeVisible();
     await page.getByRole('button', { name: 'Preview', exact: true }).last().click();
     await expect(page.getByRole('button', { name: 'Print document' })).toBeVisible();
-    // Headless Chromium downloads PDF navigations and leaves the popup at about:blank.
-    // Capture the actual renderer output instead of asserting that browser-specific URL.
-    await page.evaluate(() => {
-      const original = URL.createObjectURL.bind(URL);
-      (window as any).__timeChitPdfs = [];
-      URL.createObjectURL = (blob: Blob | MediaSource) => {
-        if (blob instanceof Blob && blob.type === 'application/pdf') (window as any).__timeChitPdfs.push(blob);
-        return original(blob);
-      };
-    });
-    const popupPromise = page.waitForEvent('popup');
-    await page.getByRole('button', { name: 'Print document' }).click();
-    const pdfPopup = await popupPromise;
-    await expect.poll(() => page.evaluate(() => (window as any).__timeChitPdfs.length)).toBeGreaterThan(0);
-    const pdfBytes = await page.evaluate(async () => Array.from(new Uint8Array(await (window as any).__timeChitPdfs.at(-1).arrayBuffer())));
-    expect(Buffer.from(pdfBytes).subarray(0, 5).toString()).toBe('%PDF-');
-    expect(pdfBytes.length).toBeGreaterThan(1000);
-    writeFileSync(`${EVIDENCE}/time-chit-checkout.pdf`, Buffer.from(pdfBytes));
+    // Checkout now previews/prints the same HTML template as the composer and Documents tab.
+    const checkoutPreview = page.frameLocator('iframe[title="Document preview"]');
+    await expect(checkoutPreview.getByText('TIME CHIT / SURAT MASA')).toBeVisible();
+    await expect(checkoutPreview.getByText('Dr Fake Attendance')).toBeVisible();
     await page.screenshot({ path: `${EVIDENCE}/time-chit-checkout-pdf.png`, fullPage: true });
-    await pdfPopup.close();
+    await page.getByRole('button', { name: 'Print document' }).click();
+    await expect(page.locator('iframe[aria-hidden="true"]')).toHaveCount(1);
     const resources = await m.searchResources('Procedure', { encounter: `Encounter/${consultationId}` }, { cache: 'no-cache' });
     const resource = resources.find(p => JSON.parse(p.note?.[0]?.text || '{}').kind === 'time-chit')!;
     expect(resource.identifier?.some(i => i.system === 'clinic' && i.value === clinicId)).toBe(true);
@@ -144,8 +130,8 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     await expect(preview.getByText(/not a Medical Certificate/)).toBeVisible();
     await expect(preview.getByText('Dr Fake Attendance')).toBeVisible();
     await page.screenshot({ path: `${EVIDENCE}/time-chit-historical-print.png`, fullPage: true });
-    const printPromise = page.waitForEvent('popup'); await page.getByRole('button', { name: 'Print / Save PDF' }).click();
-    const print = await printPromise; await expect(print.getByText('TIME CHIT / SURAT MASA')).toBeVisible(); await print.close();
+    await page.getByRole('button', { name: 'Print / Save PDF' }).click();
+    await expect(page.locator('iframe[aria-hidden="true"]')).toHaveCount(1);
     await toggle(true);
     expect((await request.patch('/api/consultations', { data: { consultationId, procedures: [line()] } })).status()).toBe(200);
 

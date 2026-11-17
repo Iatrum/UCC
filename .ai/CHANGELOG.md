@@ -1,6 +1,7 @@
 # CHANGELOG (plain language)
 
 ## 2026-11-17 — Task 508: merged latest dev into the queue and UX-small-fixes PRs; UX items #6, #7, #19 confirmed already fixed
+- fix(documents): MC, Time Chit and referral now share one HTML renderer (`lib/document-render.ts`) across the composer preview, Documents tab and checkout (React-PDF removed). Adds MYT calendar dates (`lib/clinic-dates.ts`, one `dd MMM yyyy` format), DOB/MMC/logo on MC and Time Chit, MC issue date = consult date on reprint, A4 print CSS + iframe print, `{{clinicLogo}}`/`{{mmcLine}}`/`{{diagnosisBlock}}` in the template editor, Time Chit in the signed-document audit, hidden MC diagnosis no longer shown in the list, and signed documents can only be voided (record kept) or reissued, not edited/deleted (Task 549).
 Resolved changelog-only conflicts in both PRs. The patient-profile items (history refresh after Sign, hidden Start consult while the drawer is open, scrollable history table, consistent "Last consult / Total consults" header) were already fixed by Task 446 on dev, so no app code changed; UX-FINDINGS now marks them fixed.
 
 ## 2026-11-17 — Task 476: queue confirm, "Live updates off" hint, recent-consultations mapping

@@ -914,10 +914,10 @@ export async function updateConsultationInMedplum(
 
   let clinicTenant: Awaited<ReturnType<typeof resolveClinicTenant>> = null;
   if (updates.procedures !== undefined) {
+    await assertTimeChitMutationAllowed(updates.procedures, procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
     // Signed MC / Time Chit / referral are legal records: only void (record kept) or reissue, never edit/delete.
     const signedError = signedDocumentMutationError(procedures.map(p => ({ notes: p.note?.[0]?.text })), updates.procedures as any[]);
     if (signedError) throw new ConflictError(signedError);
-    await assertTimeChitMutationAllowed(updates.procedures, procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
     const hasTimeChit = (updates.procedures as any[]).some(isTimeChitProcedure);
     if (hasTimeChit || (updates.procedures as any[]).some(p => isSignedDocumentNote(p.notes))) {
       clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);
