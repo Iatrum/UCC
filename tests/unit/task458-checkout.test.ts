@@ -16,9 +16,27 @@ const patients: Record<string, { id: string; fullName: string; clinic: string }>
   "pat-b": { id: "pat-b", fullName: "Fake B", clinic: "clinic-b" },
 };
 let completeCalls = 0;
+let stockResult: any;
+let dispenseError: string | undefined;
 
 mock.module("@/lib/server/medplum-auth", () => ({
-  requireClinicAuth: async () => ({ medplum: {}, clinicId: "clinic-a" }),
+  // Fake Medplum for the Task 504 consultation/patient ownership read (own clinic: pat-a / enc-a).
+  requireClinicAuth: async () => ({
+    clinicId: "clinic-a",
+    medplum: {
+      async readResource(type: string, id: string) {
+        if (type === "Organization") return { resourceType: type, id };
+        if (type === "Encounter" && id === "enc-a")
+          return { resourceType: type, id, subject: { reference: "Patient/pat-a" }, identifier: [{ system: "clinic", value: "clinic-a" }] };
+        if (type === "Patient" && id === "pat-a")
+          return { resourceType: type, id, identifier: [{ system: "clinic", value: "clinic-a" }] };
+        throw new Error("not found");
+      },
+      async searchOne(type: string) { return type === "HealthcareService" ? { resourceType: type, id: "acct-a" } : undefined; },
+      async searchResources() { return []; },
+      async createResource(resource: unknown) { return resource; },
+    },
+  }),
   getCurrentProfile: async () => null,
 }));
 mock.module("@/lib/fhir/consultation-service", () => ({
@@ -37,7 +55,7 @@ mock.module("@/lib/fhir/patient-service", () => ({
 mock.module("@/lib/fhir/billing-service", () => ({
   completeCheckoutInvoice: async () => {
     completeCalls++;
-    return { invoice: { id: "inv-1", invoiceNumber: "INV-1" } };
+    return { invoice: { id: "inv-1", invoiceNumber: "INV-1" }, stock: stockResult, dispenseError };
   },
   generateInvoiceNumber: async () => "INV-1",
   deleteInvoice: async () => {},
@@ -54,6 +72,8 @@ const get = (qs: string) => orders.GET(new NextRequest(`http://localhost/api/ord
 
 beforeEach(() => {
   completeCalls = 0;
+  stockResult = undefined;
+  dispenseError = undefined;
 });
 
 describe("GET /api/orders without patientId", () => {
@@ -128,5 +148,51 @@ describe("no billable items", () => {
     const ok = await post({ ...base, paidAmount: 25, totalAmount: 25, items: [{ name: "Consult", quantity: 1, price: 25 }] });
     expect(ok.status).toBe(200);
     expect(completeCalls).toBe(1);
+  });
+});
+
+describe("POST /api/billing stock feedback (Task 504)", () => {
+  const post = () =>
+    billing.POST(
+      new NextRequest("http://localhost/api/billing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          consultationId: "enc-a", patientId: "pat-a", paymentMethod: "cash", paidAmount: 25, totalAmount: 25,
+          items: [{ name: "Fake Med", type: "Item", quantity: 1, price: 25 }],
+        }),
+      })
+    );
+
+  test("returns stockNegative, stockUnresolved and stockError", async () => {
+    stockResult = { adjusted: [], unmatched: ["Dup"], negativeStock: ["Fake Med"], unresolved: ["Dup"], retained: [] };
+    dispenseError = "boom";
+    const body = await (await post()).json();
+    expect(body.success).toBe(true);
+    expect(body.stockNegative).toEqual(["Fake Med"]);
+    expect(body.stockUnresolved).toEqual(["Dup"]);
+    expect(body.stockError).toBe("boom");
+  });
+
+  test("clean checkout returns empty stock fields", async () => {
+    const body = await (await post()).json();
+    expect(body.stockNegative).toEqual([]);
+    expect(body.stockUnresolved).toEqual([]);
+    expect(body.stockError).toBeNull();
+  });
+
+  test("a consultation that belongs to another patient is 404 and writes nothing", async () => {
+    const res = await billing.POST(
+      new NextRequest("http://localhost/api/billing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          consultationId: "enc-a", patientId: "pat-b", paymentMethod: "cash", paidAmount: 25, totalAmount: 25,
+          items: [{ name: "Fake Med", type: "Item", quantity: 1, price: 25 }],
+        }),
+      })
+    );
+    expect(res.status).toBe(404);
+    expect(completeCalls).toBe(0);
   });
 });
