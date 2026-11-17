@@ -45,7 +45,20 @@ import type {
   ClinicSummary,
   ParentOrganizationSummary,
 } from "@/lib/fhir/admin-service";
+import { sameIdSet } from "@/lib/admin-ui";
 import { useAdminPath } from "@/hooks/use-admin-path";
+
+function UnsavedBadge() {
+  return (
+    <span
+      role="status"
+      className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900"
+    >
+      <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+      Unsaved changes
+    </span>
+  );
+}
 
 export default function ClinicEditForm({
   clinic,
@@ -61,7 +74,7 @@ export default function ClinicEditForm({
   const adminPath = useAdminPath();
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [form, setForm] = useState({
+  const initialForm = {
     name: clinic.name,
     parentId: clinic.parentId ?? organisations[0]?.id ?? "",
     phone: clinic.phone ?? "",
@@ -69,15 +82,31 @@ export default function ClinicEditForm({
     logoUrl: clinic.logoUrl ?? "",
     enabledModuleIds: clinic.enabledModuleIds,
     pacsViewerHostsText: (clinic.pacsViewerHosts ?? []).join("\n"),
-  });
+  };
+  const [form, setForm] = useState(initialForm);
+  // Last-saved values, so each section can tell whether it has unsaved edits.
+  const [saved, setSaved] = useState(initialForm);
+  const parseHosts = (text: string) =>
+    text.split(/[\s,]+/).map((h) => h.trim()).filter(Boolean);
+  const detailsDirty =
+    form.name !== saved.name ||
+    form.parentId !== saved.parentId ||
+    form.phone !== saved.phone ||
+    form.address !== saved.address ||
+    form.logoUrl !== saved.logoUrl;
+  const modulesDirty =
+    !sameIdSet(form.enabledModuleIds, saved.enabledModuleIds) ||
+    form.pacsViewerHostsText !== saved.pacsViewerHostsText;
 
   const handleChange =
     (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
     };
 
-  const saveClinic = async () => {
-    if (!form.name.trim() || !form.parentId) {
+  const saveClinic = async (section: "details" | "modules") => {
+    // Each button saves only its own section; the other section's unsaved edits are left alone.
+    const src = section === "details" ? form : { ...saved, ...form, name: saved.name, parentId: saved.parentId, phone: saved.phone, address: saved.address, logoUrl: saved.logoUrl };
+    if (!src.name.trim() || !src.parentId) {
       toast({ title: "Clinic name and organisation are required", variant: "destructive" });
       return;
     }
@@ -86,21 +115,38 @@ export default function ClinicEditForm({
       const res = await fetch(`/api/admin/clinics/${clinic.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          pacsViewerHosts: form.pacsViewerHostsText
-            .split(/[\s,]+/)
-            .map((h) => h.trim())
-            .filter(Boolean),
-        }),
+        body: JSON.stringify(
+          section === "details"
+            ? {
+                name: src.name,
+                parentId: src.parentId,
+                phone: src.phone,
+                address: src.address,
+                logoUrl: src.logoUrl,
+              }
+            : {
+                name: src.name,
+                parentId: src.parentId,
+                phone: src.phone,
+                address: src.address,
+                logoUrl: src.logoUrl,
+                enabledModuleIds: src.enabledModuleIds,
+                pacsViewerHosts: parseHosts(src.pacsViewerHostsText),
+              }
+        ),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to save clinic");
       }
+      setSaved((prev) =>
+        section === "details"
+          ? { ...prev, name: form.name, parentId: form.parentId, phone: form.phone, address: form.address, logoUrl: form.logoUrl }
+          : { ...prev, enabledModuleIds: form.enabledModuleIds, pacsViewerHostsText: form.pacsViewerHostsText }
+      );
       toast({
-        title: "Saved",
-        description: `${form.name} has been updated.`,
+        title: section === "details" ? "Details saved" : "Modules saved",
+        description: `${src.name} has been updated.`,
       });
       router.refresh();
     } catch (err: any) {
@@ -116,7 +162,7 @@ export default function ClinicEditForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveClinic();
+    await saveClinic("details");
   };
 
   const handleDelete = async () => {
@@ -190,7 +236,10 @@ export default function ClinicEditForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Branch Details</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            Branch Details
+            {detailsDirty && <UnsavedBadge />}
+          </CardTitle>
           <CardDescription>
             Update contact information and branding. The subdomain cannot be
             changed after creation.
@@ -258,8 +307,8 @@ export default function ClinicEditForm({
               />
             </div>
             <div className="pt-2 flex gap-3">
-              <Button type="submit" disabled={saving || organisations.length === 0}>
-                {saving ? "Saving..." : "Save Changes"}
+              <Button type="submit" disabled={saving || organisations.length === 0 || !detailsDirty}>
+                {saving ? "Saving..." : "Save details"}
               </Button>
               <Button type="button" variant="outline" asChild>
                 <Link href={adminPath("/organisation")}>Cancel</Link>
@@ -271,7 +320,10 @@ export default function ClinicEditForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Branch Modules</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            Branch Modules
+            {modulesDirty && <UnsavedBadge />}
+          </CardTitle>
           <CardDescription>
             Choose which modules are available for this branch. Disabled
             modules are hidden from the branch sidebar and blocked on direct
@@ -337,8 +389,8 @@ export default function ClinicEditForm({
           )}
           {modules.length > 0 && (
             <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={saveClinic} disabled={saving || organisations.length === 0}>
-                {saving ? "Saving..." : "Save Module Settings"}
+              <Button type="button" onClick={() => saveClinic("modules")} disabled={saving || organisations.length === 0 || !modulesDirty}>
+                {saving ? "Saving..." : "Save modules"}
               </Button>
             </div>
           )}

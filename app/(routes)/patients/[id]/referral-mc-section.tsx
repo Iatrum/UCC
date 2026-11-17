@@ -22,6 +22,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -160,6 +170,9 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [savingSigned, setSavingSigned] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<
+    { type: "signed"; doc: SignedDocument } | { type: "referral"; referral: Referral } | null
+  >(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [viewingHtml, setViewingHtml] = useState<string | null>(null);
   const [viewingHtmlLoading, setViewingHtmlLoading] = useState(false);
@@ -482,12 +495,6 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
           <CardDescription>Saved MCs, time chits and referral letters.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading documents…
-            </div>
-          )}
           {!loading && loadError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <p className="text-sm font-medium text-destructive">Could not load generated documents.</p>
@@ -532,12 +539,14 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                     {[
                       doc.kind === "time-chit" ? `${doc.details.tcTimeIn}–${doc.details.tcTimeOut} (${doc.details.tcHours} hour(s))` : doc.kind === "mc"
                         ? [
-                            doc.details.mcDays
-                              ? `${doc.details.mcDays} day${doc.details.mcDays === "1" ? "" : "s"}`
-                              : null,
-                            doc.details.mcStartDate
-                              ? `from ${formatDateLabel(doc.details.mcStartDate)}`
-                              : null,
+                            [
+                              doc.details.mcStartDate ? formatDateLabel(doc.details.mcStartDate) : null,
+                              doc.details.mcDays
+                                ? `(${doc.details.mcDays} day${doc.details.mcDays === "1" ? "" : "s"})`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" "),
                             doc.details.mcDiagnosis,
                           ]
                             .filter(Boolean)
@@ -545,8 +554,12 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                         : [doc.details.referralTo, doc.details.referralDiagnosis]
                             .filter(Boolean)
                             .join(" • "),
-                      doc.date ? formatDateLabel(doc.date) : null,
-                      doc.status,
+                      [
+                        doc.date ? `Issued ${formatDateLabel(doc.date)}` : null,
+                        doc.status ? (doc.status === "completed" ? "Signed" : doc.status) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
                     ]
                       .filter(Boolean)
                       .join(" — ")}
@@ -562,7 +575,8 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                   variant="ghost"
                   size="sm"
                   disabled={deleting === doc.id}
-                  onClick={() => handleDeleteSignedDocument(doc)}
+                  aria-label="Delete document"
+                  onClick={() => setPendingDelete({ type: "signed", doc })}
                 >
                   {deleting === doc.id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -600,7 +614,8 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                   variant="ghost"
                   size="sm"
                   disabled={deleting === r.id}
-                  onClick={() => handleDelete(r.id)}
+                  aria-label={`Delete ${r.specialty} referral`}
+                  onClick={() => setPendingDelete({ type: "referral", referral: r })}
                 >
                   {deleting === r.id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -611,11 +626,43 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               </div>
             </div>
           ))}
-          {!loading && !loadError && referrals.length === 0 && signedDocuments.length > 0 && (
-            <p className="text-sm text-muted-foreground">Referral letters are not saved yet.</p>
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {signedDocuments.length > 0 ? "Checking for older referral letters…" : "Loading documents…"}
+            </div>
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.type === "signed"
+                ? `Delete this ${
+                    pendingDelete.doc.kind === "mc" ? "MC" : pendingDelete.doc.kind === "time-chit" ? "time chit" : "referral letter"
+                  } for ${patient.fullName}? This removes it from the signed consultation.`
+                : `Delete this referral letter for ${patient.fullName}? This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const target = pendingDelete;
+                setPendingDelete(null);
+                if (target?.type === "signed") void handleDeleteSignedDocument(target.doc);
+                else if (target) void handleDelete(target.referral.id);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit dialog — unchanged */}
       <Dialog
@@ -816,6 +863,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               {viewingHtmlLoading && (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
                 </div>
               )}
               {!viewingHtmlLoading && viewingHtml && (
@@ -871,6 +919,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               {viewingHtmlLoading && (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
                 </div>
               )}
               {!viewingHtmlLoading && viewingHtml && (

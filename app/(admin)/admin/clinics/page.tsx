@@ -14,17 +14,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Building2, ExternalLink, Plus, AlertCircle } from "lucide-react";
 import Link from "next/link";
+import { firstParam, matchesSearch } from "@/lib/admin-ui";
+import { Input } from "@/components/ui/input";
 import { headers } from "next/headers";
 import { getHostFromHeaders } from "@/lib/server/subdomain-host";
 
-export default async function BranchesPage() {
+type Props = { searchParams?: Promise<{ [key: string]: string | string[] | undefined }> };
+
+export default async function BranchesPage({ searchParams }: Props) {
+  const q = firstParam((await searchParams?.catch(() => ({} as Record<string, string>)))?.q).trim();
   const host = getHostFromHeaders(await headers());
   const adminPath = (path: string) => adminPathForHost(path, host);
-  const [clinics, organisations] = await Promise.all([
+  const [allClinics, organisations] = await Promise.all([
     getOrganizationsFromMedplum().catch(() => []),
     getParentOrganizationsFromMedplum().catch(() => []),
   ]);
   const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || "yourdomain.com";
+  const clinics = allClinics.filter((c) =>
+    matchesSearch(q, [c.name, c.subdomain, c.parentName, c.phone, c.address])
+  );
 
   return (
     <div className="space-y-6">
@@ -61,7 +69,29 @@ export default async function BranchesPage() {
         </Card>
       )}
 
-      {clinics.length === 0 ? (
+      {allClinics.length > 0 && (
+        <form method="get" role="search" className="flex items-center gap-2">
+          <Input
+            name="q"
+            type="search"
+            defaultValue={q}
+            placeholder="Search name, subdomain or organisation"
+            aria-label="Search branches"
+            className="max-w-sm"
+          />
+          <Button type="submit" size="sm" variant="outline">Search</Button>
+          {q && (
+            <Button asChild size="sm" variant="ghost">
+              <Link href={adminPath("/clinics")}>Clear</Link>
+            </Button>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {clinics.length} of {allClinics.length} branches
+          </span>
+        </form>
+      )}
+
+      {allClinics.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
@@ -74,6 +104,10 @@ export default async function BranchesPage() {
             </Button>
           </CardContent>
         </Card>
+      ) : clinics.length === 0 ? (
+        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No branches match &ldquo;{q}&rdquo;.
+        </p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {clinics.map((clinic) => (
