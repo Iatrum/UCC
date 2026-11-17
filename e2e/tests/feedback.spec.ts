@@ -58,7 +58,9 @@ test.describe('Feedback module', () => {
   test('toggle on: feature request form stores once and counts a repeat; PII scrubbed', async ({ request, page }) => {
     const { m, clinicId } = await clinicOf(request);
     const restore = await setFeedbackEnabled(m, clinicId, true);
-    const title = `Dark mode ${randomUUID().slice(0, 6)}`;
+    // Numeric/ID-like hex suffixes are intentionally redacted by the privacy scrubber.
+    const suffix = randomUUID().slice(0, 6).replace(/[0-9]/g, digit => 'ghijklmnop'[Number(digit)]);
+    const title = `Dark mode ${suffix}`;
     try {
       await page.goto('/dashboard');
       await page.getByTestId('feedback-trigger').click();
@@ -74,6 +76,8 @@ test.describe('Feedback module', () => {
       expect(again.status()).toBe(201);
       expect((await again.json()).result.status).toBe('already-counted');
 
+      // Medplum search indexing can lag a write by a moment under load.
+      await expect.poll(async () => (await feedbackRecords(m, clinicId, title)).length, { timeout: 15_000 }).toBe(1);
       const rows = await feedbackRecords(m, clinicId, title);
       expect(rows).toHaveLength(1);
       const json = JSON.stringify(rows[0]);

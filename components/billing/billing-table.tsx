@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -18,12 +19,15 @@ import { BillableConsultation, QueueStatus } from '@/lib/types';
 
 interface BillingTableProps {
   consultations: BillableConsultation[];
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void | Promise<void>;
 }
 
 function getStatusBadge(status: QueueStatus | undefined | string) {
   switch (status) {
     case 'meds_and_bills':
-      return <Badge variant="secondary" className="bg-yellow-400 text-zinc-900 hover:bg-yellow-500">Meds & Bills</Badge>;
+      return <Badge variant="secondary" className="bg-yellow-400 text-zinc-900 hover:bg-yellow-500">Ready to bill</Badge>;
     case 'completed':
       return <Badge variant="outline">Completed</Badge>;
     default:
@@ -31,7 +35,7 @@ function getStatusBadge(status: QueueStatus | undefined | string) {
   }
 }
 
-export default function BillingTable({ consultations }: BillingTableProps) {
+export default function BillingTable({ consultations, loading, error, onRetry }: BillingTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filtered = useMemo(() => {
@@ -41,6 +45,27 @@ export default function BillingTable({ consultations }: BillingTableProps) {
       (c) => c.patientFullName && c.patientFullName.toLowerCase().includes(q)
     );
   }, [consultations, searchQuery]);
+
+  if (loading) {
+    return (
+      <div role="status" aria-live="polite" className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-10 text-center text-sm text-muted-foreground">
+        Loading billable consultations...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
+        <p>{error}</p>
+        {onRetry ? (
+          <Button variant="outline" size="sm" onClick={() => void onRetry()}>
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -61,27 +86,41 @@ export default function BillingTable({ consultations }: BillingTableProps) {
               <TableHead>Patient Name</TableHead>
               <TableHead>Consultation Date</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length > 0 ? (
               filtered.map((consultation) => (
-                <TableRow key={consultation.id}>
+                <TableRow
+                  key={consultation.id}
+                  className="relative cursor-pointer focus-within:bg-muted/50"
+                >
                   <TableCell className="font-medium">
                     <Link
                       href={`/orders/checkout/${consultation.id}?patientId=${consultation.patientId}`}
-                      className="text-primary hover:underline"
+                      className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm after:absolute after:inset-0 after:content-['']"
                     >
                       {consultation.patientFullName || 'N/A'}
                     </Link>
                   </TableCell>
                   <TableCell>{formatDisplayDate(consultation.date)}</TableCell>
                   <TableCell>{getStatusBadge(consultation.queueStatus)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild size="sm" variant="outline" className="relative z-10">
+                      <Link
+                        href={`/orders/checkout/${consultation.id}?patientId=${consultation.patientId}`}
+                        aria-label={`Open checkout for ${consultation.patientFullName || 'patient'}`}
+                      >
+                        Open checkout
+                      </Link>
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={3} className="text-center py-4">
+                <TableCell colSpan={4} className="text-center py-4">
                   No billable consultations found
                 </TableCell>
               </TableRow>

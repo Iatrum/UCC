@@ -15,7 +15,9 @@ let page: Page; let step = 'init';
 const issues: Issue[] = []; const bugs: string[] = []; const facts: Record<string, any> = { run: RUN };
 const bug = (ok: boolean, msg: string) => { known(ok, msg); if (!ok) bugs.push(msg); };
 const name = `E2E Fake ${RUN}`;
-const nric = `9203${String(1 + (Number(RUN.slice(-2)) % 28)).padStart(2, '0')}-14-${RUN.slice(-4)}`; // valid YYMMDD
+// Valid YYMMDD with a random 4-digit tail: a time-derived NRIC repeated on later days/months and collided with
+// leftover dev patients (409 "already exists"), failing 02 and skipping 03-11.
+const nric = `9203${String(1 + Math.floor(Math.random() * 28)).padStart(2, '0')}-14-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 const stubPlan = (p: Page) => p.route('**/api/consultations/plan**', r => r.fulfill({ status: 200, contentType: 'application/json',
   body: JSON.stringify({ success: true, persistenceAvailable: false, plan: { entries: [], summary: {} } }) }));
 
@@ -139,7 +141,15 @@ test('06 composer (plan API stubbed as persistence-unavailable): meds, services,
   await expect(page.getByText('Paracetamol').last()).toBeVisible();
   facts.composerTotal = await page.getByText(/Current order total/).innerText().catch(() => '');
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
-  await page.waitForTimeout(15000); await shot(page, '11-treatment-signed');
+  // Signing persists medication, lab and imaging orders through separate routes.
+  // A cold dev compilation can exceed 15 seconds before those writes finish.
+  await expect.poll(async () => {
+    const [medications, orders] = await Promise.all([
+      byPatient('MedicationRequest', facts.patientId), byPatient('ServiceRequest', facts.patientId),
+    ]);
+    return medications.length > 0 && orders.length >= 2;
+  }, { timeout: 90_000, message: 'Signed medication, lab and imaging orders persist' }).toBe(true);
+  await shot(page, '11-treatment-signed');
   const pid = facts.patientId;
   const [mr, sr, proc, docs, enc] = await Promise.all(['MedicationRequest', 'ServiceRequest', 'Procedure', 'DocumentReference', 'Encounter'].map(t => byPatient(t, pid)));
   facts.afterTreatment = { MedicationRequest: mr.length, ServiceRequest: sr.map((s: any) => s.code?.text), Procedure: proc.map((p: any) => `${p.code?.text}:${p.status}`), DocumentReference: docs.length, Encounter: enc.map((e: any) => e.status) };
@@ -208,11 +218,17 @@ test('09 billing checkout -> payment -> complete visitation', async () => {
   await page.goto('/orders');
   await page.getByRole('link', { name }).click();
   await page.waitForURL(/orders\/checkout\//, { timeout: 120_000 });
-  await page.waitForTimeout(6000); await shot(page, '15-checkout');
+  await expect(page.getByText('Loading checkout...', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Payments', { exact: true })).toBeVisible();
+  await shot(page, '15-checkout');
   const body = await page.locator('main').last().innerText(); facts.checkoutText = body.slice(0, 1500);
   const totalMatch = body.match(/Total[^\d]*RM\s*([\d.,]+)/i); facts.checkoutTotal = totalMatch?.[1];
   const paid = page.locator('#paid-amount');
-  await paid.fill((totalMatch?.[1] || '0').replace(/,/g, ''));
+  expect(totalMatch, 'loaded checkout includes a total').toBeTruthy();
+  const payment = totalMatch![1].replace(/,/g, '');
+  await paid.fill(payment);
+  await expect(paid).toHaveValue(payment);
+  await expect(page.getByRole('button', { name: /Complete visitation/ })).toBeEnabled();
   const preview = page.getByRole('button', { name: /Preview bill/ });
   if (await preview.isEnabled()) { await preview.click(); await page.waitForTimeout(2000); await shot(page, '16-bill-preview'); await page.keyboard.press('Escape'); }
   await page.getByRole('button', { name: /Complete visitation/ }).click();

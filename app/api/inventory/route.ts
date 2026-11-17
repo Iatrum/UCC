@@ -8,6 +8,7 @@ import {
   updateInventoryMedicationInMedplum,
 } from '@/lib/fhir/inventory-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
+import { listDispensesForConsultation } from '@/lib/fhir/dispense-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import { InventoryValidationError, parseInventoryInput } from '@/lib/fhir/inventory-validation';
@@ -21,10 +22,17 @@ function inventoryError(error: unknown, context: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { clinicId } = await requireClinicAuth(request);
+    const { clinicId, medplum: staffMedplum } = await requireClinicAuth(request);
     const medplum = await getAdminMedplum();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const dispensesFor = searchParams.get('dispensesFor');
+
+    if (dispensesFor) {
+      // Audit rows are clinical records: read them as the signed-in staff member (clinic-scoped policy).
+      const dispenses = await listDispensesForConsultation(staffMedplum, clinicId, dispensesFor);
+      return NextResponse.json({ success: true, dispenses });
+    }
 
     if (id) {
       const medication = await getInventoryMedicationByIdFromMedplum(medplum, id, clinicId);

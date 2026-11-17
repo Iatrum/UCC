@@ -16,6 +16,9 @@ import {
 type NameValue = { name: string; value: number };
 type Point = { name: string; value: number };
 
+// Extra right margin so the value label drawn after the longest bar is not clipped by the card edge.
+export const HORIZONTAL_BAR_MARGIN = { left: 8, right: 40 };
+
 const COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#a855f7", "#06b6d4"]; // primary, green, amber, red, violet, cyan
 
 interface AnalyticsChartsProps {
@@ -45,7 +48,7 @@ export default function AnalyticsCharts({ genderData, ageData, weeklyVisits, dia
     <div className="grid gap-6 md:grid-cols-2">
       <ChartPanel title="Gender distribution">
         <ResponsiveContainer width="100%" height="90%">
-          <BarChart data={genderData} layout="vertical" margin={{ left: 8, right: 16 }}>
+          <BarChart data={genderData} layout="vertical" margin={HORIZONTAL_BAR_MARGIN}>
             <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
             <XAxis type="number" allowDecimals={false} tick={axisTick} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="name" width={90} tick={axisTick} axisLine={false} tickLine={false} />
@@ -62,7 +65,7 @@ export default function AnalyticsCharts({ genderData, ageData, weeklyVisits, dia
 
       <ChartPanel title="Age buckets">
         <ResponsiveContainer width="100%" height="90%">
-          <BarChart data={ageData} layout="vertical" margin={{ left: 8, right: 16 }}>
+          <BarChart data={ageData} layout="vertical" margin={HORIZONTAL_BAR_MARGIN}>
             <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
             <XAxis type="number" allowDecimals={false} tick={axisTick} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="name" width={90} tick={axisTick} axisLine={false} tickLine={false} />
@@ -79,7 +82,7 @@ export default function AnalyticsCharts({ genderData, ageData, weeklyVisits, dia
 
       <ChartPanel title="Weekly visits">
         <ResponsiveContainer width="100%" height="90%">
-          <BarChart data={weeklyVisits} margin={{ left: 8, right: 8 }}>
+          <BarChart data={weeklyVisits} margin={{ left: 8, right: 24 }}>
             <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
             <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
             <YAxis allowDecimals={false} tick={axisTick} axisLine={false} tickLine={false} />
@@ -94,7 +97,7 @@ export default function AnalyticsCharts({ genderData, ageData, weeklyVisits, dia
       <ChartPanel title="Top diagnoses">
         {diagnosisTop.length > 0 ? (
           <ResponsiveContainer width="100%" height="90%">
-            <BarChart data={diagnosisTop} layout="vertical" margin={{ left: 8, right: 16 }}>
+            <BarChart data={diagnosisTop} layout="vertical" margin={HORIZONTAL_BAR_MARGIN}>
               <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
               <XAxis type="number" tick={axisTick} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="name" width={120} tick={axisTick} axisLine={false} tickLine={false} />
@@ -114,7 +117,7 @@ export default function AnalyticsCharts({ genderData, ageData, weeklyVisits, dia
 
       <ChartPanel title="Revenue (last 12 months)" className="h-[300px] md:col-span-2">
         <ResponsiveContainer width="100%" height="90%">
-          <BarChart data={revenueMonthly} margin={{ left: 8, right: 8 }}>
+          <BarChart data={revenueMonthly} margin={{ left: 8, right: 24 }}>
             <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
             <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
             <YAxis tick={axisTick} axisLine={false} tickLine={false} />
