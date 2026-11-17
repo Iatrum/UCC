@@ -189,3 +189,6 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 ## Task 533 (staging prep continuation, repo-side only)
 - 385c: `e2e/scripts/lib/baseline.mjs` (baseline identity sidecar: target + sha256), `compare.mjs` fails closed under `UCC_GATE_TARGET=staging`, `check-all.sh` pre-checks it, new `e2e/scripts/check-staging.sh` adapter (preflight + attested baseline). Unit tests: `tests/unit/staging-gate.test.ts`.
 - 385b gap: `scripts/staging/bootstrap.ts` creates the fake `demo` Organization and fake doctor Practitioner on an empty staging project, called from `staging:seed` after the preflight (`--no-bootstrap` to skip, `--dry-run` contacts nothing). No server/container started; nothing run against staging.
+
+## Task 556 (385d repo side, staging)
+- Loopback rehearsal proxy `infra/staging/rehearsal/` (allowlist Traefik, no socket, no dashboard), `scripts/staging/probe.sh` (`bun run staging:probe`), unit test `tests/unit/staging-rehearsal.test.ts`. Nothing started or run against any server; production untouched. Plan 385d marked partially done with the operator steps listed.

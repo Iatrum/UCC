@@ -1,0 +1,19 @@
+# ALLOWLIST routing for the Medplum API. Anything not matched gets Traefik's default 404, so there is no
+# blocklist to bypass (Medplum mounts its router at /, /api/, /projects/:id/, /api/projects/:id/; blocking only
+# /admin would leak). Add a prefix only after the rehearsal shows UCC needs it. Verify with scripts/staging/probe.sh.
+# /admin/* is deliberately NOT listed; UCC's invite/deactivate flows call admin endpoints server-side, so rehearse
+# them through the proxy and add the exact minimal prefix only if they fail (record it in the plan).
+http:
+  routers:
+    medplum-api:
+      entryPoints: [web]
+      priority: 10
+      rule: >-
+        PathPrefix(`/auth/`) || PathPrefix(`/oauth2/`) || PathPrefix(`/fhir/`) ||
+        PathPrefix(`/.well-known/`) || PathPrefix(`/storage/`) || Path(`/healthcheck`)
+      service: medplum-api
+  services:
+    medplum-api:
+      loadBalancer:
+        servers:
+          - url: http://ucc-stg-medplum:8103/
