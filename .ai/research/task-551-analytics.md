@@ -34,7 +34,7 @@ Spec: /home/dev/ai-logs/analytics-design-claude/summary.md (Task 547a). Verified
   de-dup; response `Cache-Control: private, max-age=30`. Ringkasan (default) is streamed from the server component via Suspense;
   other tabs load lazily on first click. Skeletons everywhere.
 - Charts: existing `recharts` 3.x plus plain SVG/CSS (sparkline, heatmap).
-- Deviations from spec: "all-time revenue" hint replaced by 12-month total (unbounded sum is not cheap); wait trend uses
+- Deviations from spec: "all-time revenue" hint replaced by 6-month total (unbounded sum is not cheap); wait trend uses
   daily averages when samples exist.
 
 ## Docs

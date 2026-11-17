@@ -289,8 +289,11 @@ export async function getClinical(medplum: MedplumClient, clinicId: string, key:
   const totals = { poct: 0, xray: 0, lab: 0 };
   for (const o of orders.rows) {
     if (!o.authoredOn) continue;
+    const hasCat = (code: string) => o.category?.some((c) => c.coding?.some((x) => x.code === code));
+    // Only lab / POCT / imaging orders; referrals and procedure ServiceRequests carry no such category and are skipped.
     const kind = o.meta?.tag?.some((t) => t.system === POCT_TAG_SYSTEM) ? "poct"
-      : o.category?.some((c) => c.coding?.some((x) => x.code === "363679005")) ? "xray" : "lab";
+      : hasCat("363679005") ? "xray" : hasCat("108252007") ? "lab" : null;
+    if (!kind) continue;
     const i = Math.min(buckets - 1, Math.max(0, Math.floor((new Date(o.authoredOn).getTime() - r.from.getTime()) / (bucketDays * 86_400_000))));
     orderBuckets[i][kind]++;
     totals[kind]++;
