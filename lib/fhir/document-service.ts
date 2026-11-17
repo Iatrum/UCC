@@ -10,7 +10,7 @@ import { STORAGE_PATH_EXTENSION_URL } from './structure-definitions';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
 import { resolveClinicTenant, withClinicIdentifier } from './clinic-tenancy';
-import { assertPatientInClinic } from './write-containment';
+import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
 
 export interface DocumentRegistration {
   patientId: string; // FHIR Patient ID
@@ -150,7 +150,8 @@ export async function updatePatientDocument(
   documentId: string,
   updates: { title?: string; clinicId?: string }
 ): Promise<void> {
-  const doc = await medplum.readResource('DocumentReference', documentId) as DocumentReference;
+  const doc = await medplum.readResource('DocumentReference', documentId, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } }) as DocumentReference;
+  assertResourceInClinic(doc, updates.clinicId);
   const updated: DocumentReference = { ...doc };
   if (updates.title && updated.content?.[0]?.attachment) {
     updated.content = [
@@ -167,6 +168,8 @@ export async function updatePatientDocument(
 /**
  * Delete a DocumentReference in Medplum by id.
  */
-export async function deletePatientDocument(medplum: MedplumClient, documentId: string): Promise<void> {
+export async function deletePatientDocument(medplum: MedplumClient, documentId: string, clinicId?: string): Promise<void> {
+  const doc = await medplum.readResource('DocumentReference', documentId, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } });
+  assertResourceInClinic(doc, clinicId);
   await medplum.deleteResource('DocumentReference', documentId);
 }
