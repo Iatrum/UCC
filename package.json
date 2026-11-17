@@ -21,7 +21,12 @@
     "medplum:backfill-clinic-identifiers": "bun run scripts/backfill-clinic-identifiers.ts",
     "seed:procedures": "bun tsx tests/seeds/seed-procedures.ts",
     "seed": "bun tsx tests/seeds/seed.ts",
-    "seed:patient": "bun run tests/seeds/seed-one-patient.mjs"
+    "seed:patient": "bun run tests/seeds/seed-one-patient.mjs",
+    "staging:preflight": "bun run scripts/staging/preflight.ts",
+    "staging:seed": "bun run scripts/staging/seed.ts",
+    "staging:up": "bash infra/staging/up.sh",
+    "staging:down": "bash infra/staging/up.sh down",
+    "staging:guard": "bash infra/staging/up.sh guard"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
