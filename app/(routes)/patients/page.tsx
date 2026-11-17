@@ -161,7 +161,7 @@ export default function PatientsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{fmt(stats.new)}</div>
-            <p className="text-xs text-muted-foreground">This month</p>
+            <p className="text-xs text-muted-foreground">Registered this month</p>
           </CardContent>
         </Card>
         <Card>

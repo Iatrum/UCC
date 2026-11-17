@@ -4,6 +4,12 @@ import {
   countPatientsInMedplum,
   getPatientsPageFromMedplum,
 } from "../../lib/fhir/patient-service";
+import {
+  REGISTERED_TAG_SYSTEM,
+  getRegistrationDate,
+  registeredThisMonthTagParam,
+  withRegistrationTag,
+} from "../../lib/fhir/patient-registration";
 import { CLINIC_IDENTIFIER_SYSTEM } from "../../lib/fhir/clinic-tenancy";
 
 const CLINICS = ["clinic-a", "clinic-b", "clinic-c", "clinic-d"];
@@ -13,6 +19,10 @@ const SIZES: Record<string, number> = { "clinic-a": 230, "clinic-b": 7, "clinic-
 const ident = (c: string) => ({ system: CLINIC_IDENTIFIER_SYSTEM, value: c });
 const clinicOf = (r: any) => r.identifier?.find((i: any) => i.system === CLINIC_IDENTIFIER_SYSTEM)?.value;
 
+const ymdToday = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+})();
 const patients: any[] = [];
 let n = 0;
 for (const c of CLINICS) {
@@ -27,7 +37,11 @@ for (const c of CLINICS) {
       gender: "unknown",
       managingOrganization: { reference: `Organization/org-${c}` },
       // first 2 of each clinic are "this month", others last year
-      meta: { lastUpdated: i < 2 ? new Date().toISOString() : "2020-01-01T00:00:00.000Z" },
+      // first 2 of each clinic registered today; all are edited today (lastUpdated must not matter)
+      meta: {
+        lastUpdated: new Date().toISOString(),
+        tag: i < 2 ? [{ system: REGISTERED_TAG_SYSTEM, code: ymdToday }] : i === 2 ? [{ system: REGISTERED_TAG_SYSTEM, code: "2020-01-01" }] : [],
+      },
     });
   }
 }
@@ -49,9 +63,9 @@ const fake: any = {
       const [, v] = params.identifier.split("|");
       rows = rows.filter((p) => clinicOf(p) === v);
     }
-    if (params._lastUpdated) {
-      const from = params._lastUpdated.slice(2);
-      rows = rows.filter((p) => p.meta.lastUpdated >= from);
+    if (params._tag) {
+      const wanted = new Set<string>(params._tag.split(","));
+      rows = rows.filter((p) => p.meta.tag.some((t: any) => wanted.has(`${t.system}|${t.code}`)));
     }
     const bundle: any = { resourceType: "Bundle", type: "searchset", total: rows.length };
     if (params._summary === "count") return bundle;
@@ -108,5 +122,26 @@ describe("task 434: clinic-scoped patient counts", () => {
     await expect(getPatientsPageFromMedplum(1, 25, null, fake)).rejects.toThrow();
     const far = await getPatientsPageFromMedplum(500, 25, "clinic-a", fake);
     expect(far.patients).toHaveLength(0);
+  });
+});
+
+describe("task 527: registration date tag", () => {
+  it("edited-this-month legacy/old patients are not counted as new", async () => {
+    // every patient has lastUpdated = now, only 2 per clinic carry a this-month registration tag
+    expect(await countNewPatientsThisMonth("clinic-a", fake)).toBe(2);
+  });
+
+  it("stamps a registration tag once and keeps existing tags", () => {
+    const now = new Date(2026, 10, 5);
+    const p = withRegistrationTag({ meta: { tag: [{ system: "x", code: "y" }] } } as any, now);
+    expect(p.meta!.tag).toEqual([{ system: "x", code: "y" }, { system: REGISTERED_TAG_SYSTEM, code: "2026-11-05" }]);
+    expect(withRegistrationTag(p, new Date(2027, 0, 1))).toBe(p);
+    expect(getRegistrationDate(p)).toBe("2026-11-05");
+    expect(getRegistrationDate({})).toBeUndefined();
+  });
+
+  it("month param covers day 1..today only", () => {
+    const parts = registeredThisMonthTagParam(new Date(2026, 1, 3)).split(",");
+    expect(parts).toEqual([1, 2, 3].map((d) => `${REGISTERED_TAG_SYSTEM}|2026-02-0${d}`));
   });
 });

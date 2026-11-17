@@ -1,3 +1,4 @@
+import { withRegistrationTag } from './patient-registration';
 import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } from './write-containment';
 import { ForbiddenError } from '@/lib/server/route-helpers';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
@@ -250,7 +251,7 @@ async function getOrCreatePatient(
 
   // Create new patient if not found
   if (!patient) {
-    const patientResource: FHIRPatient = withClinicIdentifier({
+    const patientResource: FHIRPatient = withRegistrationTag(withClinicIdentifier({
       resourceType: 'Patient',
       identifier: [
         { system: 'firebase', value: patientData.id },
@@ -268,7 +269,7 @@ async function getOrCreatePatient(
       telecom: patientData.phone ? [{ system: 'phone', value: patientData.phone }] : undefined,
       address: patientData.address ? [{ text: patientData.address }] : undefined,
       managingOrganization: clinicTenant ? { reference: clinicTenant.organizationReference } : undefined,
-    }, clinicId);
+    }, clinicId));
     patient = await medplum.createResource(patientResource);
     await assignPatientToClinicTenant(medplum, patient as FHIRPatient, clinicTenant);
     console.log(`✅ Created FHIR Patient: ${patient.id}`);

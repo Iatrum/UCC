@@ -4,6 +4,7 @@
  * Replaces Firebase patients with FHIR Patient resources
  */
 
+import { withRegistrationTag, registeredThisMonthTagParam } from './patient-registration';
 import { MedplumClient } from '@medplum/core';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type {
@@ -386,10 +387,10 @@ export async function savePatientToMedplum(
     ] : undefined,
   };
 
-  const fhirPatient = withClinicIdentifier(
+  const fhirPatient = withRegistrationTag(withClinicIdentifier(
     addManagingOrganization(basePatient, clinicTenant?.organizationReference),
     clinicId
-  );
+  ));
 
   const savedPatient = await validateAndCreate<FHIRPatient>(client, fhirPatient);
   await assignPatientToClinicTenant(client, savedPatient, clinicTenant);
@@ -846,8 +847,9 @@ export async function countNewPatientsThisMonth(
   medplum: MedplumClient,
   now = new Date()
 ): Promise<number | null> {
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  return countPatientsInMedplum(clinicId, medplum, { _lastUpdated: `ge${monthStart}` });
+  // Counts by stored registration tag (not _lastUpdated, which moves on every edit).
+  // Legacy patients without the tag are not counted.
+  return countPatientsInMedplum(clinicId, medplum, { _tag: registeredThisMonthTagParam(now) });
 }
 
 /** One server-side page of the clinic's active patients plus the exact total. */
