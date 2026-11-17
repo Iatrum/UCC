@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Plan 385d probe kit, loopback version of plan 1.2. Read-only HTTP GETs + `ss`; changes nothing.
 #   bash scripts/staging/probe.sh [proxy_base=http://127.0.0.1:8180]
-# Exit 1 if any expectation fails. Staging only (refuses any base that is not 127.0.0.1:81xx/8123).
+# Exit 1 if any expectation fails. Staging only (refuses any base other than 127.0.0.1:8180 / :8123).
 set -u
 BASE=${1:-http://127.0.0.1:8180}
 case "$BASE" in http://127.0.0.1:8180|http://127.0.0.1:8123) ;; *) echo "refusing non-staging base $BASE" >&2; exit 2 ;; esac
 fail=0
-code() { curl -sS -o /dev/null -m 10 -w '%{http_code}' "$BASE$1" 2>/dev/null || echo 000; }
+code() { curl -sS --path-as-is -o /dev/null -m 10 -w '%{http_code}' "$BASE$1" 2>/dev/null || echo 000; }
 expect() { # label path predicate(allow|deny)
   c=$(code "$2")
   if [ "$3" = allow ]; then case "$c" in 2*|3*|401|400) ok=1 ;; *) ok=0 ;; esac
