@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-16 — Task 354: composer never says "saved" when the server refused the save
+The "Unable to detect a Project Id" error came from the old Firebase-backed plan store; since the U1b draft retention work, `/api/consultations/plan` stores drafts in Medplum, and on the dev Medplum a real add, reload and read-back works with no Firebase credentials. What remained was in the composer: it guessed "the server can't store drafts" from error text (`UNAUTHENTICATED`, "Project Id") and quietly switched to on-screen-only mode, and any other failed save made the item vanish. Now only an explicit `persistenceAvailable:false` from the server means on-screen-only. Any other rejection (401, 403, 409, 500, network) shows "Failed to save" with Retry, keeps the doctor's item on screen, and keeps Sign disabled until it is saved or removed. Removing an item whose save failed clears the failure. No change to the server route, Firebase Storage, Lab/POCT or navigation.
+
 ## 2026-11-16 — Task 385: network lockdown + staging plan (docs only)
 A step-by-step runbook for Hidayat to close the production server (firewall, SSH, optional Tailscale, Docker port check, Traefik hygiene) with rollback at every step, plus a plan for a fake-data staging environment and dev → staging → prod promotion. Key finding: ufw does not protect Docker-published ports, so the plan verifies from outside. Staging does not fit in RAM next to dev and production; time-box it or use a second small server. Nothing on the VPS was changed.
 
@@ -109,6 +112,7 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - 2026-11-16 Task 375: merged dev `52c2554` into PR #245 head `deaa129` using a merge commit, preserving Task 330 regression coverage and dev Task 180 Device clinic containment notes in the sole BACKLOG conflict. Unit 145/145, standalone tsc and repository lint PASS; no full gate/server/Medplum access. Research/evidence: `.ai/research/task-375.md`. Normal push to existing PR branch authorized by task; no PR merge or force-push.
 
 - 2026-11-16 Task 376: merged origin/dev `5aee691` into PR #248 Task 365 branch; kept both shared-note histories, dev runtime, and unchanged migration plan/runbook/scripts/tests. No ID collisions. Unit 190/190, standalone tsc and lint PASS; full gate infrastructure FAIL (unwritable hardcoded /workspace paths, no browser results). No server or service access. Evidence: `.ai/research/task-376.md`. Normal existing-branch push explicitly authorized; no PR merge/rebase/force-push.
+- 2026-11-16 Task 354 review (PR #261): reproduced original bug on dev; fixed a failed-item-vanishes-after-later-save gap with mergeUnsavedEntries (+unit, +e2e); see .ai/REVIEW-354.md.
 
 - Task 357 continuation: require one explicit clinic per Orthanc archive; foreign device keys, staff attachments and existing viewer capabilities cannot cross that binding. Previously unmatched/dismissed studies require an explicit staff attachment even after an order appears. Suppress launch-token access/error logs. Preserve dev PACS setup/storage notes and improve local validation fixture paths, auth-budget use and evidence handling. Final browser gate pending shared dev slot; no production rollout.
 
