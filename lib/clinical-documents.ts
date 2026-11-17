@@ -63,6 +63,8 @@ export interface ReferralBodyInput {
   notes?: string;
   progressNote?: string;
   medications?: string[];
+  /** Medicines/items ordered in this consult (from the treatment plan). */
+  orderedMedications?: string[];
   allergies?: string[];
 }
 
@@ -72,17 +74,22 @@ const clean = (list?: string[]) => (list || []).map((s) => s.trim()).filter(Bool
 export function buildReferralBody(input: ReferralBodyInput): string {
   const meds = clean(input.medications);
   const allergies = clean(input.allergies);
+  const ordered = clean(input.orderedMedications);
+  const medLines = [
+    ...meds.map((m) => `- ${m}`),
+    ...ordered.map((m) => `- ${m} (ordered in this consult)`),
+  ];
   const details = [
     input.clinicalSummary ? `Clinical summary:\n${input.clinicalSummary}` : null,
     input.diagnosis ? `Diagnosis:\n${input.diagnosis}` : null,
     input.notes ? `Additional notes:\n${input.notes}` : null,
     input.progressNote ? `Progress note:\n${input.progressNote}` : null,
-    `Current medications:\n${meds.length ? meds.map((m) => `- ${m}`).join("\n") : "None recorded"}`,
-    `Allergies:\n${allergies.length ? allergies.join(", ") : "No known drug allergies recorded"}`,
+    `Current medications:\n${medLines.length ? medLines.join("\n") : "Not documented (see attached prescription, if any)"}`,
+    `Allergies:\n${allergies.length ? allergies.join(", ") : "Allergies not documented"}`,
   ].filter(Boolean) as string[];
 
   const hasVisit = Boolean(input.clinicalSummary || input.diagnosis || input.notes || input.progressNote);
-  if (!hasVisit && !meds.length && !allergies.length) {
+  if (!hasVisit && !medLines.length && !allergies.length) {
     return "Please include any medical information you deem relevant for the referral";
   }
   const visit = input.visitDate ? ` during the consultation on ${input.visitDate}` : "";
