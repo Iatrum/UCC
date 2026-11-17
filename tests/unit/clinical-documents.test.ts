@@ -89,10 +89,17 @@ describe('referral letter', () => {
     expect(body).toContain('- Paracetamol 500mg');
     expect(body).toContain('Allergies:\nPenicillin');
   });
-  test('states explicitly when no meds / allergies are recorded', () => {
+  test('does not assert absence when no meds / allergies are recorded', () => {
     const body = buildReferralBody({ diagnosis: 'URTI' });
-    expect(body).toContain('None recorded');
-    expect(body).toContain('No known drug allergies recorded');
+    expect(body).toContain('Allergies:\nAllergies not documented');
+    expect(body).toContain('see attached prescription');
+    expect(body).not.toContain('None recorded');
+    expect(body).not.toContain('No known');
+  });
+  test('includes medicines ordered in this consult', () => {
+    const body = buildReferralBody({ diagnosis: 'URTI', orderedMedications: ['Paracetamol 500mg'] });
+    expect(body).toContain('- Paracetamol 500mg (ordered in this consult)');
+    expect(body).not.toContain('see attached prescription');
   });
   test('empty input falls back to prompt text', () => {
     expect(buildReferralBody({})).toStartWith('Please include');

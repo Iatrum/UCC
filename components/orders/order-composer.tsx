@@ -298,11 +298,13 @@ function buildReferralDefaultContent({
   patientName,
   consultation,
   medications,
+  orderedMedications,
   allergies,
 }: {
   patientName?: string | null;
   consultation?: OrderComposerProps["consultation"];
   medications?: string[];
+  orderedMedications?: string[];
   allergies?: string[];
 }): string {
   return buildReferralBody({
@@ -313,6 +315,7 @@ function buildReferralDefaultContent({
     notes: htmlToPlainText(consultation?.notes),
     progressNote: htmlToPlainText(consultation?.progressNote),
     medications,
+    orderedMedications,
     allergies,
   });
 }
@@ -436,7 +439,7 @@ export function OrderComposer({
   const [mcIncludeDiagnosis, setMcIncludeDiagnosis] = React.useState(false);
   const [referralDoctorName, setReferralDoctorName] = React.useState("");
   const [referralDoctorMmc, setReferralDoctorMmc] = React.useState("");
-  const [referralTo, setReferralTo] = React.useState("(Insert Hosp name)");
+  const [referralTo, setReferralTo] = React.useState("");
   const [referralDiagnosis, setReferralDiagnosis] = React.useState("");
   const [referralContent, setReferralContent] = React.useState(
     "Please include any medical information you deem relevant for the referral"
@@ -510,9 +513,10 @@ export function OrderComposer({
       patientName: patient?.fullName,
       consultation,
       medications: patient?.medicalHistory?.medications ?? [],
+      orderedMedications: entries.filter((e) => e.tab === "items").map((e) => e.name),
       allergies: patient?.medicalHistory?.allergies ?? [],
     }),
-    [consultation, patient?.fullName, patient?.medicalHistory]
+    [consultation, patient?.fullName, patient?.medicalHistory, entries]
   );
 
   React.useEffect(() => {
@@ -856,6 +860,10 @@ export function OrderComposer({
 
   async function handleCompleteDocumentDialog(status: "draft" | "completed") {
     if (!editingDocumentEntry) return;
+    if (editingDocumentKind === "referral" && !referralTo.trim()) {
+      toast({ title: "Enter who the referral is addressed to", variant: "destructive" });
+      return;
+    }
     if (editingDocumentKind === "time-chit") {
       const error = timeChitError(tcDetails);
       if (!timeChitEnabled || error) {
@@ -999,7 +1007,7 @@ export function OrderComposer({
                     setMcIncludeDiagnosis(mcDiagnosisVisible({ mcIncludeDiagnosis: entry.meta?.mcIncludeDiagnosis }));
                     setReferralDoctorName(entry.meta?.referralDoctorName || signer.name);
                     setReferralDoctorMmc(entry.meta?.referralDoctorMmc || signer.mmc);
-                    setReferralTo(entry.meta?.referralTo || "(Insert Hosp name)");
+                    setReferralTo(entry.meta?.referralTo || "");
                     setReferralDiagnosis(entry.meta?.referralDiagnosis || defaultReferralDiagnosis);
                     setReferralContent(entry.meta?.referralContent || defaultReferralContent);
                     setEditingDocumentEntryId(entry.id);
@@ -1229,8 +1237,11 @@ export function OrderComposer({
             <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
               <div className="space-y-3">
                 <div>
-                  <Label className="text-xs">Referral to:</Label>
+                  <Label className="text-xs" htmlFor="referral-to">Referral to:</Label>
                   <Input
+                    id="referral-to"
+                    placeholder="Hospital / clinic name"
+                    aria-required="true"
                     value={referralTo}
                     onChange={(event) => {
                       userTouchedRef.current = true;
@@ -1310,7 +1321,16 @@ export function OrderComposer({
             </div>
           ) : null}
           <DialogFooter>
-            <Button type="button" onClick={() => void handleCompleteDocumentDialog("completed")}>
+            {editingDocumentKind === "referral" && (!referralDoctorName.trim() || !referralDoctorMmc.trim()) ? (
+              <p className="mr-auto text-xs text-amber-700" role="status">
+                Doctor name or MMC number is empty; the letter will print without it.
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              disabled={editingDocumentKind === "referral" && !referralTo.trim()}
+              onClick={() => void handleCompleteDocumentDialog("completed")}
+            >
               Complete document
             </Button>
           </DialogFooter>

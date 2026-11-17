@@ -11,16 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Server, Shield, Wrench } from "lucide-react";
+import { configuredValue, isHttpUrl } from "@/lib/admin-ui";
 import { getHostFromHeaders } from "@/lib/server/subdomain-host";
 
 export default async function AdminSettingsPage() {
   const host = getHostFromHeaders(await headers());
   const adminPath = (path: string) => adminPathForHost(path, host);
-  const medplumUi =
-    process.env.NEXT_PUBLIC_MEDPLUM_UI_URL || "https://medplum.drhidayat.com";
-  const medplumApi =
-    process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL ||
-    "https://medplum-api.drhidayat.com";
+  const medplumUi = configuredValue(process.env.NEXT_PUBLIC_MEDPLUM_UI_URL);
+  const medplumApi = configuredValue(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL);
   const baseDomain =
     process.env.NEXT_PUBLIC_BASE_DOMAIN || "yourdomain.com";
 
@@ -47,27 +45,35 @@ export default async function AdminSettingsPage() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Medplum API</span>
-            <a
-              href={medplumApi}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-xs inline-flex items-center gap-1 hover:underline"
-            >
-              {medplumApi}
-              <ExternalLink className="h-3 w-3" />
-            </a>
+            {isHttpUrl(medplumApi) ? (
+              <a
+                href={medplumApi}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs inline-flex items-center gap-1 hover:underline"
+              >
+                {medplumApi}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <span className="text-xs text-muted-foreground">Not configured</span>
+            )}
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Medplum Console</span>
-            <a
-              href={medplumUi}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-xs inline-flex items-center gap-1 hover:underline"
-            >
-              {medplumUi}
-              <ExternalLink className="h-3 w-3" />
-            </a>
+            {isHttpUrl(medplumUi) ? (
+              <a
+                href={medplumUi}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs inline-flex items-center gap-1 hover:underline"
+              >
+                {medplumUi}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <span className="text-xs text-muted-foreground">Not configured</span>
+            )}
           </div>
         </CardContent>
       </Card>

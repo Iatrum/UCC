@@ -191,7 +191,7 @@ export default function PatientDocuments({ patientId }: Props) {
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="text-sm text-muted-foreground">Loading documents...</div>
+          <div className="text-sm text-muted-foreground">Loading uploaded files…</div>
         ) : loadError ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
             <p className="text-sm font-medium text-destructive">Unable to load uploaded files.</p>

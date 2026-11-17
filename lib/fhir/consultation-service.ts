@@ -720,6 +720,61 @@ export async function getPatientConsultationsFromMedplum(
   }
 }
 
+const CLINIC_CONSULTATIONS_PAGE = 1000;
+const CLINIC_CONSULTATIONS_MAX = 10000;
+const CHILD_BATCH = 100;
+
+/**
+ * All consultations of one clinic in a fixed number of round trips (Task 502):
+ * paged clinic-scoped Encounter search + one batched Condition/Procedure/MedicationRequest
+ * search per 100 encounters (run in parallel). Replaces the per-patient N+1 for analytics.
+ * Observations are skipped: analytics never reads them. Newest first, like the per-patient reader.
+ */
+export async function getClinicConsultationsFromMedplum(
+  clinicId: string,
+  medplum: MedplumClient
+): Promise<SavedConsultation[]> {
+  const encounters: Encounter[] = [];
+  for (let offset = 0; offset < CLINIC_CONSULTATIONS_MAX; offset += CLINIC_CONSULTATIONS_PAGE) {
+    const page = await medplum.searchResources('Encounter', {
+      identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+      _sort: '-date',
+      _count: String(CLINIC_CONSULTATIONS_PAGE),
+      _offset: String(offset),
+    });
+    encounters.push(...page.filter((enc) => matchesClinic(enc as any, clinicId)));
+    if (page.length < CLINIC_CONSULTATIONS_PAGE) break;
+  }
+  if (encounters.length === 0) return [];
+
+  const batches: Encounter[][] = [];
+  for (let i = 0; i < encounters.length; i += CHILD_BATCH) batches.push(encounters.slice(i, i + CHILD_BATCH));
+  const children = await Promise.all(
+    batches.map(async (batch) => {
+      const refs = batch.map((e) => `Encounter/${e.id}`).join(',');
+      const [conditions, procedures, medications] = await Promise.all([
+        medplum.searchResources('Condition', { encounter: refs, _count: '1000' }),
+        medplum.searchResources('Procedure', { encounter: refs, _count: '1000' }),
+        medplum.searchResources('MedicationRequest', { encounter: refs, _count: '1000' }),
+      ]);
+      return { conditions, procedures, medications };
+    })
+  );
+  const conditionsBy = groupByEncounter(children.flatMap((c) => c.conditions));
+  const proceduresBy = groupByEncounter(children.flatMap((c) => c.procedures));
+  const medicationsBy = groupByEncounter(children.flatMap((c) => c.medications));
+
+  return encounters.map((enc) =>
+    buildSavedConsultation(
+      enc,
+      conditionsBy.get(enc.id!) ?? [],
+      [],
+      proceduresBy.get(enc.id!) ?? [],
+      medicationsBy.get(enc.id!) ?? []
+    )
+  );
+}
+
 /**
  * Update an existing consultation in Medplum (FHIR).
  *
