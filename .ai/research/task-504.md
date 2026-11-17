@@ -1,0 +1,5 @@
+# Task 504 notes
+- Task 422 rule (lib/fhir/write-containment.ts `assertResourceInClinic`): foreign/missing/mismatched => 404, no clinic => 403. New `assertCheckoutConsultationPatient` reuses `assertEncounterInClinic` and maps its forbidden outcome to NotFoundError; it runs in POST /api/billing before the main try so the catch's billing-exception Task is never created for a foreign id.
+- Stock preview mirrors `inventoryCandidates`/`dispensedUnits` in lib/fhir/dispense-service.ts (name or name+strength, exactly one hit, whole units, lines of one medicine summed). "Low" = on hand < billed, which is exactly when the server reports `stockNegative`. It reads GET /api/inventory; if a visit was already checked out once, on-hand already includes the earlier deduction (re-run case), so the warning can be conservative.
+- Post-checkout feedback travels via sessionStorage (`ucc.checkoutStockNotice`) across the redirect to /orders, avoiding long query strings.
+- Medplum: MedicationDispense/Medication per FHIR R4; no API change. Not browser-tested (no dev server run; worktree has no .env.local).

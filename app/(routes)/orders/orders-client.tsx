@@ -6,6 +6,7 @@ import Link from "next/link";
 import { BillableConsultation } from '@/lib/types';
 import BillingTable from "@/components/billing/billing-table";
 import { useToast } from "@/components/ui/use-toast";
+import { CHECKOUT_NOTICE_STORAGE_KEY, type CheckoutStockNotice } from "@/lib/billing/checkout-stock";
 
 interface OrdersClientProps {
   initialConsultations: BillableConsultation[];
@@ -23,14 +24,28 @@ export default function OrdersClient({ initialConsultations, otcContext, checkou
   const { toast } = useToast();
   const checkoutToastShown = useRef(false);
   const [consultations, setConsultations] = useState<BillableConsultation[]>(initialConsultations);
+  const [stockNotice, setStockNotice] = useState<CheckoutStockNotice | null>(null);
 
   useEffect(() => {
     if (!checkoutComplete || checkoutToastShown.current) return;
 
     checkoutToastShown.current = true;
+    // Task 504: stock problems from POST /api/billing (negative stock, unmatched line, failed deduction).
+    let notice: CheckoutStockNotice | null = null;
+    try {
+      const raw = window.sessionStorage.getItem(CHECKOUT_NOTICE_STORAGE_KEY);
+      window.sessionStorage.removeItem(CHECKOUT_NOTICE_STORAGE_KEY);
+      notice = raw ? (JSON.parse(raw) as CheckoutStockNotice) : null;
+    } catch {
+      notice = null;
+    }
+    // sessionStorage only exists in the browser, so it is read here and applied after the effect body.
+    if (notice) queueMicrotask(() => setStockNotice(notice));
     toast({
-      title: "Checkout completed",
-      description: `Invoice ${checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record"} was saved.`,
+      title: notice ? "Checkout completed – check stock" : "Checkout completed",
+      description: `Invoice ${checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record"} was saved.${
+        notice ? " See the stock notice on this page." : ""
+      }`,
     });
 
     const cleanUrl = new URL(window.location.href);
@@ -67,6 +82,26 @@ export default function OrdersClient({ initialConsultations, otcContext, checkou
           Open checkout for completed consultations and manage visit documents.
         </p>
       </div>
+
+      {stockNotice ? (
+        <div
+          role={stockNotice.severe ? "alert" : "status"}
+          data-testid="checkout-stock-notice"
+          className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p className="font-medium">{stockNotice.title}</p>
+            <button type="button" className="text-xs underline" onClick={() => setStockNotice(null)}>
+              Dismiss
+            </button>
+          </div>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {stockNotice.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {otcContext ? (
         <Card className="border-primary/30 bg-primary/5">
