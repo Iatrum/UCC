@@ -41,6 +41,7 @@ export default function PatientsPage() {
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState<number | null>(null);
+  const [capped, setCapped] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   useEffect(() => {
@@ -77,10 +78,12 @@ export default function PatientsPage() {
           const res = await searchPatientsPage(debouncedQuery, page, PAGE_SIZE);
           active = res.patients;
           setTotal(res.total);
+          setCapped(res.capped);
         } else {
           const res = await getPatientsPage(page, PAGE_SIZE);
           active = res.patients;
           setTotal(res.total);
+          setCapped(false);
         }
         if (cancelled) return;
         setPatients(active);
@@ -274,7 +277,7 @@ export default function PatientsPage() {
               {totalPages != null && (
                 <div className="flex items-center justify-between border-t px-4 py-3 text-sm" data-testid="patients-pagination">
                   <span className="text-muted-foreground">
-                    Page {page} of {totalPages} · {total?.toLocaleString()} {debouncedQuery ? "matches" : "patients"}
+                    Page {page} of {totalPages} · {total?.toLocaleString()}{capped ? "+" : ""} {debouncedQuery ? "matches" : "patients"}{capped ? " — refine your search to narrow results" : ""}
                   </span>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
