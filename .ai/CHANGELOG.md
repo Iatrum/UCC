@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 568: access-policy ProjectMembership leak checked; already closed, now pinned by a test
+On the dev server a clinic staff login cannot search, read or create ProjectMembership, User or AccessPolicy, and cannot see other clinics' Practitioner or PractitionerRole records. The old backlog item was out of date. Added a unit test so the policy can't regress. No app or policy change; production needs no action. Notes: `.ai/research/task-568.md`.
+
 ## 2026-11-17 — Task 545: re-checked every open UX finding against current dev; none of the Medium/High items is still open
 The findings list was out of date. Fixed items are now marked with the file and line that proves it. Only three Low items remain (dead purchasing panels, raw-HTML templates, long branch list) plus sidebar polish, which is out of scope. Docs only, no app code changed.
 
