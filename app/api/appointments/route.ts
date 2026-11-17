@@ -2,9 +2,8 @@
  * Appointment API - FHIR via Medplum
  *
  * All operations are scoped to the authenticated clinic. Clinic ownership is
- * verified via the appointment's Patient participant: a patient must belong to
- * the current clinic (managingOrganization or clinic identifier) before the
- * appointment is returned or mutated.
+ * verified via its Patient participant for reads and the stored Appointment's
+ * clinic identifier/account for mutations (enforced inside each service helper).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -120,17 +119,12 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Missing appointmentId' }, { status: 400 });
     }
 
-    const appointment = await getAppointmentForClinic(medplum, appointmentId, clinicId);
-    if (!appointment) {
-      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
-    }
-
     if (status) {
-      await updateAppointmentStatus(medplum, appointmentId, status);
+      await updateAppointmentStatus(medplum, appointmentId, status, clinicId);
     }
 
     if (scheduledAt) {
-      await rescheduleAppointment(medplum, appointmentId, scheduledAt);
+      await rescheduleAppointment(medplum, appointmentId, scheduledAt, clinicId);
     }
 
     if (!status && !scheduledAt) {
@@ -155,12 +149,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Missing appointmentId' }, { status: 400 });
     }
 
-    const appointment = await getAppointmentForClinic(medplum, appointmentId, clinicId);
-    if (!appointment) {
-      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
-    }
-
-    await deleteAppointment(medplum, appointmentId);
+    await deleteAppointment(medplum, appointmentId, clinicId);
     return NextResponse.json({ success: true, message: 'Appointment deleted successfully' });
   } catch (error) {
     return handleRouteError(error, 'DELETE /api/appointments');
