@@ -24,6 +24,8 @@ const fakeMedplum = {
     return r;
   },
   deleteResource: mock(async () => {}),
+  updateResource: mock(async (r: any) => r),
+  createResource: mock(async (r: any) => r),
   // Honours the clinic identifier filter server-side and pages by _count.
   async *searchResourcePages(_t: string, params: Record<string, string>) {
     searchCalls.push(params);
@@ -40,9 +42,15 @@ const fakeMedplum = {
 };
 
 mock.module("@/lib/server/medplum-admin", () => ({ getAdminMedplum: async () => fakeMedplum }));
+// PATCH/DELETE short-circuit with 403 while purchasing is switched off, which
+// would hide the clinic/type 404 guard. Enable it so the guard is what we test.
+mock.module("@/lib/purchasing", () => ({
+  INVENTORY_PURCHASING_ENABLED: true,
+  INVENTORY_PURCHASING_DISABLED_ERROR: "Inventory purchasing is temporarily disabled",
+}));
 mock.module("@/lib/server/medplum-auth", () => ({ requireClinicAuth: async () => ({ clinicId: "clinic-a" }) }));
 
-const { GET, DELETE } = await import("@/app/api/purchases/route");
+const { GET, DELETE, PATCH } = await import("@/app/api/purchases/route");
 const { listClinicPurchaseOrders } = await import("@/lib/server/purchase-orders");
 
 const get = (qs = "") => GET(new NextRequest(`http://localhost/api/purchases${qs}`));
@@ -50,6 +58,8 @@ const get = (qs = "") => GET(new NextRequest(`http://localhost/api/purchases${qs
 beforeEach(() => {
   store = [];
   searchCalls.length = 0;
+  fakeMedplum.deleteResource.mockClear();
+  fakeMedplum.updateResource.mockClear();
 });
 
 describe("GET /api/purchases list is clinic-scoped server-side", () => {
@@ -96,7 +106,38 @@ describe("same-clinic Basic that is not a purchase order -> 404", () => {
   test("DELETE never deletes a non-PO Basic", async () => {
     store = [otherBasic("x", "clinic-a")];
     const res = await DELETE(new NextRequest("http://localhost/api/purchases?id=x", { method: "DELETE" }));
-    expect([403, 404]).toContain(res.status);
+    expect(res.status).toBe(404);
     expect(fakeMedplum.deleteResource).not.toHaveBeenCalled();
+  });
+
+  test("DELETE of another clinic's PO is 404 and deletes nothing", async () => {
+    store = [po("b1", "clinic-b")];
+    const res = await DELETE(new NextRequest("http://localhost/api/purchases?id=b1", { method: "DELETE" }));
+    expect(res.status).toBe(404);
+    expect(fakeMedplum.deleteResource).not.toHaveBeenCalled();
+  });
+
+  test("PATCH of a non-PO Basic is 404 and updates nothing", async () => {
+    store = [otherBasic("x", "clinic-a")];
+    const res = await PATCH(
+      new NextRequest("http://localhost/api/purchases", {
+        method: "PATCH",
+        body: JSON.stringify({ id: "x", notes: "tamper" }),
+      })
+    );
+    expect(res.status).toBe(404);
+    expect(fakeMedplum.updateResource).not.toHaveBeenCalled();
+  });
+
+  test("PATCH of another clinic's PO is 404 and updates nothing", async () => {
+    store = [po("b1", "clinic-b")];
+    const res = await PATCH(
+      new NextRequest("http://localhost/api/purchases", {
+        method: "PATCH",
+        body: JSON.stringify({ id: "b1", notes: "tamper" }),
+      })
+    );
+    expect(res.status).toBe(404);
+    expect(fakeMedplum.updateResource).not.toHaveBeenCalled();
   });
 });

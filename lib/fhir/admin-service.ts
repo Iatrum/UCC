@@ -62,6 +62,42 @@ async function getClinicPolicyParameters(
   ];
 }
 
+/**
+ * Keep Practitioner.meta.accounts equal to the clinic accounts of the
+ * practitioner's active PractitionerRoles. The clinic staff AccessPolicy lists
+ * Practitioners with `_compartment=%clinicAccount`, so this is what stops one
+ * clinic from enumerating another clinic's staff. Fail-closed: a practitioner
+ * that is not stamped is simply invisible to clinic staff (platform admins and
+ * the app server still see it); the Task 5 migration script re-syncs all.
+ */
+export async function syncPractitionerClinicAccounts(
+  medplum: MedplumClient,
+  practitionerId: string
+): Promise<void> {
+  const orgIds = new Set<string>();
+  for await (const page of medplum.searchResourcePages("PractitionerRole", {
+    practitioner: `Practitioner/${practitionerId}`, _count: "100",
+  })) {
+    for (const role of page) {
+      const orgId = getIdFromReference(role.organization?.reference);
+      if (orgId && role.active !== false) orgIds.add(orgId);
+    }
+  }
+  const accounts: string[] = [];
+  for (const orgId of orgIds) {
+    const parameters = await getClinicPolicyParameters(medplum, orgId);
+    const reference = parameters?.find((p) => p.name === "clinicAccount")?.valueReference?.reference;
+    if (reference) accounts.push(reference);
+  }
+  await medplum.post(`fhir/R4/Practitioner/${practitionerId}/$set-accounts`, {
+      resourceType: "Parameters",
+      parameter: [
+        ...accounts.map((reference) => ({ name: "accounts", valueReference: { reference } })),
+        { name: "propagate", valueBoolean: false },
+      ],
+  });
+}
+
 async function getClinicStaffPolicyReference(medplum: MedplumClient): Promise<string> {
   const configured = process.env.MEDPLUM_POLICY_CLINIC_STAFF;
   if (configured) return `AccessPolicy/${configured}`;
@@ -696,7 +732,17 @@ export async function updatePractitionerInMedplum(
       request: { method: "POST", url: "PractitionerRole" },
     });
   }
+  // Hide the directory entry before changing clinics. If the transaction or
+  // restamp fails, old colleagues cannot retain access through stale accounts.
+  await medplum.post(`fhir/R4/Practitioner/${id}/$set-accounts`, {
+    resourceType: "Parameters",
+    parameter: [{ name: "propagate", valueBoolean: false }],
+  });
+  const directoryVersion = await medplum.readResource("Practitioner", id, { cache: "no-cache" });
+  entries[0].resource = { ...updated, meta: directoryVersion.meta };
+  entries[0].request!.ifMatch = directoryVersion.meta?.versionId ? `W/"${directoryVersion.meta.versionId}"` : undefined;
   await medplum.executeBatch({ resourceType: "Bundle", type: "transaction", entry: entries });
+  await syncPractitionerClinicAccounts(medplum, id);
 
   const detail = await getPractitionerFromMedplum(id);
   if (!detail) {
@@ -976,4 +1022,5 @@ export async function invitePractitionerToMedplum(
       organization: { reference: clinicRef },
     });
   }
+  await syncPractitionerClinicAccounts(medplum, practitionerId);
 }
