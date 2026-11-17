@@ -1,5 +1,7 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 446: patient profile history stays current after Sign
+Three fixes from the UX audit on the patient profile. (1) After a consult is signed, the new row now shows in Consultation History straight away instead of "No consultation history yet", and the empty-state "Start consult" button is hidden while the consult/treatment drawer is open. (2) The history table now scrolls sideways when it is wider than the screen, so the Actions column is no longer cut off. (3) The header no longer calls a signed-but-unbilled consult a "completed visit": the labels are now "Last consult" and "Total consults", both counted from the consultation list. Composer code, Lab/POCT, and navigation are untouched.
 ## 2026-11-17 — Task 478: patient search covers the whole clinic again (name, NRIC, phone)
 After server paging (Task 434), typing in the Patients search only filtered the page on screen, and phone numbers could not be found. Search now runs on the server across all of the clinic's patients by name, NRIC/IC or phone number, and its results are paged (Previous/Next) like the normal list. Starting a new search goes back to page 1. Only the caller's own clinic is ever searched or returned. Tests: `tests/unit/task478-patient-search.test.ts` (match on page 3, phone and NRIC search, other clinic never appears, no-clinic fails closed). Note: phone search relies on Medplum's `phone:contains`, checked against a fake server only, not live dev Medplum.
 
