@@ -16,7 +16,7 @@ const compare = (cur: string, base: string | undefined, target?: string) => spaw
 
 test('baseline identity: valid only for the recorded target and bytes', () => {
   const b = write('b1.json', report({ a: 'passed' }));
-  expect(checkBaselineIdentity(b, 'staging')).toContain('baseline identity file is missing (record one with: node scripts/lib/baseline.mjs write <results.json> <target>)');
+  expect(checkBaselineIdentity(b, 'staging')).toContain('baseline identity file is missing (record one with: node e2e/scripts/lib/baseline.mjs write <results.json> <target>)');
   writeBaselineIdentity(b, 'staging');
   expect(checkBaselineIdentity(b, 'staging')).toEqual([]);
   expect(checkBaselineIdentity(b, 'Staging')).toEqual([]);

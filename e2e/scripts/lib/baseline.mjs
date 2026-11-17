@@ -28,7 +28,7 @@ export function checkBaselineIdentity(baselinePath, target) {
     return ['baseline results file is not valid JSON'];
   }
   const idf = identityPath(baselinePath);
-  if (!fs.existsSync(idf)) return ['baseline identity file is missing (record one with: node scripts/lib/baseline.mjs write <results.json> <target>)'];
+  if (!fs.existsSync(idf)) return ['baseline identity file is missing (record one with: node e2e/scripts/lib/baseline.mjs write <results.json> <target>)'];
   let id;
   try { id = JSON.parse(fs.readFileSync(idf, 'utf8')); } catch { return ['baseline identity file is not valid JSON']; }
   const problems = [];
