@@ -2,6 +2,7 @@
  * Admin Service - Server-side helpers for admin portal
  * Uses Medplum client credentials to access all organisations.
  */
+import { invalidateModuleIdsMemo } from "@/lib/server/module-ids-memo";
 import type { MedplumClient } from "@medplum/core";
 import type { AccessPolicy, BundleEntry, HealthcareService, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
 import { ConflictError } from "@/lib/server/route-helpers";
@@ -365,6 +366,7 @@ export async function updateOrganizationDetailsInMedplum(
   };
 
   const saved = await medplum.updateResource(updated);
+  invalidateModuleIdsMemo(); // modules may have changed: do not serve the 5 s memo (Task 547)
   const parentName = parent?.name;
   return mapOrganizationToSummary(saved, parentName);
 }

@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
 import { getAllPatientsFromMedplum, countPatientsInMedplum } from "@/lib/fhir/patient-service";
@@ -9,10 +9,30 @@ import { computeAnalytics } from "@/lib/analytics/compute";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
 import AnalyticsCharts from "@/components/analytics/analytics-charts";
+import { AnalyticsBodySkeleton } from "@/components/analytics/analytics-skeleton";
 
-export default async function AnalyticsPage() {
-  const medplum = await getMedplumForRequest();
-  const clinicId = await resolveClinicIdFromServerScope();
+export default function AnalyticsPage() {
+  // Heading paints at once; the data-heavy cards/charts stream in behind Suspense (Task 547).
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Analytics</h1>
+        <p className="text-sm text-muted-foreground">
+          Clinic performance, patient mix, visit trends, and revenue movement.
+        </p>
+      </div>
+      <Suspense fallback={<AnalyticsBodySkeleton />}>
+        <AnalyticsBody />
+      </Suspense>
+    </div>
+  );
+}
+
+async function AnalyticsBody() {
+  const [medplum, clinicId] = await Promise.all([
+    getMedplumForRequest(),
+    resolveClinicIdFromServerScope(),
+  ]);
   // Task 502: patients + exact count + all clinic consultations in parallel (was one 5-query N+1 per patient).
   const [patients, exactTotal, clinicConsultations] = await Promise.all([
     getAllPatientsFromMedplum(300, clinicId, medplum),
@@ -30,14 +50,7 @@ export default async function AnalyticsPage() {
   } = computeAnalytics(patients, consultations, exactTotal);
 
   return (
-    <div className="space-y-6 pb-10">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Analytics</h1>
-        <p className="text-sm text-muted-foreground">
-          Clinic performance, patient mix, visit trends, and revenue movement.
-        </p>
-      </div>
-
+    <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <AnalyticsMetricCard
           icon={<Users className="h-4 w-4 text-sky-700" />}
@@ -72,7 +85,7 @@ export default async function AnalyticsPage() {
         diagnosisTop={diagnosisTop}
         revenueMonthly={revenueMonthly}
       />
-    </div>
+    </>
   );
 }
 

@@ -109,7 +109,8 @@ function makeFakeMedplum(resources: FakeResource[]) {
       }
 
       if (params.subject) {
-        matches = matches.filter((resource) => resource.subject?.reference === params.subject);
+        const subjects = params.subject.split(",");
+        matches = matches.filter((resource) => subjects.includes(resource.subject?.reference));
       }
 
       if (params.encounter) {

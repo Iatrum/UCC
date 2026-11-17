@@ -575,6 +575,38 @@ export async function getPatientFromMedplum(
 }
 
 /**
+ * Several patients in one search per 100 ids (Task 547) instead of one read each. Clinic check is
+ * identical to getPatientFromMedplum: a patient belonging to another clinic is dropped.
+ */
+export async function getPatientsByIdsFromMedplum(
+  patientIds: string[],
+  clinicId?: string | null,
+  medplum?: MedplumClient
+): Promise<Map<string, SavedPatient>> {
+  const result = new Map<string, SavedPatient>();
+  const ids = Array.from(new Set(patientIds.filter(Boolean)));
+  if (ids.length === 0) return result;
+  try {
+    const client = medplum ?? (await getAdminMedplum());
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        client.searchResources('Patient', { _id: chunk.join(','), _count: String(chunk.length) })
+      )
+    );
+    for (const fhirPatient of pages.flat()) {
+      if (!fhirPatient.id || !ids.includes(fhirPatient.id)) continue;
+      if (!matchesClinic(fhirPatient, clinicId)) continue;
+      result.set(fhirPatient.id, fhirPatientToPatientData(fhirPatient));
+    }
+  } catch (error: any) {
+    console.error('Failed to get patients by id from Medplum:', error?.message ?? error);
+  }
+  return result;
+}
+
+/**
  * Save triage + queue data to Medplum (Patient extension)
  */
 export async function saveTriageToMedplum(
@@ -743,11 +775,11 @@ export async function getAllPatientsFromMedplum(
 ): Promise<SavedPatient[]> {
   try {
     const client = medplum;
-    const clinicTenant = await resolveClinicTenant(client, clinicId);
-
     // Scope by Medplum tenant compartment/account. clinicId is only the UI slug
-    // used to resolve the Organization tenant.
-    const [patients, encounters] = await Promise.all([
+    // used to resolve the Organization tenant. The tenant check runs alongside the searches
+    // (Task 547) instead of ahead of them; the memo shares it with the other lookups.
+    const [, patients, encounters] = await Promise.all([
+      resolveClinicTenantMemo(client, clinicId),
       client.searchResources('Patient', {
         _count: String(limit),
         _sort: '-_lastUpdated',

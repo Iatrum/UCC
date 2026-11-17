@@ -9,6 +9,7 @@ import {
   getResourceAccountReferences,
   assignResourceToClinicTenant,
   resolveClinicTenant,
+  resolveClinicTenantMemo,
   resourceMatchesClinicTenant,
   withClinicIdentifier,
 } from './clinic-tenancy';
@@ -228,7 +229,7 @@ export async function getUpcomingAppointmentsForClinic(
   clinicId: string,
   limit = 50
 ): Promise<SavedAppointment[]> {
-  const clinicTenant = await resolveClinicTenant(medplum, clinicId);
+  const clinicTenant = await resolveClinicTenantMemo(medplum, clinicId);
   if (!clinicTenant) return [];
 
   const startOfToday = new Date();
