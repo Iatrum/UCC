@@ -82,7 +82,7 @@ export const CLINIC_COMPARTMENT_TYPES = [
   'Patient', 'Encounter', 'Observation', 'Condition', 'Procedure', 'MedicationRequest',
   'MedicationStatement', 'AllergyIntolerance', 'ServiceRequest', 'DiagnosticReport',
   'ImagingStudy', 'DocumentReference', 'Appointment', 'Invoice', 'Task', 'Basic',
-  'ChargeItemDefinition', 'Medication', 'Communication', 'QuestionnaireResponse',
+  'ChargeItemDefinition', 'Medication', 'MedicationDispense', 'Communication', 'QuestionnaireResponse',
   'Schedule', 'Slot',
 ] as const;
 

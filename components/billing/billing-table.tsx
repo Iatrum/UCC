@@ -19,6 +19,9 @@ import { BillableConsultation, QueueStatus } from '@/lib/types';
 
 interface BillingTableProps {
   consultations: BillableConsultation[];
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void | Promise<void>;
 }
 
 function getStatusBadge(status: QueueStatus | undefined | string) {
@@ -32,7 +35,7 @@ function getStatusBadge(status: QueueStatus | undefined | string) {
   }
 }
 
-export default function BillingTable({ consultations }: BillingTableProps) {
+export default function BillingTable({ consultations, loading, error, onRetry }: BillingTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filtered = useMemo(() => {
@@ -42,6 +45,27 @@ export default function BillingTable({ consultations }: BillingTableProps) {
       (c) => c.patientFullName && c.patientFullName.toLowerCase().includes(q)
     );
   }, [consultations, searchQuery]);
+
+  if (loading) {
+    return (
+      <div role="status" aria-live="polite" className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-10 text-center text-sm text-muted-foreground">
+        Loading billable consultations...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
+        <p>{error}</p>
+        {onRetry ? (
+          <Button variant="outline" size="sm" onClick={() => void onRetry()}>
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div>

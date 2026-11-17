@@ -15,7 +15,9 @@ let page: Page; let step = 'init';
 const issues: Issue[] = []; const bugs: string[] = []; const facts: Record<string, any> = { run: RUN };
 const bug = (ok: boolean, msg: string) => { known(ok, msg); if (!ok) bugs.push(msg); };
 const name = `E2E Fake ${RUN}`;
-const nric = `9203${String(1 + (Number(RUN.slice(-2)) % 28)).padStart(2, '0')}-14-${RUN.slice(-4)}`; // valid YYMMDD
+// Valid YYMMDD with a random 4-digit tail: a time-derived NRIC repeated on later days/months and collided with
+// leftover dev patients (409 "already exists"), failing 02 and skipping 03-11.
+const nric = `9203${String(1 + Math.floor(Math.random() * 28)).padStart(2, '0')}-14-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 const stubPlan = (p: Page) => p.route('**/api/consultations/plan**', r => r.fulfill({ status: 200, contentType: 'application/json',
   body: JSON.stringify({ success: true, persistenceAvailable: false, plan: { entries: [], summary: {} } }) }));
 
