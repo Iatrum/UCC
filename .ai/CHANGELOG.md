@@ -1,5 +1,9 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 502: Analytics loads much faster (UX #11)
+Analytics used to run about five Medplum searches for every patient (roughly 1,500 for 300 patients), each one scanning the whole clinic's visits. It now reads the clinic's visits once, in pages, and fetches diagnoses, procedures and prescriptions in a few parallel batches (about 20 searches). Same charts and formulas, still only the signed-in clinic's data. Side effect: the old code only ever saw each clinic's 20 newest visits, so some totals may now be higher (more correct). Tests: `tests/unit/task502-analytics-perf.test.ts`. Not timed on live dev Medplum.
+
+
 ## 2026-11-17 — Task 446: patient profile history stays current after Sign
 Three fixes from the UX audit on the patient profile. (1) After a consult is signed, the new row now shows in Consultation History straight away instead of "No consultation history yet", and the empty-state "Start consult" button is hidden while the consult/treatment drawer is open. (2) The history table now scrolls sideways when it is wider than the screen, so the Actions column is no longer cut off. (3) The header no longer calls a signed-but-unbilled consult a "completed visit": the labels are now "Last consult" and "Total consults", both counted from the consultation list. Composer code, Lab/POCT, and navigation are untouched.
 ## 2026-11-17 — Task 478: patient search covers the whole clinic again (name, NRIC, phone)
