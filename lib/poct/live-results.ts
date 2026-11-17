@@ -84,7 +84,7 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
       if (!data || !Array.isArray(data.reports)) throw new Error('Malformed lab results response');
       allowed = data.poctEnabled === true || data.pacsEnabled === true;
       onResults(data, Date.now());
-      if (!allowed) { disconnect(); stopPoll(); return 'disabled'; }
+      if (!allowed) { disconnect(true); stopPoll(); return 'disabled'; }
       return 'ok';
     } catch {
       // Keep the last successful results during a transient outage, but surface the failure.

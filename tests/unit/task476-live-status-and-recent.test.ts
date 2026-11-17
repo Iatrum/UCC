@@ -63,3 +63,17 @@ describe("Task 476 (c): buildSavedConsultation mapping", () => {
     expect(bare.diagnosis).toBe("");
   });
 });
+
+describe("Task 477: hint only on subscription failure", () => {
+  test("features disabled (no subscription attempted) reports no live status", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ ...results, poctEnabled: false, pacsEnabled: false }), { status: 200 })) as unknown as typeof fetch;
+    const live: boolean[] = [];
+    const handle = startLabResultUpdates({
+      patientId: "fake-1", onResults: () => {}, onError: () => {}, onLoaded: () => {}, onLiveStatus: (v) => live.push(v),
+    });
+    await tick();
+    handle.stop();
+    expect(live).toEqual([]);
+  });
+});
