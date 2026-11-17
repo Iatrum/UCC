@@ -69,6 +69,11 @@ beforeEach(() => {
       resourceType: 'DocumentReference', id: 'doc-mistagged', identifier: foreign, subject: { reference: 'Patient/p-a' },
       extension: [{ url: STORAGE_PATH_EXTENSION_URL, valueString: 'patients/p-a/documents/mistagged.pdf' }],
     },
+    // Own identifier but stored in another clinic's account.
+    'DocumentReference/doc-foreign-account': {
+      resourceType: 'DocumentReference', id: 'doc-foreign-account', identifier: own, subject: { reference: 'Patient/p-a' }, meta: { accounts: [{ reference: 'HealthcareService/fake-account-b' }] },
+      extension: [{ url: STORAGE_PATH_EXTENSION_URL, valueString: 'patients/p-a/documents/acct.pdf' }],
+    },
     'DocumentReference/doc-nopatient': { resourceType: 'DocumentReference', id: 'doc-nopatient', identifier: own },
     'Appointment/appt-b': { resourceType: 'Appointment', id: 'appt-b', status: 'booked', identifier: foreign, participant: [{ actor: { reference: 'Patient/p-b' }, status: 'accepted' }] },
     'ServiceRequest/sr-b': { resourceType: 'ServiceRequest', id: 'sr-b', status: 'active', identifier: foreign, subject: { reference: 'Patient/p-b' } },
@@ -96,6 +101,12 @@ describe('DELETE /api/documents ordering (Task 482)', () => {
 
   test('document tagged for another clinic on an own patient: 404 and no storage or FHIR delete', async () => {
     const response = await documents.DELETE(req('DELETE', { id: 'doc-mistagged' }));
+    expect(response.status).toBe(404);
+    expect(writes()).toEqual([]);
+  });
+
+  test('document in a foreign account despite own tag: 404 and no storage or FHIR delete', async () => {
+    const response = await documents.DELETE(req('DELETE', { id: 'doc-foreign-account' }));
     expect(response.status).toBe(404);
     expect(writes()).toEqual([]);
   });
