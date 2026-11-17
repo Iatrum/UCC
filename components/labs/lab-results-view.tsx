@@ -26,6 +26,7 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
   const [loadError, setLoadError] = useState<LabLoadError | null>(null);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [liveOff, setLiveOff] = useState(false);
   const updates = useRef<LabResultUpdates | null>(null);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
     setLoadError(null);
     setFetchedAt(null);
     setIsRefreshing(false);
+    setLiveOff(false);
     const handle = startLabResultUpdates({
       patientId, encounterId,
       onResults: (data, at) => {
@@ -48,6 +50,7 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
         if (error === 'denied') { setReports([]); setPending([]); setXrayPending([]); setFetchedAt(null); }
       },
       onLoaded: () => { setIsLoading(false); setIsRefreshing(false); },
+      onLiveStatus: (live) => setLiveOff(!live),
     });
     updates.current = handle;
     return () => { handle.stop(); updates.current = null; };
@@ -60,6 +63,9 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
     <div className="flex flex-wrap items-center justify-between gap-2" data-testid="lab-status-bar">
       <p className="text-xs text-muted-foreground" data-testid="lab-last-updated" aria-live="polite">
         {fetchedAt ? `Last updated ${new Date(fetchedAt).toLocaleTimeString()}` : 'Not updated yet'}
+        {liveOff && fetchedAt && (
+          <span data-testid="lab-live-off"> · Live updates off – press Refresh</span>
+        )}
       </p>
       <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={isRefreshing}>
         <RefreshCw className={`mr-2 h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />

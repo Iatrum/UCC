@@ -12,12 +12,14 @@ type Options = {
   /** Called when a load fails. The caller decides what to keep; a failure is never an empty result. */
   onError: (error: LabLoadError) => void;
   onLoaded: () => void;
+  /** Live (WebSocket) updates unavailable or dropped: the tab still polls, but staff should press Refresh. */
+  onLiveStatus?: (live: boolean) => void;
 };
 export type LabResultUpdates = { stop: () => void; refresh: () => void };
 type Outcome = 'ok' | 'disabled' | 'denied' | 'failed' | 'queued' | 'aborted';
 
 /** Mounted only by the Lab tab. Notifications invalidate data; the gated API is authoritative. */
-export function startLabResultUpdates({ patientId, encounterId, onResults, onError, onLoaded }: Options): LabResultUpdates {
+export function startLabResultUpdates({ patientId, encounterId, onResults, onError, onLoaded, onLiveStatus }: Options): LabResultUpdates {
   const abort = new AbortController();
   let allowed = false;
   let socket: WebSocket | undefined;
@@ -31,7 +33,9 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
   let ping: ReturnType<typeof setInterval> | undefined;
   const endpoint = `/api/labs/results?${new URLSearchParams(encounterId ? { encounterId } : { patientId })}`;
 
-  const disconnect = () => {
+  const setLive = (live: boolean) => { if (!abort.signal.aborted) onLiveStatus?.(live); };
+
+  const disconnect = (quiet = false) => {
     clearTimeout(renewal);
     clearTimeout(handshake);
     clearInterval(ping);
@@ -41,6 +45,7 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
     socket?.close();
     socket = undefined;
     token = undefined;
+    if (!quiet) setLive(false);
   };
 
   const stopPoll = () => { clearInterval(poll); poll = undefined; };
@@ -79,7 +84,7 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
       if (!data || !Array.isArray(data.reports)) throw new Error('Malformed lab results response');
       allowed = data.poctEnabled === true || data.pacsEnabled === true;
       onResults(data, Date.now());
-      if (!allowed) { disconnect(); stopPoll(); return 'disabled'; }
+      if (!allowed) { disconnect(true); stopPoll(); return 'disabled'; }
       return 'ok';
     } catch {
       // Keep the last successful results during a transient outage, but surface the failure.
@@ -102,11 +107,11 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patientId, encounterId }), signal: abort.signal, cache: 'no-store',
       });
-      if (!response.ok) { if (response.status === 403) await load(); return; }
+      if (!response.ok) { setLive(false); if (response.status === 403) await load(); return; }
       const binding = await response.json();
       if (abort.signal.aborted || !allowed) return;
       if (typeof binding.token !== 'string' || typeof binding.subscriptionId !== 'string' ||
-        typeof binding.expiresAt !== 'number' || binding.expiresAt <= Date.now()) return;
+        typeof binding.expiresAt !== 'number' || binding.expiresAt <= Date.now()) { setLive(false); return; }
       token = binding.token;
       const ws = new WebSocket(binding.url);
       socket = ws;
@@ -121,14 +126,14 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
           const bundle = JSON.parse(event.data);
           const status = bundle.entry?.[0]?.resource;
           if (status?.subscription?.reference !== `Subscription/${binding.subscriptionId}`) return;
-          if (status.type === 'handshake') clearTimeout(handshake);
+          if (status.type === 'handshake') { clearTimeout(handshake); setLive(true); }
           if (status.type === 'handshake' || status.type === 'event-notification') void load();
         } catch { /* Ignore malformed or unrelated frames, never display socket payloads. */ }
       };
       ws.onerror = () => { if (socket === ws) disconnect(); };
       ws.onclose = () => { if (socket === ws) disconnect(); };
       handshake = setTimeout(() => { if (socket === ws) disconnect(); }, 10_000);
-      renewal = setTimeout(() => { disconnect(); void connect(); }, Math.max(1000, binding.expiresAt - Date.now() - 15_000));
+      renewal = setTimeout(() => { disconnect(true); void connect(); }, Math.max(1000, binding.expiresAt - Date.now() - 15_000));
     } catch { disconnect(); }
     finally { connecting = false; }
   };
