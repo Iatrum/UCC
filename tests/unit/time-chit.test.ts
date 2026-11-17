@@ -26,3 +26,9 @@ describe('Time Chit boundaries', () => {
       .toBe('&lt;script&gt;alert(1)&lt;/script&gt; Dr {{patientName}}');
   });
 });
+
+describe('Time Chit MMC', () => {
+  test('rawKeys lets already-escaped mmcLine through while other values stay escaped', () => {
+    expect(fillTimeChitTemplate('{{mmcLine}}|{{doctorName}}', { mmcLine: 'MMC No: 1', doctorName: '<b>' }, ['mmcLine'])).toBe('MMC No: 1|&lt;b&gt;');
+  });
+});

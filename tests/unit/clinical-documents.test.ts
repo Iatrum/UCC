@@ -118,7 +118,7 @@ describe('document note detection (drives provenance)', () => {
   test('detects only mc / referral JSON notes', () => {
     expect(isSignedDocumentNote('{"kind":"mc"}')).toBe('mc');
     expect(isSignedDocumentNote('{"kind":"referral"}')).toBe('referral');
-    expect(isSignedDocumentNote('{"kind":"time-chit"}')).toBeNull();
+    expect(isSignedDocumentNote('{"kind":"time-chit"}')).toBe('time-chit');
     expect(isSignedDocumentNote('not json')).toBeNull();
     expect(isSignedDocumentNote(undefined)).toBeNull();
   });
