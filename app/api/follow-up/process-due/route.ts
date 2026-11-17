@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
 
     const sent = [];
     for (const followUp of dueTwilio) {
-      sent.push(await sendFollowUpWithTwilio(medplum, followUp.id));
+      sent.push(await sendFollowUpWithTwilio(medplum, followUp.id, clinicId));
     }
 
     return NextResponse.json({ success: true, count: sent.length, followUps: sent });
