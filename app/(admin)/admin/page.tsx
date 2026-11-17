@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { assignedLabel } from "@/lib/admin-ui";
 import { Button } from "@/components/ui/button";
 import { headers } from "next/headers";
 import { getHostFromHeaders } from "@/lib/server/subdomain-host";
@@ -75,8 +76,8 @@ export default async function AdminOverviewPage() {
           <p className="mt-1 text-xl font-semibold">{clinics.length}</p>
         </div>
         <div>
-          <p className="text-muted-foreground">Assigned users</p>
-          <p className="mt-1 text-xl font-semibold">{assignedUsers.length}</p>
+          <p className="text-muted-foreground">Users assigned to a clinic</p>
+          <p className="mt-1 text-xl font-semibold">{assignedUsers.length} of {practitioners.length}</p>
         </div>
         <div>
           <p className="text-muted-foreground">Domain</p>
@@ -168,7 +169,7 @@ export default async function AdminOverviewPage() {
             <div className="rounded-md border p-3">
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
-                <p className="font-medium">{assignedUsers.length} assigned users</p>
+                <p className="font-medium">{assignedLabel(assignedUsers.length, practitioners.length)}</p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 Users inherit access from their branch assignments.

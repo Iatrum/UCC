@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { ChevronRight, Users, UserPlus } from "lucide-react";
 import { headers } from "next/headers";
 import { getHostFromHeaders } from "@/lib/server/subdomain-host";
+import { assignedLabel, firstParam, matchesSearch } from "@/lib/admin-ui";
+import { Input } from "@/components/ui/input";
 import { requirePlatformAdminPage } from "@/lib/server/medplum-auth";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
@@ -32,6 +34,8 @@ export default async function UsersPage({ searchParams }: Props) {
     : {};
   const statusParam = resolvedParams.status;
   const status = typeof statusParam === "string" ? statusParam : "all";
+
+  const q = firstParam(resolvedParams.q).trim();
 
   const host = getHostFromHeaders(await headers());
   const adminPath = (path: string) => adminPathForHost(path, host);
@@ -53,7 +57,14 @@ export default async function UsersPage({ searchParams }: Props) {
     if (status === "active") return p.active === true;
     if (status === "deactivated") return p.active === false;
     return true;
-  });
+  }).filter((p) =>
+    matchesSearch(q, [p.name, p.email, ...(p.organizations ?? []).map((o) => o.name)])
+  );
+  const assignedCount = practitioners.filter((p) => (p.organizations?.length ?? 0) > 0).length;
+  const usersHref = (st: string) => {
+    const parts = [st !== "all" ? `status=${st}` : "", q ? `q=${encodeURIComponent(q)}` : ""].filter(Boolean);
+    return adminPath(`/users${parts.length ? `?${parts.join("&")}` : ""}`);
+  };
 
   return (
     <div className="space-y-6">
@@ -72,6 +83,24 @@ export default async function UsersPage({ searchParams }: Props) {
         </Button>
       </div>
 
+      <form method="get" role="search" className="flex items-center gap-2">
+        {status !== "all" && <input type="hidden" name="status" value={status} />}
+        <Input
+          name="q"
+          type="search"
+          defaultValue={q}
+          placeholder="Search name, email or clinic"
+          aria-label="Search users"
+          className="max-w-sm"
+        />
+        <Button type="submit" size="sm" variant="outline">Search</Button>
+        {q && (
+          <Button asChild size="sm" variant="ghost">
+            <Link href={adminPath(status === "all" ? "/users" : `/users?status=${status}`)}>Clear</Link>
+          </Button>
+        )}
+      </form>
+
       <div className="flex items-center gap-2">
         {STATUS_FILTERS.map((filter) => (
           <Button
@@ -81,11 +110,7 @@ export default async function UsersPage({ searchParams }: Props) {
             variant={status === filter.value ? "default" : "outline"}
           >
             <Link
-              href={
-                filter.value === "all"
-                  ? adminPath("/users")
-                  : adminPath(`/users?status=${filter.value}`)
-              }
+              href={usersHref(filter.value)}
             >
               {filter.label}
             </Link>
@@ -97,7 +122,7 @@ export default async function UsersPage({ searchParams }: Props) {
         <CardHeader>
           <CardTitle>Practitioners ({filteredPractitioners.length})</CardTitle>
           <CardDescription>
-            These are registered Medplum Practitioner resources. Click a row to
+            {assignedLabel(assignedCount, practitioners.length)}. These are registered Medplum Practitioner resources. Click a row to
             edit profile or clinic assignments.
           </CardDescription>
         </CardHeader>
@@ -115,12 +140,12 @@ export default async function UsersPage({ searchParams }: Props) {
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Users className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="font-semibold">
-                {practitioners.length === 0 ? "No users yet" : "No users match this filter"}
+                {practitioners.length === 0 ? "No users yet" : "No users match"}
               </h3>
               <p className="text-muted-foreground text-sm mt-1 mb-4">
                 {practitioners.length === 0
                   ? "Invite practitioners to get started."
-                  : "Try a different status filter."}
+                  : "Try a different search or status filter."}
               </p>
             </div>
           ) : (
