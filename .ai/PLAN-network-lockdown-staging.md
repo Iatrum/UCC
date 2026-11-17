@@ -274,13 +274,13 @@ Rules: one SHA, no hot fixes on prod that skip staging (hotfix = branch from the
 
 Prod rollback: Vercel → promote the previous deployment (instant); Medplum → previous image tag (always pin tags/digests, not `latest`; today's dev server uses `latest`, which hides which version is running) plus the pre-change DB backup. Never restore an old database over newer clinical writes without a decision from you.
 
-## 2.5 Build order (small tasks, one commit each, none done yet)
+## 2.5 Build order (small tasks, one commit each)
 
-1. **385a** staging compose + `.env.staging.example` (no secrets) + start/stop scripts with the memory limits and the stop condition. Mirrors `infra/pacs-dev/`.
-2. **385b** safe-target preflight (positive allowlist of staging hosts/projects, fails closed on anything else) and a staging seed runner. Do not weaken the localhost guards in existing seed/admin spec.
-3. **385c** staging gate adapter for `check-all.sh` with baseline identity check (Task 8: `compare.mjs` currently accepts a missing baseline).
-4. **385d** rehearse Part 1 steps 1.4-1.9 on a staging Traefik-equivalent (loopback) before touching production.
-5. **385e** (decision) second VPS.
+1. [x] (repo files, Task 525; never started, server bring-up untested) **385a** staging compose + `.env.staging.example` (no secrets) + start/stop scripts with the memory limits and the stop condition. Mirrors `infra/pacs-dev/`. Files: `infra/staging/`, `.env.staging.example`, `scripts/staging/`, checklist `.ai/PLAN-staging-promotion-checklist.md`.
+2. [x] (repo files + unit test, Task 525; the empty staging DB bootstrap of demo org/doctor is not automated) **385b** safe-target preflight (positive allowlist of staging hosts/projects, fails closed on anything else) and a staging seed runner. Do not weaken the localhost guards in existing seed/admin spec.
+3. [ ] (not done in Task 525) **385c** staging gate adapter for `check-all.sh` with baseline identity check (Task 8: `compare.mjs` currently accepts a missing baseline).
+4. [ ] **385d** rehearse Part 1 steps 1.4-1.9 on a staging Traefik-equivalent (loopback) before touching production.
+5. [ ] **385e** (decision) second VPS.
 
 ## 2.6 Staging risks
 

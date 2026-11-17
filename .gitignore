@@ -53,3 +53,9 @@ e2e/node_modules
 # dev PACS secrets (X-ray phase 3)
 infra/pacs-dev/secrets/
 infra/pacs-dev/viewer-secret
+
+# staging infra secrets (Task 525)
+infra/staging/.env.staging.local
+infra/staging/secrets/
+.env.staging*
+!.env.staging.example
