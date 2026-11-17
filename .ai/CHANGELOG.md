@@ -190,3 +190,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 ## Task 533 (staging prep continuation, repo-side only)
 - 385c: `e2e/scripts/lib/baseline.mjs` (baseline identity sidecar: target + sha256), `compare.mjs` fails closed under `UCC_GATE_TARGET=staging`, `check-all.sh` pre-checks it, new `e2e/scripts/check-staging.sh` adapter (preflight + attested baseline). Unit tests: `tests/unit/staging-gate.test.ts`.
 - 385b gap: `scripts/staging/bootstrap.ts` creates the fake `demo` Organization and fake doctor Practitioner on an empty staging project, called from `staging:seed` after the preflight (`--no-bootstrap` to skip, `--dry-run` contacts nothing). No server/container started; nothing run against staging.
+
+- 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.

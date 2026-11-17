@@ -22,7 +22,7 @@ async function openTreatment(page: Page, patientId: string) {
 }
 async function search(page: Page, text: string) { await page.getByRole('textbox', { name: 'Search treatment catalog' }).fill(text); }
 
-test('Time Chit toggle, composer, checkout, historical print, validation and clinic scope', async ({ page, request, playwright }) => {
+test('Time Chit is core (no module toggle): composer, checkout, historical print, validation and clinic scope', async ({ page, request, playwright }) => {
   expect(BASE).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9]\d{3,4}$/);
   expect(MEDPLUM.replace(/\/$/, '')).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   const m = await fhir(), suffix = randomUUID().slice(0, 8);
@@ -34,10 +34,11 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
   expect(['demo', 'clinicb', 'clinicc', 'clinicd']).toContain(clinicId);
   const org = (await m.searchOne('Organization', { identifier: `clinic|${clinicId}` }, { cache: 'no-cache' }))!;
   const original = org.extension?.find(e => e.url === moduleUrl);
-  const toggle = async (enabled: boolean) => {
+  // Time Chit is not a module. `legacy` writes a stale "time-chit" id into the org extension to prove it is ignored.
+  const toggle = async (legacy: boolean) => {
     const latest = await m.readResource('Organization', org.id!, { cache: 'no-cache' });
     const ids = (original?.valueString ? JSON.parse(original.valueString) : defaults).filter((id: string) => id !== 'time-chit');
-    await m.updateResource({ ...latest, extension: [...(latest.extension || []).filter(e => e.url !== moduleUrl), { url: moduleUrl, valueString: JSON.stringify(enabled ? [...ids, 'time-chit'] : ids) }] });
+    await m.updateResource({ ...latest, extension: [...(latest.extension || []).filter(e => e.url !== moduleUrl), { url: moduleUrl, valueString: JSON.stringify(legacy ? [...ids, 'time-chit'] : ids) }] });
   };
   let catalogId: string | undefined;
   let foreignOrg: any, foreignAccount: any, foreignContext: any, staff: MedplumClient | undefined, practitionerId: string | undefined;
@@ -46,16 +47,12 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     const consultationResponse = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake attendance visit', diagnosis: 'Fake test attendance' } });
     expect(consultationResponse.status()).toBe(200);
     const { consultationId } = await consultationResponse.json();
-    await openTreatment(page, patientId);
-    await search(page, 'time chit');
-    await expect(page.getByRole('button', { name: /TIME CHIT.*RM/i })).toHaveCount(0);
-    await expect(page.getByText(/No matches/)).toBeVisible();
-    await page.screenshot({ path: `${EVIDENCE}/time-chit-toggle-off.png`, fullPage: true });
-    expect((await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake', diagnosis: 'Fake', procedures: [line()], clinicId: 'spoofed' } })).status()).toBe(403);
-    expect((await request.post('/api/orders', { data: { consultationId, procedures: [line()], clinicId: 'spoofed' } })).status()).toBe(403);
-    expect((await request.patch('/api/consultations', { data: { consultationId, procedures: [line()] } })).status()).toBe(403);
     const catalog = await request.post('/api/catalogs', { data: { type: 'document', name: `Time Chit Fake ${suffix}`, code: 'letter-time-chit', defaultPrice: 7 } });
     expect(catalog.status()).toBe(200); catalogId = (await catalog.json()).id;
+    await openTreatment(page, patientId);
+    await search(page, 'time chit');
+    await expect(page.getByRole('button', { name: /TIME CHIT.*RM/i })).toBeVisible();
+    await page.screenshot({ path: `${EVIDENCE}/time-chit-no-module.png`, fullPage: true });
     for (const enabled of [false, true]) {
       await toggle(enabled); await openTreatment(page, patientId);
       for (const [query, title] of [['medical', /MEDICAL CERTIFICATE/], ['referral', /REFERRAL LETTER/]] as const) {
@@ -64,7 +61,7 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
         await page.getByText(title).last().click();
         const dialog = page.getByRole('dialog'); await expect(dialog).toBeVisible();
         if (query === 'medical') await dialog.getByPlaceholder('Dr. ...').fill('Dr Fake MC');
-        else await dialog.locator('textarea').fill('Fake referral content');
+        else { await dialog.getByLabel('Referral to:').fill('Fake Hospital'); await dialog.locator('textarea').fill('Fake referral content'); }
         await dialog.getByRole('button', { name: 'Complete document' }).click();
         await expect(dialog).toHaveCount(0);
       }
@@ -118,11 +115,6 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
       expect((await m.readResource('Procedure', resource.id!)).id).toBe(resource.id);
     }
     await toggle(false);
-    for (const procedures of [[line()], []]) {
-      expect((await request.patch('/api/consultations', { data: { consultationId, procedures } })).status()).toBe(403);
-      expect((await request.patch('/api/orders', { data: { consultationId, procedures } })).status()).toBe(403);
-    }
-    expect((await request.delete('/api/consultations', { data: { consultationId } })).status()).toBe(403);
     await page.goto(`/patients/${patientId}`); await page.getByRole('tab', { name: 'Documents', exact: true }).click();
     await page.getByRole('button', { name: /^Time Chit/ }).click();
     const preview = page.frameLocator('iframe[title="Document preview"]');
@@ -153,21 +145,8 @@ test('Time Chit toggle, composer, checkout, historical print, validation and cli
     const adminPage = await adminBrowser.newPage();
     try {
       await adminPage.goto(`/admin/clinics/${org.id}`);
-      const moduleSwitch = adminPage.getByRole('switch', { name: 'Toggle Time Chit (Surat Masa)' });
-      await expect(moduleSwitch).toBeChecked();
-      // A click before React hydrates (cold dev compile) is lost and no PATCH is sent: retry the idempotent save.
-      await expect(async () => {
-        if (await moduleSwitch.isChecked()) await moduleSwitch.uncheck();
-        await expect(moduleSwitch).not.toBeChecked({ timeout: 2_000 });
-        const save = adminPage.waitForResponse(r => r.url().includes(`/api/admin/clinics/${org.id}`) && r.request().method() === 'PATCH', { timeout: 20_000 });
-        await adminPage.getByRole('button', { name: 'Save Module Settings' }).click();
-        expect((await save).status()).toBe(200);
-      }).toPass({ timeout: 150_000 });
-      await adminPage.reload(); await expect(moduleSwitch).not.toBeChecked();
-      await adminPage.screenshot({ path: `${EVIDENCE}/time-chit-admin-toggle.png`, fullPage: true });
-      // A new clinic without a module-settings extension also starts off.
-      await adminPage.goto(`/admin/clinics/${foreignOrg.id}`);
-      await expect(adminPage.getByRole('switch', { name: 'Toggle Time Chit (Surat Masa)' })).not.toBeChecked();
+      // Time Chit is core: no module switch may appear in the admin settings, even for clinics with a legacy id.
+      await expect(adminPage.getByRole('switch', { name: /Time Chit/ })).toHaveCount(0);
     } finally { await adminBrowser.close(); }
     await admin.dispose(); practitionerId = (await m.searchOne('Practitioner', { telecom: email }))?.id;
     foreignContext = await playwright.request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });

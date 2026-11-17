@@ -95,7 +95,7 @@ matching the narrower gate `assertTimeChitMutationAllowed` already used. The sib
 (`saveConsultationToMedplum`) has the same unconditional call but predates this PR — left alone as
 out of scope; flagged here for awareness if it ever surfaces the same symptom on create.
 
-## D41 — Time Chit has its own default-off clinic module (2026-11-14, Task 140)
+## D41 — (SUPERSEDED by D-527) Time Chit has its own default-off clinic module (2026-11-14, Task 140)
 
 Time Chit (`time-chit`, catalog `letter-time-chit`) follows the MC document pipeline without a
 routed module or navigation entry. Admins enable it per clinic using the generic module switch.
@@ -121,3 +121,12 @@ User decision: no separate dispense step. Checkout reconciles stock per (visit, 
 
 ## D46 — Make staff AccessPolicy enforceable through project topology (2026-11-16, Task 5)
 Demote the existing clinical project to non-superAdmin, preserving resource/membership IDs and Firebase/PACS references; create a dedicated operator project/user. Derive staff access entries from active clinic roles, restrict Practitioner directory reads through clinic accounts and preserve application clinic checks. The app client keeps the minimum project-admin capability needed for invitations/account assignment plus an explicit clinical type list; it remains trusted because Medplum injects administrative grants. Deny raw staff Patient creation; the authenticated registration server route creates/stamps Patients. Migration is dry-run by default, backed up, identity-bound, idempotent and reversible; unknown policies, alternate super-admin memberships, unowned operator promotion and drift cause refusal. Production is a manual Hidayat procedure, separately rehearsed for its exact Medplum version.
+
+## D-527 — Time Chit is core, not a module (2026-11-17, Task 527; supersedes D41)
+
+Per Hidayat (17 Nov), Time Chit is always available in every clinic and has no toggle. `time-chit` is
+removed from `KNOWN_BRANCH_MODULE_IDS`, `modules/time-chit/` is deleted (so it no longer appears in the
+admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are gone from the patient page,
+composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
+Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
+Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
