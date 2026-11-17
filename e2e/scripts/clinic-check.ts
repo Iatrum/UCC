@@ -3,7 +3,7 @@
 // - every Patient/Encounter must carry exactly one clinic identifier/tag that matches a known clinic
 import { fhir } from '../lib/fhir';
 import { MEDPLUM } from '../lib/env';
-if (new URL(MEDPLUM).origin !== 'http://localhost:8113') throw new Error('Local Medplum only');
+if (!['http://localhost:8113', 'http://127.0.0.1:8113'].includes(new URL(MEDPLUM).origin)) throw new Error('Local Medplum only');
 const m = await fhir();
 const all = async (type: string, q: Record<string, string> = {}) => {
   const out: any[] = []; for await (const page of m.searchResourcePages(type as any, { _count: '500', ...q }, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } })) out.push(...page); return out; };

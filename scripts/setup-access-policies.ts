@@ -13,13 +13,12 @@
 
 import { MedplumClient } from "@medplum/core";
 import type { AccessPolicy, AccessPolicyResource } from "@medplum/fhirtypes";
-import { clinicCompartmentRules, clinicProvenanceRules } from "../lib/fhir/clinic-access-policy";
+import { CLINIC_POLICY_NAME, clinicStaffPolicyResources } from "../lib/fhir/clinic-access-policy";
 
 const MEDPLUM_BASE_URL = process.env.MEDPLUM_BASE_URL || "http://localhost:8103";
 const MEDPLUM_CLIENT_ID = process.env.MEDPLUM_CLIENT_ID;
 const MEDPLUM_CLIENT_SECRET = process.env.MEDPLUM_CLIENT_SECRET;
 
-const CLINIC_POLICY_NAME = "UCC Clinic Staff Policy";
 const PLATFORM_ADMIN_POLICY_NAME = "UCC Platform Admin Policy";
 const PATIENT_PORTAL_POLICY_NAME = "UCC Patient Portal Policy";
 
@@ -87,51 +86,7 @@ async function setupAccessPolicies() {
   const clinicStaffPolicy = await upsertAccessPolicy(medplum, {
     resourceType: "AccessPolicy",
     name: CLINIC_POLICY_NAME,
-    resource: [
-      ...clinicCompartmentRules("Patient"),
-      ...clinicCompartmentRules("Encounter"),
-      ...clinicCompartmentRules("Observation"),
-      ...clinicCompartmentRules("Condition"),
-      ...clinicCompartmentRules("Procedure"),
-      ...clinicCompartmentRules("MedicationRequest"),
-      ...clinicCompartmentRules("MedicationStatement"),
-      ...clinicCompartmentRules("AllergyIntolerance"),
-      ...clinicCompartmentRules("ServiceRequest"),
-      ...clinicCompartmentRules("DiagnosticReport"),
-      ...clinicCompartmentRules("ImagingStudy"),
-      ...clinicCompartmentRules("DocumentReference"),
-      ...clinicCompartmentRules("Appointment"),
-      ...clinicCompartmentRules("Invoice"),
-      ...clinicCompartmentRules("Task"),
-      ...clinicCompartmentRules("Basic"),
-      ...clinicCompartmentRules("ChargeItemDefinition"),
-      ...clinicCompartmentRules("Medication"),
-      ...clinicCompartmentRules("MedicationDispense"),
-      ...clinicCompartmentRules("Communication"),
-      ...clinicCompartmentRules("QuestionnaireResponse"),
-      ...clinicCompartmentRules("Schedule"),
-      ...clinicCompartmentRules("Slot"),
-      ...clinicProvenanceRules(),
-      {
-        resourceType: "Practitioner",
-        interaction: READ_INTERACTIONS,
-      },
-      {
-        resourceType: "PractitionerRole",
-        criteria: "PractitionerRole?organization=%clinicOrganization",
-        interaction: READ_INTERACTIONS,
-      },
-      {
-        resourceType: "Organization",
-        criteria: "Organization?_id=%clinicOrganization",
-        interaction: READ_INTERACTIONS,
-      },
-      {
-        resourceType: "HealthcareService",
-        criteria: "HealthcareService?_id=%clinicAccount",
-        interaction: READ_INTERACTIONS,
-      },
-    ],
+    resource: clinicStaffPolicyResources(),
   });
 
   const platformAdminPolicy = await upsertAccessPolicy(medplum, {
