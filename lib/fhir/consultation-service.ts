@@ -1,4 +1,5 @@
 import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } from './write-containment';
+import { ForbiddenError } from '@/lib/server/route-helpers';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
 import { investigationBillItems } from './investigation-billing';
@@ -271,7 +272,7 @@ async function getOrCreatePatient(
     console.log(`✅ Created FHIR Patient: ${patient.id}`);
   } else if (clinicTenant && !matchesClinic(patient as any, clinicId)) {
     // Patient exists but not linked to this clinic -> deny
-    throw new Error('Patient does not belong to this clinic');
+    throw new ForbiddenError('Patient unavailable in current clinic');
   } else if (clinicTenant) {
     await assertPatientInClinic(medplum, clinicId, patient.id);
     // Ensure existing patient carries the clinic identifier and Organization tenant,
