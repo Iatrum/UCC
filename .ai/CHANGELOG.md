@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 502: Analytics loads much faster (UX #11)
+Analytics used to run about five Medplum searches for every patient (roughly 1,500 for 300 patients), each one scanning the whole clinic's visits. It now reads the clinic's visits once, in pages, and fetches diagnoses, procedures and prescriptions in a few parallel batches (about 20 searches). Same charts and formulas, still only the signed-in clinic's data. Side effect: the old code only ever saw each clinic's 20 newest visits, so some totals may now be higher (more correct). Tests: `tests/unit/task502-analytics-perf.test.ts`. Not timed on live dev Medplum.
+
 ## 2026-11-17 — Task 478: patient search covers the whole clinic again (name, NRIC, phone)
 After server paging (Task 434), typing in the Patients search only filtered the page on screen, and phone numbers could not be found. Search now runs on the server across all of the clinic's patients by name, NRIC/IC or phone number, and its results are paged (Previous/Next) like the normal list. Starting a new search goes back to page 1. Only the caller's own clinic is ever searched or returned. Tests: `tests/unit/task478-patient-search.test.ts` (match on page 3, phone and NRIC search, other clinic never appears, no-clinic fails closed). Note: phone search relies on Medplum's `phone:contains`, checked against a fake server only, not live dev Medplum.
 
