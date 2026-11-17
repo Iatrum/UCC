@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { NextRequest } from "next/server";
 import { OperationOutcomeError, notFound } from "@medplum/core";
 import { createHash } from "node:crypto";
+import { clearPacsToggleCache } from "@/lib/pacs/viewer-guard";
 
 // Fake data only. Task 357 (X-ray phase 3): PACS ingress matched by AccessionNumber inside ONE clinic,
 // unmatched studies filed for review (never auto-attached), viewer link clinic-scoped (foreign 403).
@@ -39,6 +40,7 @@ const fake: any = {
     if (!r) throw new OperationOutcomeError(notFound);
     return r;
   },
+  async createResourceIfNoneExist(r: any, q: string) { const [, jti] = q.split('|'); const hit = db.find((x) => x.resourceType === r.resourceType && (x.identifier || []).some((i: any) => i.value === jti)); return hit ?? (await this.createResource(r)); },
   async createResource(r: any) { const saved = { ...r, id: `${r.resourceType.toLowerCase()}-${++seq}` }; db.push(saved); return saved; },
   async updateResource(r: any) { db = db.map((x) => (x.resourceType === r.resourceType && x.id === r.id ? r : x)); return r; },
   async post() { return {}; },
@@ -131,7 +133,7 @@ const studies = () => db.filter((r) => r.resourceType === "ImagingStudy");
 const tasks = () => db.filter((r) => r.resourceType === "Task");
 const viewerHost = { "x-pacs-viewer-host": "viewer.fake.test:3320" };
 
-beforeEach(() => { seed(); pacsEnabled = true; sessionClinic = "clinic-a"; signedIn = true; dicomwebCalls.length = 0; archiveReads.length = 0; for (const k of Object.keys(ORTHANC)) delete ORTHANC[Number(k)]; process.env.PACS_ORTHANC_CLINICS = "clinic-a"; });
+beforeEach(() => { clearPacsToggleCache(); (globalThis as any).__uccPacsUsedLaunch?.clear(); seed(); pacsEnabled = true; sessionClinic = "clinic-a"; signedIn = true; dicomwebCalls.length = 0; archiveReads.length = 0; for (const k of Object.keys(ORTHANC)) delete ORTHANC[Number(k)]; process.env.PACS_ORTHANC_CLINICS = "clinic-a"; });
 afterAll(() => {
   globalThis.fetch = realFetch;
   for (const [k, v] of Object.entries(savedEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
@@ -421,5 +423,27 @@ describe("viewer link, launch and DICOMweb proxy", () => {
 
     await proxy(`studies?StudyInstanceUID=${uid(8)}&PatientName=*`, cookie);
     expect(dicomwebCalls[1].url).toBe(`/dicom-web/studies?StudyInstanceUID=${uid(1)}`);
+  });
+
+  test("toggle OFF: issued session cookies stop working, new launches are refused without burning the token", async () => {
+    const { url } = await (await mint(await ingestA())).json();
+    const cookie = (await open(url)).headers.get("set-cookie")!.split(";")[0];
+    expect((await proxy(`studies/${uid(1)}/metadata`, cookie)).status).toBe(200);
+    pacsEnabled = false; clearPacsToggleCache();
+    expect((await proxy(`studies/${uid(1)}/metadata`, cookie)).status).toBe(403);
+    // A fresh launch while OFF is refused, and the token is still usable once ON again.
+    pacsEnabled = true; clearPacsToggleCache();
+    const second = await (await mint(await ingestA())).json();
+    pacsEnabled = false; clearPacsToggleCache();
+    expect((await open(second.url)).status).toBe(403);
+    pacsEnabled = true; clearPacsToggleCache();
+    expect((await open(second.url)).status).toBe(303);
+  });
+
+  test("a launch token redeemed once cannot be redeemed by another instance", async () => {
+    const { url } = await (await mint(await ingestA())).json();
+    expect((await open(url)).status).toBe(303);
+    (globalThis as any).__uccPacsUsedLaunch.clear(); // another process: empty local memory, same Medplum
+    expect((await open(url)).status).toBe(403);
   });
 });
