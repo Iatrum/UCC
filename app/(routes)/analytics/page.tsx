@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
-import { getAllPatientsFromMedplum } from "@/lib/fhir/patient-service";
+import { getAllPatientsFromMedplum, countPatientsInMedplum } from "@/lib/fhir/patient-service";
 import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
@@ -17,13 +17,14 @@ export default async function AnalyticsPage() {
   const medplum = await getMedplumForRequest();
   const clinicId = await resolveClinicIdFromServerScope();
   const patients = await getAllPatientsFromMedplum(300, clinicId, medplum);
+  const exactTotal = await countPatientsInMedplum(clinicId, medplum).catch(() => null);
   // Fetch consultations for all patients (simple approach; can be optimized with an aggregate collection)
   const consultations = (
     await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, clinicId, medplum)))
   ).flat();
 
   // Overview stats
-  const totalPatients = patients.length;
+  const totalPatients = exactTotal ?? patients.length;
   const thisMonth = new Date();
   thisMonth.setDate(1);
   const consultationsThisMonth = consultations.filter(c => c.date && new Date(c.date) >= thisMonth).length;

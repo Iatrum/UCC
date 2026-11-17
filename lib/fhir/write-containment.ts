@@ -1,6 +1,7 @@
+import { ForbiddenError, NotFoundError } from "@/lib/server/route-helpers";
 import type { MedplumClient } from "@medplum/core";
 import { OperationOutcomeError, forbidden } from "@medplum/core";
-import { assertOrderClinic, resolveClinicTenant, resourceMatchesClinicTenant, withClinicIdentifier, getResourceAccountReferences } from "@/lib/fhir/clinic-tenancy";
+import { CLINIC_IDENTIFIER_SYSTEM, assertOrderClinic, resolveClinicTenant, resourceMatchesClinicTenant, withClinicIdentifier, getResourceAccountReferences } from "@/lib/fhir/clinic-tenancy";
 
 /**
  * Write-side clinic containment (Task 320). Medplum's AccessPolicy criteria do
@@ -75,4 +76,49 @@ export async function makeClinicStamper(
         resourceMatchesClinicTenant(resource, clinicId);
     },
   };
+}
+
+/**
+ * Authorize an update/delete-by-id against the STORED ownership, never the
+ * proposed patch. Task 422 rule: a foreign, untagged or mixed-clinic id is
+ * indistinguishable from a missing one (NotFoundError => 404); a caller with no
+ * clinic context fails closed (ForbiddenError => 403).
+ */
+export function assertResourceInClinic(
+  resource: { identifier?: { system?: string; value?: string }[] },
+  clinicId?: string
+): void {
+  const clinics = resource.identifier?.filter(identifier => identifier.system === 'clinic') ?? [];
+  if (!clinicId) throw new ForbiddenError('Clinic context is required.');
+  if (clinics.length === 0 || clinics.some(identifier => identifier.value !== clinicId)) {
+    throw new NotFoundError('Resource not found.');
+  }
+}
+
+/**
+ * Task 482: authorize an update/delete of a resource addressed by id against the STORED
+ * resource (read with `X-Medplum: extended` so `meta.accounts` is present), never the
+ * proposed patch. Follows the Task 422 status rule: a resource addressed by id that is
+ * foreign, untagged, conflicting or otherwise not provably this clinic's is
+ * indistinguishable from a missing one => NotFoundError (404). A missing caller clinic is
+ * an authorization failure => ForbiddenError (403). Requires an explicit clinic tag;
+ * compartment matching alone does not establish the owning clinic.
+ */
+export async function assertStoredResourceInClinic(
+  medplum: MedplumClient,
+  resource: { resourceType?: string; identifier?: { system?: string; value?: string }[]; meta?: any },
+  clinicId: string | undefined | null,
+  label = 'Resource'
+): Promise<void> {
+  if (!clinicId) throw new ForbiddenError(`${label} unavailable in current clinic`);
+  const notFound = () => new NotFoundError(`${label} not found`);
+  const tags = resource.identifier?.filter(identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM) ?? [];
+  if (!tags.some(identifier => identifier.value === clinicId) || tags.some(identifier => identifier.value !== clinicId)) {
+    throw notFound();
+  }
+  const accounts = getResourceAccountReferences(resource as any);
+  if (accounts.length) {
+    const tenant = await resolveClinicTenant(medplum, clinicId);
+    if (!tenant || accounts.some(account => account.reference !== tenant.accountReference)) throw notFound();
+  }
 }
