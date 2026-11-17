@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 446: patient profile history stays current after Sign
+Three fixes from the UX audit on the patient profile. (1) After a consult is signed, the new row now shows in Consultation History straight away instead of "No consultation history yet", and the empty-state "Start consult" button is hidden while the consult/treatment drawer is open. (2) The history table now scrolls sideways when it is wider than the screen, so the Actions column is no longer cut off. (3) The header no longer calls a signed-but-unbilled consult a "completed visit": the labels are now "Last consult" and "Total consults", both counted from the consultation list. Composer code, Lab/POCT, and navigation are untouched.
+
 ## 2026-11-16 — Task 354: composer never says "saved" when the server refused the save
 The "Unable to detect a Project Id" error came from the old Firebase-backed plan store; since the U1b draft retention work, `/api/consultations/plan` stores drafts in Medplum, and on the dev Medplum a real add, reload and read-back works with no Firebase credentials. What remained was in the composer: it guessed "the server can't store drafts" from error text (`UNAUTHENTICATED`, "Project Id") and quietly switched to on-screen-only mode, and any other failed save made the item vanish. Now only an explicit `persistenceAvailable:false` from the server means on-screen-only. Any other rejection (401, 403, 409, 500, network) shows "Failed to save" with Retry, keeps the doctor's item on screen, and keeps Sign disabled until it is saved or removed. Removing an item whose save failed clears the failure. No change to the server route, Firebase Storage, Lab/POCT or navigation.
 
