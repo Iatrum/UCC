@@ -10,7 +10,7 @@ test.describe.configure({ mode: 'serial' });
 test('full local admin audit (one login)', async ({ browser }) => {
   test.setTimeout(15 * 60_000);
   expect(BASE).toBe('http://localhost:3210');
-  expect(MEDPLUM.replace(/\/$/, '')).toBe('http://localhost:8113');
+  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(MEDPLUM).origin);
   fs.mkdirSync(`${OUT}/shots`, { recursive: true });
   type Row = { function: string; result: string; evidence: string; cause: string };
   const rows: Row[] = [];

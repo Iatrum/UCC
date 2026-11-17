@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -23,7 +24,7 @@ interface BillingTableProps {
 function getStatusBadge(status: QueueStatus | undefined | string) {
   switch (status) {
     case 'meds_and_bills':
-      return <Badge variant="secondary" className="bg-yellow-400 text-zinc-900 hover:bg-yellow-500">Meds & Bills</Badge>;
+      return <Badge variant="secondary" className="bg-yellow-400 text-zinc-900 hover:bg-yellow-500">Ready to bill</Badge>;
     case 'completed':
       return <Badge variant="outline">Completed</Badge>;
     default:
@@ -61,27 +62,41 @@ export default function BillingTable({ consultations }: BillingTableProps) {
               <TableHead>Patient Name</TableHead>
               <TableHead>Consultation Date</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length > 0 ? (
               filtered.map((consultation) => (
-                <TableRow key={consultation.id}>
+                <TableRow
+                  key={consultation.id}
+                  className="relative cursor-pointer focus-within:bg-muted/50"
+                >
                   <TableCell className="font-medium">
                     <Link
                       href={`/orders/checkout/${consultation.id}?patientId=${consultation.patientId}`}
-                      className="text-primary hover:underline"
+                      className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm after:absolute after:inset-0 after:content-['']"
                     >
                       {consultation.patientFullName || 'N/A'}
                     </Link>
                   </TableCell>
                   <TableCell>{formatDisplayDate(consultation.date)}</TableCell>
                   <TableCell>{getStatusBadge(consultation.queueStatus)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild size="sm" variant="outline" className="relative z-10">
+                      <Link
+                        href={`/orders/checkout/${consultation.id}?patientId=${consultation.patientId}`}
+                        aria-label={`Open checkout for ${consultation.patientFullName || 'patient'}`}
+                      >
+                        Open checkout
+                      </Link>
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={3} className="text-center py-4">
+                <TableCell colSpan={4} className="text-center py-4">
                   No billable consultations found
                 </TableCell>
               </TableRow>
