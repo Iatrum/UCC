@@ -12,7 +12,7 @@ export default function SummaryTab({ data }: { data: SummaryData }) {
   const hasWaitSeries = k.wait.series.some((p) => p.value != null);
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         <KpiCard
           label="Pesakit hari ini" value={fmtInt(k.patientsToday.value)} hint={`${k.totalPatients != null ? fmtInt(k.totalPatients) : "—"} pesakit berdaftar`}
           delta={<Delta pct={k.patientsToday.deltaVsYesterday} unit="" suffix="vs semalam" />} spark={k.patientsToday.series.map((p) => p.value)} color={PALETTE.blue}
@@ -31,7 +31,7 @@ export default function SummaryTab({ data }: { data: SummaryData }) {
           delta={waitDelta == null ? undefined : <Delta pct={waitDelta} unit=" min" suffix={waitDelta <= 0 ? "lebih laju" : "lebih lambat"} upIsGood={false} />}
           spark={k.wait.series.map((p) => p.value)} color={PALETTE.orange}
         />
-        <KpiCard className="col-span-2 lg:col-span-4" label="Follow-up belum selesai" value={k.followUpsOpen == null ? "—" : fmtInt(k.followUpsOpen)} hint="Peringatan temujanji & permintaan ulasan yang belum dihantar/ditutup" />
+        <KpiCard className="col-span-2 lg:col-span-1" label="Follow-up belum selesai" value={k.followUpsOpen == null ? "—" : fmtInt(k.followUpsOpen)} hint="peringatan & permintaan ulasan belum ditutup" />
       </div>
 
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-5">

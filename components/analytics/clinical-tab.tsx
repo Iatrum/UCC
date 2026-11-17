@@ -20,7 +20,7 @@ export default function ClinicalTab({ data }: { data: ClinicalData }) {
         <KpiCard label="MC dikeluarkan" value={fmtInt(data.mc.value)} hint={data.mc.pctOfConsultations != null ? `${data.mc.pctOfConsultations}% konsultasi · ${fmtInt(data.timeChit)} time chit` : `${fmtInt(data.timeChit)} time chit`} />
         <KpiCard
           label="Antibiotik" value={data.antibiotic.pct == null ? "—" : `${data.antibiotic.pct}%`}
-          hint={data.antibiotic.prescribing ? `${data.antibiotic.withAntibiotic} / ${data.antibiotic.prescribing} konsultasi berpreskripsi (ikut nama ubat)` : "Tiada preskripsi dalam tempoh ini"}
+          hint={data.antibiotic.prescribing ? `${data.antibiotic.withAntibiotic} / ${data.antibiotic.prescribing} berpreskripsi · ikut nama ubat` : "Tiada preskripsi dalam tempoh ini"}
           delta={data.antibiotic.deltaPoints == null ? undefined : <Delta pct={data.antibiotic.deltaPoints} unit=" mata" upIsGood={false} />}
         />
         <KpiCard label="Pesakit baru vs ulang" value={mixTotal ? `${Math.round((data.patientMix.returning / mixTotal) * 100)}% ulang` : "—"} hint={mixTotal ? `${data.patientMix.newPatients} baru · ${data.patientMix.returning} ulang` : "Tiada pesakit dalam tempoh ini"} />
@@ -35,7 +35,7 @@ export default function ClinicalTab({ data }: { data: ClinicalData }) {
                   <span className="truncate text-sm text-slate-800" title={d.name}>{d.name}</span>
                   <span className="text-right text-sm font-semibold tabular-nums text-slate-950">{fmtInt(d.value)}</span>
                   <span className="hidden sm:block"><Sparkline data={d.weekly} /></span>
-                  <span className="min-w-[72px] text-right"><Delta pct={d.pct} suffix="" upIsGood={false} /></span>
+                  <span className="min-w-[72px] whitespace-nowrap text-right"><Delta pct={d.pct} suffix="" neutral emptyText="baru" /></span>
                 </li>
               ))}
             </ul>

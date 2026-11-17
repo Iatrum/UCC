@@ -52,6 +52,16 @@ async function count(medplum: MedplumClient, type: string, params: Params): Prom
   return typeof bundle.total === "number" ? bundle.total : 0;
 }
 
+/** Optional sources must not blank a whole tab: log, flag and continue with an empty list. */
+async function optional<T>(label: string, load: Promise<Bounded<T>>): Promise<Bounded<T> & { failed?: boolean }> {
+  try {
+    return await load;
+  } catch (error) {
+    console.warn(`[analytics] ${label} unavailable:`, error instanceof Error ? error.message : error);
+    return { rows: [], truncated: false, failed: true };
+  }
+}
+
 /* -------- tiny TTL cache with in-flight de-dup (per clinic) -------- */
 const cache = new Map<string, { exp: number; value: Promise<unknown> }>();
 export function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
@@ -198,14 +208,14 @@ export async function getClinical(medplum: MedplumClient, clinicId: string, key:
   const [enc, conds, rx, procs, orders, dispenses, fuDone, fuOpen, fuStopped, fuStale, ageGender] = await Promise.all([
     loadEncounters(medplum, clinicId, r.prevFrom, r.to),
     loadConditions(medplum, clinicId, condFrom, r.to),
-    cached(`${clinicId}|rx|${winKey(r.prevFrom, r.to)}`, CACHE_MS, () =>
-      searchBounded<MedicationRequest>(medplum, "MedicationRequest", clinicId, { authoredon: between(r.prevFrom, r.to), _elements: "medicationCodeableConcept,encounter,authoredOn,identifier,meta" }, 3)),
-    cached(`${clinicId}|proc|${winKey(r.from, r.to)}`, CACHE_MS, () =>
-      searchBounded<Procedure>(medplum, "Procedure", clinicId, { date: between(r.from, r.to), _elements: "note,identifier,meta" }, 3)),
-    cached(`${clinicId}|sr|${winKey(r.from, r.to)}`, CACHE_MS, () =>
-      searchBounded<ServiceRequest>(medplum, "ServiceRequest", clinicId, { authored: between(r.from, r.to), _elements: "category,authoredOn,identifier,meta" }, 3)),
-    cached(`${clinicId}|disp|${winKey(r.from, r.to)}`, CACHE_MS, () =>
-      searchBounded<MedicationDispense>(medplum, "MedicationDispense", clinicId, { status: "completed", _lastUpdated: between(r.from, r.to), _elements: "medicationReference,quantity,status,identifier,meta" }, 3)),
+    optional("medication requests", cached(`${clinicId}|rx|${winKey(r.prevFrom, r.to)}`, CACHE_MS, () =>
+      searchBounded<MedicationRequest>(medplum, "MedicationRequest", clinicId, { authoredon: between(r.prevFrom, r.to), _elements: "medicationCodeableConcept,encounter,authoredOn,identifier,meta" }, 3))),
+    optional("procedures", cached(`${clinicId}|proc|${winKey(r.from, r.to)}`, CACHE_MS, () =>
+      searchBounded<Procedure>(medplum, "Procedure", clinicId, { date: between(r.from, r.to), _elements: "note,identifier,meta" }, 3))),
+    optional("service requests", cached(`${clinicId}|sr|${winKey(r.from, r.to)}`, CACHE_MS, () =>
+      searchBounded<ServiceRequest>(medplum, "ServiceRequest", clinicId, { authored: between(r.from, r.to), _elements: "category,authoredOn,identifier,meta" }, 3))),
+    optional("dispenses", cached(`${clinicId}|disp|${winKey(r.from, r.to)}`, CACHE_MS, () =>
+      searchBounded<MedicationDispense>(medplum, "MedicationDispense", clinicId, { status: "completed", _lastUpdated: between(r.from, r.to), _elements: "medicationReference,quantity,status,identifier,meta" }, 3))),
     followUpCount(medplum, clinicId, "completed", r),
     followUpCount(medplum, clinicId, "preparation,in-progress", r),
     followUpCount(medplum, clinicId, "stopped", r),
@@ -323,8 +333,8 @@ export async function getMoneyOps(medplum: MedplumClient, clinicId: string, key:
   const sixFrom = sixMonthStart(now);
   const [inv, appts, meds, enc, newPatients] = await Promise.all([
     loadInvoices(medplum, clinicId, sixFrom, r.to, true),
-    cached(`${clinicId}|appt|${winKey(r.from, r.to)}`, CACHE_MS, () =>
-      searchBounded<Appointment>(medplum, "Appointment", clinicId, { date: between(r.from, r.to), _elements: "status,start,identifier,meta" }, 3)),
+    optional("appointments", cached(`${clinicId}|appt|${winKey(r.from, r.to)}`, CACHE_MS, () =>
+      searchBounded<Appointment>(medplum, "Appointment", clinicId, { date: between(r.from, r.to), _elements: "status,start,identifier,meta" }, 3))),
     cached(`${clinicId}|stock`, CACHE_MS, () => getInventoryMedicationsFromMedplum(medplum, clinicId)).catch(() => null),
     loadEncounters(medplum, clinicId, r.from, r.to),
     newPatientCount(medplum, clinicId, r),

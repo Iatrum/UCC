@@ -41,3 +41,11 @@ Spec: /home/dev/ai-logs/analytics-design-claude/summary.md (Task 547a). Verified
 - Medplum search: https://www.medplum.com/docs/search/basic-search , `_summary=count`, `_elements`, `_total=accurate`
 - FHIR R4 Encounter/Invoice/Appointment/MedicationDispense/ServiceRequest search params: https://hl7.org/fhir/R4/
 - Next.js 16 route handlers / Suspense streaming: https://nextjs.org/docs ; React 19 `use()`.
+
+## Verification (dev Medplum, fake data, clinic `demo`)
+- Unit: 682 pass; tsc + clinic-admin check + eslint (analytics paths) clean.
+- Browser (Playwright, 1440x900 + 390x844): all three tabs render with real data, no console errors. Screenshots in /home/dev/ai-logs/analytics-551/.
+- Dev-server tab load incl. cold query 1.2-2.5 s on the 1,500-encounter demo clinic (1,000+ encounters on one day); repeats served from the 60 s server cache.
+- Dev finding: the service credential gets 403 on MedicationDispense (policy not updated for Task 358 on dev) -> "Ubat paling banyak dispens" shows its empty state there; sources are optional so the tab still renders. Check the policy on staging.
+- The existing app shell keeps the desktop sidebar open at 390px (not changed here); layout tolerates ~200px content, and a collapsed-sidebar phone shot is included.
+- Seeded 20 fake Appointments (identifier https://ucc.emr/seed/task551) for the first screenshots, then deleted them.

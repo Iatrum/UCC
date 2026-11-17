@@ -42,16 +42,16 @@ export function EmptyState({ children = "Belum ada data untuk tempoh ini.", clas
 }
 
 /** Percent/point change. `good` decides colour: up-is-good (revenue) or down-is-good (wait, antibiotics). */
-export function Delta({ pct, suffix = "vs sebelum", unit = "%", upIsGood = true }: { pct: number | null | undefined; suffix?: string; unit?: string; upIsGood?: boolean }) {
-  if (pct == null) return <span className="text-xs text-muted-foreground">Tiada asas banding</span>;
-  const flat = Math.abs(pct) < 0.1;
+export function Delta({ pct, suffix = "vs sebelum", unit = "%", upIsGood = true, neutral = false, emptyText = "Tiada asas banding" }: { pct: number | null | undefined; suffix?: string; unit?: string; upIsGood?: boolean; neutral?: boolean; emptyText?: string }) {
+  if (pct == null) return <span className="text-xs text-muted-foreground">{emptyText}</span>;
+  const flat = Math.abs(pct) < 0.1 || neutral;
   const good = flat ? null : (pct > 0) === upIsGood;
   const Icon = flat ? Minus : pct > 0 ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={cn("inline-flex items-center gap-0.5 text-xs font-semibold", flat ? "text-slate-500" : good ? "text-emerald-700" : "text-red-600")}>
+    <span className={cn("inline-flex flex-wrap items-center gap-x-0.5 text-xs font-semibold", flat ? "text-slate-600" : good ? "text-emerald-700" : "text-red-600")}>
       <Icon className="h-3.5 w-3.5" aria-hidden />
       {pct > 0 ? "+" : ""}{pct}{unit}
-      <span className="ml-1 font-normal text-muted-foreground">{suffix}</span>
+      {suffix ? <span className="ml-1 whitespace-nowrap font-normal text-muted-foreground">{suffix}</span> : null}
     </span>
   );
 }
@@ -59,7 +59,7 @@ export function Delta({ pct, suffix = "vs sebelum", unit = "%", upIsGood = true 
 /** Dependency-free SVG sparkline; null values break the line. */
 export function Sparkline({ data, color = PALETTE.blue, className }: { data: (number | null)[]; color?: string; className?: string }) {
   const pts = data.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v != null);
-  if (pts.length < 2) return <div className={cn("h-9 w-24", className)} aria-hidden />;
+  if (pts.length < 2) return <div className={cn("h-9 w-16", className)} aria-hidden />;
   const w = 100, h = 36, pad = 3;
   const max = Math.max(...pts.map((p) => p.v)), min = Math.min(...pts.map((p) => p.v));
   const span = max - min || 1;
@@ -67,7 +67,7 @@ export function Sparkline({ data, color = PALETTE.blue, className }: { data: (nu
   const y = (v: number) => h - pad - ((v - min) / span) * (h - pad * 2);
   const last = pts[pts.length - 1];
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("h-9 w-24 shrink-0 overflow-visible", className)} aria-hidden>
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("h-9 w-16 shrink-0 overflow-visible", className)} aria-hidden>
       <polyline fill="none" stroke={color} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" points={pts.map((p) => `${x(p.i)},${y(p.v)}`).join(" ")} />
       <circle cx={x(last.i)} cy={y(last.v)} r={2.5} fill={color} />
     </svg>
@@ -77,13 +77,13 @@ export function Sparkline({ data, color = PALETTE.blue, className }: { data: (nu
 export function KpiCard({ label, value, hint, delta, spark, color, className }: { label: string; value: ReactNode; hint?: ReactNode; delta?: ReactNode; spark?: (number | null)[]; color?: string; className?: string }) {
   return (
     <Card className={cn("border-slate-200/80 shadow-sm", className)}>
-      <CardContent className="p-4">
+      <CardContent className="p-3 sm:p-4">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-        <div className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950">{value}</div>
-        {hint ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{hint}</p> : null}
+        <div className="mt-1.5 break-words text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">{value}</div>
+        {hint ? <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{hint}</p> : null}
         <div className="mt-2 flex items-end justify-between gap-2">
           <div className="min-w-0">{delta}</div>
-          {spark ? <Sparkline data={spark} color={color} /> : null}
+          {spark ? <Sparkline data={spark} color={color} className="hidden sm:block" /> : null}
         </div>
       </CardContent>
     </Card>
@@ -120,10 +120,10 @@ export function Heatmap({ matrix }: { matrix: number[][] }) {
   return (
     <div>
       <div className="overflow-x-auto pb-1">
-        <table className="w-full min-w-[520px] border-separate border-spacing-[3px] text-[10px] text-slate-500" aria-label="Heatmap kunjungan ikut hari dan jam">
+        <table className="w-full min-w-[520px] table-fixed border-separate border-spacing-[3px] text-[10px] text-slate-500" aria-label="Heatmap kunjungan ikut hari dan jam">
           <thead>
             <tr>
-              <th className="w-8" />
+              <th className="w-9" />
               {hours.map((h) => <th key={h} className="font-normal tabular-nums">{h % 2 === 0 ? h : ""}</th>)}
             </tr>
           </thead>

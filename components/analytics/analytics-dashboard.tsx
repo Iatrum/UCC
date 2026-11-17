@@ -28,49 +28,45 @@ export default function AnalyticsDashboard({ initial }: { initial: Promise<Initi
   const [tab, setTab] = useState<TabKey>("summary");
   const [range, setRange] = useState<RangeKey>("7d");
   const [fresh, setFresh] = useState(true); // true until the first interaction: use the server-streamed Ringkasan
-  const store = useRef(new Map<string, Entry>());
-  const [, bump] = useState(0);
-  const inflight = useRef<AbortController | null>(null);
+  const [store, setStore] = useState<Record<string, Entry>>({});
+  const requested = useRef(new Set<string>());
 
   const load = useCallback((t: TabKey, r: RangeKey, force = false) => {
     const key = `${t}:${r}`;
-    const cur = store.current.get(key);
-    if (!force && cur && (cur.status === "ok" || cur.status === "loading")) return;
-    store.current.set(key, { status: "loading" });
-    bump((n) => n + 1);
-    const ctrl = new AbortController();
-    fetch(`/api/analytics/${t}?range=${r}`, { signal: ctrl.signal, credentials: "same-origin" })
+    if (!force && requested.current.has(key)) return;
+    requested.current.add(key);
+    const put = (e: Entry | null) => setStore((s) => { const n = { ...s }; if (e) n[key] = e; else delete n[key]; return n; });
+    put({ status: "loading" });
+    fetch(`/api/analytics/${t}?range=${r}`, { credentials: "same-origin" })
       .then(async (res) => {
         if (!res.ok) throw new Error(res.status === 401 ? "Sesi tamat. Sila log masuk semula." : "Gagal memuatkan data.");
         return res.json();
       })
-      .then((data) => store.current.set(key, { status: "ok", data }))
-      .catch((e) => { if (e?.name !== "AbortError") store.current.set(key, { status: "error", message: e?.message || "Gagal memuatkan data." }); else store.current.delete(key); })
-      .finally(() => bump((n) => n + 1));
-    inflight.current = ctrl;
+      .then((data) => put({ status: "ok", data }))
+      .catch((e) => { requested.current.delete(key); put({ status: "error", message: e?.message || "Gagal memuatkan data." }); });
   }, []);
 
   const showInitial = fresh && tab === "summary" && range === "7d";
   useEffect(() => { if (!showInitial) load(tab, range); }, [tab, range, showInitial, load]);
 
   const select = (t: TabKey, r: RangeKey) => { setFresh(false); setTab(t); setRange(r); };
-  const entry = store.current.get(`${tab}:${range}`);
+  const entry = store[`${tab}:${range}`];
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div role="tablist" aria-label="Bahagian analitik" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 sm:inline-flex">
+        <div role="tablist" aria-label="Bahagian analitik" className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:inline-flex">
           {TABS.map((t) => (
             <button key={t.key} role="tab" type="button" aria-selected={tab === t.key} onClick={() => select(t.key, range)}
-              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap", tab === t.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
+              className={cn("shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap", tab === t.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
               {t.label}
             </button>
           ))}
         </div>
-        <div role="group" aria-label="Tempoh" className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 sm:inline-flex">
+        <div role="group" aria-label="Tempoh" className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:inline-flex">
           {RANGE_KEYS.map((k) => (
             <button key={k} type="button" aria-pressed={range === k} onClick={() => select(tab, k)}
-              className={cn("rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap sm:px-3 sm:text-sm", range === k ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
+              className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap sm:px-3 sm:text-sm", range === k ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
               {RANGE_LABELS[k]}
             </button>
           ))}
