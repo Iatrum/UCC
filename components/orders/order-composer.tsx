@@ -944,6 +944,7 @@ export function OrderComposer({
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               aria-label="Search treatment catalog"
+              placeholder="Search medicines, services, documents..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               className="pl-8"
