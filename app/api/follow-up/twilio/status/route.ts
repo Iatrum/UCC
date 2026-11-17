@@ -2,17 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateTwilioDeliveryStatus } from "@/lib/fhir/communication-service";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { handleRouteError } from "@/lib/server/route-helpers";
+import { isValidTwilioSignature } from "@/lib/server/twilio-signature";
+
+const forbidden = () => NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
 
 export async function POST(req: NextRequest) {
   try {
+    // Twilio status callbacks are application/x-www-form-urlencoded and signed over the
+    // exact StatusCallback URL we gave Twilio (not the proxied request URL) plus the params.
     const contentType = req.headers.get("content-type") || "";
-    const body = contentType.includes("application/json")
-      ? await req.json().catch(() => ({}))
-      : Object.fromEntries((await req.formData()).entries());
+    if (!contentType.includes("application/x-www-form-urlencoded")) return forbidden();
 
-    const messageSid = String(body.MessageSid || body.SmsSid || body.messageSid || "");
-    const status = String(body.MessageStatus || body.SmsStatus || body.status || "");
-    const error = body.ErrorCode ? `Twilio error ${body.ErrorCode}` : body.error ? String(body.error) : undefined;
+    const params: Record<string, string> = {};
+    for (const [key, value] of (await req.formData()).entries()) {
+      if (typeof value === "string") params[key] = value;
+    }
+
+    // Authenticate BEFORE any Medplum access. Unset token/URL or a bad signature => 403.
+    const valid = isValidTwilioSignature({
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      url: process.env.TWILIO_STATUS_CALLBACK_URL,
+      signature: req.headers.get("x-twilio-signature"),
+      params,
+    });
+    if (!valid) {
+      console.warn("[POST /api/follow-up/twilio/status] Rejected callback: invalid or unverifiable signature");
+      return forbidden();
+    }
+
+    const messageSid = String(params.MessageSid || params.SmsSid || "");
+    const status = String(params.MessageStatus || params.SmsStatus || "");
+    const error = params.ErrorCode ? `Twilio error ${params.ErrorCode}` : undefined;
 
     if (!messageSid || !status) {
       return NextResponse.json({ success: false, error: "MessageSid and status are required" }, { status: 400 });
