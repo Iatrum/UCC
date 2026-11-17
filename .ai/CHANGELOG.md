@@ -8,8 +8,8 @@ Right after check-in the queue could sit on "Loading queue..." on first paint. C
 
 ## 2026-11-17 — Task 472: dashboard queue no longer misses new patients on busy days
 The dashboard queue only read the first 200 of today's visits (finished ones included), so on a very busy day a newly checked-in patient could be missing. It now keeps reading further pages until it has all of today's visits for the clinic, then shows the ones still in the queue. Another clinic's visits are still never shown. A safety limit of 50 pages writes an error to the server log if ever reached. Tests: `tests/unit/triage-queue-pagination.test.ts` (250 finished + 1 new check-in shows the new one; clinic B never appears). No composer, Lab/POCT or navigation change.
-=======
 
+## 2026-11-17 — Task 510: admin screen fixes (UX #12-#15)
 Admin Settings no longer falls back to the production Medplum console/API links; it says "Not configured" when the env vars are unset. The Create Medplum ClientApplication form now warns that it uses a project admin account and shows the client secret only once, turns off browser autofill, and uses the right dev placeholder (`:8113`) with the URL prefilled from config (no hardcoded email). Users and Branches have a search box; the overview and Users page say "Assigned to a clinic: X of Y"; the subdomain shows under each branch in the Organisations hierarchy. On the branch page the two buttons are "Save details" and "Save modules", each saves only its own section, and each section shows an "Unsaved changes" badge (buttons stay disabled until something changed). Admin pages only; no nav changes. Tests: `tests/unit/admin-ui.test.ts`. Not walked in a browser.
 
 
