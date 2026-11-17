@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { TestTube2, Camera } from 'lucide-react';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { resolveClinicIdFromServerScope } from '@/lib/server/clinic';
-import { imagingOrderEntryMode } from '@/lib/imaging/order-entry';
+import { resolveImagingOrderEntryMode } from '@/lib/imaging/order-entry';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -25,8 +25,8 @@ export default async function PatientLabsImagingPage({ params }: Props) {
   const resolvedParams = await params;
   const patientId = resolvedParams.id;
   const clinicId = await resolveClinicIdFromServerScope();
-  const pacsEnabled = await isModuleEnabledForClinic('pacs', clinicId).catch(() => false);
-  const orderMode = imagingOrderEntryMode(pacsEnabled);
+  // Fails closed: a failed module lookup shows the Treatment-panel pointer, not the old form.
+  const orderMode = await resolveImagingOrderEntryMode(() => isModuleEnabledForClinic('pacs', clinicId));
 
   return (
     <div className="container mx-auto p-6 space-y-6">

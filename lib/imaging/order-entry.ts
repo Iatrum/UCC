@@ -12,3 +12,18 @@ export type ImagingOrderEntryMode = 'treatment-panel-only' | 'generic-form';
 export function imagingOrderEntryMode(pacsEnabled: boolean): ImagingOrderEntryMode {
   return pacsEnabled ? 'treatment-panel-only' : 'generic-form';
 }
+
+/**
+ * Resolve the mode from a (possibly failing) module lookup. Fails CLOSED: if the lookup
+ * throws or rejects we cannot tell whether X-ray is on, so we show the Treatment-panel
+ * pointer rather than the accession-less generic form.
+ */
+export async function resolveImagingOrderEntryMode(
+  lookupPacsEnabled: () => Promise<boolean>
+): Promise<ImagingOrderEntryMode> {
+  try {
+    return imagingOrderEntryMode(await lookupPacsEnabled());
+  } catch {
+    return 'treatment-panel-only';
+  }
+}
