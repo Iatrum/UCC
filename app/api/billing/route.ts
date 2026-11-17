@@ -97,10 +97,37 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (result.dispenseError) {
+      await createBillingExceptionTask(medplum, {
+        consultationId: body.consultationId,
+        patientId: body.patientId,
+        clinicId,
+        paymentMethod: body.paymentMethod,
+        invoiceId: invoice.id,
+        errorClass: "stock-deduction-failed",
+        errorSummary: `Invoice saved, but inventory deduction failed: ${result.dispenseError}. Re-run checkout to retry safely.`,
+        requesterReference,
+      });
+    }
+
+    if (result.stock && (result.stock.unresolved.length > 0)) {
+      await createBillingExceptionTask(medplum, {
+        consultationId: body.consultationId,
+        patientId: body.patientId,
+        clinicId,
+        paymentMethod: body.paymentMethod,
+        invoiceId: invoice.id,
+        errorClass: "stock-line-unresolved",
+        errorSummary: `Inventory line(s) could not be matched to exactly one stock item: ${result.stock.unresolved.join(", ")}.${result.stock.retained.length ? ` Earlier deductions kept unchanged: ${result.stock.retained.join(", ")}.` : ""} Fix the catalog name and re-run checkout.`,
+        requesterReference,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       invoiceId: invoice.id,
       invoiceNumber: getInvoiceNumber(invoice),
+      stockNegative: result.stock?.negativeStock ?? [],
     });
   } catch (error) {
     if (isClientFixableBillingError(error)) {

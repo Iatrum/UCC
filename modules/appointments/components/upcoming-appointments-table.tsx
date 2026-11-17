@@ -87,10 +87,11 @@ const noCheckInStatuses: AppointmentStatus[] = ["completed", "cancelled", "no_sh
 interface Props {
   appointments: UpcomingAppointment[];
   loading?: boolean;
+  error?: string | null;
   onRefresh?: () => void | Promise<void>;
 }
 
-export default function UpcomingAppointmentsTable({ appointments, loading, onRefresh }: Props) {
+export default function UpcomingAppointmentsTable({ appointments, loading, error, onRefresh }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
@@ -127,6 +128,25 @@ export default function UpcomingAppointmentsTable({ appointments, loading, onRef
       <Card>
         <CardContent className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
           <Calendar className="h-4 w-4 animate-pulse" /> Loading appointments...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent
+          role="status"
+          aria-live="polite"
+          className="flex flex-col items-center gap-3 py-8 text-center text-sm text-rose-800"
+        >
+          <p>{error}</p>
+          {onRefresh ? (
+            <Button variant="outline" size="sm" onClick={() => void onRefresh()}>
+              Retry
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     );

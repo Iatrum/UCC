@@ -11,6 +11,11 @@ import {
   withClinicIdentifier,
 } from "@/lib/fhir/clinic-tenancy";
 import { assertPatientInClinic } from './write-containment';
+import {
+  deductStockForCheckout,
+  reverseStockForCheckout,
+  type CheckoutDispenseResult,
+} from "@/lib/fhir/dispense-service";
 
 export type CheckoutPaymentMethod = "cash" | "card" | "qr" | "panel";
 
@@ -37,6 +42,9 @@ export type CompleteCheckoutInput = {
 export type CompleteCheckoutResult = {
   invoice: Invoice;
   queueUpdateError?: string;
+  /** Auto stock deduction outcome; `dispenseError` set when it failed (invoice is still saved). */
+  stock?: CheckoutDispenseResult;
+  dispenseError?: string;
 };
 
 const CURRENCY = "MYR";
@@ -284,6 +292,26 @@ function validateCheckoutInput(input: CompleteCheckoutInput): {
   return { normalizedItems, normalizedPaidAmount, normalizedTotalAmount };
 }
 
+function isVersionConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /412|precondition|version|conflict/i.test(message);
+}
+
+/** Billed content that stock deduction depends on. */
+function billedContent(invoice: Invoice): string {
+  return JSON.stringify([invoice.status, invoice.lineItem, invoice.totalGross?.value, invoice.totalNet?.value]);
+}
+
+/**
+ * True when `current` is the invoice this request saved, or differs only by a metadata-only bump
+ * (clinic account assignment): same billed content. A different version with different content means a
+ * concurrent checkout/void saved in between.
+ */
+export function isOwnVersionOrClinicBump(saved: Invoice, current: Invoice): boolean {
+  if (!current.meta?.versionId || current.meta.versionId === saved.meta?.versionId) return true;
+  return billedContent(saved) === billedContent(current);
+}
+
 async function findExistingInvoice(
   medplum: MedplumClient,
   consultationId: string,
@@ -311,74 +339,122 @@ export async function completeCheckoutInvoice(
   const now = nowDate.toISOString();
   await assertPatientInClinic(medplum, input.clinicId, input.patientId, input.consultationId);
   const clinicTenant = await resolveClinicTenant(medplum, input.clinicId);
-  const existing = await findExistingInvoice(medplum, input.consultationId, input.clinicId);
-  const invoiceNumber = await resolveInvoiceNumber(medplum, existing, input.invoiceNumber, nowDate);
+  let saved!: Invoice;
+  for (let attempt = 0; ; attempt += 1) {
+    const existing = await findExistingInvoice(medplum, input.consultationId, input.clinicId);
+    const invoiceNumber = await resolveInvoiceNumber(medplum, existing, input.invoiceNumber, nowDate);
 
-  const invoice: Invoice = {
-    ...(existing ?? {}),
-    resourceType: "Invoice",
-    status: "balanced",
-    identifier: buildInvoiceIdentifiers(existing, input.consultationId, invoiceNumber, input.clinicId),
-    type: {
-      text: "Clinic checkout invoice",
-      coding: [
+    const invoice: Invoice = {
+      ...(existing ?? {}),
+      resourceType: "Invoice",
+      status: "balanced",
+      identifier: buildInvoiceIdentifiers(existing, input.consultationId, invoiceNumber, input.clinicId),
+      type: {
+        text: "Clinic checkout invoice",
+        coding: [
+          {
+            system: "https://ucc.emr/invoice-type",
+            code: "clinic-checkout",
+            display: "Clinic checkout",
+          },
+        ],
+      },
+      subject: {
+        reference: `Patient/${input.patientId}`,
+      },
+      date: now,
+      lineItem: normalizedItems.map(buildLineItem),
+      totalNet: {
+        value: normalizedTotalAmount,
+        currency: CURRENCY,
+      },
+      totalGross: {
+        value: normalizedTotalAmount,
+        currency: CURRENCY,
+      },
+      totalPriceComponent: [
         {
-          system: "https://ucc.emr/invoice-type",
-          code: "clinic-checkout",
-          display: "Clinic checkout",
+          type: "base",
+          amount: {
+            value: normalizedTotalAmount,
+            currency: CURRENCY,
+          },
         },
       ],
-    },
-    subject: {
-      reference: `Patient/${input.patientId}`,
-    },
-    date: now,
-    lineItem: normalizedItems.map(buildLineItem),
-    totalNet: {
-      value: normalizedTotalAmount,
-      currency: CURRENCY,
-    },
-    totalGross: {
-      value: normalizedTotalAmount,
-      currency: CURRENCY,
-    },
-    totalPriceComponent: [
-      {
-        type: "base",
-        amount: {
-          value: normalizedTotalAmount,
-          currency: CURRENCY,
+      paymentTerms: `Paid by ${input.paymentMethod.toUpperCase()} at checkout`,
+      extension: [
+        { url: ENCOUNTER_EXTENSION_URL, valueReference: { reference: `Encounter/${input.consultationId}` } },
+        { url: CLINIC_EXTENSION_URL, valueString: input.clinicId },
+        { url: PAYMENT_METHOD_EXTENSION_URL, valueCode: input.paymentMethod },
+        moneyExtension(PAID_AMOUNT_EXTENSION_URL, normalizedPaidAmount),
+        moneyExtension(BALANCE_EXTENSION_URL, balance),
+        { url: CHECKOUT_SOURCE_EXTENSION_URL, valueString: "orders-checkout" },
+      ],
+      note: [
+        {
+          time: now,
+          text: "Checkout completed from UCC Billing & Documents.",
         },
-      },
-    ],
-    paymentTerms: `Paid by ${input.paymentMethod.toUpperCase()} at checkout`,
-    extension: [
-      { url: ENCOUNTER_EXTENSION_URL, valueReference: { reference: `Encounter/${input.consultationId}` } },
-      { url: CLINIC_EXTENSION_URL, valueString: input.clinicId },
-      { url: PAYMENT_METHOD_EXTENSION_URL, valueCode: input.paymentMethod },
-      moneyExtension(PAID_AMOUNT_EXTENSION_URL, normalizedPaidAmount),
-      moneyExtension(BALANCE_EXTENSION_URL, balance),
-      { url: CHECKOUT_SOURCE_EXTENSION_URL, valueString: "orders-checkout" },
-    ],
-    note: [
-      {
-        time: now,
-        text: "Checkout completed from UCC Billing & Documents.",
-      },
-    ],
-  };
+      ],
+    };
 
-  const saved = existing?.id
-    ? await medplum.updateResource(withClinicIdentifier(invoice, input.clinicId))
-    : await medplum.createResource<Invoice>(withClinicIdentifier(invoice, input.clinicId));
+    try {
+      if (existing?.id) {
+        saved = await medplum.updateResource(withClinicIdentifier(invoice, input.clinicId), {
+          // Optimistic lock: a concurrent checkout/void that changed the invoice makes this write fail.
+          headers: existing.meta?.versionId ? { "If-Match": `W/"${existing.meta.versionId}"` } : undefined,
+        });
+      } else {
+        // Idempotent per visit: conditional create (FHIR If-None-Exist) on consultation + clinic identifiers.
+        // Two first-time checkouts for the same visit resolve to ONE invoice.
+        saved = await medplum.createResourceIfNoneExist<Invoice>(
+          withClinicIdentifier(invoice, input.clinicId),
+          `identifier=${INVOICE_IDENTIFIER_SYSTEM}|${input.consultationId}&identifier=${CLINIC_IDENTIFIER_SYSTEM}|${input.clinicId}`
+        );
+        if (getStoredInvoiceNumber(saved) !== invoiceNumber || saved.date !== now) {
+          // A competing checkout created the invoice first: adopt it and apply our data as a guarded update.
+          if (attempt < 3) continue;
+          throw new Error("Invoice was created concurrently; please retry checkout");
+        }
+      }
+      break;
+    } catch (err) {
+      if (existing?.id && attempt < 3 && isVersionConflict(err)) continue; // re-read the newer invoice and re-apply
+      throw err;
+    }
+  }
   await assignResourceToClinicTenant(medplum, "Invoice", saved, clinicTenant);
+  // assignResourceToClinicTenant may write a new version (the clinic-assignment bump). Re-read, but only
+  // accept a version we did not write if it is that bump (same billed content); otherwise another checkout
+  // saved in between and must reconcile stock itself, so this request must not deduct outdated quantities.
+  const finalInvoice = (await medplum.readResource("Invoice", saved.id as string).catch(() => saved)) as Invoice;
+  const supersededByOther = !isOwnVersionOrClinicBump(saved, finalInvoice);
+
+  // Auto-deduct inventory for the billed medication lines (idempotent; never blocks checkout).
+  let stock: CheckoutDispenseResult | undefined;
+  let dispenseError: string | undefined;
+  try {
+    if (supersededByOther) {
+      stock = { adjusted: [], unmatched: [], negativeStock: [], unresolved: [], retained: [], superseded: true };
+    } else stock = await deductStockForCheckout(medplum, {
+      clinicId: input.clinicId,
+      consultationId: input.consultationId,
+      patientId: input.patientId,
+      invoiceId: saved.id,
+      invoiceVersionId: finalInvoice.meta?.versionId,
+      items: normalizedItems,
+    });
+  } catch (err) {
+    console.error("[billing-service] Invoice saved but stock deduction failed for consultation", input.consultationId, err);
+    dispenseError = err instanceof Error ? err.message : "Stock deduction failed";
+  }
 
   try {
     await updateQueueStatusForPatient(input.patientId, "completed", medplum, input.clinicId);
   } catch (err) {
     console.error("[billing-service] Invoice saved but queue status update failed for patient", input.patientId, err);
     const message = err instanceof Error ? err.message : "Queue status update failed";
-    return { invoice: saved, queueUpdateError: message };
+    return { invoice: saved, queueUpdateError: message, stock, dispenseError };
   }
 
   try {
@@ -391,7 +467,7 @@ export async function completeCheckoutInvoice(
     console.error("[billing-service] Checkout completed but review follow-up creation failed", input.patientId, err);
   }
 
-  return { invoice: saved };
+  return { invoice: saved, stock, dispenseError };
 }
 
 export async function getInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<Invoice | null> {
@@ -427,14 +503,42 @@ export async function getConsultationInvoice(medplum: MedplumClient, consultatio
   return null;
 }
 
+function consultationIdOfInvoice(invoice: Invoice): string | undefined {
+  return invoice.identifier?.find((identifier) => identifier.system === INVOICE_IDENTIFIER_SYSTEM)?.value;
+}
+
+/** Return the stock deducted at checkout (clinic-scoped, idempotent). */
+async function restoreStockForInvoice(medplum: MedplumClient, invoice: Invoice, clinicId?: string): Promise<void> {
+  const consultationId = consultationIdOfInvoice(invoice);
+  const invoiceClinic =
+    clinicId || invoice.extension?.find((ext) => ext.url === CLINIC_EXTENSION_URL)?.valueString;
+  if (!consultationId || !invoiceClinic) return;
+  await reverseStockForCheckout(medplum, { clinicId: invoiceClinic, consultationId, invoiceId: invoice.id });
+}
+
+/**
+ * Void: cancel the invoice FIRST (If-Match), then restore stock. A checkout racing with the void
+ * fails its invoice-version guard and cannot deduct. If the restore fails the invoice stays
+ * cancelled and calling void again retries only the restore (idempotent), so stock is never
+ * restored against a still-balanced invoice.
+ */
 export async function voidInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<Invoice> {
   const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
   await assertInvoiceBelongsToClinic(medplum, invoice, clinicId);
-  return medplum.updateResource({ ...invoice, status: "cancelled" });
+  const cancelled =
+    invoice.status === "cancelled"
+      ? invoice
+      : await medplum.updateResource({ ...invoice, status: "cancelled" }, {
+          headers: invoice.meta?.versionId ? { "If-Match": `W/"${invoice.meta.versionId}"` } : undefined,
+        });
+  await restoreStockForInvoice(medplum, invoice, clinicId);
+  return cancelled;
 }
 
 export async function deleteInvoice(medplum: MedplumClient, invoiceId: string, clinicId?: string): Promise<void> {
-  const invoice = await medplum.readResource("Invoice", invoiceId) as Invoice;
-  await assertInvoiceBelongsToClinic(medplum, invoice, clinicId);
+  // Cancel (blocks concurrent checkout deductions) -> restore stock -> delete.
+  // A failed delete leaves a cancelled invoice with stock restored (consistent); a failed restore leaves
+  // a retriable cancelled invoice.
+  await voidInvoice(medplum, invoiceId, clinicId);
   await medplum.deleteResource("Invoice", invoiceId);
 }

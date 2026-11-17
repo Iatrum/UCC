@@ -96,8 +96,24 @@ export function InventoryTable({
                     {medication.category}
                   </Badge>
                 </TableCell>
-                <TableCell className={medication.stock <= medication.minimumStock ? "font-medium text-rose-600" : ""}>
+                <TableCell
+                  className={medication.stock <= medication.minimumStock ? "font-medium text-rose-600" : ""}
+                  data-testid={`stock-cell-${medication.id}`}
+                >
                   {medication.stock} {medication.unit}
+                  {medication.stock < 0 ? (
+                    <Badge variant="destructive" className="ml-2" data-testid="stock-flag-negative">
+                      Negative stock
+                    </Badge>
+                  ) : medication.stock === 0 ? (
+                    <Badge variant="destructive" className="ml-2" data-testid="stock-flag-out">
+                      Out of stock
+                    </Badge>
+                  ) : medication.stock <= medication.minimumStock ? (
+                    <Badge variant="outline" className="ml-2 border-amber-300 text-amber-700" data-testid="stock-flag-low">
+                      Low stock
+                    </Badge>
+                  ) : null}
                 </TableCell>
                 <TableCell>{medication.minimumStock}</TableCell>
                 <TableCell>RM {medication.unitPrice?.toFixed(2) || "0.00"}</TableCell>
