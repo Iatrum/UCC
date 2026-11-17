@@ -665,8 +665,40 @@ export function buildSavedConsultation(
   };
 }
 
+const PATIENT_HISTORY_PAGE = 100;
+/** Medplum's _offset ceiling is 10000; a single patient never legitimately gets near it. */
+const PATIENT_HISTORY_MAX_PAGES = 100;
+const PATIENT_HISTORY_CHILD_BATCH = 50;
+
+/**
+ * Read every page of a search. searchResources returns one page only (_count is a page size, not a cap),
+ * so history beyond the default page would silently disappear. Stops at a short page or the page cap.
+ */
+async function searchAllPages<T>(
+  client: MedplumClient,
+  type: string,
+  entries: [string, string][]
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 0; page < PATIENT_HISTORY_MAX_PAGES; page += 1) {
+    const query = new URLSearchParams(entries);
+    query.set('_count', String(PATIENT_HISTORY_PAGE));
+    query.set('_offset', String(page * PATIENT_HISTORY_PAGE));
+    const batch = (await client.searchResources(type as any, query)) as unknown as T[];
+    all.push(...batch);
+    if (batch.length < PATIENT_HISTORY_PAGE) return all;
+  }
+  console.warn(`Patient consultation history truncated at ${PATIENT_HISTORY_MAX_PAGES * PATIENT_HISTORY_PAGE} ${type} resources`);
+  return all;
+}
+
 /**
  * Get all consultations for a patient (by Firebase patient ID)
+ *
+ * The Encounter search is scoped server-side to BOTH the clinic (when given) and the patient: two
+ * `identifier` params are ANDed by FHIR. matchesClinic + the patient identifier are re-checked on the
+ * results as a second guard, so a foreign-clinic encounter can never be returned even if the server
+ * ignores a param. Paged and sorted newest first.
  */
 export async function getPatientConsultationsFromMedplum(
   firebasePatientId: string,
@@ -676,18 +708,10 @@ export async function getPatientConsultationsFromMedplum(
   try {
     const client = medplum ?? (await getAdminMedplum());
 
-    // Find encounters scoped to the clinic Organization, then filter by patient identifier.
-    const searchParams: Record<string, string> = clinicId
-      ? {
-          identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-          _sort: '-date',
-        }
-      : {
-          identifier: `firebase-patient|${firebasePatientId}`,
-          _sort: '-date',
-        };
+    const entries: [string, string][] = [['identifier', `firebase-patient|${firebasePatientId}`], ['_sort', '-date']];
+    if (clinicId) entries.push(['identifier', `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`]);
 
-    const encounters = await client.searchResources('Encounter', searchParams);
+    const encounters = await searchAllPages<Encounter>(client, 'Encounter', entries);
 
     const filtered = encounters.filter(
       (enc) =>
@@ -697,19 +721,28 @@ export async function getPatientConsultationsFromMedplum(
 
     if (filtered.length === 0) return [];
 
-    const encounterRefs = filtered.map((e) => `Encounter/${e.id}`).join(',');
+    const batches: Encounter[][] = [];
+    for (let i = 0; i < filtered.length; i += PATIENT_HISTORY_CHILD_BATCH) {
+      batches.push(filtered.slice(i, i + PATIENT_HISTORY_CHILD_BATCH));
+    }
+    const children = await Promise.all(
+      batches.map(async (batch) => {
+        const refs = batch.map((e) => `Encounter/${e.id}`).join(',');
+        const byType = (type: string) => searchAllPages<any>(client, type, [['encounter', refs]]);
+        const [conditions, observations, procedures, medications] = await Promise.all([
+          byType('Condition'),
+          byType('Observation'),
+          byType('Procedure'),
+          byType('MedicationRequest'),
+        ]);
+        return { conditions, observations, procedures, medications };
+      })
+    );
 
-    const [conditions, observations, procedures, medications] = await Promise.all([
-      client.searchResources('Condition', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-      client.searchResources('Observation', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-      client.searchResources('Procedure', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-      client.searchResources('MedicationRequest', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-    ]);
-
-    const conditionsByEncounter = groupByEncounter(conditions);
-    const observationsByEncounter = groupByEncounter(observations);
-    const proceduresByEncounter = groupByEncounter(procedures);
-    const medicationsByEncounter = groupByEncounter(medications);
+    const conditionsByEncounter = groupByEncounter(children.flatMap((c) => c.conditions));
+    const observationsByEncounter = groupByEncounter(children.flatMap((c) => c.observations));
+    const proceduresByEncounter = groupByEncounter(children.flatMap((c) => c.procedures));
+    const medicationsByEncounter = groupByEncounter(children.flatMap((c) => c.medications));
 
     return filtered.map((encounter) => {
       const encId = encounter.id!;

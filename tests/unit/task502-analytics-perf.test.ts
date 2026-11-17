@@ -29,12 +29,15 @@ for (let i = 0; i < 40; i++) addEnc("clinic-b", `pb${i % 3}`, "2026-02-01T00:00:
 
 const calls: { type: string; params: any }[] = [];
 const fake: any = {
-  async searchResources(type: string, params: any) {
+  async searchResources(type: string, rawParams: any) {
+    // Patient reader passes URLSearchParams (repeated identifier = AND); normalise to a plain object for this fake.
+    const params: any = rawParams instanceof URLSearchParams ? Object.fromEntries(rawParams) : rawParams;
+    if (rawParams instanceof URLSearchParams) params.identifiers = rawParams.getAll("identifier");
     calls.push({ type, params });
     const table: any[] = { Encounter: encs, Procedure: procs, MedicationRequest: meds, Condition: conds, Observation: [] }[type] ?? [];
     let rows = table;
-    if (params.identifier) {
-      const [sys, val] = params.identifier.split("|");
+    for (const token of params.identifiers ?? (params.identifier ? [params.identifier] : [])) {
+      const [sys, val] = token.split("|");
       rows = rows.filter((r) => r.identifier?.some((i: any) => i.system === sys && i.value === val));
     }
     if (params.encounter) {

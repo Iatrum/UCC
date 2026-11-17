@@ -25,3 +25,21 @@ A preload wrapper counted outgoing FHIR requests and optionally added 40 ms per 
 5. One module lookup for the three flags.
 
 Docs: Next.js App Router layouts/pages rendering, Medplum client GET cache (`@medplum/core` MedplumClient).
+
+## Task 539 - patient history search scoping (follow-up, same PR)
+Verified on the branch: `getPatientConsultationsFromMedplum` searched `identifier=<clinic system>|<clinic>` with the
+default page size (20) and filtered by patient afterwards, so a busy clinic got a clinic-wide search and an incomplete,
+possibly empty history (patient's consults older than the 20 newest clinic encounters were dropped).
+
+Fix (`lib/fhir/consultation-service.ts`):
+- Encounter search sends two `identifier` params (`firebase-patient|<id>` and, when given, the clinic identifier);
+  repeated params are ANDed in FHIR search (https://hl7.org/fhir/R4/search.html#combining), Medplum follows this
+  (https://www.medplum.com/docs/search/basic-search). `_sort=-date` kept.
+- Paged with `_count=100` + `_offset` until a short page (same approach as Task 472/502/dispense `searchAll`),
+  capped at 100 pages (Medplum `_offset` ceiling 10000); truncation logs a warning instead of throwing.
+- Child searches (Condition/Observation/Procedure/MedicationRequest) batched per 50 encounters and paged too.
+- Second guard unchanged: results are still filtered by `matchesClinic` and the patient identifier, so a foreign
+  clinic's encounter can never be returned, even if the server ignored a param. Foreign patient => `[]` as before.
+Verified on dev Medplum (fake data): 130 encounters for one patient under 130 newer noise rows -> 130 returned, sorted
+newest first; same patient id in a second clinic -> only its own 5; unknown clinic -> 0.
+Tests: `tests/unit/task539-patient-history-scope.test.ts` (removing the guard fails 2 tests).
