@@ -1,0 +1,9 @@
+# Task 523 — verification of UX findings on origin/dev (cab678a)
+
+| Item | Finding | Action |
+|---|---|---|
+| Part 1 #11 Analytics slow first load / clipped bar label | Already fixed on origin/dev by Task 460: `app/(routes)/analytics/loading.tsx` renders `AnalyticsSkeleton`; `HORIZONTAL_BAR_MARGIN.right = 40` in `components/analytics/analytics-charts.tsx`. Tests: `task460-analytics-skeleton.test.ts`. | None (regression test added for loading.tsx wiring). |
+| Part 1 #18 `/api/consultations?recent=` empty patientId/chiefComplaint/diagnosis | `patientId`: code bug, already fixed by Task 476 (`buildSavedConsultation` falls back to the Encounter `subject` Patient id when no `firebase-patient` identifier). `chiefComplaint`/`diagnosis`: NOT a mapper bug. Direct FHIR read of the 20 newest dev Encounters (fake data) shows they are `in-progress` check-in/queue encounters with zero Observation/Condition children, so empty strings are the correct mapping. Older seeded ones carry only a `firebase-patient` identifier. The mapper reads `Observation.code.text = "Chief Complaint"` and `Condition[0].code.text`, matching what `triage-service` and `export-consultation` write. Clinic scoping: `getRecentConsultationsFromMedplum` filters by clinic identifier search + `matchesClinic`. | No code change. Possible product follow-up (not done, design call): exclude children-less queue encounters from "recent consultations". |
+| Part 2 #17 Treatment drawer search box unlabeled | `aria-label="Search treatment catalog"` already present (used by `e2e/tests/time-chit.spec.ts`, so kept unchanged); placeholder was missing. | Added `placeholder="Search medicines, services, documents..."` in `components/orders/order-composer.tsx`. No behaviour change. |
+
+Docs consulted: none new needed (no API changes); HTML `placeholder`/`aria-label` semantics only.
