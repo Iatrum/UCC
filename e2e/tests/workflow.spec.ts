@@ -37,7 +37,9 @@ test('01 login', async () => {
 test('02 register patient', async () => {
   step = '02-register';
   await page.goto('/patients/new');
-  await page.fill('[name=fullName]', name); await page.fill('[name=nric]', nric); await page.locator('[name=nric]').blur();
+  // The form can remount once right after load (a second, empty nric input briefly exists); retry until the value sticks on a single input.
+  await expect(async () => { await page.fill('[name=fullName]', name); await page.fill('[name=nric]', nric); await expect(page.locator('[name=nric]')).toHaveValue(nric); await expect(page.locator('[name=fullName]')).toHaveValue(name); }).toPass({ timeout: 30_000 });
+  await page.locator('[name=nric]').blur();
   await page.selectOption('select', 'male').catch(() => {});
   await page.fill('[name=email]', `e2e.${RUN}@example.test`); await page.fill('[name=phone]', '0123456789');
   await page.fill('[name=address]', '1 Jalan Ujian, Kuala Lumpur'); await page.fill('[name=postalCode]', '50000');
@@ -216,7 +218,7 @@ test('08 documents tab (MC / referral generation & print)', async () => {
 test('09 billing checkout -> payment -> complete visitation', async () => {
   step = '09-checkout';
   await page.goto('/orders');
-  await page.getByRole('link', { name }).click();
+  await page.getByRole('link', { name }).first().click(); // Task 432 added a second 'Open checkout for <name>' link per row
   await page.waitForURL(/orders\/checkout\//, { timeout: 120_000 });
   await expect(page.getByText('Loading checkout...', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Payments', { exact: true })).toBeVisible();
