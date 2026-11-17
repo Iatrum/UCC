@@ -4,103 +4,30 @@ import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, Users, Calendar, TrendingUp } from "lucide-react";
 import { getAllPatientsFromMedplum, countPatientsInMedplum } from "@/lib/fhir/patient-service";
-import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
+import { getPatientConsultationsFromMedplum, getClinicConsultationsFromMedplum } from "@/lib/fhir/consultation-service";
+import { computeAnalytics } from "@/lib/analytics/compute";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
 import AnalyticsCharts from "@/components/analytics/analytics-charts";
 
-function getCurrentTimestamp(): number {
-  return Date.now();
-}
-
 export default async function AnalyticsPage() {
   const medplum = await getMedplumForRequest();
   const clinicId = await resolveClinicIdFromServerScope();
-  const patients = await getAllPatientsFromMedplum(300, clinicId, medplum);
-  const exactTotal = await countPatientsInMedplum(clinicId, medplum).catch(() => null);
-  // Fetch consultations for all patients (simple approach; can be optimized with an aggregate collection)
-  const consultations = (
-    await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, clinicId, medplum)))
-  ).flat();
+  // Task 502: patients + exact count + all clinic consultations in parallel (was one 5-query N+1 per patient).
+  const [patients, exactTotal, clinicConsultations] = await Promise.all([
+    getAllPatientsFromMedplum(300, clinicId, medplum),
+    countPatientsInMedplum(clinicId, medplum).catch(() => null),
+    clinicId ? getClinicConsultationsFromMedplum(clinicId, medplum) : Promise.resolve(null),
+  ]);
+  const patientIds = new Set(patients.map((p) => p.id));
+  const consultations = clinicConsultations
+    ? clinicConsultations.filter((c) => patientIds.has(c.patientId))
+    : (await Promise.all(patients.map((p) => getPatientConsultationsFromMedplum(p.id, clinicId, medplum)))).flat();
 
-  // Overview stats
-  const totalPatients = exactTotal ?? patients.length;
-  const thisMonth = new Date();
-  thisMonth.setDate(1);
-  const consultationsThisMonth = consultations.filter(c => c.date && new Date(c.date) >= thisMonth).length;
-
-  // Revenue (sum of prices from prescriptions + procedures)
-  const sumItems = (arr?: Array<{ price?: number }>) => (arr || []).reduce((s, it) => s + (it?.price ?? 0), 0);
-  const revenueAllTime = consultations.reduce((s, c) => s + sumItems(c.prescriptions) + sumItems(c.procedures), 0);
-  const revenueThisMonth = consultations
-    .filter(c => c.date && new Date(c.date) >= thisMonth)
-    .reduce((s, c) => s + sumItems(c.prescriptions) + sumItems(c.procedures), 0);
-
-  // Compute wait time from queueAddedAt -> first consultation date per patient (if available)
-  const waitTimes: number[] = patients
-    .map(p => {
-      const added = p.queueAddedAt ? new Date(p.queueAddedAt as any).getTime() : null;
-      const firstC = consultations.find(c => c.patientId === p.id)?.date as any;
-      const firstTime = firstC ? new Date(firstC).getTime() : null;
-      return added && firstTime && firstTime > added ? Math.round((firstTime - added) / (60 * 1000)) : null;
-    })
-    .filter((v): v is number => typeof v === 'number');
-  const avgWait = waitTimes.length ? Math.round(waitTimes.reduce((a, b) => a + b, 0) / waitTimes.length) : 0;
-
-  // Gender pie
-  const genderCounts: Record<string, number> = {};
-  for (const p of patients) {
-    genderCounts[p.gender] = (genderCounts[p.gender] ?? 0) + 1;
-  }
-  const genderData = Object.entries(genderCounts).map(([name, value]) => ({ name, value }));
-
-  // Age buckets
-  const buckets: Record<string, number> = { '0-17': 0, '18-39': 0, '40-64': 0, '65+': 0 };
-  const nowMs = getCurrentTimestamp();
-  for (const p of patients) {
-    if (!p.dateOfBirth) continue;
-    const dob = new Date(p.dateOfBirth as any);
-    if (isNaN(dob.getTime())) continue;
-    const age = Math.floor((nowMs - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    if (age < 18) buckets['0-17']++; else if (age < 40) buckets['18-39']++; else if (age < 65) buckets['40-64']++; else buckets['65+']++;
-  }
-  const ageData = Object.entries(buckets).map(([name, value]) => ({ name, value }));
-
-  // Weekly visits (last 7 days)
-  const days = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
-  const weeklyVisits = days.map(d => ({
-    name: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    value: consultations.filter(c => c.date && new Date(c.date).toDateString() === d.toDateString()).length,
-  }));
-
-  // Top diagnoses
-  const diagnosisCounts: Record<string, number> = {};
-  for (const c of consultations) {
-    if (!c.diagnosis) continue;
-    diagnosisCounts[c.diagnosis] = (diagnosisCounts[c.diagnosis] ?? 0) + 1;
-  }
-  const diagnosisTop = Object.entries(diagnosisCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([name, value]) => ({ name, value }));
-
-  // Revenue by month (last 12 months)
-  const now = new Date();
-  const months: { name: string; year: number; month: number }[] = Array.from({ length: 12 }).map((_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
-    return { name: d.toLocaleDateString('en-US', { month: 'short' }), year: d.getFullYear(), month: d.getMonth() };
-  });
-  const revenueMonthly = months.map(({ name, year, month }) => {
-    const monthlyRevenue = consultations
-      .filter(c => c.date && new Date(c.date).getFullYear() === year && new Date(c.date).getMonth() === month)
-      .reduce((s, c) => s + sumItems(c.prescriptions) + sumItems(c.procedures), 0);
-    return { name: `${name} ${String(year).slice(2)}`, value: Number(monthlyRevenue.toFixed(2)) };
-  });
+  const {
+    totalPatients, consultationsThisMonth, avgWait, waitSamples, revenueThisMonth, revenueAllTime,
+    genderData, ageData, weeklyVisits, diagnosisTop, revenueMonthly,
+  } = computeAnalytics(patients, consultations, exactTotal);
 
   return (
     <div className="space-y-6 pb-10">
@@ -128,7 +55,7 @@ export default async function AnalyticsPage() {
           icon={<Calendar className="h-4 w-4 text-amber-700" />}
           label="Average wait"
           value={`${avgWait} min`}
-          hint={`${waitTimes.length} completed queue samples`}
+          hint={`${waitSamples} completed queue samples`}
         />
         <AnalyticsMetricCard
           icon={<TrendingUp className="h-4 w-4 text-violet-700" />}

@@ -137,3 +137,25 @@ export function appServerPolicyResources(): AccessPolicyResource[] {
     ...['SearchParameter', 'ValueSet', 'CodeSystem'].map(readOnly),
   ];
 }
+
+/**
+ * Compare a deployed "UCC Clinic Staff Policy" with the repo definition.
+ * Returns human-readable problems (empty = in sync). Used by e2e preconditions:
+ * a Medplum project whose policy predates the repo definition (for example one
+ * that still grants Patient `create`) accepts writes the code assumes are denied.
+ * Fix: `bun run medplum:setup-access` against that project (idempotent upsert).
+ */
+export function clinicStaffPolicyDrift(deployed: AccessPolicyResource[] | undefined): string[] {
+  const current = deployed ?? [];
+  const expected = clinicStaffPolicyResources();
+  const key = (rule: AccessPolicyResource) => JSON.stringify(rule);
+  const have = new Set(current.map(key));
+  const want = new Set(expected.map(key));
+  const problems: string[] = [];
+  const patientCreate = current.some((rule) => rule.resourceType === 'Patient' && (rule.interaction ?? []).includes('create'));
+  if (patientCreate) problems.push('Patient rule still grants "create" (staff could forge a Patient in any clinic)');
+  const missing = expected.filter((rule) => !have.has(key(rule))).length;
+  const extra = current.filter((rule) => !want.has(key(rule))).length;
+  if (missing || extra) problems.push(`${missing} expected rule(s) missing, ${extra} unexpected rule(s) (deployed ${current.length}, expected ${expected.length})`);
+  return problems;
+}

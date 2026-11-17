@@ -11,6 +11,7 @@ import '../lib/ws-polyfill';
 const require = createRequire(import.meta.url);
 require('tsx/cjs');
 const { getAdminMedplum } = require('../../lib/server/medplum-admin.ts');
+const { clinicStaffPolicyDrift, CLINIC_POLICY_NAME } = require('../../lib/fhir/clinic-access-policy.ts');
 const { invitePractitionerToMedplum, updatePractitionerInMedplum, deletePractitionerFromMedplum } = require('../../lib/fhir/admin-service.ts');
 const run = promisify(execFile);
 const script = new URL('../../scripts/access-policy/migrate-staff-membership.mjs', import.meta.url).pathname;
@@ -27,6 +28,10 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
   // A prior spec can use the whole 5/min login budget.
   await new Promise(resolve => setTimeout(resolve, 65_000));
   const m: MedplumClient = await getAdminMedplum();
+  // Precondition: the dev project must carry the CURRENT clinic staff policy. A stale one (e.g. Patient `create`
+  // allowed) makes 'forged foreign Patient create' return 201. Fix: `bun run medplum:setup-access` against dev.
+  const deployedPolicy = await m.searchOne('AccessPolicy', { name: CLINIC_POLICY_NAME }, { cache: 'no-cache' });
+  expect(clinicStaffPolicyDrift(deployedPolicy?.resource), 'dev "UCC Clinic Staff Policy" is stale: run `bun run medplum:setup-access` against the dev Medplum (127.0.0.1:8113) and re-run').toEqual([]);
   const owned: Array<{ resourceType: any; id: string }> = [];
   const practitioners: string[] = [];
   const create = async (resource: any) => {
