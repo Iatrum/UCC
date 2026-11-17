@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { MODULES } from "@/lib/modules";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
+import { memoizedModuleIds } from "@/lib/server/module-ids-memo";
 import {
   getEnabledModuleIdsFromOrganization,
   DEFAULT_BRANCH_ENABLED_MODULE_IDS,
@@ -124,13 +125,17 @@ export async function getEnabledModuleIdsForClinic(clinicId?: string | null): Pr
   }
 
   try {
-    const medplum = await getAdminMedplum();
-    const orgs = await medplum.searchResources("Organization", {
-      identifier: `clinic|${clinicId}`,
-      _count: "1",
-    });
-    const org = orgs?.[0];
-    return org ? getEnabledModuleIdsFromOrganization(org) : [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
+    return [
+      ...(await memoizedModuleIds(clinicId, async () => {
+        const medplum = await getAdminMedplum();
+        const orgs = await medplum.searchResources("Organization", {
+          identifier: `clinic|${clinicId}`,
+          _count: "1",
+        });
+        const org = orgs?.[0];
+        return org ? getEnabledModuleIdsFromOrganization(org) : [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
+      })),
+    ];
   } catch {
     return [...DEFAULT_BRANCH_ENABLED_MODULE_IDS];
   }
