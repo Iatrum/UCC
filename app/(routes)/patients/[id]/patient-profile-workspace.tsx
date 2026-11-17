@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { shouldShowStartConsultButton, withSignedConsultation } from "@/lib/patients/profile-history";
 import { OrderComposer, buildSignedDocumentNote } from "@/components/orders/order-composer";
 import PatientDocuments from "@/components/patients/patient-documents";
 import { LabResultsView } from "@/components/labs/lab-results-view";
@@ -266,7 +267,10 @@ export default function PatientProfileWorkspace({
     });
   }, [queueStatus, toast, updateQueueStatus]);
 
-  const visibleConsultations = useMemo(() => mergeByVisit(consultations), [consultations]);
+  const visibleConsultations = useMemo(
+    () => mergeByVisit(withSignedConsultation(consultations, signedConsultationForTreatment)),
+    [consultations, signedConsultationForTreatment]
+  );
   const latestTreatmentConsultation = useMemo(
     () => latestSignedConsultation(visibleConsultations),
     [visibleConsultations]
@@ -828,7 +832,7 @@ export default function PatientProfileWorkspace({
                           </div>
                         )}
                       </div>
-                      <div className="hidden md:block">
+                      <div className="hidden overflow-x-auto md:block">
                         <Table className="min-w-[860px]">
                         <TableHeader>
                           <TableRow>
@@ -953,9 +957,11 @@ export default function PatientProfileWorkspace({
                     <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
                       <p className="font-medium text-foreground">No consultation history yet.</p>
                       <p className="mt-1">Start the first consult to build the record here.</p>
-                      <Button type="button" variant="outline" size="sm" className="mt-4" onClick={openConsultPanel}>
-                        Start consult
-                      </Button>
+                      {shouldShowStartConsultButton(panelOpen) && (
+                        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={openConsultPanel}>
+                          Start consult
+                        </Button>
+                      )}
                     </div>
                   )}
                 </CardContent>

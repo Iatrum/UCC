@@ -5,6 +5,7 @@ import { Plus, TestTube, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { getClinicPoctOrders, type PoctOrderSummary } from "@/lib/fhir/lab-service";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
+import { poctStatusLabel, poctOrderDateLabel } from "@/lib/poct-display";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +17,6 @@ function isToday(iso?: string): boolean {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
-function formatOrderedAt(iso?: string): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
-}
 
 function OrderList({ orders, emptyIcon: Icon, emptyText }: {
   orders: PoctOrderSummary[];
@@ -44,10 +41,10 @@ function OrderList({ orders, emptyIcon: Icon, emptyText }: {
             <p className="text-sm text-muted-foreground">
               <Link href={`/patients/${order.patientId}`} className="hover:underline">{order.patientName}</Link>
               {" · "}
-              {formatOrderedAt(order.authoredOn)}
+              {poctOrderDateLabel(order)}
             </p>
           </div>
-          <span className="text-xs font-medium uppercase text-muted-foreground">{order.status}</span>
+          <span className="text-xs font-medium uppercase text-muted-foreground">{poctStatusLabel(order.status)}</span>
         </li>
       ))}
     </ul>

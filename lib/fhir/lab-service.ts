@@ -334,6 +334,8 @@ export interface PoctOrderSummary {
   status: NonNullable<ServiceRequest['status']>;
   priority?: ServiceRequest['priority'];
   authoredOn?: string;
+  /** meta.lastUpdated, used as a display fallback when authoredOn is missing. */
+  updatedAt?: string;
   analyserId?: string;
 }
 
@@ -379,6 +381,7 @@ export async function getClinicPoctOrders(clinicId: string, medplum: MedplumClie
       status: order.status || 'active',
       priority: order.priority,
       authoredOn: order.authoredOn,
+      updatedAt: order.meta?.lastUpdated,
       analyserId: order.performer?.[0]?.reference?.split('/')[1],
     };
   });
