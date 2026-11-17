@@ -727,6 +727,91 @@ export async function getPatientConsultationsFromMedplum(
   }
 }
 
+const PATIENT_ENCOUNTER_CHUNK = 25;
+
+/**
+ * Consultations for MANY patients in a fixed number of round trips (Task 547). Replaces calling
+ * getPatientConsultationsFromMedplum once per patient, which ran a clinic-wide Encounter search
+ * (no subject filter) for every patient. Here Encounters are searched with
+ * `subject=Patient/a,Patient/b,...` (plus the clinic identifier), and Condition/Observation/
+ * Procedure/MedicationRequest children are loaded in batches of 100 encounters.
+ *
+ * `extraEncounters` (already clinic-checked by the caller) are merged in so a caller that already
+ * holds some encounters does not read them again. Returns consultations keyed by encounter id and
+ * the per-patient list (newest first), using the same patient matching as the per-patient reader
+ * (firebase-patient identifier).
+ */
+export async function getConsultationsForPatientsBatch(
+  patientIds: string[],
+  clinicId: string | null | undefined,
+  medplum: MedplumClient,
+  extraEncounters: Encounter[] = []
+): Promise<{ byEncounter: Map<string, SavedConsultation>; byPatient: Map<string, SavedConsultation[]> }> {
+  const uniquePatientIds = Array.from(new Set(patientIds.filter(Boolean)));
+  const patientIdSet = new Set(uniquePatientIds);
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < uniquePatientIds.length; i += PATIENT_ENCOUNTER_CHUNK) {
+    chunks.push(uniquePatientIds.slice(i, i + PATIENT_ENCOUNTER_CHUNK));
+  }
+  const pages = await Promise.all(
+    chunks.map((chunk) =>
+      medplum.searchResources('Encounter', {
+        subject: chunk.map((id) => `Patient/${id}`).join(','),
+        ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+        _sort: '-date',
+        _count: '1000',
+      })
+    )
+  );
+
+  const encounterById = new Map<string, Encounter>();
+  for (const enc of [...extraEncounters, ...pages.flat()]) {
+    if (!enc.id || encounterById.has(enc.id)) continue;
+    if (!matchesClinic(enc as any, clinicId)) continue;
+    encounterById.set(enc.id, enc);
+  }
+  const encounters = Array.from(encounterById.values());
+
+  const batches: Encounter[][] = [];
+  for (let i = 0; i < encounters.length; i += CHILD_BATCH) batches.push(encounters.slice(i, i + CHILD_BATCH));
+  const children = await Promise.all(
+    batches.map(async (batch) => {
+      const refs = batch.map((e) => `Encounter/${e.id}`).join(',');
+      const [conditions, observations, procedures, medications] = await Promise.all([
+        medplum.searchResources('Condition', { encounter: refs, _count: BULK_CHILD_COUNT }),
+        medplum.searchResources('Observation', { encounter: refs, _count: BULK_CHILD_COUNT }),
+        medplum.searchResources('Procedure', { encounter: refs, _count: BULK_CHILD_COUNT }),
+        medplum.searchResources('MedicationRequest', { encounter: refs, _count: BULK_CHILD_COUNT }),
+      ]);
+      return { conditions, observations, procedures, medications };
+    })
+  );
+  const conditionsBy = groupByEncounter(children.flatMap((c) => c.conditions));
+  const observationsBy = groupByEncounter(children.flatMap((c) => c.observations));
+  const proceduresBy = groupByEncounter(children.flatMap((c) => c.procedures));
+  const medicationsBy = groupByEncounter(children.flatMap((c) => c.medications));
+
+  const byEncounter = new Map<string, SavedConsultation>();
+  const byPatient = new Map<string, SavedConsultation[]>();
+  for (const enc of encounters) {
+    const consultation = buildSavedConsultation(
+      enc,
+      conditionsBy.get(enc.id!) ?? [],
+      observationsBy.get(enc.id!) ?? [],
+      proceduresBy.get(enc.id!) ?? [],
+      medicationsBy.get(enc.id!) ?? []
+    );
+    byEncounter.set(enc.id!, consultation);
+    const firebaseId = enc.identifier?.find((id) => id.system === 'firebase-patient')?.value;
+    if (firebaseId && patientIdSet.has(firebaseId)) {
+      if (!byPatient.has(firebaseId)) byPatient.set(firebaseId, []);
+      byPatient.get(firebaseId)!.push(consultation);
+    }
+  }
+  return { byEncounter, byPatient };
+}
+
 const CLINIC_CONSULTATIONS_PAGE = 1000;
 const CLINIC_CONSULTATIONS_MAX = 10000;
 const CHILD_BATCH = 100;

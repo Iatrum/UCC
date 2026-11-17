@@ -1,7 +1,7 @@
 import { safeToISOString } from "./utils";
 import { QueueStatus, BillableConsultation, TriageData } from "./types";
 import type { MedplumClient } from "@medplum/core";
-import { getAllPatientsFromMedplum, getPatientFromMedplum } from "./fhir/patient-service";
+import { getAllPatientsFromMedplum, getPatientFromMedplum, getPatientsByIdsFromMedplum } from "./fhir/patient-service";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
   getTriageQueueForToday,
@@ -11,8 +11,8 @@ import {
   updateTriageEncounter,
   checkInPatientInTriage,
 } from "./fhir/triage-service";
-import { getPatientConsultationsFromMedplum, getConsultationFromMedplum, saveConsultationToMedplum } from "./fhir/consultation-service";
-import { resolveClinicTenant, resourceMatchesClinicTenant, withClinicIdentifier } from "./fhir/clinic-tenancy";
+import { getConsultationsForPatientsBatch, getPatientConsultationsFromMedplum, getConsultationFromMedplum, saveConsultationToMedplum } from "./fhir/consultation-service";
+import { resolveClinicTenantMemo, resourceMatchesClinicTenant, withClinicIdentifier } from "./fhir/clinic-tenancy";
 import { assertEncounterInClinic } from "./fhir/write-containment";
 
 export interface Patient {
@@ -267,7 +267,7 @@ export async function getConsultationsWithDetails(
         ...params,
       } as any);
 
-    const clinicTenant = clinicId ? await resolveClinicTenant(medplum, clinicId) : null;
+    const clinicTenant = clinicId ? await resolveClinicTenantMemo(medplum, clinicId) : null;
     const encounters = clinicTenant
       ? (await searchEncounterPage({ 'service-provider': clinicTenant.organizationReference }) ?? [])
           .filter((encounter) => encounter.id && resourceMatchesClinicTenant(encounter as any, clinicTenant.organizationId))
@@ -292,62 +292,75 @@ export async function getConsultationsWithDetails(
       };
     };
 
-    const consultations = (
-      await Promise.all(
-        encounters.map(async (enc: any) => {
-          const { queueStatus } = parseQueueStatus(enc);
-          if (!queueStatus || !validStatuses.includes(queueStatus)) {
-            return null;
-          }
+    // Batched (Task 547): one patient search, one patient-scoped Encounter search and batched child
+    // searches for ALL queue encounters, instead of read + patient read + a clinic-wide Encounter
+    // search per encounter.
+    const queued = (encounters as any[]).filter((enc) => {
+      if (!enc.id) return false;
+      const { queueStatus } = parseQueueStatus(enc);
+      return Boolean(queueStatus && validStatuses.includes(queueStatus));
+    });
+    if (queued.length === 0) return [];
 
-          const queueEncounterConsultation = await getConsultationFromMedplum(enc.id, clinicId, medplum);
-          const patientId =
-            queueEncounterConsultation?.patientId ||
-            enc.subject?.reference?.replace('Patient/', '');
-          if (!patientId) return null;
+    const patientIdOf = (enc: any): string =>
+      enc.identifier?.find((id: any) => id.system === 'firebase-patient')?.value ||
+      enc.subject?.reference?.replace('Patient/', '') ||
+      '';
+    const patientIds = Array.from(new Set(queued.map(patientIdOf).filter(Boolean)));
 
-          const patient = await getPatientFromMedplum(patientId, clinicId, medplum, { includeMedicalHistory: false });
-          if (!patient) return null;
+    const [patientsById, { byEncounter, byPatient }] = await Promise.all([
+      getPatientsByIdsFromMedplum(patientIds, clinicId, medplum),
+      getConsultationsForPatientsBatch(patientIds, clinicId, medplum, queued),
+    ]);
 
-          const patientConsultations = await getPatientConsultationsFromMedplum(patientId, clinicId, medplum);
-          const clinicalConsultation =
-            patientConsultations
-              .filter((consultation) =>
-                Boolean(
-                  consultation.id &&
-                    (
-                      consultation.diagnosis ||
-                      consultation.notes ||
-                      consultation.progressNote ||
-                      consultation.procedures?.length ||
-                      consultation.prescriptions?.length
-                    )
-                )
+    const consultations = queued
+      .map((enc: any): BillableConsultation | null => {
+        const { queueStatus } = parseQueueStatus(enc);
+        const queueEncounterConsultation = byEncounter.get(enc.id) ?? null;
+        const patientId = queueEncounterConsultation?.patientId || enc.subject?.reference?.replace('Patient/', '');
+        if (!patientId) return null;
+
+        const patient = patientsById.get(patientId);
+        if (!patient) return null;
+
+        const patientConsultations = byPatient.get(patientId) ?? [];
+        const clinicalConsultation =
+          patientConsultations
+            .filter((consultation) =>
+              Boolean(
+                consultation.id &&
+                  (
+                    consultation.diagnosis ||
+                    consultation.notes ||
+                    consultation.progressNote ||
+                    consultation.procedures?.length ||
+                    consultation.prescriptions?.length
+                  )
               )
-              .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0] ||
-            queueEncounterConsultation;
+            )
+            .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0] ||
+          queueEncounterConsultation;
 
-          if (!clinicalConsultation) return null;
+        if (!clinicalConsultation) return null;
 
-          return {
-            id: clinicalConsultation.id,
-            patientId,
-            patientFullName: patient?.fullName ?? clinicalConsultation.patientName ?? '',
-            queueStatus,
-            date: safeToISOString((clinicalConsultation as any).date) ?? null,
-            createdAt: safeToISOString((clinicalConsultation as any).createdAt) ?? null,
-            updatedAt: safeToISOString((clinicalConsultation as any).updatedAt) ?? null,
-            type: (clinicalConsultation as any).type,
-            doctor: (clinicalConsultation as any).doctor,
-            chiefComplaint: (clinicalConsultation as any).chiefComplaint,
-            diagnosis: (clinicalConsultation as any).diagnosis,
-            procedures: (clinicalConsultation as any).procedures,
-            notes: (clinicalConsultation as any).notes,
-            prescriptions: (clinicalConsultation as any).prescriptions,
-          } satisfies BillableConsultation;
-        })
-      )
-    ).filter(Boolean) as BillableConsultation[];
+        return {
+          id: clinicalConsultation.id,
+          patientId,
+          patientFullName: patient?.fullName ?? clinicalConsultation.patientName ?? '',
+          queueStatus: queueStatus as QueueStatus,
+          date: safeToISOString((clinicalConsultation as any).date) ?? null,
+          createdAt: safeToISOString((clinicalConsultation as any).createdAt) ?? null,
+          updatedAt: safeToISOString((clinicalConsultation as any).updatedAt) ?? null,
+          type: (clinicalConsultation as any).type,
+          doctor: (clinicalConsultation as any).doctor,
+          chiefComplaint: (clinicalConsultation as any).chiefComplaint,
+          diagnosis: (clinicalConsultation as any).diagnosis,
+          procedures: (clinicalConsultation as any).procedures,
+          notes: (clinicalConsultation as any).notes,
+          prescriptions: (clinicalConsultation as any).prescriptions,
+        } satisfies BillableConsultation;
+      })
+      .filter(Boolean) as BillableConsultation[];
 
     const uniqueConsultations = Array.from(
       new Map(consultations.map((consultation) => [consultation.id, consultation])).values()
