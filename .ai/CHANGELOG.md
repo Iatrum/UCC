@@ -112,3 +112,10 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 357 continuation: require one explicit clinic per Orthanc archive; foreign device keys, staff attachments and existing viewer capabilities cannot cross that binding. Previously unmatched/dismissed studies require an explicit staff attachment even after an order appears. Suppress launch-token access/error logs. Preserve dev PACS setup/storage notes and improve local validation fixture paths, auth-budget use and evidence handling. Final browser gate pending shared dev slot; no production rollout.
 
 - Task 357 evidence: real synthetic DICOM-to-OHIF and clinic/study security checks pass; 226 unit tests pass. Trusted Orthanc refresh enables the stored viewer on an existing tagged study with the same UID. Full gate is still HOLD due shared-slot/RAM and fixture failures; updated opt-in low-memory driver/retry/path fixes require one exclusive final run. Nothing deployed to production.
+
+## Task 434 — Patients page shows the real patient count
+- The Patients page used to show "Total Patients 200 / New Patients 200 this month" because it counted only the first 200 patients it had loaded, while Analytics said 300 for the same clinic. Both numbers were just page-size caps.
+- Now the cards show the true number of active patients in *your clinic* (and how many were added this month), asked of Medplum directly (FHIR `_summary=count` + `_total=accurate`). Analytics' "Total patients" uses the same exact count.
+- The patient list is now paged on the server (25 per page, Previous/Next, "Page X of Y"), so patients beyond the first page can be reached. Search is also done on the server (name / NRIC, up to 50 matches) instead of filtering only what was loaded. Search by phone number no longer works in the list.
+- Counts are filtered by the clinic identifier, so other clinics' patients are never counted. Covered by a unit test with four clinics.
+- Not changed: "Follow-ups" and "In Queue" cards still reflect the patients on the current page; Analytics charts still sample the 300 most recent patients.

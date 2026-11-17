@@ -10,6 +10,9 @@ import {
   savePatientToMedplumWithAdmin,
   getPatientFromMedplum,
   getAllPatientsFromMedplum,
+  getPatientsPageFromMedplum,
+  countPatientsInMedplum,
+  countNewPatientsThisMonth,
   searchPatientsInMedplum,
   updatePatientInMedplum,
   archivePatientInMedplum,
@@ -75,6 +78,26 @@ export async function GET(request: NextRequest) {
         count: patients.length,
         patients,
       });
+    }
+
+    // Clinic-scoped real counts (not capped by page size)
+    if (searchParams.get('stats') === '1') {
+      const [total, newThisMonth] = await Promise.all([
+        countPatientsInMedplum(clinicId, medplum),
+        countNewPatientsThisMonth(clinicId, medplum),
+      ]);
+      return NextResponse.json({ success: true, total, newThisMonth });
+    }
+
+    // Server-side pagination
+    if (searchParams.get('page')) {
+      const result = await getPatientsPageFromMedplum(
+        parseInt(searchParams.get('page') || '1', 10),
+        parseInt(searchParams.get('pageSize') || '25', 10),
+        clinicId,
+        medplum
+      );
+      return NextResponse.json({ success: true, count: result.patients.length, ...result });
     }
 
     // Get all patients

@@ -789,6 +789,70 @@ export async function getAllPatientsFromMedplum(
   }
 }
 
+export const PATIENT_PAGE_MAX_SIZE = 100;
+export const PATIENT_MAX_OFFSET = 10000; // Medplum _offset ceiling
+
+function clinicPatientParams(clinicId: string | null | undefined): Record<string, string> {
+  return {
+    active: 'true',
+    ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+  };
+}
+
+/**
+ * Exact (or null when the server did not return one) count of active patients
+ * for the caller's clinic. FHIR R4 `_summary=count` + `_total=accurate`.
+ */
+export async function countPatientsInMedplum(
+  clinicId: string | null | undefined,
+  medplum: MedplumClient,
+  extra: Record<string, string> = {}
+): Promise<number | null> {
+  await resolveClinicTenant(medplum, clinicId);
+  const bundle = await medplum.search('Patient', {
+    ...clinicPatientParams(clinicId),
+    ...extra,
+    _summary: 'count',
+    _total: 'accurate',
+  } as any);
+  return typeof bundle.total === 'number' ? bundle.total : null;
+}
+
+export async function countNewPatientsThisMonth(
+  clinicId: string | null | undefined,
+  medplum: MedplumClient,
+  now = new Date()
+): Promise<number | null> {
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  return countPatientsInMedplum(clinicId, medplum, { _lastUpdated: `ge${monthStart}` });
+}
+
+/** One server-side page of the clinic's active patients plus the exact total. */
+export async function getPatientsPageFromMedplum(
+  page: number,
+  pageSize: number,
+  clinicId: string | null | undefined,
+  medplum: MedplumClient
+): Promise<{ patients: SavedPatient[]; total: number | null; page: number; pageSize: number }> {
+  const size = Math.min(Math.max(Math.floor(pageSize) || 25, 1), PATIENT_PAGE_MAX_SIZE);
+  const pg = Math.max(Math.floor(page) || 1, 1);
+  const offset = Math.min((pg - 1) * size, PATIENT_MAX_OFFSET);
+  await resolveClinicTenant(medplum, clinicId);
+  const bundle = await medplum.search('Patient', {
+    ...clinicPatientParams(clinicId),
+    _sort: '-_lastUpdated',
+    _count: String(size),
+    _offset: String(offset),
+    _total: 'accurate',
+  } as any);
+  const rows = (bundle.entry ?? [])
+    .map((e) => e.resource as FHIRPatient)
+    .filter((r) => r && matchesClinic(r as any, clinicId))
+    .map((r) => fhirPatientToPatientData(r))
+    .filter((r) => r.active !== false);
+  return { patients: rows, total: typeof bundle.total === 'number' ? bundle.total : null, page: pg, pageSize: size };
+}
+
 /**
  * Update a patient in Medplum
  */
