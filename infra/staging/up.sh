@@ -11,14 +11,14 @@ P=ucc-staging
 MIN=${STG_MIN_AVAILABLE_MB:-600}
 avail() { awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo; }
 case "${1:-up}" in
-  down) exec docker compose -p "$P" down ;;
+  down) MEDPLUM_IMAGE_TAG=${MEDPLUM_IMAGE_TAG:-down-only} exec docker compose -p "$P" down ;;
   config)
     MEDPLUM_IMAGE_TAG=${MEDPLUM_IMAGE_TAG:-0.0.0-placeholder} docker compose -p "$P" config -q && echo "compose config OK"; exit 0 ;;
   guard)
     a=$(avail)
     if [ "$a" -lt "$MIN" ]; then
       echo "MemAvailable ${a} MB < ${MIN} MB: stopping staging (production wins)" >&2
-      docker compose -p "$P" down; exit 1
+      MEDPLUM_IMAGE_TAG=${MEDPLUM_IMAGE_TAG:-down-only} docker compose -p "$P" down; exit 1
     fi
     echo "MemAvailable ${a} MB OK"; exit 0 ;;
   up) ;;

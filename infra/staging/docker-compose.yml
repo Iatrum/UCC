@@ -9,7 +9,7 @@ services:
   ucc-stg-pg:
     image: postgres:16-alpine
     container_name: ucc-stg-pg
-    restart: unless-stopped
+    restart: "no"        # runs only during a release test; must not return after a host reboot
     mem_limit: 768m
     memswap_limit: 768m
     env_file: [{path: .env.staging.local, required: false}]   # POSTGRES_PASSWORD
@@ -28,7 +28,7 @@ services:
   ucc-stg-redis:
     image: redis:7-alpine
     container_name: ucc-stg-redis
-    restart: unless-stopped
+    restart: "no"        # runs only during a release test; must not return after a host reboot
     mem_limit: 128m
     memswap_limit: 128m
     env_file: [{path: .env.staging.local, required: false}]   # REDIS_PASSWORD
@@ -43,7 +43,7 @@ services:
   ucc-stg-medplum:
     image: medplum/medplum-server:${MEDPLUM_IMAGE_TAG:?set MEDPLUM_IMAGE_TAG (pinned, never latest)}
     container_name: ucc-stg-medplum
-    restart: unless-stopped
+    restart: "no"        # runs only during a release test; must not return after a host reboot
     mem_limit: 1536m
     memswap_limit: 1536m
     depends_on:

@@ -11,6 +11,8 @@ Companion to `.ai/PLAN-network-lockdown-staging.md` Part 2. Fake data only. Stag
 ## Bring up (operator; not done by Task 525)
 - [ ] `MEDPLUM_IMAGE_TAG=<pinned> bun run staging:up` (refuses below 600 MB). Check `docker ps` shows only `ucc-stg-*` added.
 - [ ] Bootstrap staging project + demo clinic Organization + doctor Practitioner (not automated yet) and a **non-superAdmin** clinic project (D20).
+- [ ] Medplum seeds a default super admin (`admin@example.com` / `medplum_admin`) on an empty DB. Change that password first (loopback only, but never leave it); `staging:seed` refuses the default credentials.
+- [ ] Port 3220 has been used ad hoc by verification worktrees: confirm `ss -tln | grep :3220` is empty before `next start`.
 - [ ] `bun run staging:seed --dry-run`, then `bun run staging:seed` (needs `MEDPLUM_ADMIN_*` for staging).
 - [ ] Production-mode build with staging `NEXT_PUBLIC_*` (`NODE_OPTIONS=--max-old-space-size=2048`, one build at a time); `next start -p 3220` bound to 127.0.0.1.
 - [ ] Run `bun run staging:guard` periodically; it stops staging if available < 600 MB.

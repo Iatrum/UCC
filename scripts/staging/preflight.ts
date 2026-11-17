@@ -45,6 +45,13 @@ export function stagingPreflight(env: Env): string[] {
     const b = env[key] ?? '';
     if (!project || !(b === project || b.startsWith(`${project}.`) || b.startsWith(`${project}-`))) fails.push(`${key} does not belong to the staging project`);
   }
+  // Browser-side (inlined at build) and admin-SDK identifiers must also belong to the staging project.
+  const pub = env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (!project || pub !== project) fails.push('NEXT_PUBLIC_FIREBASE_PROJECT_ID is not the allowlisted staging project');
+  const authDomain = env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '';
+  if (!project || !authDomain.startsWith(`${project}.`)) fails.push('NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN does not belong to the staging project');
+  const email = env.FIREBASE_CLIENT_EMAIL;
+  if (email && !(project && email.toLowerCase().endsWith(`@${project}.iam.gserviceaccount.com`))) fails.push('FIREBASE_CLIENT_EMAIL does not belong to the staging project');
   if (env.GOOGLE_APPLICATION_CREDENTIALS || env.FIREBASE_CONFIG || env.GCLOUD_PROJECT || env.GOOGLE_CLOUD_PROJECT) fails.push('ambient Google credentials/project env is set (ADC fallback could reach another project)');
   if (env.FIREBASE_SERVICE_ACCOUNT) {
     try {
