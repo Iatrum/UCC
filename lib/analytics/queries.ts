@@ -215,7 +215,7 @@ export async function getClinical(medplum: MedplumClient, clinicId: string, key:
     optional("service requests", cached(`${clinicId}|sr|${winKey(r.from, r.to)}`, CACHE_MS, () =>
       searchBounded<ServiceRequest>(medplum, "ServiceRequest", clinicId, { authored: between(r.from, r.to), _elements: "category,authoredOn,identifier,meta" }, 3))),
     optional("dispenses", cached(`${clinicId}|disp|${winKey(r.from, r.to)}`, CACHE_MS, () =>
-      searchBounded<MedicationDispense>(medplum, "MedicationDispense", clinicId, { status: "completed", _lastUpdated: between(r.from, r.to), _elements: "medicationReference,quantity,status,identifier,meta" }, 3))),
+      searchBounded<MedicationDispense>(medplum, "MedicationDispense", clinicId, { status: "completed", whenhandedover: between(r.from, r.to), _elements: "medicationReference,quantity,status,identifier,meta,whenHandedOver" }, 3))),
     followUpCount(medplum, clinicId, "completed", r),
     followUpCount(medplum, clinicId, "preparation,in-progress", r),
     followUpCount(medplum, clinicId, "stopped", r),

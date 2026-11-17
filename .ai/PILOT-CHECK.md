@@ -32,7 +32,7 @@ Tools: Playwright (`e2e/tests/workflow.spec.ts`, `dispense-checkout-ui.spec.ts`)
 
 ### Open (not fixed; not clear/small, or already tracked)
 3. Analytics "Revenue" = ordered lines on consultations, not invoiced/paid amounts (invoices are the source of truth after checkout). Recommend computing from Invoice totals; needs a product decision.
-4. Analytics gender/age charts still use only the newest 300 patients (`page.tsx:38`) while "Total patients" is an exact count. Label or paginate.
+4. Analytics gender/age charts still use only the newest 300 patients (`page.tsx:38`) while "Total patients" is an exact count. Label or paginate. **Resolved (Task 564): charts are exact per-clinic _summary=count queries; see research/task-564.md.**
 5. Consultation Fee is RM 0.00 on checkout (`patient-profile-workspace.tsx:80-84`, `unitPrice: 0`; bill-modal.tsx:154 as well). Clinic must set a price; no catalog-driven default.
 6. Known probe (workflow test 11): `/api/labs/receive` returns 500 when `result.status` is omitted (Observation.status required) - should be 400 or defaulted. Lab/imaging orders also write Procedure `completed` at Sign.
 7. No dedicated receipt view after completion: only a toast `Invoice INV-... was saved`, plus Bill preview/print before completing. Confirm with the clinic whether a post-payment receipt is required for the pilot.
