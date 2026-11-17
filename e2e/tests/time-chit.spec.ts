@@ -62,7 +62,7 @@ test('Time Chit is core (no module toggle): composer, checkout, historical print
         await page.getByText(title).last().click();
         const dialog = page.getByRole('dialog'); await expect(dialog).toBeVisible();
         if (query === 'medical') await dialog.getByPlaceholder('Dr. ...').fill('Dr Fake MC');
-        else await dialog.locator('textarea').fill('Fake referral content');
+        else { await dialog.getByLabel('Referral to:').fill('Fake Hospital'); await dialog.locator('textarea').fill('Fake referral content'); }
         await dialog.getByRole('button', { name: 'Complete document' }).click();
         await expect(dialog).toHaveCount(0);
       }
