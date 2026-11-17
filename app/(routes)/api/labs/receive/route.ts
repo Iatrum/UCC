@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { receiveLabResults, type LabResult } from '@/lib/fhir/lab-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
+import { validateLabReceiveResults } from '@/lib/fhir/lab-receive-validation';
 import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
@@ -24,42 +25,37 @@ interface ReceiveLabResultsRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReceiveLabResultsRequest = await request.json();
+    // Parse leniently so authentication still runs first; a bad body is reported as 400 after auth.
+    let parsed: unknown = null;
+    try { parsed = await request.json(); } catch { /* handled below */ }
+    const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Partial<ReceiveLabResultsRequest>;
 
     // Fail closed: the calling analyser Device is authenticated by its own key; its clinic scopes every write.
     const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'poct');
 
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return NextResponse.json({ error: 'Request body must be a JSON object' }, { status: 400 });
+    }
+
     // Validate required fields
-    if (!body.serviceRequestId) {
+    if (typeof body.serviceRequestId !== 'string' || !body.serviceRequestId.trim()) {
       return NextResponse.json(
         { error: 'serviceRequestId is required' },
         { status: 400 }
       );
     }
 
-    if (!body.results || !Array.isArray(body.results) || body.results.length === 0) {
-      return NextResponse.json(
-        { error: 'results array is required and must not be empty' },
-        { status: 400 }
-      );
-    }
-
-    // Validate each result
-    for (const result of body.results) {
-      if (!result.testCode || !result.testName || result.value === undefined) {
-        return NextResponse.json(
-          { error: 'Each result must have testCode, testName, and value' },
-          { status: 400 }
-        );
-      }
+    const validated = validateLabReceiveResults(body.results);
+    if (!validated.ok) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
 
     // Process the lab results
     const medplum = await getAdminMedplum();
     const reportId = await receiveLabResults(
-      body.serviceRequestId,
-      body.results,
-      body.conclusion,
+      body.serviceRequestId!.trim(),
+      validated.results,
+      typeof body.conclusion === 'string' ? body.conclusion : undefined,
       medplum,
       device.clinicId
     );
