@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 452: dashboard queue keeps its list while refreshing
+The dashboard queue used to swap the whole list for "Loading queue..." on every refresh (including the 30-second auto refresh), and if you clicked away while it was loading, the interrupted request showed up as a "Failed to load" error. Now "Loading queue..." only appears the first time; later refreshes keep the current list on screen. If a refresh fails, the list stays and the "Queue could not be refreshed" banner appears; the full error panel with Retry only shows when there is no list yet. Requests cancelled by leaving the page (or replaced by a newer refresh) no longer show errors; a real 10-second timeout still does. The same quiet handling applies to Appointments and Billing. Left for Hidayat: the nav label that reads "Login" instead of "Logout" while the session loads (no sidebar/nav changes in this task). Tests: extended `e2e/tests/dashboard-load-errors.spec.ts`.
+
 ## 2026-11-17 — Task 430: dashboard Billing and Appointments tabs show loading and errors
 The dashboard Billing tab used to say "No billable consultations found" when the billable list failed to load (and while it was still loading), even though /orders listed a billable patient. It now shows "Loading billable consultations..." while fetching, and "Failed to load billable consultations." with a Retry button if the request fails; the empty text only appears after a successful fetch that returned nothing. The dashboard Appointments tab got the same treatment ("Failed to load appointments." + Retry). Same pattern as the queue. No composer, sidebar or navigation change. Test: `e2e/tests/dashboard-load-errors.spec.ts` (mocked failure, then Retry shows the list).
 
