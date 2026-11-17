@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 508: merged latest dev into the queue and UX-small-fixes PRs; UX items #6, #7, #19 confirmed already fixed
+Resolved changelog-only conflicts in both PRs. The patient-profile items (history refresh after Sign, hidden Start consult while the drawer is open, scrollable history table, consistent "Last consult / Total consults" header) were already fixed by Task 446 on dev, so no app code changed; UX-FINDINGS now marks them fixed.
+
 ## 2026-11-17 — Task 476: queue confirm, "Live updates off" hint, recent-consultations mapping
 Queue row menu: "Mark as Complete" now asks for confirmation (Remove from Queue already did; the audit missed it). Labs & Imaging: when live updates can't connect (the subscription returns 503) a quiet "Live updates off – press Refresh" appears beside "Last updated"; results keep polling as before. `/api/consultations?recent=`: fixed two real bugs, empty `patientId` for check-in encounters (now falls back to the encounter's patient) and missing complaint/diagnosis on later rows because child lookups were cut off at 20 results. Clinic scoping unchanged. Tests: `tests/unit/task476-live-status-and-recent.test.ts`, `e2e/tests/task476-queue-confirm.spec.ts`, `e2e/tests/lab-results-state.spec.ts`. Notes: `.ai/research/task-476.md`.
 ## 2026-11-17 — Task 502: Analytics loads much faster (UX #11)
