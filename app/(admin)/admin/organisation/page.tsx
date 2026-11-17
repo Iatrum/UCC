@@ -116,7 +116,12 @@ export default async function OrganisationPage() {
                       >
                         <span className="inline-flex min-w-0 items-center gap-2">
                           <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{clinic.name}</span>
+                          <span className="min-w-0">
+                            <span className="block truncate">{clinic.name}</span>
+                            <span className="block truncate font-mono text-xs text-muted-foreground">
+                              {clinic.subdomain}
+                            </span>
+                          </span>
                         </span>
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {clinic.enabledModuleIds.length} modules

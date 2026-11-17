@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 510: admin screen fixes (UX #12-#15)
+Admin Settings no longer falls back to the production Medplum console/API links; it says "Not configured" when the env vars are unset. The Create Medplum ClientApplication form now warns that it uses a project admin account and shows the client secret only once, turns off browser autofill, and uses the right dev placeholder (`:8113`) with the URL prefilled from config (no hardcoded email). Users and Branches have a search box; the overview and Users page say "Assigned to a clinic: X of Y"; the subdomain shows under each branch in the Organisations hierarchy. On the branch page the two buttons are "Save details" and "Save modules", each saves only its own section, and each section shows an "Unsaved changes" badge (buttons stay disabled until something changed). Admin pages only; no nav changes. Tests: `tests/unit/admin-ui.test.ts`. Not walked in a browser.
+
 ## 2026-11-17 — Task 502: Analytics loads much faster (UX #11)
 Analytics used to run about five Medplum searches for every patient (roughly 1,500 for 300 patients), each one scanning the whole clinic's visits. It now reads the clinic's visits once, in pages, and fetches diagnoses, procedures and prescriptions in a few parallel batches (about 20 searches). Same charts and formulas, still only the signed-in clinic's data. Side effect: the old code only ever saw each clinic's 20 newest visits, so some totals may now be higher (more correct). Tests: `tests/unit/task502-analytics-perf.test.ts`. Not timed on live dev Medplum.
 

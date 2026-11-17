@@ -17,8 +17,8 @@ export default function CreateMedplumClientPage() {
   } | null>(null);
 
   const [formData, setFormData] = useState({
-    medplumUrl: 'http://localhost:8103',
-    email: 'dayatfactor@gmail.com',
+    medplumUrl: process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || '',
+    email: '',
     password: '',
   });
 
@@ -69,13 +69,22 @@ export default function CreateMedplumClientPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Alert className="border-amber-200 bg-amber-50">
+            <AlertDescription className="text-amber-900 text-sm">
+              This signs in to Medplum with a <strong>project admin account</strong> to create the
+              client. The client secret
+              is shown <strong>only once</strong> after creation: copy it now, it cannot be
+              retrieved later.
+            </AlertDescription>
+          </Alert>
           <div className="space-y-2">
             <Label htmlFor="medplumUrl">Medplum URL</Label>
             <Input
               id="medplumUrl"
               value={formData.medplumUrl}
               onChange={(e) => setFormData({ ...formData, medplumUrl: e.target.value })}
-              placeholder="http://localhost:8103"
+              placeholder="http://localhost:8113"
+              autoComplete="off"
             />
           </div>
 
@@ -86,7 +95,8 @@ export default function CreateMedplumClientPage() {
               type="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="your@email.com"
+              placeholder="admin@example.com"
+              autoComplete="off"
             />
           </div>
 
@@ -98,6 +108,7 @@ export default function CreateMedplumClientPage() {
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               placeholder="Your Medplum password"
+              autoComplete="new-password"
             />
           </div>
 
