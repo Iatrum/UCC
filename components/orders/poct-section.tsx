@@ -61,7 +61,7 @@ export function PoctSection({ entries, query, onAdd }: {
       const added = entries.some((e) => e.meta?.kind === 'poct' && e.meta.code === test.code);
       return <div key={test.code} data-testid={`poct-${test.code}`} className="flex flex-wrap items-center gap-2 rounded border px-2 py-2 text-xs">
         <span className="min-w-24 flex-1 font-medium">{test.name}</span>
-        <span className="max-w-32 truncate text-muted-foreground">{device?.name || 'No analyser'}</span>
+        <span className="max-w-32 truncate text-muted-foreground">{loading ? '' : device?.name || 'No analyser'}</span>
         <span className={device?.online ? 'text-green-700' : 'text-muted-foreground'}>{loading ? 'Checking…' : device?.online ? 'Online' : 'Offline'}</span>
         <span>RM {test.unitPrice.toFixed(2)}</span>
         <Button type="button" size="sm" variant="outline" disabled={loading || adding || !device?.online || added} onClick={() => device && void add(test, device)} aria-label={`Add POCT ${test.name}`}>{added ? 'Added' : '+ Add'}</Button>

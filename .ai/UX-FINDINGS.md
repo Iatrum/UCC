@@ -30,8 +30,8 @@ Severity: **High** = can mislead staff on money or clinical flow; **Med** = conf
 
 ## Low
 
-12. **POCT rows in the composer can show "No analyser" next to "Checking…".** While analyser status is loading, an unmatched test reads as both. The Add button is correctly disabled, and "Only online, connected analysers can be ordered. No manual results." is clear. Fix: hide the device name until loading ends. File: `components/orders/poct-section.tsx:64-65`. No new POCT features suggested.
-13. **POCT page lists pending tests as "ACTIVE" and some rows have a blank date ("—").** Staff expect "Pending"/"Waiting for analyser". File: `app/(routes)/poct/page.tsx:50`.
+12. **POCT rows in the composer can show "No analyser" next to "Checking…".** While analyser status is loading, an unmatched test reads as both. The Add button is correctly disabled, and "Only online, connected analysers can be ordered. No manual results." is clear. Fix: hide the device name until loading ends. File: `components/orders/poct-section.tsx:64-65`. No new POCT features suggested. **Addressed in Task 486 (wording only).**
+13. **POCT page lists pending tests as "ACTIVE" and some rows have a blank date ("—").** Staff expect "Pending"/"Waiting for analyser". File: `app/(routes)/poct/page.tsx:50`. **Addressed in Task 486 (wording only).**
 14. **Labs & Imaging: `/api/labs/subscription` returned 503** (live results feed unavailable in dev). The page works but there is no "live updates off" hint; staff must press Refresh. Files: `app/(routes)/api/labs/subscription/route.ts`, `lib/poct/live-results.ts`.
 15. **Queue row menu has "Mark as Complete" and "Remove from Queue" next to "Start Consultation" with no confirmation seen.** Easy to hit by mistake. Fix: confirm dialog for Remove. File: dashboard queue table.
 16. **Checkout with no items.** An empty invoice (RM 0.00) still shows "Submit e-Invoice" and "Complete visitation". Not confirmed whether they are enabled. Check whether Complete should warn "no billable items". File: `app/(routes)/orders/checkout/[consultationId]` client.
