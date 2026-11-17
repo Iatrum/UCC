@@ -1,6 +1,6 @@
 "use client";
 
-import { checkoutSubtotal, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
+import { checkoutSubtotal, displayInvoiceNumber, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import {
   buildStockNotice,
   CHECKOUT_NOTICE_STORAGE_KEY,
@@ -324,7 +324,7 @@ function buildPrintableBillHtml({
   return `<!doctype html>
     <html>
       <head>
-        <title>${escapeHtml(invoiceNumber || "Patient bill")}</title>
+        <title>${escapeHtml(displayInvoiceNumber(invoiceNumber))}</title>
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; background: #fff; color: #111827; font-family: Arial, sans-serif; font-size: 13px; }
@@ -357,7 +357,7 @@ function buildPrintableBillHtml({
               <div class="muted">Clinic checkout invoice</div>
             </div>
             <div class="meta">
-              <div><strong>${escapeHtml(invoiceNumber || "Invoice pending")}</strong></div>
+              <div><strong>${escapeHtml(displayInvoiceNumber(invoiceNumber))}</strong></div>
               <div>${escapeHtml(date)}</div>
             </div>
           </div>
@@ -503,7 +503,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         const resolvedPatientId = String(payload.consultation.patientId || payload.patient.id || patientId);
         const [invoiceResponse, draftResponse] = await Promise.all([
           fetch(
-            `/api/billing?consultationId=${encodeURIComponent(consultationId)}&previewNumber=true`,
+            `/api/billing?consultationId=${encodeURIComponent(consultationId)}`,
             { cache: "no-store" }
           ),
           fetch(
@@ -611,7 +611,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           paymentMethod,
           paidAmount: paid,
           totalAmount: subtotal,
-          invoiceNumber,
+          invoiceNumber: invoiceNumber || undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -805,9 +805,9 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
             <CardContent className="pt-6">
               <div className="mb-4 grid gap-3 rounded-md border bg-muted/20 px-4 py-3 text-sm sm:grid-cols-2">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Preview number</p>
-                  <p className="mt-1 font-semibold">{invoiceNumber || "Generating..."}</p>
-                  <p className="text-xs text-muted-foreground">Confirmed when the invoice is saved.</p>
+                  <p className="text-xs font-medium text-muted-foreground">Invoice number</p>
+                  <p className="mt-1 font-semibold">{displayInvoiceNumber(invoiceNumber)}</p>
+                  <p className="text-xs text-muted-foreground">Issued when the invoice is saved.</p>
                 </div>
                 <div className="sm:text-right">
                   <p className="text-xs font-medium text-muted-foreground">Date</p>
@@ -1028,7 +1028,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
           <DialogHeader>
             <DialogTitle>Patient bill preview</DialogTitle>
             <DialogDescription>
-              {invoiceNumber || "Invoice pending"} · {patient.fullName}
+              {displayInvoiceNumber(invoiceNumber)} · {patient.fullName}
             </DialogDescription>
           </DialogHeader>
           <BillPreview
@@ -1194,7 +1194,7 @@ function BillPreview({
           <p className="mt-1 text-slate-500">Clinic checkout invoice</p>
         </div>
         <div className="text-left sm:text-right">
-          <p className="font-semibold">{invoiceNumber || "Invoice pending"}</p>
+          <p className="font-semibold">{displayInvoiceNumber(invoiceNumber)}</p>
           <p className="mt-1 text-slate-500">{date}</p>
         </div>
       </div>
