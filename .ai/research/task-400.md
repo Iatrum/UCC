@@ -65,3 +65,9 @@ No dev server, Playwright, service access, secrets or production data.
   clinic; ownership checks precede no-op returns, field mutation and network calls.
   Extended metadata survives updates; identifiers are never used to relabel foreign records.
   Missing/untagged/mixed clinic identifiers fail closed. No appointment helpers changed.
+
+## Task 474 addendum (2026-11-17)
+- Merged origin/dev into the PR branch (no rebase); only `.ai/BACKLOG.md` conflicted (kept both the Task 400 and Task 398 entries).
+- Aligned to the Task 422 rule (`.ai/research/task422.md`): id-addressed foreign/untagged/mixed => 404 (`NotFoundError`), missing caller clinic => 403. `/api/tasks/[id]` and `/api/follow-up/[id]` pre-checks now 404 too.
+- Added guards to `deletePatientDocument`, `deleteFollowUp`, `deleteReferralFromMedplum` (previously unguarded or clinicId-optional); documents route checks before the Storage delete.
+- Mutation check: removing the guard fails 15 of 21 tests in `task400-update-containment.test.ts`.

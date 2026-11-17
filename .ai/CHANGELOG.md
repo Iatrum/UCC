@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-17 — Task 474: edits and deletes of documents, referrals, follow-ups and billing tasks are checked against your clinic
+Every remaining edit/delete-by-id helper (documents, billing exception tasks, follow-up status/open/send/delete, referrals) now looks at the saved record's clinic before writing, even if the caller forgot to pass a clinic. A record from another clinic (or one with no clinic tag) answers "not found" (404) and nothing is written; a request with no clinic context is refused (403). Deleting a document now checks ownership before its file is removed from storage. Own-clinic edits work as before. Draft PR #267 was also merged with the latest dev (only the BACKLOG note conflicted).
+
 ## 2026-11-17 — Task 452: dashboard queue keeps its list while refreshing
 The dashboard queue used to swap the whole list for "Loading queue..." on every refresh (including the 30-second auto refresh), and if you clicked away while it was loading, the interrupted request showed up as a "Failed to load" error. Now "Loading queue..." only appears the first time; later refreshes keep the current list on screen. If a refresh fails, the list stays and the "Queue could not be refreshed" banner appears; the full error panel with Retry only shows when there is no list yet. Requests cancelled by leaving the page (or replaced by a newer refresh) no longer show errors; a real 10-second timeout still does. The same quiet handling applies to Appointments and Billing. Left for Hidayat: the nav label that reads "Login" instead of "Logout" while the session loads (no sidebar/nav changes in this task). Tests: extended `e2e/tests/dashboard-load-errors.spec.ts`.
 

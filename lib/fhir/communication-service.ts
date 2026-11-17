@@ -513,7 +513,9 @@ export async function updateTwilioDeliveryStatus(
   return mapCommunicationToFollowUp(updated as Communication);
 }
 
-export async function deleteFollowUp(medplum: MedplumClient, id: string): Promise<void> {
+export async function deleteFollowUp(medplum: MedplumClient, id: string, clinicId?: string): Promise<void> {
+  const comm = await medplum.readResource("Communication", id, { cache: "no-cache", headers: { "X-Medplum": "extended" } }) as Communication;
+  assertResourceInClinic(comm, clinicId);
   await medplum.deleteResource("Communication", id);
 }
 

@@ -168,6 +168,8 @@ export async function updatePatientDocument(
 /**
  * Delete a DocumentReference in Medplum by id.
  */
-export async function deletePatientDocument(medplum: MedplumClient, documentId: string): Promise<void> {
+export async function deletePatientDocument(medplum: MedplumClient, documentId: string, clinicId?: string): Promise<void> {
+  const doc = await medplum.readResource('DocumentReference', documentId, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } });
+  assertResourceInClinic(doc, clinicId);
   await medplum.deleteResource('DocumentReference', documentId);
 }

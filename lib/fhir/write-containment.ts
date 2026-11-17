@@ -1,4 +1,4 @@
-import { ForbiddenError } from "@/lib/server/route-helpers";
+import { ForbiddenError, NotFoundError } from "@/lib/server/route-helpers";
 import type { MedplumClient } from "@medplum/core";
 import { OperationOutcomeError, forbidden } from "@medplum/core";
 import { assertOrderClinic, resolveClinicTenant, resourceMatchesClinicTenant, withClinicIdentifier, getResourceAccountReferences } from "@/lib/fhir/clinic-tenancy";
@@ -78,13 +78,19 @@ export async function makeClinicStamper(
   };
 }
 
-/** Authorize an update against the stored ownership, never the proposed patch. */
+/**
+ * Authorize an update/delete-by-id against the STORED ownership, never the
+ * proposed patch. Task 422 rule: a foreign, untagged or mixed-clinic id is
+ * indistinguishable from a missing one (NotFoundError => 404); a caller with no
+ * clinic context fails closed (ForbiddenError => 403).
+ */
 export function assertResourceInClinic(
   resource: { identifier?: { system?: string; value?: string }[] },
   clinicId?: string
 ): void {
   const clinics = resource.identifier?.filter(identifier => identifier.system === 'clinic') ?? [];
-  if (!clinicId || clinics.length === 0 || clinics.some(identifier => identifier.value !== clinicId)) {
-    throw new ForbiddenError('Resource unavailable in current clinic.');
+  if (!clinicId) throw new ForbiddenError('Clinic context is required.');
+  if (clinics.length === 0 || clinics.some(identifier => identifier.value !== clinicId)) {
+    throw new NotFoundError('Resource not found.');
   }
 }
