@@ -751,6 +751,8 @@ export async function getTriageForPatient(
   return existing;
 }
 
+const TRIAGE_QUEUE_MAX_PAGES = 50;
+
 export async function getTriageQueueForToday(
   limit = 200,
   medplum: MedplumClient,
@@ -774,15 +776,34 @@ export async function getTriageQueueForToday(
   const clinicTenant = await resolveClinicTenant(client, clinicId);
   if (!clinicTenant) return [];
 
+  // Page through ALL of today's clinic encounters (not just the first page). Finished
+  // encounters must stay in the query because "meds_and_bills" visits are stored as
+  // status=finished but still belong in the queue; completed ones are dropped below.
+  // `limit` is the page size; the safety cap bounds total pages and logs if hit.
+  const pageSize = Math.max(1, Math.min(limit, 200));
   const query =
     `status=arrived,triaged,in-progress,finished` +
     `&date=ge${startIso}&date=lt${endIso}` +
-    `&_count=${limit}&_sort=date` +
+    `&_count=${pageSize}&_sort=date` +
     `&identifier=${encodeURIComponent(`${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`)}` +
     `&_include=Encounter:subject`;
 
-  const bundle = (await client.search('Encounter', query)) as any;
-  const bundleResources = bundle.entry?.map((entry: any) => entry.resource).filter(Boolean) ?? [];
+  const bundleResources: any[] = [];
+  let bundle = (await client.search('Encounter', query)) as any;
+  let pages = 1;
+  for (;;) {
+    for (const entry of bundle.entry ?? []) if (entry.resource) bundleResources.push(entry.resource);
+    const nextUrl = bundle.link?.find((l: any) => l.relation === 'next')?.url as string | undefined;
+    if (!nextUrl) break;
+    if (pages >= TRIAGE_QUEUE_MAX_PAGES) {
+      console.error(
+        `[getTriageQueueForToday] safety cap hit (${TRIAGE_QUEUE_MAX_PAGES} pages x ${pageSize}) for clinic '${clinicId}' — queue may be incomplete`
+      );
+      break;
+    }
+    bundle = (await client.get(nextUrl)) as any;
+    pages += 1;
+  }
   const encounters = bundleResources.filter((resource: any) => resource.resourceType === 'Encounter') as any[];
   const includedPatients = new Map(
     bundleResources
