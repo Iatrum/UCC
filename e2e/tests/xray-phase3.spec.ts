@@ -21,16 +21,25 @@ const PACS_DIR = path.join(import.meta.dirname, '../../infra/pacs-dev');
 const SHOTS = path.join(EVIDENCE, 'task357');
 const ORTHANC = process.env.PACS_ORTHANC_URL || 'http://127.0.0.1:8042';
 const VIEWER = process.env.PACS_VIEWER_ORIGIN || 'http://127.0.0.1:3320';
-const KEY_FILE = path.join(PACS_DIR, 'secrets/device-key');
+// .env.local and secrets/ are git-ignored and written by infra/pacs-dev/up.sh, so they exist only in the checkout that ran it.
+// PACS_DEV_STATE_DIR points at that checkout's infra/pacs-dev when the test runs from another worktree (Task 420).
+const STATE_DIR = process.env.PACS_DEV_STATE_DIR ? path.resolve(process.env.PACS_DEV_STATE_DIR) : PACS_DIR;
+const KEY_FILE = path.join(STATE_DIR, 'secrets/device-key');
 const moduleExt = 'https://ucc.emr/organization-enabled-module-ids';
 const typeSystem = 'https://ucc.emr/xray/device-type';
 const tagSystem = 'https://ucc.emr/xray';
 const ACC = 'https://ucc.emr/xray/accession';
 const UID = 'urn:dicom:uid';
 
+let skipReason = 'dev PACS (infra/pacs-dev) is not set up on this machine';
 function orthancAuth(): string | undefined {
   try {
-    const env = Object.fromEntries(fs.readFileSync(path.join(PACS_DIR, '.env.local'), 'utf8').split('\n')
+    const envFile = path.join(STATE_DIR, '.env.local');
+    if (!fs.existsSync(envFile) || !fs.existsSync(KEY_FILE)) {
+      skipReason = `dev PACS state not found in ${STATE_DIR} (need .env.local and secrets/device-key from up.sh); set PACS_DEV_STATE_DIR to the infra/pacs-dev checkout that ran up.sh`;
+      return undefined;
+    }
+    const env = Object.fromEntries(fs.readFileSync(envFile, 'utf8').split('\n')
       .filter((l) => l.includes('=') && !l.startsWith('#')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
     if (!env.ORTHANC_USER || !env.ORTHANC_PASSWORD || !fs.existsSync(KEY_FILE)) return undefined;
     return `Basic ${Buffer.from(`${env.ORTHANC_USER}:${env.ORTHANC_PASSWORD}`).toString('base64')}`;
@@ -78,7 +87,7 @@ async function openImaging(page: Page, patientId: string) {
 }
 
 test('stored DICOM appears as a study matched by accession; viewer link is clinic- and study-scoped; unmatched goes to review', async ({ request, page, context }) => {
-  test.skip(!AUTH, 'dev PACS (infra/pacs-dev) is not set up on this machine');
+  test.skip(!AUTH, skipReason);
   test.setTimeout(10 * 60_000);
   const m = await fhir();
   const suffix = randomUUID().slice(0, 8);
