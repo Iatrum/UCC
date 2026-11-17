@@ -1,5 +1,6 @@
 "use client";
 
+import { checkoutSubtotal, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -460,13 +461,14 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const [printingDocument, setPrintingDocument] = useState(false);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [confirmComplete, setConfirmComplete] = useState(false);
+  const [effectivePatientId, setEffectivePatientId] = useState(patientId);
 
   useEffect(() => {
     let active = true;
 
     async function loadDetails() {
-      if (!consultationId || !patientId) {
-        setError("Missing checkout patient or consultation reference.");
+      if (!consultationId) {
+        setError("Missing checkout consultation reference.");
         setLoading(false);
         return;
       }
@@ -475,28 +477,37 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       setError(null);
 
       try {
-        const [orderResponse, invoiceResponse, draftResponse] = await Promise.all([
-          fetch(
-            `/api/orders?consultationId=${encodeURIComponent(consultationId)}&patientId=${encodeURIComponent(patientId)}`
-          ),
+        // The patient comes from the consultation (clinic-scoped on the server),
+        // so the link works without ?patientId=.
+        const orderResponse = await fetch(
+          `/api/orders?consultationId=${encodeURIComponent(consultationId)}${
+            patientId ? `&patientId=${encodeURIComponent(patientId)}` : ""
+          }`
+        );
+        const payload = await orderResponse.json().catch(() => ({}));
+        if (!orderResponse.ok || !payload.patient || !payload.consultation) {
+          throw new Error(
+            orderResponse.status === 404
+              ? "Consultation not found."
+              : payload.error || "Failed to load checkout details."
+          );
+        }
+        const resolvedPatientId = String(payload.consultation.patientId || payload.patient.id || patientId);
+        const [invoiceResponse, draftResponse] = await Promise.all([
           fetch(
             `/api/billing?consultationId=${encodeURIComponent(consultationId)}&previewNumber=true`,
             { cache: "no-store" }
           ),
           fetch(
-            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${patientId}-${consultationId}`)}&patientId=${encodeURIComponent(patientId)}&consultationId=${encodeURIComponent(consultationId)}`,
+            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${resolvedPatientId}-${consultationId}`)}&patientId=${encodeURIComponent(resolvedPatientId)}&consultationId=${encodeURIComponent(consultationId)}`,
             { cache: "no-store" }
           ),
         ]);
-        const payload = await orderResponse.json().catch(() => ({}));
         const invoicePayload = await invoiceResponse.json().catch(() => ({}));
         const draftPayload = await draftResponse.json().catch(() => ({}));
 
-        if (!orderResponse.ok || !payload.patient || !payload.consultation) {
-          throw new Error(payload.error || "Failed to load checkout details.");
-        }
-
         if (active) {
+          setEffectivePatientId(resolvedPatientId);
           setDetails({
             patient: payload.patient,
             consultation: payload.consultation,
@@ -543,11 +554,12 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     },
     [details?.consultation, details?.draftEntries]
   );
-  const subtotal = checkoutItems.reduce((total, item) => total + item.quantity * item.price, 0);
+  const subtotal = checkoutSubtotal(checkoutItems);
+  const billable = hasBillableItems(checkoutItems);
   const paid = Number.parseFloat(paidAmount) || 0;
   const balance = subtotal - paid;
   const handleCompleteVisitation = async () => {
-    if (!details || completing || balance > 0) return;
+    if (!details || completing || balance > 0 || !billable) return;
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
@@ -560,7 +572,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           consultationId,
-          patientId,
+          patientId: effectivePatientId,
           items: checkoutItems,
           paymentMethod,
           paidAmount: paid,
@@ -896,6 +908,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
                 variant="outline"
                 className="w-full"
                 type="button"
+                disabled={!billable}
                 onClick={() => setCompletionError("e-Invoice submission is not connected yet. Complete visitation records this checkout invoice.")}
               >
                 <FileText className="mr-2 h-4 w-4" />
@@ -903,13 +916,23 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
               </Button>
               <Button
                 className="w-full"
-                disabled={balance > 0 || completing || checkoutItems.length === 0}
+                disabled={balance > 0 || completing || !billable}
                 onClick={() => setConfirmComplete(true)}
               >
                 <CheckCircle2 className="mr-2 h-4 w-4" />
                 {completing ? "Completing..." : "Complete visitation"}
               </Button>
-              {balance > 0 ? (
+              {!billable ? (
+                <div
+                  role="alert"
+                  data-testid="no-billable-items-warning"
+                  className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{NO_BILLABLE_ITEMS_MESSAGE}</span>
+                </div>
+              ) : null}
+              {billable && balance > 0 ? (
                 <p className="text-xs text-muted-foreground">
                   Collect the full total to enable completion.
                 </p>

@@ -1,3 +1,4 @@
+import { hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import { NextRequest, NextResponse } from "next/server";
 import {
   completeCheckoutInvoice,
@@ -35,6 +36,10 @@ function validateRequestBody(body: any): string | null {
 
   if (!Array.isArray(body.items) || body.items.length === 0) {
     return "At least one invoice item is required";
+  }
+
+  if (!hasBillableItems(body.items.map((i: any) => ({ quantity: Number(i?.quantity), price: Number(i?.price) })))) {
+    return NO_BILLABLE_ITEMS_MESSAGE;
   }
 
   if (!["cash", "card", "qr", "panel"].includes(body.paymentMethod)) {

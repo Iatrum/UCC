@@ -3,6 +3,7 @@ import { investigationBillItems, investigationBillingExtensions, INVESTIGATION_B
 import { NextRequest, NextResponse } from 'next/server';
 import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
+import { resolveCheckoutPatientId } from '@/lib/billing/checkout-guards';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
@@ -21,20 +22,24 @@ export async function GET(req: NextRequest) {
     const consultationId = searchParams.get('consultationId');
     const patientId = searchParams.get('patientId');
 
-    if (!consultationId || !patientId) {
-      return NextResponse.json({ success: false, error: 'consultationId and patientId are required' }, { status: 400 });
+    if (!consultationId) {
+      return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
     }
 
-    const [patient, consultation] = await Promise.all([
-      getPatientFromMedplum(patientId, clinicId, medplum),
-      getConsultationFromMedplum(consultationId, clinicId, medplum),
-    ]);
-
-    if (!patient || !consultation) {
+    // Clinic-scoped: a consultation from another clinic reads as null here.
+    const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
+    if (!consultation) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
-    if (consultation.patientId !== patientId) {
+    // patientId is optional (bookmarked/shared links); derive it from the consultation.
+    const resolvedPatientId = resolveCheckoutPatientId(consultation.patientId, patientId);
+    if (!resolvedPatientId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    }
+
+    const patient = await getPatientFromMedplum(resolvedPatientId, clinicId, medplum);
+    if (!patient) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
