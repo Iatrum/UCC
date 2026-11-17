@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { formatItemCount, isOrderSoon, isOutOfStock, summarizeLowStock } from "@/lib/inventory/stock-summary";
 import {
   AlertCircle,
   CheckCircle2,
@@ -66,13 +67,14 @@ export default function InventoryPage() {
     setMedications(await getMedications());
   }
 
-  const lowStockItems = medications.filter((medication) => medication.stock <= medication.minimumStock);
-  const outOfStockItems = medications.filter((medication) => medication.stock === 0);
-  const selectedMedication = lowStockItems[0] ?? medications[0] ?? null;
+  const stockSummary = summarizeLowStock(medications);
+  const lowStockItems = stockSummary.orderSoon;
+  const outOfStockItems = stockSummary.outOfStock;
+  const selectedMedication = stockSummary.attention[0] ?? medications[0] ?? null;
   const overviewMedications = React.useMemo(() => {
     if (overviewFilter === "All") return medications;
-    if (overviewFilter === "Out of stock") return medications.filter((m) => m.stock === 0);
-    if (overviewFilter === "Order soon") return medications.filter((m) => m.stock <= m.minimumStock);
+    if (overviewFilter === "Out of stock") return medications.filter(isOutOfStock);
+    if (overviewFilter === "Order soon") return medications.filter(isOrderSoon);
     return medications.filter((m) => m.category === overviewFilter);
   }, [medications, overviewFilter]);
 
@@ -159,12 +161,30 @@ export default function InventoryPage() {
         </p>
       </div>
 
-      {lowStockItems.length > 0 ? (
+      {stockSummary.attention.length > 0 ? (
         <Alert className="border-amber-200 bg-amber-50 text-amber-950">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Low stock attention</AlertTitle>
           <AlertDescription>
-            {lowStockItems.map((item) => item.name).join(", ")} {lowStockItems.length === 1 ? "is" : "are"} at or below the minimum stock threshold.
+            <span>
+            {stockSummary.bannerNames.join(", ")}
+            {stockSummary.moreCount > 0 ? (
+              <>
+                {" "}and{" "}
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2"
+                  onClick={() => {
+                    setActiveTab("overview");
+                    setOverviewFilter(stockSummary.moreFilter);
+                  }}
+                >
+                  {stockSummary.moreCount} more
+                </button>
+              </>
+            ) : null}{" "}
+            {stockSummary.attention.length === 1 ? "is" : "are"} at or below the minimum stock threshold.
+            </span>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -183,19 +203,19 @@ export default function InventoryPage() {
                   <MetricCard
                     icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
                     label="In stock"
-                    value={`${medications.length - outOfStockItems.length} inventories`}
+                    value={formatItemCount(stockSummary.inStock)}
                     hint="Available for use"
                   />
                   <MetricCard
                     icon={<AlertCircle className="h-4 w-4 text-rose-700" />}
                     label="Out of stock"
-                    value={`${outOfStockItems.length} inventories`}
+                    value={formatItemCount(outOfStockItems.length)}
                     hint="Needs replenishment"
                   />
                   <MetricCard
                     icon={<Package className="h-4 w-4 text-amber-700" />}
                     label="Order soon"
-                    value={`${lowStockItems.length} inventories`}
+                    value={formatItemCount(lowStockItems.length)}
                     hint="At or below threshold"
                   />
                 </div>
@@ -260,7 +280,7 @@ export default function InventoryPage() {
                                     : "bg-emerald-100 text-emerald-700"
                               }
                             >
-                              {item.stock === 0 ? "Out of stock" : item.stock <= item.minimumStock ? "Order soon" : "In stock"}
+                              {isOutOfStock(item) ? "Out of stock" : isOrderSoon(item) ? "Order soon" : "In stock"}
                             </Badge>
                           </td>
                         </tr>

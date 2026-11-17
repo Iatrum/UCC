@@ -1,4 +1,4 @@
-import { assertPatientInClinic } from './write-containment';
+import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
 import type { MedplumClient } from "@medplum/core";
 import type { Annotation, Task } from "@medplum/fhirtypes";
 import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier, resolveClinicTenant } from "@/lib/fhir/clinic-tenancy";
@@ -157,9 +157,11 @@ export async function updateBillingExceptionTaskStatus(
   medplum: MedplumClient,
   taskId: string,
   status: BillingTaskStatus,
-  note?: string
+  note?: string,
+  clinicId?: string
 ): Promise<Task> {
-  const task = (await medplum.readResource("Task", taskId)) as Task;
+  const task = (await medplum.readResource("Task", taskId, { cache: "no-cache", headers: { "X-Medplum": "extended" } })) as Task;
+  assertResourceInClinic(task, clinicId);
   const currentStatus = coerceTaskStatus(task.status || "requested");
   if (currentStatus === status) {
     return task;
@@ -179,5 +181,5 @@ export async function updateBillingExceptionTaskStatus(
     ...task,
     status,
     note: annotations.length > 0 ? annotations : undefined,
-  }, getBillingTaskClinicId(task)));
+  }, clinicId));
 }
