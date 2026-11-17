@@ -10,6 +10,7 @@ import {
   voidInvoice,
   deleteInvoice,
 } from "@/lib/fhir/billing-service";
+import { assertCheckoutConsultationPatient } from "@/lib/fhir/write-containment";
 import { createBillingExceptionTask } from "@/lib/fhir/billing-task-service";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
@@ -65,6 +66,15 @@ export async function POST(req: NextRequest) {
 
   if (validationError) {
     return NextResponse.json({ success: false, error: validationError }, { status: 400 });
+  }
+
+  // Task 504: the posted patient must own the posted consultation. Done before anything is written
+  // (including the billing-exception Task the catch below would otherwise create for a foreign id).
+  try {
+    const { medplum, clinicId } = await requireClinicAuth(req);
+    await assertCheckoutConsultationPatient(medplum, clinicId, String(body.consultationId), String(body.patientId));
+  } catch (error) {
+    return handleRouteError(error, "POST /api/billing");
   }
 
   try {
@@ -128,6 +138,9 @@ export async function POST(req: NextRequest) {
       invoiceId: invoice.id,
       invoiceNumber: getInvoiceNumber(invoice),
       stockNegative: result.stock?.negativeStock ?? [],
+      // Task 504: surface stock problems to staff now, not only as a billing-exception Task.
+      stockUnresolved: result.stock?.unresolved ?? [],
+      stockError: result.dispenseError ?? null,
     });
   } catch (error) {
     if (isClientFixableBillingError(error)) {
