@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPatientDocument, deletePatientDocument, listPatientDocuments, updatePatientDocument } from '@/lib/fhir/document-service';
+import { assertResourceInClinic } from '@/lib/fhir/write-containment';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
@@ -191,6 +192,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
+    // Authorize the stored ownership BEFORE the irreversible Storage delete.
+    assertResourceInClinic(doc as any, clinicId);
+
     const storagePath = (doc as any).extension?.find((ext: any) => ext.url === STORAGE_PATH_EXTENSION_URL)?.valueString;
     if (storagePath) {
       try {
@@ -200,7 +204,7 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    await deletePatientDocument(medplum, id);
+    await deletePatientDocument(medplum, id, clinicId);
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleRouteError(error, 'DELETE /api/documents');

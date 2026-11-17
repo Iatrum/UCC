@@ -171,12 +171,8 @@ export async function deleteReferralFromMedplum(
   referralId: string,
   clinicId?: string
 ): Promise<void> {
-  if (clinicId) {
-    const serviceRequest = await medplum.readResource('ServiceRequest', referralId);
-    if (!resourceMatchesClinicTenant(serviceRequest as any, clinicId)) {
-      throw new Error('Referral not found');
-    }
-  }
+  const serviceRequest = await medplum.readResource('ServiceRequest', referralId, { cache: 'no-cache', headers: { 'X-Medplum': 'extended' } });
+  assertResourceInClinic(serviceRequest, clinicId);
   await medplum.deleteResource('ServiceRequest', referralId);
 }
 

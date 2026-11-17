@@ -9,5 +9,5 @@ Reading `meta.accounts` needs `X-Medplum: extended` ([Medplum extended header](h
 - Lab/imaging order update/delete: `readOrderForMutation` (extended read + assert) before `assertPoctOrderMutable` / `assertXrayOrderMutable`.
 - Tests with fake servers; guard removal verified to fail them (stored assert off: 65 fails; appointment patient check off: 9; documents DELETE authz off: 2).
 
-## Not changed
-Task 400 helpers still return 403 for a foreign id (own tests pin that). Documents route already authorized before deleting; now test-pinned.
+## Merged with Task 474
+Task 474 (already on the PR branch) aligned the Task 400 helpers to 404 and made `deletePatientDocument` take `clinicId`; the documents DELETE route now also asserts stored ownership before the Storage delete. Task 482 pins that ordering with tests.

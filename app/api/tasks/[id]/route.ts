@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBillingTaskClinicId, updateBillingExceptionTaskStatus } from "@/lib/fhir/billing-task-service";
 import { isModuleEnabledForClinic } from "@/lib/module-registry";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
-import { ForbiddenError, handleRouteError } from "@/lib/server/route-helpers";
+import { NotFoundError, handleRouteError } from "@/lib/server/route-helpers";
 
 export async function PATCH(
   req: NextRequest,
@@ -28,7 +28,7 @@ export async function PATCH(
 
     const existing = await medplum.readResource("Task", id);
     if (getBillingTaskClinicId(existing) !== clinicId) {
-      throw new ForbiddenError("Task does not belong to the current clinic.");
+      throw new NotFoundError("Task not found.");
     }
 
     const task = await updateBillingExceptionTaskStatus(medplum, id, status, note, clinicId);
