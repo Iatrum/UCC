@@ -1,14 +1,16 @@
 // Available placeholders per template type:
 //
-// MC:       {{clinicName}} {{clinicAddress}} {{clinicPhone}}
+// MC:       {{clinicLogo}} (raw <img>, empty without a logo) {{clinicName}} {{clinicAddress}} {{clinicPhone}}
 //           {{patientName}} {{patientNric}} {{patientDob}}
 //           {{mcDays}} {{mcStartDate}} {{mcEndDate}}
 //           {{diagnosisBlock}} (empty unless doctor opts in) {{doctorName}} {{mmcLine}} {{date}}
 //
-// Referral: {{clinicName}} {{clinicAddress}} {{clinicPhone}}
+// Referral: {{clinicLogo}} {{clinicName}} {{clinicAddress}} {{clinicPhone}}
 //           {{patientName}} {{patientNric}} {{patientAge}}
 //           {{referralTo}} {{referralFrom}} {{referralBody}}
 //           {{diagnosis}} {{doctorName}} {{date}}
+
+import { formatClinicDate } from './clinic-dates';
 
 export const DEFAULT_MC_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
@@ -24,7 +26,6 @@ export const DEFAULT_MC_TEMPLATE = `<!DOCTYPE html>
     padding: 48px;
     max-width: 800px;
     margin: 0 auto;
-    min-height: 100vh;
     display: flex;
     flex-direction: column;
   }
@@ -73,10 +74,13 @@ export const DEFAULT_MC_TEMPLATE = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="letterhead">
-  <div class="clinic-name">{{clinicName}}</div>
-  <div class="clinic-meta">{{clinicAddress}}</div>
-  <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+<div class="letterhead letterhead-row">
+  {{clinicLogo}}
+  <div>
+    <div class="clinic-name">{{clinicName}}</div>
+    <div class="clinic-meta">{{clinicAddress}}</div>
+    <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+  </div>
 </div>
 <hr class="rule-thick" />
 <div class="title-band"><span class="title">MEDICAL CERTIFICATE</span></div>
@@ -131,7 +135,6 @@ export const DEFAULT_REFERRAL_TEMPLATE = `<!DOCTYPE html>
     padding: 48px;
     max-width: 800px;
     margin: 0 auto;
-    min-height: 100vh;
     display: flex;
     flex-direction: column;
   }
@@ -158,10 +161,13 @@ export const DEFAULT_REFERRAL_TEMPLATE = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="letterhead">
-  <div class="clinic-name">{{clinicName}}</div>
-  <div class="clinic-meta">{{clinicAddress}}</div>
-  <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+<div class="letterhead letterhead-row">
+  {{clinicLogo}}
+  <div>
+    <div class="clinic-name">{{clinicName}}</div>
+    <div class="clinic-meta">{{clinicAddress}}</div>
+    <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+  </div>
 </div>
 <hr class="rule-thick" />
 <div class="title-band"><span class="title">REFERRAL LETTER</span></div>
@@ -191,11 +197,7 @@ export const DEFAULT_REFERRAL_TEMPLATE = `<!DOCTYPE html>
 </html>`;
 
 export function fillPreviewData(html: string): string {
-  const today = new Date().toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const today = formatClinicDate(new Date());
 
   const data: Record<string, string> = {
     '{{clinicName}}': 'Iatrum Clinic',
@@ -203,11 +205,12 @@ export function fillPreviewData(html: string): string {
     '{{clinicPhone}}': '03-1234 5678',
     '{{patientName}}': 'Ahmad bin Abdullah',
     '{{patientNric}}': '900101-14-5678',
-    '{{patientDob}}': '1 January 1990',
+    '{{patientDob}}': '01 Jan 1990',
     '{{patientAge}}': '36',
     '{{tcDate}}': today, '{{tcTimeIn}}': '09:00', '{{tcTimeOut}}': '10:30', '{{tcHours}}': '1.5',
-    '{{mcDays}}': '2',
+    '{{mcDays}}': '2', '{{mcDaysLabel}}': '2 days', '{{tcHoursLabel}}': '1.5 hours',
     '{{mcStartDate}}': '23 May 2026',
+    '{{clinicLogo}}': '',
     '{{mcEndDate}}': '24 May 2026',
     '{{diagnosis}}': 'Acute Upper Respiratory Tract Infection',
     '{{doctorName}}': 'Dr. Demo Klinik',
@@ -239,7 +242,6 @@ export const DEFAULT_TIME_CHIT_TEMPLATE = `<!DOCTYPE html>
     padding: 48px;
     max-width: 800px;
     margin: 0 auto;
-    min-height: 100vh;
     display: flex;
     flex-direction: column;
   }
@@ -288,10 +290,13 @@ export const DEFAULT_TIME_CHIT_TEMPLATE = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="letterhead">
-  <div class="clinic-name">{{clinicName}}</div>
-  <div class="clinic-meta">{{clinicAddress}}</div>
-  <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+<div class="letterhead letterhead-row">
+  {{clinicLogo}}
+  <div>
+    <div class="clinic-name">{{clinicName}}</div>
+    <div class="clinic-meta">{{clinicAddress}}</div>
+    <div class="clinic-meta">Tel: {{clinicPhone}}</div>
+  </div>
 </div>
 <hr class="rule-thick" />
 <div class="title-band"><span class="title">TIME CHIT / SURAT MASA</span></div>
@@ -305,6 +310,10 @@ export const DEFAULT_TIME_CHIT_TEMPLATE = `<!DOCTYPE html>
   <div class="patient-row">
     <span class="patient-label">NRIC / ID</span>
     <span class="patient-value">{{patientNric}}</span>
+  </div>
+  <div class="patient-row">
+    <span class="patient-label">Date of Birth</span>
+    <span class="patient-value">{{patientDob}}</span>
   </div>
 </div>
 <div class="content">
@@ -323,6 +332,7 @@ export const DEFAULT_TIME_CHIT_TEMPLATE = `<!DOCTYPE html>
     <div class="sig-line"></div>
     <div class="sig-name">{{doctorName}}</div>
     <div class="sig-subtitle">Medical Practitioner</div>
+    <div class="sig-subtitle">{{mmcLine}}</div>
     <div class="sig-subtitle">Date: {{date}}</div>
   </div>
   <div class="stamp-box">Clinic<br>Stamp</div>

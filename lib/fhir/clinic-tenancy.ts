@@ -1,8 +1,8 @@
 import { OperationOutcomeError, forbidden, isNotFound, isGone } from "@medplum/core";
-import type { HealthcareService, Organization, Parameters, Patient, Reference } from "@medplum/fhirtypes";
+import type { HealthcareService, Organization, Parameters, Patient, Reference, ServiceRequest } from "@medplum/fhirtypes";
 import type { MedplumClient } from "@medplum/core";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
-import { ForbiddenError } from "@/lib/server/route-helpers";
+import { ForbiddenError, NotFoundError } from "@/lib/server/route-helpers";
 
 export const CLINIC_IDENTIFIER_SYSTEM = "clinic";
 
@@ -331,4 +331,34 @@ export async function assertOrderInDeviceClinic(
       throw new ForbiddenError("Order does not belong to this device's clinic");
     }
   }
+}
+
+/**
+ * Read a device-addressed ServiceRequest and require it to belong to the device's clinic.
+ * Task 422 NotFound rule: an unknown id and another clinic's order are indistinguishable
+ * (both NotFoundError => 404, same message), and nothing is written. Delegates the
+ * clinic decision to `assertOrderInDeviceClinic` (unchanged).
+ */
+export async function readDeviceOrderOrNotFound(
+  medplum: MedplumClient,
+  id: string,
+  deviceClinicId: string
+): Promise<ServiceRequest> {
+  const notFound = () => new NotFoundError("Order not found");
+  let order: ServiceRequest;
+  try {
+    order = await medplum.readResource("ServiceRequest", id, {
+      cache: "no-cache", headers: { "X-Medplum": "extended" },
+    });
+  } catch (error) {
+    if (error instanceof OperationOutcomeError && (isNotFound(error.outcome) || isGone(error.outcome))) throw notFound();
+    throw error;
+  }
+  try {
+    await assertOrderInDeviceClinic(medplum, order, deviceClinicId);
+  } catch (error) {
+    if (error instanceof ForbiddenError) throw notFound();
+    throw error;
+  }
+  return order;
 }

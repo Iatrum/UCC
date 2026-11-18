@@ -3,10 +3,14 @@
 ## 2026-11-18 — Task 570: read-only exposure audit kit for the lockdown runbook (plan 385d, part 2)
 New `bun run staging:audit` checks pasted command output (`docker ps`, `ss`, outside `nmap`) and compose files for anything published beyond loopback / 80 / 443, Docker socket mounts, host networking, `:latest` images and Traefik dashboard flags. It only reads text; it runs nothing and touches no server. The repo's own staging, rehearsal and PACS compose files pass. Step 385e (second VPS) is a decision for Hidayat, so no code was written for it. Unit-tested; never run against the real VPS.
 
+## 2026-11-17 — Task 568: access-policy ProjectMembership leak checked; already closed, now pinned by a test
+On the dev server a clinic staff login cannot search, read or create ProjectMembership, User or AccessPolicy, and cannot see other clinics' Practitioner or PractitionerRole records. The old backlog item was out of date. Added a unit test so the policy can't regress. No app or policy change; production needs no action. Notes: `.ai/research/task-568.md`.
+
 ## 2026-11-17 — Task 545: re-checked every open UX finding against current dev; none of the Medium/High items is still open
 The findings list was out of date. Fixed items are now marked with the file and line that proves it. Only three Low items remain (dead purchasing panels, raw-HTML templates, long branch list) plus sidebar polish, which is out of scope. Docs only, no app code changed.
 
 ## 2026-11-17 — Task 508: merged latest dev into the queue and UX-small-fixes PRs; UX items #6, #7, #19 confirmed already fixed
+- fix(documents): MC, Time Chit and referral now share one HTML renderer (`lib/document-render.ts`) across the composer preview, Documents tab and checkout (React-PDF removed). Adds MYT calendar dates (`lib/clinic-dates.ts`, one `dd MMM yyyy` format), DOB/MMC/logo on MC and Time Chit, MC issue date = consult date on reprint, A4 print CSS + iframe print, `{{clinicLogo}}`/`{{mmcLine}}`/`{{diagnosisBlock}}` in the template editor, Time Chit in the signed-document audit, hidden MC diagnosis no longer shown in the list, and signed documents can only be voided (record kept) or reissued, not edited/deleted (Task 549).
 Resolved changelog-only conflicts in both PRs. The patient-profile items (history refresh after Sign, hidden Start consult while the drawer is open, scrollable history table, consistent "Last consult / Total consults" header) were already fixed by Task 446 on dev, so no app code changed; UX-FINDINGS now marks them fixed.
 
 ## 2026-11-17 — Task 476: queue confirm, "Live updates off" hint, recent-consultations mapping
@@ -188,6 +192,8 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - 2026-11-17 Task 506: MC/referral Documents fixes (UX-FINDINGS Part 2 #3, #4, #9, #10, #11, #18): delete confirm dialog, referral default text no longer asserts absence, empty 'Referral to' blocks completion, clearer row text and loading text.
 
 - Task 527: Patients "New this month" now counts by a registration tag stamped on create (`meta.tag`, searched via `_tag`), not `_lastUpdated`. Legacy untagged patients are not counted.
+
+- 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
 
 ## Task 533 (staging prep continuation, repo-side only)
 - 385c: `e2e/scripts/lib/baseline.mjs` (baseline identity sidecar: target + sha256), `compare.mjs` fails closed under `UCC_GATE_TARGET=staging`, `check-all.sh` pre-checks it, new `e2e/scripts/check-staging.sh` adapter (preflight + attested baseline). Unit tests: `tests/unit/staging-gate.test.ts`.

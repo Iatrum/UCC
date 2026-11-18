@@ -46,7 +46,6 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
   ]);
   const poctEnabled = enabledModuleIds.includes("poct");
   const pacsEnabled = enabledModuleIds.includes("pacs");
-  const timeChitEnabled = enabledModuleIds.includes("time-chit");
 
   if (!patientData) {
     notFound();
@@ -308,7 +307,6 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
             medicalHistory={medicalHistory}
             poctEnabled={poctEnabled}
             pacsEnabled={pacsEnabled}
-                        timeChitEnabled={timeChitEnabled}
           />
         </div>
       </div>

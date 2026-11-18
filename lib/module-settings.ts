@@ -17,7 +17,6 @@ export const KNOWN_BRANCH_MODULE_IDS = [
   "tasks",
   "poct",
   "pacs",
-  "time-chit",
   "feedback",
 ] as const;
 

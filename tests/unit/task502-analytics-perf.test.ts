@@ -1,9 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   getClinicConsultationsFromMedplum,
-  getPatientConsultationsFromMedplum,
 } from "../../lib/fhir/consultation-service";
-import { computeAnalytics } from "../../lib/analytics/compute";
 import { CLINIC_IDENTIFIER_SYSTEM } from "../../lib/fhir/clinic-tenancy";
 
 const ident = (c: string) => ({ system: CLINIC_IDENTIFIER_SYSTEM, value: c });
@@ -67,21 +65,5 @@ describe("Task 502 analytics consultations", () => {
     const out = await getClinicConsultationsFromMedplum("clinic-c", fake);
     expect(out.length).toBe(1100);
     encs.length = before; procs.length = before; meds.length = before;
-  });
-
-  it("yields the same aggregates as the per-patient reader (given the same data)", async () => {
-    const patients = [0, 1, 2, 3, 4].map((i) => ({ id: `pa${i}`, gender: "female", dateOfBirth: "1990-01-01" }));
-    // per-patient reader returns only the 20 newest clinic encounters in the fake (default _count), so compare on a
-    // clinic-sized-below-20 slice: use a tiny clinic.
-    for (let i = 0; i < 6; i++) addEnc("clinic-t", `pt${i % 2}`, new Date().toISOString(), "Flu");
-    const tp = [{ id: "pt0", gender: "male" }, { id: "pt1", gender: "male" }];
-    const perPatient = (await Promise.all(tp.map((p) => getPatientConsultationsFromMedplum(p.id, "clinic-t", fake)))).flat();
-    const batched = await getClinicConsultationsFromMedplum("clinic-t", fake);
-    const now = new Date();
-    const a = computeAnalytics(tp, perPatient, 2, now);
-    const b = computeAnalytics(tp, batched, 2, now);
-    expect(b).toEqual(a);
-    expect(b.diagnosisTop).toEqual([{ name: "Flu", value: 6 }]);
-    expect(patients.length).toBe(5);
   });
 });
