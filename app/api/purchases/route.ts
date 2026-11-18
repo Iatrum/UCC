@@ -1,3 +1,4 @@
+import { assertSafeFhirId } from '@/lib/server/clinic-id';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Basic } from '@medplum/fhirtypes';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
     const id = searchParams.get('id');
 
     if (id) {
+      assertSafeFhirId(id);
       const resource = await medplum.readResource('Basic', id) as Basic;
       if (!isClinicPurchaseOrder(resource, clinicId)) {
         return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
@@ -157,6 +159,8 @@ export async function PATCH(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
+
+    assertSafeFhirId(id);
 
     const existing = await medplum.readResource('Basic', id) as Basic;
     if (!isClinicPurchaseOrder(existing, clinicId)) {
@@ -274,6 +278,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
+    assertSafeFhirId(id);
     const existing = await medplum.readResource('Basic', id) as Basic;
     if (!isClinicPurchaseOrder(existing, clinicId)) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });

@@ -125,3 +125,15 @@ describe("id-addressed foreign resources are 404 (Task 422 rule)", () => {
     await expect(updateProcedureInMedplum(fake, "def-b", {}, "clinic-a")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
+
+describe('Task 646: assertSafeFhirId guard for admin-client id reads', () => {
+  it('rejects traversal / search-syntax ids with NotFoundError, accepts real ids', async () => {
+    const { assertSafeFhirId } = await import('../../lib/server/clinic-id');
+    for (const bad of ['../Patient/1', 'a,b', 'a|b', '', 'x/y', undefined, 42, {}]) {
+      expect(() => assertSafeFhirId(bad)).toThrow(NotFoundError);
+    }
+    for (const ok of ['abc-123', '0f8fad5b-d9cb-469f-a165-70867728950e', 'a.b']) {
+      expect(() => assertSafeFhirId(ok)).not.toThrow();
+    }
+  });
+});
