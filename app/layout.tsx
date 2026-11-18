@@ -25,6 +25,8 @@ export default async function RootLayout({
   const headerStore = await headers();
   const host = getHostFromHeaders(headerStore);
   const pathname = headerStore.get("x-pathname") ?? "";
+  // Per-request CSP nonce from proxy.ts; next-themes' inline init script needs it.
+  const nonce = headerStore.get("x-nonce") ?? undefined;
   const isApexHost = (() => {
     const bare = (host ?? "").split(":")[0];
     if (!bare) return true;
@@ -46,6 +48,7 @@ export default async function RootLayout({
           children
         ) : (
           <ThemeProvider
+            nonce={nonce}
             attribute="class"
             defaultTheme="light"
             enableSystem={false}

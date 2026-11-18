@@ -1,3 +1,4 @@
+import { buildCsp } from "../../lib/security/csp";
 import { describe, expect, test } from "bun:test";
 
 const nextConfig = require("../../next.config.js");
@@ -7,6 +8,10 @@ async function headerMap() {
   const all = rules.find((r: { source: string }) => r.source === "/(.*)");
   return Object.fromEntries(all.headers.map((h: { key: string; value: string }) => [h.key, h.value]));
 }
+
+const prod = (extra: Record<string, string> = {}) =>
+  buildCsp("abc123", { NODE_ENV: "production", NEXT_PUBLIC_MEDPLUM_BASE_URL: "https://medplum.example.com", ...extra });
+const dir = (csp: string, name: string) => csp.split("; ").find((d) => d.startsWith(name + " ")) as string;
 
 describe("security headers", () => {
   test("baseline headers are present", async () => {
@@ -18,8 +23,12 @@ describe("security headers", () => {
     expect(h["Permissions-Policy"]).toContain("microphone=()");
   });
 
-  test("CSP forbids framing, plugins and base rewriting", async () => {
-    const csp = (await headerMap())["Content-Security-Policy"] as string;
+  test("CSP is set per request by proxy.ts, not statically", async () => {
+    expect((await headerMap())["Content-Security-Policy"]).toBeUndefined();
+  });
+
+  test("CSP forbids framing, plugins and base rewriting", () => {
+    const csp = prod();
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
@@ -30,28 +39,57 @@ describe("security headers", () => {
   });
 });
 
-describe("CSP keeps what the app loads working (Task 627 smoke-verified)", () => {
-  test("enforcing header, not report-only", async () => {
-    const h = await headerMap();
-    expect(h["Content-Security-Policy"]).toBeDefined();
-    expect(h["Content-Security-Policy-Report-Only"]).toBeUndefined();
+describe("buildCsp (Task 631)", () => {
+  test("production script-src: nonce, no unsafe-inline/unsafe-eval, no strict-dynamic", () => {
+    const s = dir(prod(), "script-src");
+    expect(s).toContain("'nonce-abc123'");
+    expect(s).not.toContain("'unsafe-inline'");
+    expect(s).not.toContain("'unsafe-eval'");
+    expect(s).not.toContain("strict-dynamic");
   });
 
-  test("srcDoc/blob document previews and PDF workers are allowed", async () => {
-    const csp = (await headerMap())["Content-Security-Policy"] as string;
+  test("development adds unsafe-eval and localhost:8103", () => {
+    const csp = buildCsp("n", { NODE_ENV: "development" });
+    expect(dir(csp, "script-src")).toContain("'unsafe-eval'");
+    expect(dir(csp, "connect-src")).toContain("http://localhost:8103");
+  });
+
+  test("production drops localhost:8103 and blanket https:/wss:", () => {
+    const csp = prod();
+    for (const d of ["connect-src", "img-src"]) {
+      expect(dir(csp, d)).not.toContain("localhost");
+      expect(dir(csp, d).split(" ")).not.toContain("https:");
+      expect(dir(csp, d).split(" ")).not.toContain("wss:");
+    }
+  });
+
+  test("connect-src has Medplum http+ws origins and Firebase storage", () => {
+    const c = dir(prod(), "connect-src");
+    expect(c).toContain("https://medplum.example.com");
+    expect(c).toContain("wss://medplum.example.com");
+    expect(c).toContain("https://firebasestorage.googleapis.com");
+  });
+
+  test("localhost Medplum in production env still allowed when configured", () => {
+    const c = dir(buildCsp("n", { NODE_ENV: "production", NEXT_PUBLIC_MEDPLUM_BASE_URL: "http://localhost:8113" }), "connect-src");
+    expect(c).toContain("ws://localhost:8113");
+  });
+
+  test("CSP_EXTRA_HOSTS adds origins to connect and img; invalid entries ignored", () => {
+    const csp = prod({ CSP_EXTRA_HOSTS: "https://cdn.example.com/path, nonsense" });
+    expect(dir(csp, "connect-src")).toContain("https://cdn.example.com");
+    expect(dir(csp, "img-src")).toContain("https://cdn.example.com");
+    expect(csp).not.toContain("nonsense");
+  });
+
+  test("previews/print/worker needs kept", () => {
+    const csp = prod();
     expect(csp).toMatch(/frame-src [^;]*'self'[^;]*blob:[^;]*data:/);
     expect(csp).toMatch(/worker-src [^;]*blob:/);
-    expect(csp).toMatch(/img-src [^;]*data:[^;]*blob:/);
+    expect(dir(csp, "img-src")).toMatch(/data:.*blob:|blob:.*data:/);
   });
 
-  test("Medplum HTTP + websocket origins are in connect-src", async () => {
-    const csp = (await headerMap())["Content-Security-Policy"] as string;
-    const connect = csp.split("; ").find((d) => d.startsWith("connect-src ")) as string;
-    expect(connect).toContain(new URL(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || "http://localhost:8103").origin);
-    expect(connect).toMatch(/\bwss?:\/\/localhost:\d+|\bwss:/);
-  });
-
-  test("camera stays available to own origin (patient ID scan page)", async () => {
+  test("camera stays available to own origin", async () => {
     expect((await headerMap())["Permissions-Policy"]).toContain("camera=(self)");
   });
 });

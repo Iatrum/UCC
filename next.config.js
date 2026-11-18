@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const medplumOrigin = new URL(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103').origin;
-const medplumSocketOrigin = medplumOrigin.replace(/^http/, 'ws');
 
 const nextConfig = {
   poweredByHeader: false,
@@ -50,26 +48,7 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-          // Basic CSP; adjust as needed for analytics/fonts
-          { key: 'Content-Security-Policy', value: [
-            "default-src 'self'",
-            // Allow Vercel Live feedback widget (injected on preview deployments) alongside self + inline
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live https://va.vercel-scripts.com",
-            "style-src 'self' 'unsafe-inline' https://vercel.live",
-            "img-src 'self' data: blob: https:",
-            "font-src 'self' data: https://vercel.live https://assets.vercel.com",
-            // Allow PDF viewer/yoga-wasm (data: and blob:) and Firebase HTTPS endpoints + Medplum localhost + Vercel Live pusher websocket
-            `connect-src 'self' http://localhost:8103 ${medplumOrigin} ${medplumSocketOrigin} https: wss: data: blob:`,
-            // Allow embedding PDF viewer iframe, blob URLs, and Vercel Live feedback iframe
-            "frame-src 'self' blob: data: https://vercel.live",
-            "child-src 'self' blob: data: https://vercel.live",
-            // Allow web workers for PDF rendering
-            "worker-src 'self' blob:",
-            "frame-ancestors 'none'",
-            // No plugins/<object>/<embed> and no <base> rewriting in the app.
-            "object-src 'none'",
-            "base-uri 'self'",
-          ].join('; ') },
+          // Content-Security-Policy is set per request (with a nonce) in proxy.ts via lib/security/csp.ts.
         ],
       },
     ];

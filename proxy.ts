@@ -4,6 +4,7 @@ import {
   deriveSubdomainContext,
   getHostFromNextRequest,
 } from "@/lib/server/subdomain-host";
+import { buildCsp, generateNonce } from "@/lib/security/csp";
 
 export function proxy(req: NextRequest) {
   const host = getHostFromNextRequest(req);
@@ -23,23 +24,21 @@ export function proxy(req: NextRequest) {
     }
   }
 
-  // ── Clinic subdomain ─────────────────────────────────────────
-  if (context.type === "clinic") {
-    return NextResponse.next({
-      request: { headers: withPathname(req, pathname) },
-    });
-  }
-
-  return NextResponse.next({
-    request: { headers: withPathname(req, pathname) },
+  // Per-request nonce CSP: Next.js reads the nonce from the request CSP header and stamps its scripts.
+  const nonce = generateNonce();
+  const csp = buildCsp(nonce, {
+    NODE_ENV: process.env.NODE_ENV,
+    NEXT_PUBLIC_MEDPLUM_BASE_URL: process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL,
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    CSP_EXTRA_HOSTS: process.env.CSP_EXTRA_HOSTS,
   });
-}
-
-/** Forward the current pathname to Server Components via a request header. */
-function withPathname(req: NextRequest, pathname: string): Headers {
   const headers = new Headers(req.headers);
   headers.set("x-pathname", pathname);
-  return headers;
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", csp);
+  const res = NextResponse.next({ request: { headers } });
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
 }
 
 export const config = {
