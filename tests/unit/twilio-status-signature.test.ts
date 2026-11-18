@@ -66,6 +66,20 @@ describe("POST /api/follow-up/twilio/status", () => {
     expect(await res.json()).toEqual({ success: true, found: true });
     expect(updateResource).toHaveBeenCalledTimes(1);
   });
+  test("signs over TWILIO_STATUS_CALLBACK_URL, not the proxied request URL", async () => {
+    const proxied = new NextRequest("http://127.0.0.1:3000/api/follow-up/twilio/status", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": computeTwilioSignature(TOKEN, URL_, params) },
+      body: new URLSearchParams(params).toString(),
+    });
+    expect((await POST(proxied)).status).toBe(200);
+    const wrong = new NextRequest(URL_, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": computeTwilioSignature(TOKEN, "http://127.0.0.1:3000/api/follow-up/twilio/status", params) },
+      body: new URLSearchParams(params).toString(),
+    });
+    expect((await POST(wrong)).status).toBe(403);
+  });
   test("missing signature => 403, zero reads/writes", async () => {
     const res = await POST(req(params));
     expect(res.status).toBe(403);
