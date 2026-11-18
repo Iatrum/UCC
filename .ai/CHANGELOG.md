@@ -193,6 +193,8 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - Task 527: Patients "New this month" now counts by a registration tag stamped on create (`meta.tag`, searched via `_tag`), not `_lastUpdated`. Legacy untagged patients are not counted.
 
+- 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
+
 ## Task 533 (staging prep continuation, repo-side only)
 - 385c: `e2e/scripts/lib/baseline.mjs` (baseline identity sidecar: target + sha256), `compare.mjs` fails closed under `UCC_GATE_TARGET=staging`, `check-all.sh` pre-checks it, new `e2e/scripts/check-staging.sh` adapter (preflight + attested baseline). Unit tests: `tests/unit/staging-gate.test.ts`.
 - 385b gap: `scripts/staging/bootstrap.ts` creates the fake `demo` Organization and fake doctor Practitioner on an empty staging project, called from `staging:seed` after the preflight (`--no-bootstrap` to skip, `--dry-run` contacts nothing). No server/container started; nothing run against staging.
@@ -204,3 +206,4 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
 
 - 2026-11-18 Task 607: renumbered the second D46 (Task 5 topology) to D47 and fixed the BACKLOG reference; AGENTS.md and staging README now state the dev Medplum is 5.2.15 (staging should pin it). Task 597 checklist not found in the repo/PR, so no item 3 done.
+
