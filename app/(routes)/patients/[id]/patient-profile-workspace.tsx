@@ -205,6 +205,8 @@ export default function PatientProfileWorkspace({
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
   const [queueStatus, setQueueStatus] = useState<QueueStatus>(patient.queueStatus ?? null);
   const [catalogs, setCatalogs] = useState<ComposerCatalogs>(emptyComposerCatalogs);
+  // "Loading…" (not "No matches") in the composer until catalogs arrive; a failure stops the spinner-like state.
+  const [catalogsSettled, setCatalogsSettled] = useState(false);
   const catalogRequester = useRef<ReturnType<typeof createComposerCatalogRequester> | null>(null);
   const { procedures: procedureOptions, medications: medicationOptions, labs: labCatalog,
     imaging: imagingCatalog, documents: documentCatalog } = catalogs;
@@ -213,8 +215,14 @@ export default function PatientProfileWorkspace({
   useEffect(() => {
     catalogRequester.current ??= createComposerCatalogRequester(
       () => loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog }),
-      setCatalogs,
-      (error) => console.error("Failed to load treatment catalogs:", error),
+      (loaded) => {
+        setCatalogs(loaded);
+        setCatalogsSettled(true);
+      },
+      (error) => {
+        console.error("Failed to load treatment catalogs:", error);
+        setCatalogsSettled(true);
+      },
     );
     if (!shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogRequester.current.requested())) return;
     catalogRequester.current.request();
@@ -1023,6 +1031,7 @@ export default function PatientProfileWorkspace({
                         services={treatmentServicesCatalog}
                         packages={emptyPackages}
                         documents={treatmentDocumentsCatalog}
+                        loadingCatalog={!catalogsSettled}
                         onPlanChange={handleTreatmentPlanChange}
                         onUnsavedChange={setTreatmentUnsaved}
                         submitLabel="Sign"

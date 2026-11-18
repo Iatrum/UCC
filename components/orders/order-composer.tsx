@@ -1,5 +1,6 @@
 "use client";
 
+import { getCatalogSearchState } from "@/lib/orders/catalog-search-state";
 import { mergeUnsavedEntries, planWriteOutcome } from "@/lib/plan-save-state";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 
@@ -723,6 +724,12 @@ export function OrderComposer({
     [entries, persistEntry, publishPlan]
   );
 
+  const searchState = getCatalogSearchState({
+    loading: loadingCatalog,
+    query: searchQuery,
+    resultCount: filteredPickerRows.length,
+  });
+
   return (
     <div className="flex h-full flex-col md:sticky md:top-2">
       <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -738,10 +745,10 @@ export function OrderComposer({
             />
           </div>
 
-          {loadingCatalog ? (
-            <p className="text-xs text-muted-foreground">Loading catalog…</p>
+          {searchState === "loading" ? (
+            <p className="text-xs text-muted-foreground" role="status">Loading…</p>
           ) : null}
-          {searchQuery.trim() && !loadingCatalog && filteredPickerRows.length === 0 ? (
+          {searchState === "empty" ? (
             <p className="text-xs text-muted-foreground">No matches.</p>
           ) : null}
           {filteredPickerRows.length > 0 ? (
