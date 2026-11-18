@@ -18,9 +18,13 @@ export function tenantResources(clinicId: string): Res[] {
   ];
 }
 
-export function createMockMedplum(initial: Res[] = []) {
+/**
+ * `versioning: true` (Task 643) stamps meta.versionId on create/update and enforces a single-resource
+ * `If-Match` header (412 on mismatch), like Medplum 5.2.8. Off by default so Task 639 tests keep exact shapes.
+ */
+export function createMockMedplum(initial: Res[] = [], opts: { versioning?: boolean } = {}) {
   const db = new Map<string, Res>(initial.map((r) => [`${r.resourceType}/${r.id}`, r]));
-  const writes: { op: 'create' | 'update' | 'post'; resource?: Res; path?: string; body?: any }[] = [];
+  const writes: { op: 'create' | 'update' | 'post' | 'delete'; resource?: Res; path?: string; body?: any }[] = [];
   let seq = 0;
 
   const matches = (r: Res, params: Record<string, string>) => {
@@ -35,6 +39,8 @@ export function createMockMedplum(initial: Res[] = []) {
         if (r.schedule?.reference !== value) return false;
       } else if (key === 'status') {
         if (!value.split(',').includes(r.status)) return false;
+      } else if (key === 'context') {
+        if (r.context?.reference !== value) return false;
       } else if (key === 'date') {
         // Appointment `ge<iso>` only. FHIR period semantics: matches when the period ends at/after the value.
         if (value.startsWith('ge') && !((r.end ?? r.start ?? '') >= value.slice(2))) return false;
@@ -53,21 +59,45 @@ export function createMockMedplum(initial: Res[] = []) {
     },
     async searchResources(type: string, params: Record<string, string> = {}) {
       const all = [...db.values()].filter((r) => r.resourceType === type && matches(r, params));
-      return structuredClone(all.slice(0, Number(params._count ?? 20)));
+      const offset = Number(params._offset ?? 0);
+      return structuredClone(all.slice(offset, offset + Number(params._count ?? 20)));
     },
     async searchOne(type: string, params: Record<string, string> = {}) {
       return (await client.searchResources(type, { ...params, _count: '1' }))[0];
     },
     async createResource(resource: Res) {
       const created = { ...structuredClone(resource), id: resource.id ?? `${resource.resourceType.toLowerCase()}-${++seq}` };
+      if (opts.versioning) created.meta = { ...(created.meta ?? {}), versionId: '1' };
       db.set(`${created.resourceType}/${created.id}`, created);
       writes.push({ op: 'create', resource: structuredClone(created) });
       return structuredClone(created);
     },
-    async updateResource(resource: Res) {
-      db.set(`${resource.resourceType}/${resource.id}`, structuredClone(resource));
-      writes.push({ op: 'update', resource: structuredClone(resource) });
-      return structuredClone(resource);
+    async updateResource(resource: Res, options?: { headers?: Record<string, string> }) {
+      const key = `${resource.resourceType}/${resource.id}`;
+      let saved = structuredClone(resource);
+      if (opts.versioning) {
+        const cur = db.get(key);
+        const wanted = options?.headers?.['If-Match'];
+        if (wanted && cur && `W/"${cur.meta?.versionId}"` !== wanted) throw new Error('412 Precondition Failed');
+        saved = { ...saved, meta: { ...(saved.meta ?? {}), versionId: String(Number(cur?.meta?.versionId ?? 0) + 1) } };
+      }
+      db.set(key, saved);
+      writes.push({ op: 'update', resource: structuredClone(saved) });
+      return structuredClone(saved);
+    },
+    /** FHIR conditional create; every `identifier=system|value` param must match (AND). */
+    async createResourceIfNoneExist(resource: Res, query: string) {
+      const wanted = query.split('&').map((q) => q.replace('identifier=', '').split('|'));
+      const hit = [...db.values()].find(
+        (r) =>
+          r.resourceType === resource.resourceType &&
+          wanted.every(([sys, val]) => r.identifier?.some((i: any) => i.system === sys && i.value === val))
+      );
+      return hit ? structuredClone(hit) : client.createResource(resource);
+    },
+    async deleteResource(type: string, id: string) {
+      db.delete(`${type}/${id}`);
+      writes.push({ op: 'delete', resource: { resourceType: type, id } });
     },
     async post(path: string, body: any) {
       writes.push({ op: 'post', path, body: structuredClone(body) });

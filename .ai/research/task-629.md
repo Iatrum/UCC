@@ -51,3 +51,15 @@ Real bug found and fixed: slot/appointment end times were computed with server-l
 
 Still untested: `getTriageQueueForToday` paging, `saveTriageEncounter` observations/vitals, `mcEndDate(start, 0.5)` suspected bug (above, unchanged).
 
+
+## Task 643 follow-up (billing / dispensing / inventory gaps closed)
+Extended `tests/unit/helpers/mock-medplum.ts`: `createResourceIfNoneExist`, `deleteResource`, `_offset` paging, `context` search, and opt-in `{ versioning: true }` (meta.versionId + single-resource `If-Match` → 412). Default behaviour unchanged for Task 639 tests.
+13. `completeCheckoutInvoice` through the mocked Medplum: validation matrix (ids, payment method, item shape, total mismatch, partial/NaN/negative payment → zero writes), stored totals/line items/identifiers/paid+balance (overpay → balance 0), invoice number rules (proposed upper-cased/valid/unique, generated fallback, 5-collision failure, number preserved on re-checkout), one invoice per visit on re-checkout; queue-update failure never blocks the saved invoice — tests/unit/task643-checkout-invoice.test.ts
+14. Auto-deduct at checkout with no separate dispense step (ceil of fractional qty, services/documents untouched, same medicine on two lines summed, idempotent re-checkout, negative stock reported but never blocks, unknown name reported unmatched, other clinic's same-named medicine never touched); void/delete restore stock once — same file.
+15. Clinic scoping on these paths: foreign patient / foreign or mismatched encounter rejected with zero writes; a foreign clinic's invoice for the same consultation id is not adopted/overwritten; `getInvoice` / `getConsultationInvoice` / `getPatientInvoices` hide other clinics; void/delete of a foreign invoice denied with no writes — same file.
+16. `inventory-service` CRUD scoping (create stamps clinic identifier + account, list excludes other clinics and non-catalog Medications, foreign get → null, foreign update/delete → NotFoundError with no write, partial update merge, sparse-entry defaults) — tests/unit/task643-inventory-stock.test.ts
+17. Low-stock calculation (`isOutOfStock`/`isOrderSoon` boundaries incl. negative stock and no threshold, `summarizeLowStock` bucketing/ordering/banner cap) and `computeLineStock` preview edges (skips, ceil, strict `<` low, summed demand, ambiguous/unmatched/blank) — same file.
+
+Real bug found: none. Observation (not changed): the total check `Math.abs(calculated - total) > 0.01` is float-sensitive at exactly 0.01 difference (77.61 vs 77.60 is rejected); the UI always sends the rounded sum, so it is unreachable in practice. The inventory table highlights `stock <= minimumStock` (so a 0/0 item shows as low) while `isOrderSoon` requires a non-zero threshold — cosmetic difference, left as is.
+
+Still untested: `getTriageQueueForToday` paging, `saveTriageEncounter` observations/vitals, `mcEndDate(start, 0.5)` suspected bug, `lib/analytics/queries.ts` stock-level classification ("near" = ≤150% of minimum).
