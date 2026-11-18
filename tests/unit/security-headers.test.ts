@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const nextConfig = require("../../next.config.js");
 
 async function headerMap() {
