@@ -66,7 +66,6 @@ interface PatientProfileWorkspaceProps {
   medicalHistory: MedicalHistory;
   poctEnabled: boolean;
   pacsEnabled: boolean;
-  timeChitEnabled: boolean;
 }
 
 const emptyTreatmentSummary: TreatmentPlanSummary = {
@@ -168,7 +167,6 @@ export default function PatientProfileWorkspace({
   medicalHistory,
   poctEnabled,
   pacsEnabled,
-  timeChitEnabled,
 }: PatientProfileWorkspaceProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -1050,7 +1048,6 @@ export default function PatientProfileWorkspace({
                         patient={patient}
                         poctEnabled={poctEnabled}
                         pacsEnabled={pacsEnabled}
-                        timeChitEnabled={timeChitEnabled}
                       />
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         Current order total: <span className="font-semibold">RM {treatmentSummary.total.toFixed(2)}</span>
