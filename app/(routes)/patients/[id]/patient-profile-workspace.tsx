@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 import { useRouter } from "next/navigation";
@@ -205,23 +205,18 @@ export default function PatientProfileWorkspace({
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
   const [queueStatus, setQueueStatus] = useState<QueueStatus>(patient.queueStatus ?? null);
   const [catalogs, setCatalogs] = useState<ComposerCatalogs>(emptyComposerCatalogs);
-  const [catalogsRequested, setCatalogsRequested] = useState(false);
+  const catalogsRequested = useRef(false);
   const { procedures: procedureOptions, medications: medicationOptions, labs: labCatalog,
     imaging: imagingCatalog, documents: documentCatalog } = catalogs;
 
   // The order composer is the only consumer: fetch its catalogs the first time the treatment drawer opens.
   useEffect(() => {
-    if (shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogsRequested)) setCatalogsRequested(true);
-  }, [drawerMode, panelOpen, catalogsRequested]);
-
-  useEffect(() => {
-    if (!catalogsRequested) return;
-    let active = true;
+    if (!shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogsRequested.current)) return;
+    catalogsRequested.current = true;
     loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog })
-      .then((loaded) => { if (active) setCatalogs(loaded); })
+      .then(setCatalogs)
       .catch((error) => console.error("Failed to load treatment catalogs:", error));
-    return () => { active = false; };
-  }, [catalogsRequested]);
+  }, [drawerMode, panelOpen]);
 
   const updateQueueStatus = useCallback(async (status: Exclude<QueueStatus, null>) => {
     const response = await fetch("/api/queue", {

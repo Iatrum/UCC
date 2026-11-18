@@ -195,3 +195,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - 385b gap: `scripts/staging/bootstrap.ts` creates the fake `demo` Organization and fake doctor Practitioner on an empty staging project, called from `staging:seed` after the preflight (`--no-bootstrap` to skip, `--dry-run` contacts nothing). No server/container started; nothing run against staging.
 
 - 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
+
+- Task 601: profile page loads composer catalogs only when Treatment opens, lazy-loads heavy tabs/composer chunk, draftScope reuses memoised /auth/me (PR #317). See `.ai/research/task-601.md`.
