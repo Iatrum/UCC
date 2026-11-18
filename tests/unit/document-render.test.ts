@@ -145,3 +145,22 @@ describe('renderDocumentHtml: unknown placeholders', () => {
     expect(html).not.toMatch(/\{\{\w+\}\}/);
   });
 });
+
+describe('renderDocumentHtml: empty clinic fields', () => {
+  const bare = { ...base, organization: { name: 'Fake Clinic', address: '', phone: '' } };
+  test.each([
+    ['mc', DEFAULT_MC_TEMPLATE],
+    ['time-chit', DEFAULT_TIME_CHIT_TEMPLATE],
+    ['referral', DEFAULT_REFERRAL_TEMPLATE],
+  ] as const)('%s hides empty Tel/address lines', (kind, template) => {
+    const html = renderDocumentHtml({ ...bare, kind, template, details: {} });
+    expect(html).not.toContain('Tel:');
+    expect(html).not.toMatch(/<div class="clinic-meta">\s*<\/div>/);
+    expect(html).toContain('Fake Clinic');
+  });
+  test('keeps Tel/address when present', () => {
+    const html = renderDocumentHtml({ ...base, kind: 'mc', template: DEFAULT_MC_TEMPLATE, details: {} });
+    expect(html).toContain('Tel: 03-0000');
+    expect(html).toContain('1 Jalan Fake');
+  });
+});

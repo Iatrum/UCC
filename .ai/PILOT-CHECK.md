@@ -17,7 +17,7 @@ Tools: Playwright (`e2e/tests/workflow.spec.ts`, `dispense-checkout-ui.spec.ts`)
 | Checkout (total RM 125.50) -> Complete visitation | PASS: Invoice `balanced:125.5`, patient leaves queue |
 | Dispense auto-deduct | PASS: Paracetamol 496 -> 495; `dispense-checkout-ui` 4/4 (no double deduct on reload/retry) |
 | Page smoke (18 routes, non-admin) | PASS, no redirect loops |
-| Time Chit | NOT walked: toggle work is PR #295, template work PR #307 (note only) |
+| Time Chit | Walked in Task 605: PASS after one fix (blank letterhead race), see `.ai/research/task-605.md` |
 
 ## Bugs found
 ### Fixed in this PR

@@ -125,7 +125,18 @@ test('Time Chit is core (no module toggle): composer, checkout, historical print
     await page.getByRole('button', { name: 'Print / Save PDF' }).click();
     await expect(page.locator('iframe[aria-hidden="true"]')).toHaveCount(1);
     await toggle(true);
-    expect((await request.patch('/api/consultations', { data: { consultationId, procedures: [line()] } })).status()).toBe(200);
+    // Signed documents are legal records (Task 549): re-sending them unchanged is allowed even with a stale legacy module id,
+    // but editing the signed Time Chit is refused with 409 (void + reissue instead).
+    const resend = await request.get(`/api/consultations?id=${consultationId}`);
+    expect(resend.status()).toBe(200);
+    const signedProcedures = (await resend.json()).consultation.procedures;
+    expect((await request.patch('/api/consultations', { data: { consultationId, procedures: signedProcedures } })).status()).toBe(200);
+    expect((await request.patch('/api/consultations', { data: { consultationId, procedures: [line()] } })).status()).toBe(409);
+    // PATCH replaces the Procedure rows (new ids); the signed Time Chit must still exist exactly once, unchanged.
+    const afterResend = (await m.searchResources('Procedure', { encounter: `Encounter/${consultationId}` }, { cache: 'no-cache' }))
+      .filter(p => JSON.parse(p.note?.[0]?.text || '{}').kind === 'time-chit');
+    expect(afterResend).toHaveLength(1);
+    expect(JSON.parse(afterResend[0].note![0].text!)).toMatchObject({ ...details, tcHours: '1.5' });
 
     const directCreate = await request.post('/api/consultations', { data: { patientId, chiefComplaint: 'Fake direct Time Chit visit', diagnosis: 'Fake attendance', procedures: [line()] } });
     expect(directCreate.status()).toBe(200);

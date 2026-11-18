@@ -19,6 +19,18 @@ export async function fetchOrganizationDetails(): Promise<OrganizationDetails | 
   }
 }
 
+/**
+ * Letterhead details for a printable document. The page loads the organization
+ * in an effect, so a document opened before that fetch finished (or after it
+ * failed) must fetch it itself instead of printing a blank letterhead.
+ */
+export async function resolveOrganizationDetails(
+  current: OrganizationDetails | null,
+  fetcher: () => Promise<OrganizationDetails | null> = fetchOrganizationDetails
+): Promise<OrganizationDetails | null> {
+  return current ?? (await fetcher());
+}
+
 export async function saveOrganizationDetails(details: OrganizationDetails): Promise<void> {
   const response = await fetch("/api/organization", {
     method: "PUT",

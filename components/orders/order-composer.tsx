@@ -960,8 +960,8 @@ export function OrderComposer({
             <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
               <div className="space-y-3">
                 <div>
-                  <Label className="text-xs">No of days</Label>
-                  <Input
+                  <Label className="text-xs" htmlFor="mc-no-of-days">No of days</Label>
+                  <Input id="mc-no-of-days"
                     type="number"
                     min="1"
                     value={mcDays}
@@ -972,8 +972,8 @@ export function OrderComposer({
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Start date</Label>
-                  <Input
+                  <Label className="text-xs" htmlFor="mc-start-date">Start date</Label>
+                  <Input id="mc-start-date"
                     type="date"
                     value={mcStartDate}
                     onChange={(event) => {
@@ -983,8 +983,8 @@ export function OrderComposer({
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Doctor&apos;s name</Label>
-                  <Input
+                  <Label className="text-xs" htmlFor="mc-doctors-name">Doctor&apos;s name</Label>
+                  <Input id="mc-doctors-name"
                     placeholder="Dr. ..."
                     value={mcDoctorName}
                     onChange={(event) => {
@@ -994,8 +994,8 @@ export function OrderComposer({
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">MMC registration no.</Label>
-                  <Input
+                  <Label className="text-xs" htmlFor="mc-mmc-registration-no">MMC registration no.</Label>
+                  <Input id="mc-mmc-registration-no"
                     placeholder="MMC no."
                     value={mcDoctorMmc}
                     onChange={(event) => {
@@ -1005,8 +1005,8 @@ export function OrderComposer({
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Diagnosis</Label>
-                  <Input
+                  <Label className="text-xs" htmlFor="mc-diagnosis">Diagnosis</Label>
+                  <Input id="mc-diagnosis"
                     placeholder="Diagnosis"
                     value={mcDiagnosis}
                     onChange={(event) => {
