@@ -205,6 +205,6 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
 
-- 2026-11-18 Task 607: renumbered the second D46 (Task 5 topology) to D47 and fixed the BACKLOG reference; AGENTS.md and staging README now state the dev Medplum is 5.2.15 (staging should pin it). Task 597 checklist not found in the repo/PR, so no item 3 done.
+- 2026-11-18 Task 607: renumbered the second D46 (Task 5 topology) to D47 and fixed the BACKLOG reference; AGENTS.md and staging README now state the dev Medplum is 5.2.15 (staging should pin it). the Task 597 checklist is `.ai/PILOT-READINESS.md` (on this branch); its 385c exception-list gap was closed by the next commit (Task 607).
 
 - 2026-11-18 Task 607 (item 3, Pilot checklist 597): 385c approved-exception list. `compare.mjs` on strict targets fails any non-passed test not exactly listed in `e2e/staging-exceptions.json`; unit tests added. Task 597 checklist found on the remote branch after a fetch of that branch.
