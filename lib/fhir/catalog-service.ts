@@ -1,5 +1,6 @@
 import type { MedplumClient } from '@medplum/core';
 import type { ChargeItemDefinition, Money } from '@medplum/fhirtypes';
+import { NotFoundError } from '@/lib/server/route-helpers';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
@@ -168,11 +169,11 @@ export async function updateClinicalCatalogItem(
   updates: Partial<ClinicalCatalogItem>
 ): Promise<void> {
   const existing = await readDefinition(medplum, id);
-  if (!existing) throw new Error('Catalog item not found');
-  if (!resourceMatchesClinicTenant(existing as any, clinicId)) throw new Error('Catalog item not found');
+  if (!existing) throw new NotFoundError('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicId)) throw new NotFoundError('Catalog item not found');
 
   const current = mapDefinition(existing);
-  if (!current) throw new Error('Catalog item not found');
+  if (!current) throw new NotFoundError('Catalog item not found');
 
   const next: ClinicalCatalogItem = {
     ...current,
@@ -210,7 +211,7 @@ export async function deleteClinicalCatalogItemForClinic(
   id: string
 ): Promise<void> {
   const existing = await readDefinition(medplum, id);
-  if (!existing) throw new Error('Catalog item not found');
-  if (!resourceMatchesClinicTenant(existing as any, clinicId)) throw new Error('Catalog item not found');
+  if (!existing) throw new NotFoundError('Catalog item not found');
+  if (!resourceMatchesClinicTenant(existing as any, clinicId)) throw new NotFoundError('Catalog item not found');
   await medplum.deleteResource('ChargeItemDefinition', id);
 }

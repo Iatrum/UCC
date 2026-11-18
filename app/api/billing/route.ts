@@ -1,5 +1,6 @@
 import { hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import { NextRequest, NextResponse } from "next/server";
+import { isSafeFhirId } from "@/lib/server/clinic-id";
 import {
   completeCheckoutInvoice,
   generateInvoiceNumber,
@@ -179,6 +180,13 @@ export async function GET(req: NextRequest) {
     const invoiceId = searchParams.get("id");
     const patientId = searchParams.get("patientId");
     const consultationId = searchParams.get("consultationId");
+
+    // Task 645: ids reach FHIR search strings (`,` = OR, `|` = system split); a malformed id cannot exist -> 404.
+    for (const value of [invoiceId, patientId, consultationId]) {
+      if (value && !isSafeFhirId(value)) {
+        return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+      }
+    }
 
     if (invoiceId) {
       const invoice = await getInvoice(medplum, invoiceId, clinicId);

@@ -11,6 +11,7 @@ import {
   withClinicIdentifier,
 } from "@/lib/fhir/clinic-tenancy";
 import { assertPatientInClinic } from './write-containment';
+import { NotFoundError } from '@/lib/server/route-helpers';
 import {
   deductStockForCheckout,
   reverseStockForCheckout,
@@ -186,7 +187,7 @@ async function invoiceBelongsToClinic(
 
 async function assertInvoiceBelongsToClinic(medplum: MedplumClient, invoice: Invoice, clinicId?: string): Promise<void> {
   if (!(await invoiceBelongsToClinic(medplum, invoice, clinicId))) {
-    throw new Error(`Access denied: invoice does not belong to clinic '${clinicId}'`);
+    throw new NotFoundError('Invoice not found.');
   }
 }
 

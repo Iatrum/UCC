@@ -1,5 +1,6 @@
 import { withRegistrationTag } from '@/lib/fhir/patient-registration';
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'crypto';
 import { adminDb } from '@/lib/firebase-admin';
 import { getAdminMedplum } from '@/lib/server/medplum-auth';
 import { makeClinicStamper } from '@/lib/fhir/write-containment';
@@ -46,7 +47,9 @@ export async function POST(request: NextRequest) {
 
     const auth = request.headers.get('authorization');
     const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-    if (!token || token !== bulkSecret) {
+    // Constant-time compare over fixed-length digests (Task 645).
+    const digest = (value: string) => createHash('sha256').update(value).digest();
+    if (!token || !timingSafeEqual(digest(token), digest(bulkSecret))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

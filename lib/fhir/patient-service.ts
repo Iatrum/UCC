@@ -17,7 +17,7 @@ import { QueueStatus, TriageData, VitalSigns } from '../types';
 import { TRIAGE_EXTENSION_URL } from './structure-definitions';
 import { createProvenanceForResource } from './provenance-service';
 import { validateAndCreate } from './fhir-helpers';
-import { ConflictError } from '@/lib/server/route-helpers';
+import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignPatientToClinicTenant,
@@ -101,7 +101,8 @@ function assertMatchesClinic(
   resourceLabel = 'resource'
 ): void {
   if (!matchesClinic(resource, clinicId)) {
-    throw new Error(`Access denied: ${resourceLabel} does not belong to clinic '${clinicId}'`);
+    // Id-addressed and foreign is indistinguishable from missing: 404 (Task 422 rule, Task 645).
+    throw new NotFoundError(`${resourceLabel} not found.`);
   }
 }
 
