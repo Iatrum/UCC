@@ -9,3 +9,7 @@ test('banner wording for threshold and mixed cases', () => {
   expect(lowStockBannerStatus(0, 1)).toBe('is at or below the minimum stock threshold.');
   expect(lowStockBannerStatus(1, 1)).toBe('are out of stock or at or below the minimum stock threshold.');
 });
+test('banner wording plural and large-count edge cases', () => {
+  expect(lowStockBannerStatus(0, 4)).toBe('are at or below the minimum stock threshold.');
+  expect(lowStockBannerStatus(2, 1)).toBe('are out of stock or at or below the minimum stock threshold.');
+});
