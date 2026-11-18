@@ -278,9 +278,9 @@ Prod rollback: Vercel → promote the previous deployment (instant); Medplum →
 
 1. [x] (repo files, Task 525; never started, server bring-up untested) **385a** staging compose + `.env.staging.example` (no secrets) + start/stop scripts with the memory limits and the stop condition. Mirrors `infra/pacs-dev/`. Files: `infra/staging/`, `.env.staging.example`, `scripts/staging/`, checklist `.ai/PLAN-staging-promotion-checklist.md`.
 2. [x] (repo files + unit test, Task 525; the empty staging DB bootstrap was automated in Task 533: `scripts/staging/bootstrap.ts`, run by `bun run staging:seed`, idempotent, refuses non-staging clients; untested against a real staging server) **385b** safe-target preflight (positive allowlist of staging hosts/projects, fails closed on anything else) and a staging seed runner. Do not weaken the localhost guards in existing seed/admin spec.
-3. [x] (repo side, Task 533; unit-tested, never run against a real staging stack) **385c** staging gate adapter for `check-all.sh` with baseline identity check (Task 8: `compare.mjs` used to accept a missing baseline). Now: `e2e/scripts/check-staging.sh <label> <baseline>` runs the preflight, requires a baseline with an identity sidecar (`node e2e/scripts/lib/baseline.mjs write <results.json> staging`) and sets `UCC_GATE_TARGET=staging`, under which `compare.mjs` FAILS on a missing, malformed, foreign-target or hash-mismatched baseline. Local runs are unchanged. Not yet done: exact-approved-exception list and skip classification from the Task 8 note.
-4. [ ] **385d** rehearse Part 1 steps 1.4-1.9 on a staging Traefik-equivalent (loopback) before touching production.
-5. [ ] **385e** (decision) second VPS.
+3. [x] (repo side, Task 533; unit-tested, never run against a real staging stack) **385c** staging gate adapter for `check-all.sh` with baseline identity check (Task 8: `compare.mjs` used to accept a missing baseline). Now: `e2e/scripts/check-staging.sh <label> <baseline>` runs the preflight, requires a baseline with an identity sidecar (`node e2e/scripts/lib/baseline.mjs write <results.json> staging`) and sets `UCC_GATE_TARGET=staging`, under which `compare.mjs` FAILS on a missing, malformed, foreign-target or hash-mismatched baseline. Local runs are unchanged. Task 607: strict targets now also FAIL on any non-passed test (failed, timedOut, skipped, interrupted) whose exact title is not in `e2e/staging-exceptions.json` (JSON array, default empty; override with `UCC_GATE_EXCEPTIONS`); a baseline match alone is no approval. Add titles only after review.
+4. [x] **385d** (Task 570 also added `bun run staging:audit`, a read-only parser kit for the 1.2/1.3 outputs and compose files, never run on the real host: use it on your inventory output) rehearse the allowlist on a staging Traefik-equivalent (loopback). Repo side Task 556; **actually run in Task 578 (2026-11-18, dev account, loopback only, torn down afterwards)** with Traefik `v3.5.0` and Medplum `5.2.15` (the dev server's pinned tag; the stack notes say 5.2.8 elsewhere, the running version is 5.2.15). Result: `bun run staging:probe` ends `PROBE OK` (3 allowed, 5 invite checks, 14 denied paths incl. encodings, 5 loopback listeners). Findings: (a) **UCC invite calls `POST admin/projects/<id>/invite` server-side** (`lib/fhir/admin-service.ts:909`), so a pure allowlist without `/admin` would have broken user invites on production; a single anchored route (`Method POST && PathRegexp ^/admin/projects/[A-Za-z0-9-]+/invite$`) was added. Deactivate uses FHIR `ProjectMembership` (no `/admin`). (b) Traefik v3.5.0 collapses `//` before routing, so `POST //admin/projects/x/invite` is the same allowed route (harmless; `//admin/projects` stays 404). (c) `up.sh` bug fixed: the 0600 config was unreadable by the image user (EACCES); the container now runs as the operator uid with an ephemeral tmpfs for binaries. Not rehearsed: a *successful* invite with a real token (the proxy returns Medplum's own 401 without one, which proves routing only; do one real invite through the proxy in the Hostinger window on staging, `bun run staging:seed` first). Not rehearsable on loopback: TLS/HSTS/redirect, ufw, sshd, DOCKER-USER. **Next: production Traefik allowlist, see Part 3 (Hidayat only).**
+5. [ ] **385e** (decision, nothing to build until Hidayat decides) second VPS. Inputs for the decision: RAM budget in 2.3, risks in 2.6; unlocks a public staging hostname, a Vercel preview project and a true Traefik rehearsal incl. TLS/HSTS.
 
 ## 2.6 Staging risks
 
@@ -288,6 +288,41 @@ Prod rollback: Vercel → promote the previous deployment (instant); Medplum →
 - Cookie domain `.iatrum.com` must never be used for staging.
 - Staging tests are **destructive** to their own target; the preflight above is what prevents pointing them at production.
 - Production-mode build uses more RAM than dev; serialise builds and do not run two builds at once.
+
+---
+
+# Part 3: Production Traefik allowlist runbook (Task 578; HIDAYAT ONLY, nothing here was run)
+
+Agents cannot read `/root`, `/opt/medplum` or the production Traefik config, so this is written against the **rehearsed** staging file `infra/staging/rehearsal/dynamic/medplum-allowlist.yml`. It needs root, your Traefik config, and a maintenance window. Do it only after Part 1 steps 1.3 (inventory) and 1.4 (ufw with `at` timer) and after you have confirmed the Hostinger console and snapshot (owner decision 6). Owner decisions applied: Vercel stays, SSH tunnel only (no Tailscale), self-registration off.
+
+**What changes:** the Medplum **API** host router currently forwards everything. Replace it by an allowlist so only the paths UCC uses answer. Everything else gets Traefik's 404.
+
+Paths UCC needs (verified in code): `/auth/`, `/oauth2/`, `/fhir/`, `/.well-known/`, `/storage/`, `/healthcheck`, and exactly `POST /admin/projects/<id>/invite`. Not used by UCC: `/ws/` (no subscriptions found), `/email/`, `/scim/`, `/openapi.json`, `/api/*` mounts. **Re-grep before you apply** (`grep -rn "medplum\.\(post\|get\)\|getBaseUrl" lib app`) in case newer code needs more, and watch Traefik 404s after applying.
+
+Steps (one at a time; the pre-change file is your rollback):
+```bash
+# 0. find how the API host router is defined. If it is Docker LABELS on the medplum-server container (docker provider) rather than a
+#    dynamic file, the labels must be edited and the container recreated instead; the file steps below then do not apply, stop and
+#    adapt with care (agents cannot see it). Back up whichever you change (path is yours, not known to agents)
+sudo cp -a <your-traefik-dynamic-dir> /root/traefik-dynamic-backup-$(date +%F-%H%M)
+# 1. add this file next to your existing one, adapting only: entryPoints (your real https entrypoint, e.g. websecure),
+#    the Host(`API_HOST`) matcher, tls/certResolver, and the service URL (your real medplum-server container + 8103):
+#      medplum-api:    rule: Host(`API_HOST`) && (PathPrefix(`/auth/`) || PathPrefix(`/oauth2/`) || PathPrefix(`/fhir/`) ||
+#                              PathPrefix(`/.well-known/`) || PathPrefix(`/storage/`) || Path(`/healthcheck`))     priority: 10
+#      medplum-invite: rule: Host(`API_HOST`) && Method(`POST`) && PathRegexp(`^/admin/projects/[A-Za-z0-9-]+/invite$`)  priority: 20
+# 2. REMOVE the old catch-all router for API_HOST in the same edit (an old broader router would still win or tie).
+#    With the file provider + watch, Traefik reloads on save. Do not restart Traefik.
+# 3. From OUTSIDE (laptop, mobile data) run, with API_HOST filled in:
+curl -sS -o /dev/null -w '%{http_code}\n' https://API_HOST/healthcheck                      # 200
+curl -sS -o /dev/null -w '%{http_code}\n' https://API_HOST/.well-known/jwks.json            # 200
+for p in /admin/projects /api/admin/projects //admin/projects /%61dmin/projects /metrics /openapi.json /fhir/../admin; do
+  printf '%s -> ' "$p"; curl -sS --path-as-is -o /dev/null -w '%{http_code}\n' "https://API_HOST$p"; done              # all 404
+curl -sS -X POST -H 'Content-Type: application/json' -d '{}' -o /dev/null -w 'invite no token: %{http_code}\n' https://API_HOST/admin/projects/x1/invite   # 401
+# 4. App checks as a TEST user in a private window: login, open a patient, save a note, attach a file (Firebase),
+#    then invite a TEST practitioner from Admin > Users > Invite (this is the one flow the allowlist could break) and deactivate it.
+# 5. ANY failure: restore the backup dir into place (Traefik reloads) and re-run step 3's first two curls.
+```
+The Medplum **App** (admin UI) host is a separate router: remove it (1.6 item 1) only after you have tested the SSH-tunnel access on the dev stack. Keep `registerEnabled=false` (confirm it in step 0). TLS/HSTS/redirect are not covered by the rehearsal; confirm them with probe kit 1.2 B.
 
 ---
 

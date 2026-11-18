@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-18 — Task 570: read-only exposure audit kit for the lockdown runbook (plan 385d, part 2)
+New `bun run staging:audit` checks pasted command output (`docker ps`, `ss`, outside `nmap`) and compose files for anything published beyond loopback / 80 / 443, Docker socket mounts, host networking, `:latest` images and Traefik dashboard flags. It only reads text; it runs nothing and touches no server. The repo's own staging, rehearsal and PACS compose files pass. Step 385e (second VPS) is a decision for Hidayat, so no code was written for it. Unit-tested; never run against the real VPS.
+
 ## 2026-11-17 — Task 568: access-policy ProjectMembership leak checked; already closed, now pinned by a test
 On the dev server a clinic staff login cannot search, read or create ProjectMembership, User or AccessPolicy, and cannot see other clinics' Practitioner or PractitionerRole records. The old backlog item was out of date. Added a unit test so the policy can't regress. No app or policy change; production needs no action. Notes: `.ai/research/task-568.md`.
 
@@ -190,8 +193,18 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - Task 527: Patients "New this month" now counts by a registration tag stamped on create (`meta.tag`, searched via `_tag`), not `_lastUpdated`. Legacy untagged patients are not counted.
 
+- 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
+
 ## Task 533 (staging prep continuation, repo-side only)
 - 385c: `e2e/scripts/lib/baseline.mjs` (baseline identity sidecar: target + sha256), `compare.mjs` fails closed under `UCC_GATE_TARGET=staging`, `check-all.sh` pre-checks it, new `e2e/scripts/check-staging.sh` adapter (preflight + attested baseline). Unit tests: `tests/unit/staging-gate.test.ts`.
 - 385b gap: `scripts/staging/bootstrap.ts` creates the fake `demo` Organization and fake doctor Practitioner on an empty staging project, called from `staging:seed` after the preflight (`--no-bootstrap` to skip, `--dry-run` contacts nothing). No server/container started; nothing run against staging.
 
+## Task 556 (385d repo side, staging)
+- Loopback rehearsal proxy `infra/staging/rehearsal/` (allowlist Traefik, no socket, no dashboard), `scripts/staging/probe.sh` (`bun run staging:probe`), unit test `tests/unit/staging-rehearsal.test.ts`. Nothing started or run against any server; production untouched. Plan 385d marked partially done with the operator steps listed.
+- Task 578: ran the 385d loopback rehearsal (PROBE OK); added the POST-only invite route to the allowlist, fixed staging config EACCES, wrote production Traefik runbook (plan Part 3). See `.ai/research/task-578.md`.
+
 - 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
+
+- 2026-11-18 Task 607: renumbered the second D46 (Task 5 topology) to D47 and fixed the BACKLOG reference; AGENTS.md and staging README now state the dev Medplum is 5.2.15 (staging should pin it). the Task 597 checklist is `.ai/PILOT-READINESS.md` (on this branch); its 385c exception-list gap was closed by the next commit (Task 607).
+
+- 2026-11-18 Task 607 (item 3, Pilot checklist 597): 385c approved-exception list. `compare.mjs` on strict targets fails any non-passed test not exactly listed in `e2e/staging-exceptions.json`; unit tests added. Task 597 checklist found on the remote branch after a fetch of that branch.

@@ -1,0 +1,4 @@
+# Task 556: 385d rehearsal harness
+Verified in code: 385a/b/c done (Tasks 525/533); 385d and 385e not started; no open staging PR (open drafts #307/#308 are unrelated).
+Docs read: Traefik file provider (`providers.file.directory`, `watch`; minimal router/service) https://doc.traefik.io/traefik/reference/install-configuration/providers/others/file/ ; router rules (`Path`, `PathPrefix`, `||`, length-based default priority, explicit `priority`) https://doc.traefik.io/traefik/reference/routing-configuration/http/routing/rules-and-priority/ .
+Design: allowlist rather than blocklist (unmatched requests get Traefik's default 404). Not verified by running: Traefik image tag (operator pins), whether UCC invite/deactivate need an `/admin` prefix, percent-encoding behaviour of the pinned Traefik (probe covers it).
