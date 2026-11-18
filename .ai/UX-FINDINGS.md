@@ -165,3 +165,18 @@ No new High items. Automated check: 0 unlabelled form fields and 0 horizontal pa
 ## Task 603
 - Fixed `react-hooks/set-state-in-effect` in checkout-client.tsx: document preview HTML and loading flag are now derived from a result keyed by its inputs; the effect only sets state asynchronously. Behaviour preserved (stale HTML never shown, loading while pending, null on failure). Pure UI derivation, no new logic to unit-test.
 - Part 3 re-check: #22 already FIXED (grid-cols-1, verified in code). #23 (billing table cards on phones) needs a layout decision, #24 is sidebar/nav, #25 is cosmetic tile stacking: all deliberately left, not small/safe label/overflow/empty-state/wording fixes.
+
+---
+
+# Task 623: Low leftovers verdict (2026-11-18)
+
+Method: worktree on PR #315's branch, `origin/dev` merged (already up to date). Code read only; no dev server started. tsc and eslint on changed files clean; no unit tests cover these two presentational components.
+
+- **Referral row does not open a viewer:** **NOT A BUG (re-confirmed).** Signed MC, time chit and referral rows all call `openSignedDocumentViewer` (`app/(routes)/patients/[id]/referral-mc-section.tsx:299`, wired at `:374`), same viewer dialog, same loading state and error toast. Earlier misses were `next dev` cold-compile timing. CLOSED.
+- **Part 2 Low 16 (dead purchasing panels):** still real, `purchase-orders-panel.tsx` / `suppliers-panel.tsx` unimported. Not fixed: removal belongs to the purchasing decision, not a small safe fix.
+- **Part 2 Low 20 (templates raw HTML):** VERIFIED FIXED for the warning part: `components/settings/document-template-editor.tsx:91` says to keep every `{{placeholder}}` as written (Task 587). "Preview with a real patient" is a new feature, not done.
+- **Part 2 Low 21 (user-edit lists every branch):** **FIXED.** Clinic list now scrolls inside `max-h-64` and the label shows "N of M selected" (`app/(admin)/admin/users/[id]/user-edit-form.tsx:282-291`). Search box not added (would be new UI).
+- **Part 3 #23 (billing table hides date/status on phones):** **FIXED.** Below `sm` the Date and Status columns are hidden and shown under the patient name instead; the "Open checkout" button now sits next to the name without sideways scrolling (`components/billing/billing-table.tsx`). Desktop unchanged.
+- **Part 3 #24 (sidebar width on phones):** nav, out of scope, untouched.
+- **Part 3 #25 (inventory tiles stack on phones):** cosmetic, left (`app/(routes)/inventory/page.tsx:202`).
+- Part 1 #19 sidebar polish: out of scope.
