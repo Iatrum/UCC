@@ -35,6 +35,7 @@ import {
   assignResourceToClinicTenant,
   getResourceAccountReferences,
   assertOrderInDeviceClinic,
+  readDeviceOrderOrNotFound,
   getClinicIdentifierValue,
   resolveClinicTenant,
 } from './clinic-tenancy';
@@ -226,11 +227,8 @@ export async function receiveImagingStudy(
   console.log(`📸 Receiving imaging study ${studyData.studyUid} for ServiceRequest ${serviceRequestId}`);
 
   // Get the original service request
-  const serviceRequest = await client.readResource('ServiceRequest', serviceRequestId, {
-    cache: 'no-cache', headers: { 'X-Medplum': 'extended' },
-  });
-  // Never write a study into another clinic's order: the clinic comes from the authenticated Device.
-  await assertOrderInDeviceClinic(client, serviceRequest, deviceClinicId);
+  // Unknown and foreign-clinic orders are both NotFoundError (404); the clinic comes from the authenticated Device.
+  const serviceRequest = await readDeviceOrderOrNotFound(client, serviceRequestId, deviceClinicId);
   const accountRefs = getResourceAccountReferences(serviceRequest);
   
   if (!serviceRequest.subject?.reference) {
