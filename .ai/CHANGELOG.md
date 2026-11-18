@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-18 — Task 570: read-only exposure audit kit for the lockdown runbook (plan 385d, part 2)
+New `bun run staging:audit` checks pasted command output (`docker ps`, `ss`, outside `nmap`) and compose files for anything published beyond loopback / 80 / 443, Docker socket mounts, host networking, `:latest` images and Traefik dashboard flags. It only reads text; it runs nothing and touches no server. The repo's own staging, rehearsal and PACS compose files pass. Step 385e (second VPS) is a decision for Hidayat, so no code was written for it. Unit-tested; never run against the real VPS.
+
 ## 2026-11-17 — Task 545: re-checked every open UX finding against current dev; none of the Medium/High items is still open
 The findings list was out of date. Fixed items are now marked with the file and line that proves it. Only three Low items remain (dead purchasing panels, raw-HTML templates, long branch list) plus sidebar polish, which is out of scope. Docs only, no app code changed.
 
