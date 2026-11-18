@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-18 — Task 647: pilot pages hold up on slow internet
+Inventory used to show an empty stock list when its request failed or hung; it now shows an error with Retry, and a failed refresh after saving keeps the existing list. Checkout and the dashboard Appointments/Billing tabs time out after 15 s instead of spinning forever, and checkout has a Retry button. Billing and appointments tables keep the last list on screen while refreshing (with a small Retry banner on failure). Check-in and appointment check-in can no longer be sent twice by a fast double-tap. Composer, sidebar and PR #317 files untouched. Notes: `.ai/research/task-647.md`.
+
 ## 2026-11-18 — Task 570: read-only exposure audit kit for the lockdown runbook (plan 385d, part 2)
 New `bun run staging:audit` checks pasted command output (`docker ps`, `ss`, outside `nmap`) and compose files for anything published beyond loopback / 80 / 443, Docker socket mounts, host networking, `:latest` images and Traefik dashboard flags. It only reads text; it runs nothing and touches no server. The repo's own staging, rehearsal and PACS compose files pass. Step 385e (second VPS) is a decision for Hidayat, so no code was written for it. Unit-tested; never run against the real VPS.
 

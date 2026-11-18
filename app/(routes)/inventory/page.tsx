@@ -25,10 +25,11 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
+import { describeFetchError, resolveLoadView } from "@/lib/load-state";
 import {
   createMedication,
   deleteMedication,
-  getMedications,
+  fetchMedicationsStrict,
   type Medication,
   updateMedication,
 } from "@/lib/inventory";
@@ -45,13 +46,14 @@ export default function InventoryPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   async function loadInventoryWorkspace() {
+    setLoading(true);
     try {
-      const medicationData = await getMedications();
+      const medicationData = await fetchMedicationsStrict();
       setMedications(medicationData);
       setError(null);
     } catch (err) {
       console.error(err);
-      setError("Failed to load inventory workspace");
+      setError(describeFetchError(err, "Failed to load inventory workspace"));
     } finally {
       setLoading(false);
     }
@@ -64,7 +66,17 @@ export default function InventoryPage() {
   }, []);
 
   async function reloadMedications() {
-    setMedications(await getMedications());
+    // Strict: a failed refresh after a save must not blank the list (the save itself succeeded).
+    try {
+      setMedications(await fetchMedicationsStrict());
+    } catch (err) {
+      console.error("Failed to refresh inventory:", err);
+      toast({
+        title: "Saved, but the list could not refresh",
+        description: describeFetchError(err, "Reload the page to see the latest stock."),
+        variant: "destructive",
+      });
+    }
   }
 
   const stockSummary = summarizeLowStock(medications);
@@ -134,7 +146,9 @@ export default function InventoryPage() {
     }
   }
 
-  if (loading) {
+  const view = resolveLoadView({ loading, error, hasData: medications.length > 0 });
+
+  if (view === "loading") {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
@@ -142,12 +156,17 @@ export default function InventoryPage() {
     );
   }
 
-  if (error) {
+  if (view === "error") {
     return (
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>Error</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
+        <AlertDescription className="flex flex-col items-start gap-3">
+          <span>{error}</span>
+          <Button variant="outline" size="sm" onClick={() => void loadInventoryWorkspace()}>
+            Retry
+          </Button>
+        </AlertDescription>
       </Alert>
     );
   }
