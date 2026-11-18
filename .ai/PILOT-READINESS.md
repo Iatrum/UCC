@@ -29,7 +29,7 @@ Follow `.ai/PLAN-network-lockdown-staging.md` Part 1 and Part 3 one step at a ti
 - [ ] ufw, sshd hardening and DOCKER-USER rules, each with an `at` rollback timer (plan 1.4 onward).
 - [ ] Production Traefik allowlist (Part 3). First check whether the API router is a dynamic file or Docker labels on `medplum-server`; the runbook covers both.
 - [ ] TLS/HSTS/redirect checks (cannot be rehearsed on loopback).
-- [ ] Admin UI reachable over the tailnet only (`tailscale serve`, never `funnel`).
+- [ ] Admin UI reachable by SSH tunnel only (owner decision 2: no Tailscale for now; plan 1.6). If Tailscale is adopted later: `tailscale serve`, never `funnel`.
 - [ ] Run one real user invite through the allowlisted proxy on staging (`bun run staging:seed` first).
 - [ ] Production Task 5 migration (non-superAdmin clinic project + AccessPolicies) using `.ai/RUNBOOK-task5-production-migration.md`.
 - [ ] Firestore draft migration if still pending: `.ai/RUNBOOK-firestore-draft-migration.md`.
