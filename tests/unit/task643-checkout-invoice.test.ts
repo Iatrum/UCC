@@ -18,6 +18,9 @@ import { CLINIC_A, CLINIC_B, createMockMedplum, tenantResources } from "./helper
 const NOW = "2030-03-05T12:00:00.000Z";
 const INV_NUM = "https://ucc.emr/invoice/number";
 const INV_CONSULT = "https://ucc.emr/invoice/consultation";
+// The service formats the invoice number from the server-local calendar date, so derive the expectation the same way.
+const d = new Date(NOW);
+const LOCAL_YMD = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 const clinicIdent = (c: string) => ({ system: "clinic", value: c });
 const ext = (r: any, url: string) => r.extension?.find((e: any) => e.url === url);
 
@@ -139,22 +142,22 @@ describe("invoice creation", () => {
     );
   });
 
-  test("invoice number uses the fixed date and a 6-char suffix", async () => {
+  test("invoice number uses the (local) date of the fixed clock and a 6-char suffix", async () => {
     const { invoice } = await run();
-    expect(getInvoiceNumber(invoice)).toMatch(new RegExp(`^INV-${NOW.slice(0, 10).replace(/-/g, "")}-[A-F0-9]{6}$`));
+    expect(getInvoiceNumber(invoice)).toMatch(new RegExp(`^INV-${LOCAL_YMD}-[A-F0-9]{6}$`));
   });
 
   test("a valid proposed number is upper-cased and used; invalid or taken ones are replaced", async () => {
     expect(getInvoiceNumber((await run({ invoiceNumber: " inv/2030-001 " })).invoice)).toBe("INV/2030-001");
 
     mock = createMockMedplum(seed(), { versioning: true });
-    expect(getInvoiceNumber((await run({ invoiceNumber: "bad number!" })).invoice)).toMatch(/^INV-20300305-/);
+    expect(getInvoiceNumber((await run({ invoiceNumber: "bad number!" })).invoice)).toMatch(new RegExp(`^INV-${LOCAL_YMD}-`));
 
     mock = createMockMedplum(
       [...seed(), { resourceType: "Invoice", id: "other", identifier: [{ system: INV_NUM, value: "TAKEN-1" }, clinicIdent(CLINIC_A)] }],
       { versioning: true }
     );
-    expect(getInvoiceNumber((await run({ invoiceNumber: "taken-1" })).invoice)).toMatch(/^INV-20300305-/);
+    expect(getInvoiceNumber((await run({ invoiceNumber: "taken-1" })).invoice)).toMatch(new RegExp(`^INV-${LOCAL_YMD}-`));
   });
 
   test("generateInvoiceNumber fails after 5 collisions instead of reusing a number", async () => {
@@ -206,7 +209,7 @@ describe("auto-deduct inventory at checkout (no separate dispense step)", () => 
     await run();
     await run();
     expect(stock()).toBe(7);
-    expect(mock.creates("MedicationDispense").length + mock.updates("MedicationDispense").length).toBeGreaterThan(0);
+    expect(mock.creates("MedicationDispense").length).toBe(1); // second run must not add another audit record
   });
 
   test("the same medicine on two lines is summed", async () => {
