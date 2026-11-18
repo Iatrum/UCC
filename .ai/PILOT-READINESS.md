@@ -17,7 +17,8 @@ Docs only. Written from the repo and the existing notes; **nothing was run again
 | Device ingress needs per-device keys (POCT/imaging) | Done | BACKLOG Tasks 180, 355 |
 | Twilio status callback signature check | Done | BACKLOG Task 541, `app/api/follow-up/twilio/status/route.ts` |
 | Checkout stock auto-deduct, no double deduct | Done | Task 358/402 commits; `.ai/PILOT-CHECK.md` (branch Task 558, `dispense-checkout-ui` 4/4) |
-| Staff walk register -> consult -> sign -> Lab tab -> checkout -> dispense | PASS as non-admin on dev | `.ai/PILOT-CHECK.md` (Task 558 branch `ai/task-558-pilot-check`; check it is merged) |
+| `/api/labs/receive` 400 (not 500) on missing status; unknown/foreign order 404 with zero writes | Done | Tasks 566/572, `tests/unit/task566-labs-receive-validation.test.ts`, `tests/unit/task572-receive-not-found.test.ts` |
+| Staff walk register -> consult -> sign -> Lab tab -> checkout -> dispense | PASS as non-admin on dev | `.ai/PILOT-CHECK.md` (merged into this branch) |
 
 ## 2. Hidayat must do manually (server / DNS / Vercel / root)
 
@@ -44,10 +45,10 @@ Follow `.ai/PLAN-network-lockdown-staging.md` Part 1 and Part 3 one step at a ti
 | 385c not finished: exact approved-exception list and skip classification | A staging gate can pass with unreviewed skips | plan step 385c "Not yet done" |
 | Production network is unchanged until the manual steps above | Medplum API host currently forwards all paths | plan Part 3; the audit kit has not been run on the host |
 | Production AccessPolicy isolation not applied (dev only) | In a superAdmin project the policy is bypassed (D20/D46) | `.ai/RUNBOOK-task5-production-migration.md` |
-| Analytics "Revenue" counts ordered lines, not invoiced/paid amounts; age/gender charts use newest 300 patients | Pilot owners will read wrong numbers | `.ai/PILOT-CHECK.md` items 3 and 4 |
+| Analytics "Revenue" counts ordered lines, not invoiced/paid amounts (needs a product decision). Age/gender charts are now exact (Task 564) | Pilot owners may read revenue as cash received | `.ai/PILOT-CHECK.md` item 3; `tests/unit/task564-analytics-exact.test.ts` |
 | Consultation Fee defaults to RM 0.00; no catalog-driven default | Clinic must set a price or checkout under-bills | `.ai/PILOT-CHECK.md` item 5 (`patient-profile-workspace.tsx:80-84`) |
 | No post-payment receipt view (toast and Bill preview only) | Confirm with the clinic whether a receipt is required | `.ai/PILOT-CHECK.md` item 7 |
-| Time Chit not walked in the pilot check | Toggle and template work were still in open PRs (#295, #307) | `.ai/PILOT-CHECK.md` |
+| Time Chit (now core, Task 527, with the unified MC/Time Chit renderer, Task 549) was not walked in the Task 558 staff walk; only unit/e2e specs cover it | Walk it once before the pilot | `.ai/PILOT-CHECK.md` table; `tests/unit/time-chit.test.ts` |
 | Successful invite through the proxy not rehearsed (only the 401 route check) | A broken allowlist would block user onboarding | plan 385d "Not rehearsed" |
 | Walk used a user without an AccessPolicy | Proves the flow as non-admin, not policy enforcement | `.ai/PILOT-CHECK.md` setup note |
 | Medplum login limit (5/min) can look like a wrong password in repeated e2e runs | Only a test nuisance; the UI message was fixed (Task 412) | `.ai/PILOT-CHECK.md` item 9 |
