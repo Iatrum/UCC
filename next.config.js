@@ -3,6 +3,7 @@ const medplumOrigin = new URL(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http:
 const medplumSocketOrigin = medplumOrigin.replace(/^http/, 'ws');
 
 const nextConfig = {
+  poweredByHeader: false,
   // Viewer launch URLs carry a bearer capability; keep them out of the dev request log.
   logging: { incomingRequests: { ignore: [/\/api\/pacs\/viewer\/launch(?:\?|$)/] } },
   transpilePackages: [
@@ -43,8 +44,9 @@ const nextConfig = {
         source: '/(.*)',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
-          // Consider SAMEORIGIN if you embed internal iframes; keep DENY if not needed
-          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          // Legacy twin of CSP frame-ancestors 'none'. All in-app iframes are srcDoc/blob previews
+          // (child frames of our own page), so no own-origin page is ever framed.
+          { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
@@ -64,6 +66,9 @@ const nextConfig = {
             // Allow web workers for PDF rendering
             "worker-src 'self' blob:",
             "frame-ancestors 'none'",
+            // No plugins/<object>/<embed> and no <base> rewriting in the app.
+            "object-src 'none'",
+            "base-uri 'self'",
           ].join('; ') },
         ],
       },
