@@ -86,6 +86,8 @@ function LoginForm() {
       return;
     }
     if (decision.action === "admin-notice") {
+      // Latches a notice once auth resolves; the decision depends on a submit-time ref (not readable during render).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowAdminNotice(true);
       return;
     }
