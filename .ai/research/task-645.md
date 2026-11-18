@@ -26,7 +26,7 @@ Medplum search - https://www.medplum.com/docs/search/basic-search ; status rule 
 | G7 | `PUT /api/organization` lets **any clinic staff** edit the shared parent Organisation (name/logo/phone used on every clinic's letterheads) through the admin client | (a)/(b) | Medium | **OPEN - product decision.** The Settings page uses it; restricting it to platform admin would break that screen. Options: per-clinic branding, or admin-only with the admin portal (`/api/admin/organisation`) |
 | G8 | `POST /api/storage/logo`: any clinic staff, path not clinic-prefixed (`branding/logo-*`), download token URL is the capability | (b) | Low | OPEN (cosmetic; fix together with G7) |
 | G9 | `POST /api/auth/medplum-session` is unauthenticated (stores whatever token it is given; useless without a valid token) and `GET` returns the HttpOnly token to JS (used by the browser Medplum client) | (a) | Low | OPEN, by design; note for XSS posture (CSP is nonce-based) |
-| G10 | `GET /api/suppliers` searches **all** supplier Organizations with `_count=200` and filters by clinic afterwards; clinics beyond the first 200 suppliers overall lose rows. Not a leak | (b) | Low (correctness) | OPEN: add the clinic identifier to the search |
+| G10 | `GET /api/suppliers` searches **all** supplier Organizations with `_count=200` and filters by clinic afterwards; clinics beyond the first 200 suppliers overall lose rows. Not a leak | (b) | Low (correctness) | FIXED in Task 649 (clinic identifier in the search + all pages; same fix for settings/insurers, catalogs, billing tasks - see task-649.md) |
 | G11 | `/api/health/deep` is anonymous and reports which env vars are set (ok/missing, no values) | (a) | Info | OPEN, acceptable for an uptime probe |
 
 ## Route table
@@ -77,7 +77,7 @@ Legend - Auth: `PA` platform admin; `CA` `requireClinicAuth`; `CA+S` CA plus a r
 | scheduling/schedules, slots, slots/generate | GET POST | CA | `listClinicSchedules`; foreign `scheduleId` -> 403 | FIXED (G4) |
 | settings/follow-up, settings/insurers | GET PUT / GET POST PATCH DELETE | CA | `app`: clinic identifier, 404 on foreign | OK |
 | storage/logo | POST | CA | unscoped path | G8 OPEN |
-| suppliers | GET POST PATCH DELETE | CA | `app`: `belongsToClinic`, 404 | OK / G10 |
+| suppliers | GET POST PATCH DELETE | CA | `app`: `belongsToClinic`, 404 | OK (G10 fixed, Task 649) |
 | tasks, tasks/[id] | GET / PATCH | CA + module flag | `getBillingTaskClinicId` -> 404 | OK |
 | triage | GET POST PATCH DELETE | CA | patient checked; encounter checked | FIXED (G4) |
 

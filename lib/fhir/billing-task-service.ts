@@ -1,6 +1,7 @@
 import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
 import type { MedplumClient } from "@medplum/core";
 import type { Annotation, Task } from "@medplum/fhirtypes";
+import { searchAllPages } from "@/lib/server/search-all";
 import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier, resolveClinicTenant } from "@/lib/fhir/clinic-tenancy";
 
 const BILLING_EXCEPTION_CODE_SYSTEM = "https://ucc.emr/task-type";
@@ -121,7 +122,6 @@ export async function listBillingExceptionTasks(
   const params: Record<string, string> = {
     code: `${BILLING_EXCEPTION_CODE_SYSTEM}|${BILLING_EXCEPTION_CODE}`,
     _sort: "-_lastUpdated",
-    _count: "100",
   };
   if (clinicId) {
     params.identifier = `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`;
@@ -129,7 +129,7 @@ export async function listBillingExceptionTasks(
   if (status === "open") {
     params.status = "requested,in-progress";
   }
-  const tasks = (await medplum.searchResources("Task", params)) as Task[];
+  const tasks = await searchAllPages(medplum, "Task", params);
   const byStatus = status === "open"
     ? tasks.filter((task) => task.status === "requested" || task.status === "in-progress")
     : tasks;

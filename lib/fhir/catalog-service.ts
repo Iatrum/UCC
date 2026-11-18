@@ -1,5 +1,6 @@
 import type { MedplumClient } from '@medplum/core';
 import type { ChargeItemDefinition, Money } from '@medplum/fhirtypes';
+import { searchAllPages } from '@/lib/server/search-all';
 import { NotFoundError } from '@/lib/server/route-helpers';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
@@ -113,9 +114,9 @@ export async function getClinicalCatalogItems(
   clinicId: string,
   type?: ClinicalCatalogType
 ): Promise<ClinicalCatalogItem[]> {
-  const definitions = await medplum.searchResources('ChargeItemDefinition', {
+  const definitions = await searchAllPages(medplum, 'ChargeItemDefinition', {
     identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-    _count: '200',
+    _sort: '_lastUpdated',
   });
 
   return definitions

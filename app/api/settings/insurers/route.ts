@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Basic } from "@medplum/fhirtypes";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
+import { searchAllPages } from "@/lib/server/search-all";
 import { handleRouteError } from "@/lib/server/route-helpers";
 import type { Insurer } from "@/lib/insurers";
 
@@ -40,12 +41,12 @@ export async function GET(req: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(req);
     const medplum = await getAdminMedplum();
-    const resources = await medplum.searchResources("Basic", {
+    const resources = await searchAllPages(medplum, "Basic", {
       code: `${CODE_SYSTEM}|${CODE_VALUE}`,
-      _count: "500",
+      identifier: `${CLINIC_SYSTEM}|${clinicId}`,
       _sort: "_lastUpdated",
     });
-    const insurers = (resources ?? [])
+    const insurers = resources
       .filter((resource) => belongsToClinic(resource, clinicId))
       .map(fromBasic)
       .sort((a, b) => a.name.localeCompare(b.name));
