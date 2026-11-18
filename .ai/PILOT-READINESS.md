@@ -13,7 +13,7 @@ Docs only. Written from the repo and the existing notes; **nothing was run again
 | Read-only exposure audit kit | Done, never run on the real host | `scripts/staging/audit-exposure.ts`, `tests/unit/staging-exposure.test.ts`, `.ai/reviews/task-571.md` |
 | Production Traefik allowlist runbook | Written, not applied | plan Part 3 |
 | Clinic isolation: write and update-by-id containment | Done | BACKLOG Tasks 396, 400, 482; `lib/fhir/write-containment.ts` |
-| Clinic AccessPolicy topology (non-superAdmin project) | Done on **dev only** | `.ai/RUNBOOK-task5-production-migration.md`, DECISIONS D46, `.ai/progress-task5.md` |
+| Clinic AccessPolicy topology (non-superAdmin project) | Done on **dev only** | `.ai/RUNBOOK-task5-production-migration.md`, DECISIONS D47, `.ai/progress-task5.md` |
 | Device ingress needs per-device keys (POCT/imaging) | Done | BACKLOG Tasks 180, 355 |
 | Twilio status callback signature check | Done | BACKLOG Task 541, `app/api/follow-up/twilio/status/route.ts` |
 | Checkout stock auto-deduct, no double deduct | Done | Task 358/402 commits; `.ai/PILOT-CHECK.md` (branch Task 558, `dispense-checkout-ui` 4/4) |
@@ -42,9 +42,9 @@ Follow `.ai/PLAN-network-lockdown-staging.md` Part 1 and Part 3 one step at a ti
 | Gap | Why it matters | Evidence |
 |---|---|---|
 | Staging has **never been run end to end** on a real server (bring-up, seed, gate) | Gate adapter and scripts are unit-tested only | plan 385a/385c notes: "never run against a real staging stack" |
-| 385c not finished: exact approved-exception list and skip classification | A staging gate can pass with unreviewed skips | plan step 385c "Not yet done" |
+| ~~385c exception list~~ done (Task 607): staging gate fails on any non-passed test not in `e2e/staging-exceptions.json` (empty by default) | Unreviewed skips can no longer pass | `e2e/scripts/compare.mjs`, `tests/unit/staging-gate.test.ts` |
 | Production network is unchanged until the manual steps above | Medplum API host currently forwards all paths | plan Part 3; the audit kit has not been run on the host |
-| Production AccessPolicy isolation not applied (dev only) | In a superAdmin project the policy is bypassed (D20/D46) | `.ai/RUNBOOK-task5-production-migration.md` |
+| Production AccessPolicy isolation not applied (dev only) | In a superAdmin project the policy is bypassed (D20/D47) | `.ai/RUNBOOK-task5-production-migration.md` |
 | Analytics "Revenue" counts ordered lines, not invoiced/paid amounts (needs a product decision). Age/gender charts are now exact (Task 564) | Pilot owners may read revenue as cash received | `.ai/PILOT-CHECK.md` item 3; `tests/unit/task564-analytics-exact.test.ts` |
 | Consultation Fee defaults to RM 0.00; no catalog-driven default | Clinic must set a price or checkout under-bills | `.ai/PILOT-CHECK.md` item 5 (`patient-profile-workspace.tsx:80-84`) |
 | No post-payment receipt view (toast and Bill preview only) | Confirm with the clinic whether a receipt is required | `.ai/PILOT-CHECK.md` item 7 |
@@ -52,7 +52,7 @@ Follow `.ai/PLAN-network-lockdown-staging.md` Part 1 and Part 3 one step at a ti
 | Successful invite through the proxy not rehearsed (only the 401 route check) | A broken allowlist would block user onboarding | plan 385d "Not rehearsed" |
 | Walk used a user without an AccessPolicy | Proves the flow as non-admin, not policy enforcement | `.ai/PILOT-CHECK.md` setup note |
 | Medplum login limit (5/min) can look like a wrong password in repeated e2e runs | Only a test nuisance; the UI message was fixed (Task 412) | `.ai/PILOT-CHECK.md` item 9 |
-| Version drift: notes say Medplum 5.2.8, dev server runs 5.2.15 | Pin and test the version production will run | plan step 385d |
+| Version drift: docs aligned to 5.2.15 (Task 607); staging should pin 5.2.15 (`infra/staging/README.md`). Production version still to be checked by Hidayat | Pin and test the version production will run | plan step 385d |
 
 ## 4. Rules that must stay true in the pilot
 Composer unchanged; Lab/POCT results only in the Lab tab with no critical-result warning in the composer; POCT orderable only when the analyser is online, no manual entry; every clinical resource carries its `clinic` identifier and is never read across clinics; Firebase Storage stays.

@@ -10,8 +10,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ucc-gate-'));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 const report = (tests: Record<string, string>) => JSON.stringify({ suites: [{ specs: Object.entries(tests).map(([title, status]) => ({ title, tests: [{ results: [{ status }] }] })) }] });
 const write = (name: string, body: string) => { const f = path.join(dir, name); fs.writeFileSync(f, body); return f; };
-const compare = (cur: string, base: string | undefined, target?: string) => spawnSync('node', ['e2e/scripts/compare.mjs', cur, ...(base ? [base] : [])], {
-  cwd: path.resolve(import.meta.dir, '../..'), encoding: 'utf8', env: { PATH: process.env.PATH, ...(target ? { UCC_GATE_TARGET: target } : {}) },
+const compare = (cur: string, base: string | undefined, target?: string, exceptions?: string) => spawnSync('node', ['e2e/scripts/compare.mjs', cur, ...(base ? [base] : [])], {
+  cwd: path.resolve(import.meta.dir, '../..'), encoding: 'utf8', env: { PATH: process.env.PATH, ...(target ? { UCC_GATE_TARGET: target } : {}), ...(exceptions ? { UCC_GATE_EXCEPTIONS: exceptions } : {}) },
 });
 
 test('baseline identity: valid only for the recorded target and bytes', () => {
@@ -45,9 +45,23 @@ test('compare.mjs staging target FAILS on missing or foreign baseline, passes on
   writeBaselineIdentity(base, 'local');
   expect(compare(cur, base, 'staging').status).toBe(1);               // identity of another target
   writeBaselineIdentity(base, 'staging');
-  const ok = compare(cur, base, 'staging');
-  expect(ok.status).toBe(0);                                          // known failure b is in the baseline
-  expect(compare(write('cur2.json', report({ a: 'passed', b: 'failed', c: 'failed' })), base, 'staging').status).toBe(1); // unknown failing test
+  expect(compare(cur, base, 'staging', write('none.json', '[]')).status).toBe(1); // baseline match alone is not an approval
+  const ok = compare(cur, base, 'staging', write('exc.json', '["b"]'));
+  expect(ok.status).toBe(0);                                          // known failure b is in the baseline AND approved
+  expect(compare(write('cur2.json', report({ a: 'passed', b: 'failed', c: 'failed' })), base, 'staging', write('exc2.json', '["b"]')).status).toBe(1); // unknown failing test
+});
+
+test('compare.mjs staging: skipped tests need an exact approved title; bad list fails closed', () => {
+  const cur = write('cur4.json', report({ a: 'passed', s: 'skipped' }));
+  const base = write('base4.json', report({ a: 'passed', s: 'skipped' }));
+  writeBaselineIdentity(base, 'staging');
+  const r = compare(cur, base, 'staging', write('e0.json', '[]'));
+  expect(r.status).toBe(1); expect(r.stdout).toContain('UNAPPROVED skipped: s');
+  expect(compare(cur, base, 'staging', write('e1.json', '["s"]')).status).toBe(0);
+  expect(compare(cur, base, 'staging', write('e2.json', '["s "]')).status).toBe(1);  // exact match only
+  expect(compare(cur, base, 'staging', write('e3.json', '{bad')).status).toBe(1);
+  expect(compare(cur, base, 'staging', write('e4.json', '[1]')).status).toBe(1);
+  expect(compare(write('cur5.json', report({ a: 'passed' })), base, 'staging', write('e5.json', '[]')).stdout).toContain('MISSING: s');
 });
 
 test('compare.mjs without a gate target keeps the lenient local behaviour', () => {

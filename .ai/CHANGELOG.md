@@ -207,3 +207,4 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - 2026-11-18 Task 607: renumbered the second D46 (Task 5 topology) to D47 and fixed the BACKLOG reference; AGENTS.md and staging README now state the dev Medplum is 5.2.15 (staging should pin it). Task 597 checklist not found in the repo/PR, so no item 3 done.
 
+- 2026-11-18 Task 607 (item 3, Pilot checklist 597): 385c approved-exception list. `compare.mjs` on strict targets fails any non-passed test not exactly listed in `e2e/staging-exceptions.json`; unit tests added. Task 597 checklist found on the remote branch after a fetch of that branch.
