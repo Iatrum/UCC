@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { receiveImagingStudy, type ImagingStudyData } from '@/lib/fhir/imaging-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
-import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
+import { AuthError, ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
+    if (error instanceof NotFoundError) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
     console.error('Error receiving imaging study:', error);
     
