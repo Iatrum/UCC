@@ -202,3 +202,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 578: ran the 385d loopback rehearsal (PROBE OK); added the POST-only invite route to the allowlist, fixed staging config EACCES, wrote production Traefik runbook (plan Part 3). See `.ai/research/task-578.md`.
 
 - 2026-11-17 Task 527: Time Chit is core (no module toggle). Removed `time-chit` module id/config and all module gates; clinic-scope and validation checks kept in the guard.
+
+- 2026-11-18 Task 607: renumbered the second D46 (Task 5 topology) to D47 and fixed the BACKLOG reference; AGENTS.md and staging README now state the dev Medplum is 5.2.15 (staging should pin it). Task 597 checklist not found in the repo/PR, so no item 3 done.
