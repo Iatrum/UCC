@@ -3,8 +3,9 @@ import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } fro
 import { ForbiddenError } from '@/lib/server/route-helpers';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
-import { isSignedDocumentNote } from '@/lib/clinical-documents';
+import { isSignedDocumentNote, signedDocumentMutationError } from '@/lib/clinical-documents';
 import { auditSignedDocument } from './signed-document-audit';
+import { ConflictError } from '@/lib/server/route-helpers';
 import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
@@ -914,9 +915,13 @@ export async function updateConsultationInMedplum(
   let clinicTenant: Awaited<ReturnType<typeof resolveClinicTenant>> = null;
   if (updates.procedures !== undefined) {
     await assertTimeChitMutationAllowed(updates.procedures, procedures.map(p => ({ notes: p.note?.[0]?.text })), clinicId);
-    if ((updates.procedures as any[]).some(isTimeChitProcedure)) {
+    // Signed MC / Time Chit / referral are legal records: only void (record kept) or reissue, never edit/delete.
+    const signedError = signedDocumentMutationError(procedures.map(p => ({ notes: p.note?.[0]?.text })), updates.procedures as any[]);
+    if (signedError) throw new ConflictError(signedError);
+    const hasTimeChit = (updates.procedures as any[]).some(isTimeChitProcedure);
+    if (hasTimeChit || (updates.procedures as any[]).some(p => isSignedDocumentNote(p.notes))) {
       clinicTenant = await resolveClinicTenant(client, clinicId ?? undefined);
-      if (!clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
+      if (hasTimeChit && !clinicTenant) throw new Error("Clinic tenancy unavailable for Time Chit.");
     }
   }
 

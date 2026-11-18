@@ -32,7 +32,7 @@ afterAll(() => {
 beforeEach(() => { created.length = 0; stamped.length = 0; writer.createResource.mockClear(); });
 
 describe('MC / referral Provenance', () => {
-  for (const kind of ['mc', 'referral']) {
+  for (const kind of ['mc', 'referral', 'time-chit']) {
     test(`${kind}: writes one CREATE Provenance targeting the Procedure with agent, org and clinic account`, async () => {
       await auditSignedDocument(client(), { id: 'proc-1' }, { notes: JSON.stringify({ kind }) }, 'pr-9', 'org-1', 'CREATE', tenant);
       expect(created).toHaveLength(1);
@@ -52,7 +52,7 @@ describe('MC / referral Provenance', () => {
   });
 
   test('no Provenance for other documents, bad notes, or a missing id', async () => {
-    await auditSignedDocument(client(), { id: 'p' }, { notes: '{"kind":"time-chit"}' }, 'pr', 'o', 'CREATE', tenant);
+    await auditSignedDocument(client(), { id: 'p' }, { notes: '{"kind":"other"}' }, 'pr', 'o', 'CREATE', tenant);
     await auditSignedDocument(client(), { id: 'p' }, { notes: 'plain text' }, 'pr', 'o', 'CREATE', tenant);
     await auditSignedDocument(client(), { id: 'p' }, {}, 'pr', 'o', 'CREATE', tenant);
     await auditSignedDocument(client(), undefined, { notes: '{"kind":"mc"}' }, 'pr', 'o', 'CREATE', tenant);

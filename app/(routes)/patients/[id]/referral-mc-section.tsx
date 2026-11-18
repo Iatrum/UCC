@@ -1,11 +1,12 @@
 "use client";
 
-import { fillDocumentTemplate, mcDiagnosisBlock, mcDiagnosisVisible, mmcLine, escapeHtmlText } from "@/lib/clinical-documents";
+import { fillDocumentTemplate, mcDiagnosisVisible, signedDocumentKind as kindFromProcedure, SIGNED_DOCUMENT_STATUS_VOIDED } from "@/lib/clinical-documents";
+import { calcAge, clinicLogoHtml, multilineToHtml, renderDocumentHtml, withPrintCss } from "@/lib/document-render";
+import { formatClinicDate, mcDaysLabel } from "@/lib/clinic-dates";
+import { printHtml } from "@/lib/print-html";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
-// import { PDFViewer, pdf } from "@react-pdf/renderer"; // replaced with HTML template approach
-import { Download, FileText, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Ban, Download, FileText, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -37,41 +38,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { getPatientReferrals, deleteReferral, type Referral } from "@/lib/fhir/referral-client";
-// import ReferralDocument from "@/components/referrals/referral-document"; // replaced with HTML template approach
-// import { McDocument } from "@/components/mc/mc-document"; // kept as fallback
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
-import { timeChitError, timeChitHours, fillTimeChitTemplate } from "@/lib/time-chit";
 import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import type { ProcedureRecord } from "@/lib/models";
 
-function formatDateLabel(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return format(date, "dd MMM yyyy");
-}
-
-function calcMcEndDate(startDate: string | null | undefined, numDays: number): string {
-  if (!startDate || numDays <= 0) return formatDateLabel(new Date()) || "";
-  const date = new Date(startDate);
-  if (Number.isNaN(date.getTime())) return formatDateLabel(new Date()) || "";
-  date.setDate(date.getDate() + numDays - 1);
-  return formatDateLabel(date) || "";
-}
-
-function calcAge(dob: string | Date | null | undefined): string {
-  if (!dob) return "";
-  const date = dob instanceof Date ? dob : new Date(String(dob));
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  let age = now.getFullYear() - date.getFullYear();
-  if (
-    now.getMonth() < date.getMonth() ||
-    (now.getMonth() === date.getMonth() && now.getDate() < date.getDate())
-  )
-    age--;
-  return String(age);
-}
+const formatDateLabel = (value: Date | string | null | undefined): string | null => formatClinicDate(value) || null;
 
 interface ReferralMCSectionProps {
   patient: any;
@@ -108,14 +79,7 @@ function parseSignedDocumentNote(value?: string): Record<string, string> {
 }
 
 function signedDocumentKind(procedure: ProcedureRecord): "mc" | "referral" | "time-chit" | null {
-  const details = parseSignedDocumentNote(procedure.notes);
-  if (details.kind === "time-chit") return "time-chit";
-  if (details.kind === "mc" || details.kind === "referral") return details.kind;
-
-  const key = `${procedure.procedureId || ""} ${procedure.name || ""}`.toLowerCase();
-  if (key.includes("letter-mc") || key.includes("medical certificate") || /\bmc\b/.test(key)) return "mc";
-  if (key.includes("letter-referral") || key.includes("referral")) return "referral";
-  return null;
+  return kindFromProcedure(procedure);
 }
 
 function getSignedDocuments(consultations: ReferralMCSectionProps["consultations"] = []): SignedDocument[] {
@@ -147,17 +111,6 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
   );
 }
 
-function multilineToHtml(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .map((p) => `<p style="margin: 0 0 12px; line-height: 1.65;">${escapeHtmlText(p.trim()).replace(/\n/g, "<br />")}</p>`)
-    .join("");
-}
-
-function fillPlaceholders(html: string, data: Record<string, string>): string {
-  return Object.entries(data).reduce((acc, [k, v]) => acc.replaceAll(k, v), html);
-}
-
 export default function ReferralMCSection({ patient, consultations = [] }: ReferralMCSectionProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -166,9 +119,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Referral | null>(null);
   const [viewingSigned, setViewingSigned] = useState<SignedDocument | null>(null);
-  const [editingSigned, setEditingSigned] = useState<SignedDocument | null>(null);
-  const [editForm, setEditForm] = useState<Record<string, string>>({});
-  const [savingSigned, setSavingSigned] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<
     { type: "signed"; doc: SignedDocument } | { type: "referral"; referral: Referral } | null
@@ -229,23 +180,6 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
     }
   }
 
-  function startEditSignedDocument(doc: SignedDocument) {
-    setEditingSigned(doc);
-    setEditForm({
-      ...doc.details,
-      mcDays: doc.details.mcDays || "1",
-      mcStartDate: doc.details.mcStartDate || new Date().toISOString().slice(0, 10),
-      mcDiagnosis: doc.details.mcDiagnosis || "",
-      mcDoctorName: doc.details.mcDoctorName || "",
-      mcDoctorMmc: doc.details.mcDoctorMmc || "",
-      referralDoctorName: doc.details.referralDoctorName || "",
-      referralDoctorMmc: doc.details.referralDoctorMmc || "",
-      referralTo: doc.details.referralTo || "",
-      referralDiagnosis: doc.details.referralDiagnosis || "",
-      referralContent: doc.details.referralContent || "",
-    });
-  }
-
   async function updateSignedDocumentProcedures(doc: SignedDocument, procedures: ProcedureRecord[]) {
     if (!doc.consultationId) {
       throw new Error("This generated document is missing its consultation reference.");
@@ -268,61 +202,11 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
     return consultation?.procedures || [];
   }
 
-  async function handleSaveSignedDocument() {
-    if (!editingSigned) return;
-
-    if (editingSigned.kind === "time-chit") {
-      const error = timeChitError(editForm);
-      if (error) { toast({ title: error, variant: "destructive" }); return; }
-    }
-    const currentProcedures = getConsultationProcedures(editingSigned);
-    if (!currentProcedures[editingSigned.procedureIndex]) {
-      toast({
-        title: "Document not found",
-        description: "Refresh the page and try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const title = editingSigned.kind === "time-chit" ? "TIME CHIT" : editingSigned.kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER";
-    const details = {
-      ...editingSigned.details,
-      ...editForm,
-      ...(editingSigned.kind === "time-chit" ? { tcHours: timeChitHours(editForm.tcTimeIn, editForm.tcTimeOut)! } : {}),
-      kind: editingSigned.kind,
-      title,
-      status: editingSigned.status || editingSigned.details.status || "completed",
-    };
-    const updatedProcedure: ProcedureRecord = {
-      ...editingSigned.procedure,
-      name: title,
-      category: "documents",
-      notes: JSON.stringify(details),
-    };
-
-    setSavingSigned(true);
-    try {
-      const nextProcedures = currentProcedures.map((procedure, index) =>
-        index === editingSigned.procedureIndex ? updatedProcedure : procedure
-      );
-      await updateSignedDocumentProcedures(editingSigned, nextProcedures);
-      setEditingSigned(null);
-      setEditForm({});
-      toast({ title: "Document updated" });
-      router.refresh();
-    } catch (err: any) {
-      toast({
-        title: "Error",
-        description: err?.message || "Failed to update generated document.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingSigned(false);
-    }
-  }
-
-  async function handleDeleteSignedDocument(doc: SignedDocument) {
+  /**
+   * Signed documents are legal records: they are voided (record kept, marked VOID)
+   * and reissued from a consult, never edited or deleted. The server enforces this.
+   */
+  async function handleVoidSignedDocument(doc: SignedDocument, reason: string) {
     const currentProcedures = getConsultationProcedures(doc);
     if (!currentProcedures[doc.procedureIndex]) {
       toast({
@@ -335,16 +219,26 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
 
     setDeleting(doc.id);
     try {
-      const nextProcedures = currentProcedures.filter((_, index) => index !== doc.procedureIndex);
+      const voided: ProcedureRecord = {
+        ...doc.procedure,
+        notes: JSON.stringify({
+          ...doc.details,
+          status: SIGNED_DOCUMENT_STATUS_VOIDED,
+          voidedAt: new Date().toISOString(),
+          ...(reason.trim() ? { voidReason: reason.trim() } : {}),
+        }),
+      };
+      const nextProcedures = currentProcedures.map((procedure, index) =>
+        index === doc.procedureIndex ? voided : procedure
+      );
       await updateSignedDocumentProcedures(doc, nextProcedures);
       if (viewingSigned?.id === doc.id) setViewingSigned(null);
-      if (editingSigned?.id === doc.id) setEditingSigned(null);
-      toast({ title: "Document deleted" });
+      toast({ title: "Document voided", description: "Issue a new one from a consult if it is still needed." });
       router.refresh();
     } catch (err: any) {
       toast({
         title: "Error",
-        description: err?.message || "Failed to delete generated document.",
+        description: err?.message || "Failed to void generated document.",
         variant: "destructive",
       });
     } finally {
@@ -362,51 +256,15 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
       html = doc.kind === "time-chit" ? DEFAULT_TIME_CHIT_TEMPLATE : doc.kind === "mc" ? DEFAULT_MC_TEMPLATE : DEFAULT_REFERRAL_TEMPLATE;
     }
-    if (doc.kind === "time-chit") return fillTimeChitTemplate(html, {
-      clinicName: organization?.name || "", clinicAddress: organization?.address || "", clinicPhone: organization?.phone || "",
-      patientName: patient.fullName || "", patientNric: patient.nric || "",
-      tcDate: formatDateLabel(doc.details.tcDate) || "", tcTimeIn: doc.details.tcTimeIn || "", tcTimeOut: doc.details.tcTimeOut || "",
-      tcHours: doc.details.tcHours || "", doctorName: doc.details.tcDoctorName || "", date: formatDateLabel(doc.date) || "",
+    // doc.date is the consultation (issue) date: a reprint never shows today's date.
+    return renderDocumentHtml({
+      kind: doc.kind,
+      template: html,
+      details: doc.details,
+      patient,
+      organization,
+      issuedDate: doc.date,
     });
-    const today = new Date().toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-    const issuedDate = formatDateLabel(doc.date) || today;
-    const common = {
-      clinicName: organization?.name || "",
-      clinicAddress: organization?.address || "",
-      clinicPhone: organization?.phone || "",
-      patientName: patient.fullName || "",
-      patientNric: patient.nric || "",
-      date: today,
-    };
-    if (doc.kind === "mc") {
-      const showDx = mcDiagnosisVisible(doc.details);
-      return fillDocumentTemplate(html, {
-        ...common,
-        patientDob: formatDateLabel(patient.dateOfBirth) || "",
-        mcDays: doc.details.mcDays || "1",
-        mcStartDate: formatDateLabel(doc.details.mcStartDate) || issuedDate,
-        mcEndDate: calcMcEndDate(doc.details.mcStartDate, Number(doc.details.mcDays || 1)),
-        diagnosis: showDx ? doc.details.mcDiagnosis || "" : "",
-        diagnosisBlock: mcDiagnosisBlock(doc.details.mcDiagnosis, showDx),
-        doctorName: doc.details.mcDoctorName || "",
-        mmcLine: mmcLine(doc.details.mcDoctorMmc),
-      }, { rawKeys: ["diagnosisBlock", "mmcLine"], hideMcDiagnosis: !showDx });
-    }
-    const referralDoctor = doc.details.referralDoctorName || doc.details.mcDoctorName || "";
-    return fillDocumentTemplate(html, {
-      ...common,
-      patientAge: calcAge(patient.dateOfBirth),
-      referralTo: doc.details.referralTo || "",
-      referralFrom: referralDoctor || doc.details.referralFrom || organization?.name || "",
-      referralBody: multilineToHtml(doc.details.referralContent || ""),
-      diagnosis: doc.details.referralDiagnosis || "",
-      doctorName: referralDoctor,
-      mmcLine: mmcLine(doc.details.referralDoctorMmc),
-    }, { rawKeys: ["referralBody", "mmcLine"] });
   }
 
   async function buildLegacyReferralHtml(r: Referral): Promise<string> {
@@ -419,36 +277,23 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
       html = DEFAULT_REFERRAL_TEMPLATE;
     }
-    const today = new Date().toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-    const dateLabel = r.date ? format(new Date(r.date), "dd MMM yyyy") : today;
     const toLine = [r.department, r.facility].filter(Boolean).join(", ") || "";
-    const data: Record<string, string> = {
-      "{{clinicName}}": organization?.name || "",
-      "{{clinicAddress}}": organization?.address || "",
-      "{{clinicPhone}}": organization?.phone || "",
-      "{{patientName}}": patient.fullName || "",
-      "{{patientNric}}": patient.nric || "",
-      "{{patientAge}}": calcAge(patient.dateOfBirth),
-      "{{referralTo}}": toLine,
-      "{{referralFrom}}": r.doctorName || organization?.name || "",
-      "{{referralBody}}": (r as any).letterText || "",
-      "{{diagnosis}}": r.specialty || "",
-      "{{doctorName}}": r.doctorName || "",
-      "{{date}}": dateLabel,
-    };
-    return fillPlaceholders(html, data);
-  }
-
-  function openPrintWindow(html: string) {
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank");
-    if (win) win.addEventListener("load", () => win.print());
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return withPrintCss(fillDocumentTemplate(html, {
+      clinicLogo: clinicLogoHtml(organization?.logoUrl),
+      clinicName: organization?.name || "",
+      clinicAddress: organization?.address || "",
+      clinicPhone: organization?.phone || "",
+      patientName: patient.fullName || "",
+      patientNric: patient.nric || "",
+      patientAge: calcAge(patient.dateOfBirth),
+      referralTo: toLine,
+      referralFrom: r.doctorName || organization?.name || "",
+      referralBody: multilineToHtml((r as any).letterText || ""),
+      diagnosis: r.specialty || "",
+      doctorName: r.doctorName || "",
+      mmcLine: "",
+      date: formatClinicDate(r.date) || formatClinicDate(new Date()),
+    }, { rawKeys: ["clinicLogo", "referralBody", "mmcLine"] }));
   }
 
   async function openSignedDocumentViewer(doc: SignedDocument) {
@@ -541,13 +386,12 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                         ? [
                             [
                               doc.details.mcStartDate ? formatDateLabel(doc.details.mcStartDate) : null,
-                              doc.details.mcDays
-                                ? `(${doc.details.mcDays} day${doc.details.mcDays === "1" ? "" : "s"})`
-                                : null,
+                              doc.details.mcDays ? `(${mcDaysLabel(doc.details.mcDays)})` : null,
                             ]
                               .filter(Boolean)
                               .join(" "),
-                            doc.details.mcDiagnosis,
+                            // Never list a diagnosis the printed MC hides.
+                            mcDiagnosisVisible(doc.details) ? doc.details.mcDiagnosis : null,
                           ]
                             .filter(Boolean)
                             .join(" • ")
@@ -556,7 +400,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                             .join(" • "),
                       [
                         doc.date ? `Issued ${formatDateLabel(doc.date)}` : null,
-                        doc.status ? (doc.status === "completed" ? "Signed" : doc.status) : null,
+                        doc.status ? (doc.status === "completed" ? "Signed" : doc.status === SIGNED_DOCUMENT_STATUS_VOIDED ? "Voided" : doc.status) : null,
                       ]
                         .filter(Boolean)
                         .join(" · "),
@@ -567,24 +411,22 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                 </div>
               </button>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => startEditSignedDocument(doc)}>
-                  <Pencil className="h-4 w-4" />
-                  <span className="sr-only">Edit document</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={deleting === doc.id}
-                  aria-label="Delete document"
-                  onClick={() => setPendingDelete({ type: "signed", doc })}
-                >
-                  {deleting === doc.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  )}
-                  <span className="sr-only">Delete document</span>
-                </Button>
+                {doc.status !== SIGNED_DOCUMENT_STATUS_VOIDED && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={deleting === doc.id}
+                    aria-label="Void document"
+                    onClick={() => { setVoidReason(""); setPendingDelete({ type: "signed", doc }); }}
+                  >
+                    {deleting === doc.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Ban className="h-4 w-4 text-destructive" />
+                    )}
+                    <span className="sr-only">Void document</span>
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -605,7 +447,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                   <p className="font-medium">{r.specialty} Referral</p>
                   <p className="text-sm text-muted-foreground">
                     {[r.facility, r.department].filter(Boolean).join(" • ")}
-                    {r.date ? ` — ${format(new Date(r.date), "dd MMM yyyy")}` : ""}
+                    {r.date ? ` — ${formatClinicDate(r.date)}` : ""}
                   </p>
                 </div>
               </button>
@@ -638,15 +480,21 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+            <AlertDialogTitle>{pendingDelete?.type === "signed" ? "Void this document?" : "Delete this document?"}</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete?.type === "signed"
-                ? `Delete this ${
+                ? `Void this signed ${
                     pendingDelete.doc.kind === "mc" ? "MC" : pendingDelete.doc.kind === "time-chit" ? "time chit" : "referral letter"
-                  } for ${patient.fullName}? This removes it from the signed consultation.`
+                  } for ${patient.fullName}? It stays on record marked VOID and cannot be printed. Issue a new one from a consult to replace it.`
                 : `Delete this referral letter for ${patient.fullName}? This cannot be undone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pendingDelete?.type === "signed" && (
+            <div className="grid gap-2">
+              <Label htmlFor="void-reason">Reason (optional)</Label>
+              <Input id="void-reason" value={voidReason} onChange={(e) => setVoidReason(e.target.value)} />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -654,189 +502,15 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               onClick={() => {
                 const target = pendingDelete;
                 setPendingDelete(null);
-                if (target?.type === "signed") void handleDeleteSignedDocument(target.doc);
+                if (target?.type === "signed") void handleVoidSignedDocument(target.doc, voidReason);
                 else if (target) void handleDelete(target.referral.id);
               }}
             >
-              Delete
+              {pendingDelete?.type === "signed" ? "Void" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Edit dialog — unchanged */}
-      <Dialog
-        open={!!editingSigned}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingSigned(null);
-            setEditForm({});
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              Edit {editingSigned?.kind === "time-chit" ? "Time Chit" : editingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
-            </DialogTitle>
-            <DialogDescription>
-              Update the saved generated document. The PDF preview will use these values.
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingSigned?.kind === "time-chit" && (
-            <div className="grid gap-4">
-              {([ ["tcDate", "Attendance date", "date"], ["tcTimeIn", "Time in", "time"], ["tcTimeOut", "Time out", "time"], ["tcDoctorName", "Doctor's name", "text"] ] as const).map(([field, label, type]) => (
-                <div key={field} className="grid gap-2"><Label htmlFor={`edit-${field}`}>{label}</Label>
-                  <Input id={`edit-${field}`} type={type} value={editForm[field] || ""}
-                    onChange={e => setEditForm(prev => ({ ...prev, [field]: e.target.value }))} />
-                </div>
-              ))}
-              <p>Duration: {timeChitHours(editForm.tcTimeIn || "", editForm.tcTimeOut || "") || "—"} hour(s)</p>
-            </div>
-          )}
-          {editingSigned?.kind === "mc" && (
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="mc-days">MC days</Label>
-                <Input
-                  id="mc-days"
-                  type="number"
-                  min="1"
-                  value={editForm.mcDays || ""}
-                  onChange={(event) => setEditForm((prev) => ({ ...prev, mcDays: event.target.value }))}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="mc-start-date">Start date</Label>
-                <Input
-                  id="mc-start-date"
-                  type="date"
-                  value={editForm.mcStartDate || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, mcStartDate: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="mc-diagnosis">Diagnosis / reason</Label>
-                <Textarea
-                  id="mc-diagnosis"
-                  value={editForm.mcDiagnosis || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, mcDiagnosis: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="mc-doctor">Doctor name</Label>
-                <Input
-                  id="mc-doctor"
-                  value={editForm.mcDoctorName || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, mcDoctorName: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="mc-mmc">MMC registration no.</Label>
-                <Input
-                  id="mc-mmc"
-                  value={editForm.mcDoctorMmc || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, mcDoctorMmc: event.target.value }))
-                  }
-                />
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={mcDiagnosisVisible({ mcIncludeDiagnosis: editForm.mcIncludeDiagnosis })}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, mcIncludeDiagnosis: event.target.checked ? "true" : "" }))
-                  }
-                />
-                Show diagnosis on the MC (hidden by default)
-              </label>
-            </div>
-          )}
-
-          {editingSigned?.kind === "referral" && (
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="referral-doctor">Doctor name</Label>
-                  <Input
-                    id="referral-doctor"
-                    value={editForm.referralDoctorName || ""}
-                    onChange={(event) =>
-                      setEditForm((prev) => ({ ...prev, referralDoctorName: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="referral-mmc">MMC registration no.</Label>
-                  <Input
-                    id="referral-mmc"
-                    value={editForm.referralDoctorMmc || ""}
-                    onChange={(event) =>
-                      setEditForm((prev) => ({ ...prev, referralDoctorMmc: event.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="referral-to">Referral to</Label>
-                <Input
-                  id="referral-to"
-                  value={editForm.referralTo || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, referralTo: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="referral-diagnosis">Diagnosis / specialty</Label>
-                <Input
-                  id="referral-diagnosis"
-                  value={editForm.referralDiagnosis || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, referralDiagnosis: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="referral-content">Letter content</Label>
-                <Textarea
-                  id="referral-content"
-                  className="min-h-40"
-                  value={editForm.referralContent || ""}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, referralContent: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setEditingSigned(null);
-                setEditForm({});
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleSaveSignedDocument} disabled={savingSigned}>
-              {savingSigned && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* View signed document — HTML template iframe */}
       <Dialog
@@ -849,8 +523,8 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
         }}
       >
         <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">
-          <div className="flex h-[90vh] flex-col">
-            <DialogHeader className="space-y-2 border-b px-6 py-4">
+          <div className="flex h-[90dvh] flex-col">
+            <DialogHeader className="space-y-2 border-b px-4 py-3 sm:px-6 sm:py-4">
               <DialogTitle>
                 {viewingSigned?.kind === "time-chit" ? "Time Chit" : viewingSigned?.kind === "mc" ? "Medical Certificate (MC)" : "Referral Letter"}
               </DialogTitle>
@@ -859,7 +533,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 px-6 py-4">
+            <div className="min-h-0 flex-1 px-2 py-2 sm:px-6 sm:py-4">
               {viewingHtmlLoading && (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -875,7 +549,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               )}
             </div>
 
-            <div className="flex justify-end gap-2 border-t px-6 py-4">
+            <div className="flex justify-end gap-2 border-t px-4 py-3 sm:px-6 sm:py-4">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -886,8 +560,8 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                 Close
               </Button>
               <Button
-                disabled={!viewingHtml}
-                onClick={() => viewingHtml && openPrintWindow(viewingHtml)}
+                disabled={!viewingHtml || viewingSigned?.status === SIGNED_DOCUMENT_STATUS_VOIDED}
+                onClick={() => viewingHtml && printHtml(viewingHtml)}
               >
                 <Download className="mr-2 h-4 w-4" /> Print / Save PDF
               </Button>
@@ -907,15 +581,15 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
         }}
       >
         <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">
-          <div className="flex h-[90vh] flex-col">
-            <DialogHeader className="space-y-2 border-b px-6 py-4">
+          <div className="flex h-[90dvh] flex-col">
+            <DialogHeader className="space-y-2 border-b px-4 py-3 sm:px-6 sm:py-4">
               <DialogTitle>Referral Letter</DialogTitle>
               <DialogDescription>
                 {viewing ? `${viewing.specialty} — ${viewing.facility}` : ""}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 px-6 py-4">
+            <div className="min-h-0 flex-1 px-2 py-2 sm:px-6 sm:py-4">
               {viewingHtmlLoading && (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -931,7 +605,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               )}
             </div>
 
-            <div className="flex justify-end gap-2 border-t px-6 py-4">
+            <div className="flex justify-end gap-2 border-t px-4 py-3 sm:px-6 sm:py-4">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -943,7 +617,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               </Button>
               <Button
                 disabled={!viewingHtml}
-                onClick={() => viewingHtml && openPrintWindow(viewingHtml)}
+                onClick={() => viewingHtml && printHtml(viewingHtml)}
               >
                 <Download className="mr-2 h-4 w-4" /> Print / Save PDF
               </Button>

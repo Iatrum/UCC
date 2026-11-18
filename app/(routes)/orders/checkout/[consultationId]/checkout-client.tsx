@@ -8,7 +8,7 @@ import {
   type LineStock,
   type StockCatalogItem,
 } from "@/lib/billing/checkout-stock";
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -22,7 +22,6 @@ import {
   Printer,
   ReceiptText,
 } from "lucide-react";
-import { PDFViewer, pdf, type DocumentProps } from "@react-pdf/renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,9 +52,9 @@ import { Patient, Consultation } from "@/lib/models";
 import { formatDisplayDate } from "@/lib/utils";
 import { formatMedicationNameWithStrength, formatPrescriptionDetails } from "@/lib/prescriptions";
 import type { TreatmentPlanEntry } from "@/lib/treatment-plan";
-import { TimeChitDocument } from "@/components/mc/time-chit-document";
-import { McDocument } from "@/components/mc/mc-document";
-import ReferralDocument from "@/components/referrals/referral-document";
+import { renderDocumentHtml } from "@/lib/document-render";
+import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
+import { printHtml } from "@/lib/print-html";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
 
 type CheckoutClientProps = {
@@ -84,19 +83,12 @@ type CheckoutItem = {
 
 type PaymentMethod = "cash" | "card" | "qr" | "panel";
 
-type CheckoutDocumentDetails = {
+/** Same detail keys the composer/Documents tab use (tc*, mc*, referral*, incl. doctor MMC and mcIncludeDiagnosis). */
+type CheckoutDocumentDetails = Record<string, string | undefined> & {
   kind: "mc" | "referral" | "time-chit";
-  tcDate?: string; tcTimeIn?: string; tcTimeOut?: string; tcHours?: string; tcDoctorName?: string;
   title: string;
   status?: string;
   instruction?: string;
-  mcDays?: string;
-  mcDiagnosis?: string;
-  mcStartDate?: string;
-  mcDoctorName?: string;
-  referralTo?: string;
-  referralDiagnosis?: string;
-  referralContent?: string;
 };
 
 function currency(amount: number) {
@@ -133,18 +125,9 @@ function parseDocumentDetails(value: string | undefined, fallbackTitle: string):
     if (parsed.kind !== "mc" && parsed.kind !== "referral" && parsed.kind !== "time-chit") return undefined;
 
     return {
+      ...parsed,
       kind: parsed.kind,
       title: parsed.title || fallbackTitle || (parsed.kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER"),
-      status: parsed.status,
-      instruction: parsed.instruction,
-      tcDate: parsed.tcDate, tcTimeIn: parsed.tcTimeIn, tcTimeOut: parsed.tcTimeOut, tcHours: parsed.tcHours, tcDoctorName: parsed.tcDoctorName,
-      mcDays: parsed.mcDays,
-      mcDiagnosis: parsed.mcDiagnosis,
-      mcStartDate: parsed.mcStartDate,
-      mcDoctorName: parsed.mcDoctorName,
-      referralTo: parsed.referralTo,
-      referralDiagnosis: parsed.referralDiagnosis,
-      referralContent: parsed.referralContent,
     };
   } catch {
     return undefined;
@@ -163,33 +146,12 @@ function documentDetailsFromDraft(entry: TreatmentPlanEntry): CheckoutDocumentDe
   if (!kind) return undefined;
 
   return {
+    ...(entry.meta as Record<string, string | undefined> | undefined),
     kind,
     title: entry.name || (kind === "mc" ? "MEDICAL CERTIFICATE (MC)" : "REFERRAL LETTER"),
     status: entry.meta?.documentStatus || "completed",
     instruction: entry.instruction,
-    tcDate: entry.meta?.tcDate, tcTimeIn: entry.meta?.tcTimeIn, tcTimeOut: entry.meta?.tcTimeOut, tcHours: entry.meta?.tcHours, tcDoctorName: entry.meta?.tcDoctorName,
-    mcDays: entry.meta?.mcDays,
-    mcDiagnosis: entry.meta?.mcDiagnosis,
-    mcStartDate: entry.meta?.mcStartDate,
-    mcDoctorName: entry.meta?.mcDoctorName,
-    referralTo: entry.meta?.referralTo,
-    referralDiagnosis: entry.meta?.referralDiagnosis,
-    referralContent: entry.meta?.referralContent,
   };
-}
-
-function calcMcEndDate(startDate: string | undefined, numDays: number): string {
-  if (!startDate || numDays <= 0) return formatDisplayDate(new Date());
-  const date = new Date(startDate);
-  if (Number.isNaN(date.getTime())) return formatDisplayDate(new Date());
-  date.setDate(date.getDate() + numDays - 1);
-  return formatDisplayDate(date);
-}
-
-function displayDateOr(value: Date | string | null | undefined, fallback: string): string {
-  const formatted = formatDisplayDate(value);
-  if (formatted === "N/A" || formatted === "Invalid Date") return fallback;
-  return formatted;
 }
 
 function checkoutItemType(category: CheckoutItem["category"]): CheckoutItem["type"] {
@@ -397,59 +359,27 @@ function buildPrintableBillHtml({
     </html>`;
 }
 
-function renderCheckoutDocument({
-  item,
-  patient,
-  date,
-  organization,
+const DEFAULT_TEMPLATES = { mc: DEFAULT_MC_TEMPLATE, referral: DEFAULT_REFERRAL_TEMPLATE, "time-chit": DEFAULT_TIME_CHIT_TEMPLATE } as const;
+
+/** Checkout uses the same HTML template renderer as the composer preview and the Documents tab. */
+async function buildCheckoutDocumentHtml({
+  item, patient, issuedDate, organization,
 }: {
   item: CheckoutItem;
   patient: Patient;
-  date: string;
+  issuedDate: Date | string | null | undefined;
   organization: OrganizationDetails | null;
-}): ReactElement<DocumentProps> | null {
+}): Promise<string | null> {
   const details = item.documentDetails;
   if (!details) return null;
-
-  if (details.kind === "time-chit") {
-    return <TimeChitDocument patient={patient} issuedDate={date} attendanceDate={displayDateOr(details.tcDate, date)}
-      timeIn={details.tcTimeIn || ""} timeOut={details.tcTimeOut || ""} hours={details.tcHours || ""}
-      doctorName={details.tcDoctorName || ""} organization={organization} />;
+  let template: string = DEFAULT_TEMPLATES[details.kind];
+  try {
+    const res = await fetch(`/api/document-templates?type=${details.kind}`);
+    if (res.ok) template = (await res.json()).html || template;
+  } catch {
+    // fall back to the built-in default
   }
-  if (details.kind === "mc") {
-    const numDays = Math.max(1, Number(details.mcDays || 1) || 1);
-    const startDate = displayDateOr(details.mcStartDate, date);
-    return (
-      <McDocument
-        patient={patient}
-        issuedDate={date}
-        startDate={startDate}
-        endDate={calcMcEndDate(details.mcStartDate, numDays)}
-        numDays={numDays}
-        doctorName={details.mcDoctorName || ""}
-        organization={organization}
-      />
-    );
-  }
-
-  return (
-    <ReferralDocument
-      letterText={details.referralContent || details.instruction || ""}
-      organization={organization}
-      metadata={{
-        dateLabel: date,
-        patientName: patient.fullName,
-        patientId: patient.nric,
-        patientDateOfBirth: displayDateOr(patient.dateOfBirth, ""),
-        patientPhone: patient.phone ?? null,
-        patientEmail: patient.email ?? null,
-        specialty: details.referralDiagnosis || null,
-        facility: details.referralTo || null,
-        toLine: details.referralTo || null,
-        fromLine: organization?.name ?? null,
-      }}
-    />
-  );
+  return renderDocumentHtml({ kind: details.kind, template, details, patient, organization, issuedDate });
 }
 
 export default function CheckoutClient({ consultationId, patientId }: CheckoutClientProps) {
@@ -465,7 +395,8 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const isSubmittingRef = useRef(false);
   const [billPreviewOpen, setBillPreviewOpen] = useState(false);
   const [documentPreviewItem, setDocumentPreviewItem] = useState<CheckoutItem | null>(null);
-  const [printingDocument, setPrintingDocument] = useState(false);
+  const [documentPreviewHtml, setDocumentPreviewHtml] = useState<string | null>(null);
+  const [documentPreviewLoading, setDocumentPreviewLoading] = useState(false);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [effectivePatientId, setEffectivePatientId] = useState(patientId);
@@ -577,6 +508,24 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       active = false;
     };
   }, []);
+
+  const previewPatient = details?.patient ?? null;
+  const previewIssuedDate = details?.consultation?.date ?? null;
+  useEffect(() => {
+    if (!documentPreviewItem || !previewPatient) {
+      setDocumentPreviewHtml(null);
+      return;
+    }
+    let active = true;
+    setDocumentPreviewHtml(null);
+    setDocumentPreviewLoading(true);
+    buildCheckoutDocumentHtml({ item: documentPreviewItem, patient: previewPatient, issuedDate: previewIssuedDate, organization })
+      .then((html) => { if (active) setDocumentPreviewHtml(html); })
+      .finally(() => { if (active) setDocumentPreviewLoading(false); });
+    return () => {
+      active = false;
+    };
+  }, [documentPreviewItem, previewPatient, previewIssuedDate, organization]);
 
   const checkoutItems = useMemo(
     () => {
@@ -699,40 +648,8 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     printWindow.focus();
     printWindow.print();
   };
-  const documentPreview = documentPreviewItem
-    ? renderCheckoutDocument({
-        item: documentPreviewItem,
-        patient,
-        date: billDate,
-        organization,
-      })
-    : null;
-  const handlePrintDocument = async () => {
-    if (!documentPreviewItem || !documentPreview || printingDocument) return;
-
-    const printWindow = window.open("", "_blank", "width=840,height=900");
-    if (!printWindow) {
-      setCompletionError("Unable to open document print preview. Please allow pop-ups for this site.");
-      return;
-    }
-
-    setPrintingDocument(true);
-    setCompletionError(null);
-    try {
-      const blob = await pdf(documentPreview).toBlob();
-      const url = URL.createObjectURL(blob);
-      printWindow.location.href = url;
-      printWindow.focus();
-      window.setTimeout(() => {
-        printWindow.print();
-      }, 1000);
-      window.setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (err) {
-      printWindow.close();
-      setCompletionError(err instanceof Error ? err.message : "Failed to print document.");
-    } finally {
-      setPrintingDocument(false);
-    }
+  const handlePrintDocument = () => {
+    if (documentPreviewHtml) printHtml(documentPreviewHtml);
   };
 
   return (
@@ -1056,8 +973,8 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
 
       <Dialog open={!!documentPreviewItem} onOpenChange={(open) => !open && setDocumentPreviewItem(null)}>
         <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">
-          <div className="flex h-[90vh] flex-col">
-            <DialogHeader className="space-y-2 border-b px-6 py-4">
+          <div className="flex h-[90dvh] flex-col">
+            <DialogHeader className="space-y-2 border-b px-4 py-3 sm:px-6 sm:py-4">
               <DialogTitle>Document preview</DialogTitle>
               <DialogDescription>
                 {documentPreviewItem?.documentDetails?.title || documentPreviewItem?.name || "Generated document"} · {patient.fullName}
@@ -1065,12 +982,17 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
             </DialogHeader>
 
             <div className="min-h-0 flex-1 px-6 py-4">
-              {documentPreview ? (
-                <div className="h-full overflow-hidden rounded-lg border">
-                  <PDFViewer className="h-full w-full">
-                    {documentPreview}
-                  </PDFViewer>
+              {documentPreviewLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
                 </div>
+              ) : documentPreviewHtml ? (
+                <iframe
+                  srcDoc={documentPreviewHtml}
+                  className="h-full w-full rounded-lg border"
+                  title="Document preview"
+                />
               ) : (
                 <EmptyPanel text="This document cannot be previewed from checkout." />
               )}
@@ -1080,12 +1002,8 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
               <Button variant="outline" type="button" onClick={() => setDocumentPreviewItem(null)}>
                 Close
               </Button>
-              <Button type="button" onClick={handlePrintDocument} disabled={!documentPreview || printingDocument}>
-                {printingDocument ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Printer className="mr-2 h-4 w-4" />
-                )}
+              <Button type="button" onClick={handlePrintDocument} disabled={!documentPreviewHtml}>
+                <Printer className="mr-2 h-4 w-4" />
                 Print document
               </Button>
             </DialogFooter>

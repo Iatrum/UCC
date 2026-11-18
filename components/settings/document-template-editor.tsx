@@ -22,19 +22,27 @@ import {
   DEFAULT_REFERRAL_TEMPLATE,
   fillPreviewData,
 } from "@/lib/document-templates";
+import { withPrintCss } from "@/lib/document-render";
 
 const MC_VARS = [
-  "{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}",
+  "{{clinicLogo}}", "{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}",
   "{{patientName}}", "{{patientNric}}", "{{patientDob}}",
   "{{mcDays}}", "{{mcStartDate}}", "{{mcEndDate}}",
-  "{{diagnosis}}", "{{doctorName}}", "{{date}}",
+  "{{diagnosisBlock}}", "{{diagnosis}}", "{{doctorName}}", "{{mmcLine}}", "{{date}}",
 ];
 
 const REFERRAL_VARS = [
-  "{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}",
+  "{{clinicLogo}}", "{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}",
   "{{patientName}}", "{{patientNric}}", "{{patientAge}}",
   "{{referralTo}}", "{{referralFrom}}", "{{referralBody}}",
-  "{{diagnosis}}", "{{doctorName}}", "{{date}}",
+  "{{diagnosis}}", "{{doctorName}}", "{{mmcLine}}", "{{date}}",
+];
+
+const TIME_CHIT_VARS = [
+  "{{clinicLogo}}", "{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}",
+  "{{patientName}}", "{{patientNric}}", "{{patientDob}}",
+  "{{tcDate}}", "{{tcTimeIn}}", "{{tcTimeOut}}", "{{tcHours}}",
+  "{{doctorName}}", "{{mmcLine}}", "{{date}}",
 ];
 
 interface TemplatePanelProps {
@@ -47,10 +55,10 @@ interface TemplatePanelProps {
 }
 
 function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: TemplatePanelProps) {
-  const vars = type === "time-chit" ? ["{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}", "{{patientName}}", "{{patientNric}}", "{{tcDate}}", "{{tcTimeIn}}", "{{tcTimeOut}}", "{{tcHours}}", "{{doctorName}}", "{{date}}"] : type === "mc" ? MC_VARS : REFERRAL_VARS;
+  const vars = type === "time-chit" ? TIME_CHIT_VARS : type === "mc" ? MC_VARS : REFERRAL_VARS;
   const [showVars, setShowVars] = React.useState(false);
   const editorId = React.useId();
-  const previewHtml = fillPreviewData(html);
+  const previewHtml = withPrintCss(fillPreviewData(html));
 
   return (
     <div className="space-y-3">
