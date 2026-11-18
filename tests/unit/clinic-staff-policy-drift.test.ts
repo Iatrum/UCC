@@ -22,6 +22,37 @@ describe('UCC Clinic Staff Policy definition', () => {
   });
 });
 
+describe('UCC Clinic Staff Policy identity/membership containment (Task 568)', () => {
+  const rules = clinicStaffPolicyResources();
+  const types = new Set(rules.map((rule) => rule.resourceType));
+
+  test('no wildcard and no rule for identity, membership, policy or project resources', () => {
+    for (const forbidden of ['*', 'ProjectMembership', 'User', 'AccessPolicy', 'Project', 'Login', 'Bot', 'ClientApplication', 'UserConfiguration', 'AuditEvent']) {
+      expect(types.has(forbidden)).toBe(false);
+    }
+  });
+
+  test('every directory rule is read-only and clinic/self scoped by criteria', () => {
+    for (const type of ['Practitioner', 'PractitionerRole', 'Organization', 'HealthcareService']) {
+      const own = rules.filter((rule) => rule.resourceType === type);
+      expect(own.length).toBeGreaterThan(0);
+      for (const rule of own) {
+        expect(rule.criteria).toBeTruthy();
+        expect(rule.interaction).toEqual(['read', 'search', 'history', 'vread']);
+      }
+    }
+    const criteria = (type: string) => rules.filter((rule) => rule.resourceType === type).map((rule) => rule.criteria);
+    expect(criteria('Practitioner')).toEqual(['Practitioner?_compartment=%clinicAccount', 'Practitioner?_id=%profile.id']);
+    expect(criteria('PractitionerRole')).toEqual(['PractitionerRole?organization=%clinicOrganization']);
+  });
+
+  test('no read-capable rule is unscoped except the create-only clinical rules', () => {
+    for (const rule of rules.filter((r) => !r.criteria)) {
+      expect(rule.interaction).toEqual(['create']);
+    }
+  });
+});
+
 describe('clinicStaffPolicyDrift', () => {
   test('in-sync policy has no drift', () => {
     expect(clinicStaffPolicyDrift(clinicStaffPolicyResources())).toEqual([]);

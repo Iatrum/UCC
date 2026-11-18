@@ -82,4 +82,10 @@ export function buildStockNotice(payload: {
   return { title: "Invoice saved, but check stock", lines, severe: Boolean(error || unresolved.length) };
 }
 
+/** Success-toast description: the saved-invoice sentence plus the stock lines (item names), if any. */
+export function checkoutToastDescription(invoiceLabel: string, notice: CheckoutStockNotice | null): string {
+  const base = `Invoice ${invoiceLabel} was saved.`;
+  return notice && notice.lines.length ? `${base} ${notice.lines.join(" ")}` : base;
+}
+
 export const CHECKOUT_NOTICE_STORAGE_KEY = "ucc.checkoutStockNotice";

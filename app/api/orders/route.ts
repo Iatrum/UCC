@@ -5,9 +5,12 @@ import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/f
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { resolveCheckoutPatientId } from '@/lib/billing/checkout-guards';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { isSignedDocumentNote } from '@/lib/clinical-documents';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
-function procedureKey(p: { procedureId?: string; name: string; price?: number; category?: string }): string {
+function procedureKey(p: { procedureId?: string; name: string; price?: number; category?: string; notes?: string }): string {
+  // A reissued MC/Time Chit/referral shares catalogue id + price with the voided one; key it by content.
+  if (isSignedDocumentNote(p.notes)) return `signed-document|${p.notes}`;
   return `${p.procedureId ?? p.name}|${p.price ?? ''}|${p.category ?? ''}`;
 }
 

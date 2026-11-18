@@ -1,6 +1,6 @@
 import type { ModuleDefinition } from "@/lib/module-registry";
 
-// Toggle-only module (no nav entry, like time-chit): enables the Feedback control in the main chrome.
+// Toggle-only module (no nav entry): enables the Feedback control in the main chrome.
 export default {
   id: "feedback",
   label: "Feedback (bug / feature request)",

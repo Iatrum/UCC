@@ -22,7 +22,8 @@ export function isTimeChitProcedure(proc: { notes?: string; procedureId?: string
   try { return JSON.parse(proc.notes || "{}").kind === "time-chit"; } catch { return false; }
 }
 
-export function fillTimeChitTemplate(html: string, data: Record<string, string>): string {
+/** Escapes every value except keys in `rawKeys` (already-safe HTML such as mmcLine / clinicLogo). */
+export function fillTimeChitTemplate(html: string, data: Record<string, string>, rawKeys: string[] = []): string {
   const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-  return html.replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) => key in data ? escape(data[key]) : placeholder);
+  return html.replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) => key in data ? (rawKeys.includes(key) ? data[key] : escape(data[key])) : placeholder);
 }

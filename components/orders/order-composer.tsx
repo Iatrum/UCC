@@ -30,10 +30,12 @@ import {
   type TreatmentPlanTab,
 } from "@/lib/treatment-plan";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
-import { timeChitHours, timeChitError, fillTimeChitTemplate } from "@/lib/time-chit";
-import { buildReferralBody, fillDocumentTemplate, mcDiagnosisBlock, mcDiagnosisVisible, mmcLine } from "@/lib/clinical-documents";
+import { timeChitHours, timeChitError } from "@/lib/time-chit";
+import { buildReferralBody, mcDiagnosisVisible } from "@/lib/clinical-documents";
 import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
-import { formatDisplayDate } from "@/lib/utils";
+import { formatClinicDate, clinicToday } from "@/lib/clinic-dates";
+import { renderDocumentHtml } from "@/lib/document-render";
+import { printHtml } from "@/lib/print-html";
 
 type CatalogItem = {
   id: string;
@@ -64,149 +66,9 @@ interface OrderComposerProps {
   onPlanChange?: (entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => void;
   submitLabel?: string;
   submitting?: boolean;
-  patient?: { id: string; fullName: string; nric: string; medicalHistory?: { allergies?: string[]; medications?: string[] } | null } | null;
-  timeChitEnabled?: boolean;
+  patient?: { id: string; fullName: string; nric: string; dateOfBirth?: string | null; medicalHistory?: { allergies?: string[]; medications?: string[] } | null } | null;
   poctEnabled?: boolean;
   pacsEnabled?: boolean;
-}
-
-function calcMcEndDate(startDate: string, numDays: number): string {
-  if (!startDate || numDays <= 0) return "N/A";
-  const d = new Date(startDate);
-  d.setDate(d.getDate() + numDays - 1);
-  return formatDisplayDate(d);
-}
-
-const PRIMARY = "#1e3a5f";
-const MUTED = "#6b7280";
-const BODY = "#111827";
-
-function DocLetterhead({ organization }: { organization: OrganizationDetails | null }) {
-  const hasLetterhead = Boolean(organization?.name || organization?.address || organization?.phone);
-  if (!hasLetterhead) return null;
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 10 }}>
-      {organization?.logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img alt="" src={organization.logoUrl} style={{ width: 56, height: 56, objectFit: "contain", marginRight: 12, flexShrink: 0 }} />
-      )}
-      <div>
-        {organization?.name && <p style={{ fontSize: 14, fontWeight: 700, color: PRIMARY, margin: 0, marginBottom: 2 }}>{organization.name}</p>}
-        {organization?.address && <p style={{ fontSize: 9, color: MUTED, margin: 0, lineHeight: 1.4 }}>{organization.address}</p>}
-        {organization?.phone && <p style={{ fontSize: 9, color: MUTED, margin: 0, lineHeight: 1.4 }}>Tel: {organization.phone}</p>}
-      </div>
-    </div>
-  );
-}
-
-function McDocumentPreview({
-  patient,
-  issuedDate,
-  startDate,
-  endDate,
-  numDays,
-  doctorName,
-  organization,
-}: {
-  patient: { fullName: string; nric: string } | null;
-  issuedDate: string;
-  startDate: string;
-  endDate: string;
-  numDays: number;
-  doctorName: string;
-  organization: OrganizationDetails | null;
-}) {
-  return (
-    <div style={{ fontFamily: "Helvetica, Arial, sans-serif", padding: "32px 32px 32px 32px", fontSize: 11, color: BODY, backgroundColor: "white", minHeight: "100%", boxSizing: "border-box" }}>
-      <DocLetterhead organization={organization} />
-      <div style={{ borderBottom: `2px solid ${PRIMARY}` }} />
-      <div style={{ padding: "8px 0", textAlign: "center" }}>
-        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: PRIMARY }}>MEDICAL CERTIFICATE</span>
-      </div>
-      <div style={{ borderBottom: `0.5px solid ${PRIMARY}` }} />
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14, marginBottom: 16 }}>
-        <span style={{ fontSize: 10, color: MUTED, marginRight: 4 }}>Date Issued:</span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: BODY }}>{issuedDate}</span>
-      </div>
-      <div style={{ border: "1px solid #d1d5db", borderRadius: 4, padding: "10px 14px", marginBottom: 20, backgroundColor: "#f9fafb" }}>
-        <div style={{ display: "flex", marginBottom: 6 }}>
-          <span style={{ width: 100, fontSize: 10, color: MUTED, fontWeight: 700, flexShrink: 0 }}>Patient Name</span>
-          <span style={{ fontSize: 11, color: BODY }}>{patient?.fullName ?? "—"}</span>
-        </div>
-        <div style={{ display: "flex" }}>
-          <span style={{ width: 100, fontSize: 10, color: MUTED, fontWeight: 700, flexShrink: 0 }}>NRIC / ID</span>
-          <span style={{ fontSize: 11, color: BODY }}>{patient?.nric ?? "—"}</span>
-        </div>
-      </div>
-      <p style={{ fontSize: 11, lineHeight: 1.6, color: BODY, marginBottom: 32 }}>
-        This is to certify that the above-named patient was examined at our clinic and is certified medically unfit for work/school from{" "}
-        <strong>{startDate}</strong> to <strong>{endDate}</strong> ({numDays} day{numDays > 1 ? "s" : ""}).
-      </p>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "auto" }}>
-        <div style={{ width: 200 }}>
-          <div style={{ borderBottom: `1px solid ${BODY}`, width: 160, marginBottom: 6 }} />
-          <p style={{ fontSize: 11, fontWeight: 700, color: BODY, margin: 0, marginBottom: 2 }}>{doctorName || " "}</p>
-          <p style={{ fontSize: 10, color: MUTED, margin: 0, marginBottom: 2 }}>Medical Practitioner</p>
-          <p style={{ fontSize: 10, color: MUTED, margin: 0 }}>Date: {issuedDate}</p>
-        </div>
-        <div style={{ width: 80, height: 80, border: "1px dashed #d1d5db", borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontSize: 8, color: "#9ca3af", textAlign: "center" }}>Clinic</span>
-          <span style={{ fontSize: 8, color: "#9ca3af", textAlign: "center" }}>Stamp</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReferralDocumentPreview({
-  letterText,
-  organization,
-  metadata,
-}: {
-  letterText: string;
-  organization: OrganizationDetails | null;
-  metadata?: { patientName?: string | null; patientId?: string | null; toLine?: string | null } | null;
-}) {
-  const recipientName = metadata?.toLine ?? null;
-  const hasRecipient = Boolean(recipientName);
-  const hasPatient = Boolean(metadata?.patientName);
-  const patientMetaParts = [metadata?.patientId ? `NRIC: ${metadata.patientId}` : null].filter(Boolean).join("  |  ");
-
-  return (
-    <div style={{ fontFamily: "Helvetica, Arial, sans-serif", padding: "32px", fontSize: 11, color: BODY, backgroundColor: "white", minHeight: "100%", boxSizing: "border-box" }}>
-      <DocLetterhead organization={organization} />
-      <div style={{ borderBottom: `2px solid ${PRIMARY}` }} />
-      <div style={{ padding: "8px 0", textAlign: "center" }}>
-        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2, color: PRIMARY }}>REFERRAL LETTER</span>
-      </div>
-      <div style={{ borderBottom: `0.5px solid #d1d5db` }} />
-      {hasRecipient && (
-        <div style={{ marginBottom: 14, marginTop: 14 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, color: BODY, margin: 0, marginBottom: 3 }}>To:</p>
-          <p style={{ fontSize: 11, color: BODY, margin: 0 }}>{recipientName}</p>
-        </div>
-      )}
-      {hasPatient && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", marginBottom: 3 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: BODY, marginRight: 6, width: 28, flexShrink: 0 }}>Re:</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: BODY }}>{metadata!.patientName}</span>
-          </div>
-          {patientMetaParts && <p style={{ fontSize: 9, color: MUTED, margin: 0, marginLeft: 34 }}>{patientMetaParts}</p>}
-        </div>
-      )}
-      <div style={{ borderBottom: `0.5px solid #d1d5db`, marginBottom: 14 }} />
-      <div style={{ marginBottom: 28 }}>
-        {letterText.split(/\r?\n/).map((line, i) => (
-          <p key={i} style={{ fontSize: 11, lineHeight: 1.6, color: BODY, margin: 0, marginBottom: 6 }}>{line || " "}</p>
-        ))}
-      </div>
-      <div>
-        <div style={{ borderBottom: `1px solid ${BODY}`, width: 160, marginBottom: 6 }} />
-        <p style={{ fontSize: 11, fontWeight: 700, color: BODY, margin: 0, marginBottom: 2 }}>{organization?.name ?? " "}</p>
-      </div>
-    </div>
-  );
 }
 
 const TABS: Array<{ key: TreatmentPlanTab; label: string }> = [
@@ -263,37 +125,6 @@ function htmlToPlainText(value?: string | null): string {
     .join("\n");
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function multilineTextToHtml(value: string): string {
-  const paragraphs = value
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-
-  if (paragraphs.length === 0) {
-    return "";
-  }
-
-  return paragraphs
-    .map((paragraph) => {
-      const lines = paragraph
-        .split(/\r?\n/)
-        .map((line) => escapeHtml(line.trim()))
-        .filter(Boolean);
-
-      return `<p style="margin: 0 0 12px; line-height: 1.65;">${lines.join("<br />")}</p>`;
-    })
-    .join("");
-}
-
 function buildReferralDefaultContent({
   patientName,
   consultation,
@@ -309,7 +140,7 @@ function buildReferralDefaultContent({
 }): string {
   return buildReferralBody({
     patientName,
-    visitDate: consultation?.date ? formatDisplayDate(consultation.date) : "",
+    visitDate: consultation?.date ? formatClinicDate(consultation.date) : "",
     clinicalSummary: htmlToPlainText(consultation?.chiefComplaint),
     diagnosis: (consultation?.diagnosis || "").trim(),
     notes: htmlToPlainText(consultation?.notes),
@@ -330,7 +161,7 @@ export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | und
     title: entry.name,
     instruction: entry.instruction || "",
     tcDate: entry.meta?.tcDate || "", tcTimeIn: entry.meta?.tcTimeIn || "",
-    tcTimeOut: entry.meta?.tcTimeOut || "", tcHours: entry.meta?.tcHours || "", tcDoctorName: entry.meta?.tcDoctorName || "",
+    tcTimeOut: entry.meta?.tcTimeOut || "", tcHours: entry.meta?.tcHours || "", tcDoctorName: entry.meta?.tcDoctorName || "", tcDoctorMmc: entry.meta?.tcDoctorMmc || "",
     mcDays: entry.meta?.mcDays || "",
     mcDiagnosis: entry.meta?.mcDiagnosis || "",
     mcStartDate: entry.meta?.mcStartDate || "",
@@ -362,13 +193,6 @@ function recallSigner(): { name: string; mmc: string } {
   }
 }
 
-function printHtml(html: string) {
-  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-  const win = window.open(url, "_blank");
-  if (win) win.addEventListener("load", () => win.print());
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
 export function OrderComposer({
   draftId,
   patientId,
@@ -386,7 +210,6 @@ export function OrderComposer({
   submitLabel = "Sign Order",
   submitting = false,
   patient = null,
-  timeChitEnabled = false,
   poctEnabled = false,
   pacsEnabled = false,
 }: OrderComposerProps) {
@@ -425,15 +248,15 @@ export function OrderComposer({
   }, []);
   const [detailEntryId, setDetailEntryId] = React.useState<string | null>(null);
   const [editingDocumentEntryId, setEditingDocumentEntryId] = React.useState<string | null>(null);
-  const [tcDetails, setTcDetails] = React.useState({ tcDate: new Date().toLocaleDateString("en-CA"), tcTimeIn: "", tcTimeOut: "", tcDoctorName: "" });
+  const [tcDetails, setTcDetails] = React.useState({ tcDate: clinicToday(), tcTimeIn: "", tcTimeOut: "", tcDoctorName: "", tcDoctorMmc: "" });
   const [tcTemplate, setTcTemplate] = React.useState(DEFAULT_TIME_CHIT_TEMPLATE);
   React.useEffect(() => {
-    if (timeChitEnabled) fetch("/api/document-templates?type=time-chit")
+    fetch("/api/document-templates?type=time-chit")
       .then(r => r.ok ? r.json() : null).then(data => { if (data?.html) setTcTemplate(data.html); }).catch(() => {});
-  }, [timeChitEnabled]);
+  }, []);
   const [mcDays, setMcDays] = React.useState(1);
   const [mcDiagnosis, setMcDiagnosis] = React.useState("");
-  const [mcStartDate, setMcStartDate] = React.useState(() => new Date().toISOString().split("T")[0]);
+  const [mcStartDate, setMcStartDate] = React.useState(() => clinicToday());
   const [mcDoctorName, setMcDoctorName] = React.useState("");
   const [mcDoctorMmc, setMcDoctorMmc] = React.useState("");
   const [mcIncludeDiagnosis, setMcIncludeDiagnosis] = React.useState(false);
@@ -459,9 +282,9 @@ export function OrderComposer({
       items,
       services,
       packages,
-      documents: documents.filter(item => timeChitEnabled || documentKind(item) !== "time-chit"),
+      documents,
     }),
-    [items, services, packages, documents, timeChitEnabled]
+    [items, services, packages, documents]
   );
 
   const unifiedCatalogRows = React.useMemo(
@@ -559,45 +382,39 @@ export function OrderComposer({
     [onPlanChange]
   );
 
+  // Same renderer as the Documents tab and checkout. The issue date is the day the doctor signs (MYT).
   const mcPreviewHtml = React.useMemo(() => {
     if (!mcTemplateHtml) return null;
-    const endDate = calcMcEndDate(mcStartDate, mcDays);
-    return fillDocumentTemplate(mcTemplateHtml, {
-      clinicName: organization?.name ?? "",
-      clinicAddress: organization?.address ?? "",
-      clinicPhone: organization?.phone ?? "",
-      patientName: patient?.fullName ?? "",
-      patientNric: patient?.nric ?? "",
-      patientDob: "",
-      mcDays: String(mcDays),
-      mcStartDate: formatDisplayDate(new Date(mcStartDate)),
-      mcEndDate: endDate,
-      diagnosis: mcIncludeDiagnosis ? mcDiagnosis : "",
-      doctorName: mcDoctorName,
-      mmcLine: mmcLine(mcDoctorMmc),
-      diagnosisBlock: mcDiagnosisBlock(mcDiagnosis, mcIncludeDiagnosis),
-      date: formatDisplayDate(new Date()),
-    }, { rawKeys: ["mmcLine", "diagnosisBlock"], hideMcDiagnosis: !mcIncludeDiagnosis });
+    return renderDocumentHtml({
+      kind: "mc",
+      template: mcTemplateHtml,
+      details: { mcDays: String(mcDays), mcStartDate, mcDiagnosis, mcDoctorName, mcDoctorMmc, mcIncludeDiagnosis: mcIncludeDiagnosis ? "true" : "" },
+      patient,
+      organization,
+      issuedDate: clinicToday(),
+    });
   }, [mcTemplateHtml, mcDays, mcStartDate, mcDiagnosis, mcIncludeDiagnosis, mcDoctorName, mcDoctorMmc, organization, patient]);
 
   const referralPreviewHtml = React.useMemo(() => {
     if (!referralTemplateHtml) return null;
-    return fillDocumentTemplate(referralTemplateHtml, {
-      clinicName: organization?.name ?? "",
-      clinicAddress: organization?.address ?? "",
-      clinicPhone: organization?.phone ?? "",
-      patientName: patient?.fullName ?? "",
-      patientNric: patient?.nric ?? "",
-      patientAge: "",
-      referralTo: referralTo,
-      referralFrom: referralDoctorName || organization?.name || "",
-      referralBody: multilineTextToHtml(referralContent),
-      diagnosis: referralDiagnosis,
-      doctorName: referralDoctorName,
-      mmcLine: mmcLine(referralDoctorMmc),
-      date: formatDisplayDate(new Date()),
-    }, { rawKeys: ["referralBody", "mmcLine"] });
+    return renderDocumentHtml({
+      kind: "referral",
+      template: referralTemplateHtml,
+      details: { referralTo, referralContent, referralDiagnosis, referralDoctorName, referralDoctorMmc },
+      patient,
+      organization,
+      issuedDate: clinicToday(),
+    });
   }, [referralTemplateHtml, referralTo, referralContent, referralDiagnosis, referralDoctorName, referralDoctorMmc, organization, patient]);
+
+  const tcPreviewHtml = React.useMemo(() => renderDocumentHtml({
+    kind: "time-chit",
+    template: tcTemplate,
+    details: { ...tcDetails, tcHours: timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut) || "" },
+    patient,
+    organization,
+    issuedDate: clinicToday(),
+  }), [tcTemplate, tcDetails, organization, patient]);
 
   // Read the current callbacks without making parent renders restart hydration.
   const hydrationContext = React.useRef({ initialEntries, publishPlan });
@@ -866,8 +683,8 @@ export function OrderComposer({
     }
     if (editingDocumentKind === "time-chit") {
       const error = timeChitError(tcDetails);
-      if (!timeChitEnabled || error) {
-        toast({ title: error || "Time Chit is disabled for this clinic", variant: "destructive" });
+      if (error) {
+        toast({ title: error, variant: "destructive" });
         return;
       }
     }
@@ -888,10 +705,10 @@ export function OrderComposer({
     });
     setEditingDocumentEntryId(null);
     rememberSigner(
-      editingDocumentKind === "mc" ? mcDoctorName : referralDoctorName,
-      editingDocumentKind === "mc" ? mcDoctorMmc : referralDoctorMmc
+      editingDocumentKind === "time-chit" ? tcDetails.tcDoctorName : editingDocumentKind === "mc" ? mcDoctorName : referralDoctorName,
+      editingDocumentKind === "time-chit" ? tcDetails.tcDoctorMmc : editingDocumentKind === "mc" ? mcDoctorMmc : referralDoctorMmc
     );
-    setMcStartDate(new Date().toISOString().split("T")[0]);
+    setMcStartDate(clinicToday());
     setMcDoctorName("");
     setMcDoctorMmc("");
     setMcIncludeDiagnosis(false);
@@ -996,12 +813,13 @@ export function OrderComposer({
                   if (entry.meta?.kind === "poct" || entry.meta?.kind === "xray") return;
                   const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
                   if (entry.tab === "documents" && kind !== null) {
-                    if (kind === "time-chit" && !timeChitEnabled) return;
-                    setTcDetails({ tcDate: entry.meta?.tcDate || new Date().toLocaleDateString("en-CA"),
-                      tcTimeIn: entry.meta?.tcTimeIn || "", tcTimeOut: entry.meta?.tcTimeOut || "", tcDoctorName: entry.meta?.tcDoctorName || "" });
+                                    const tcSigner = recallSigner();
+                    setTcDetails({ tcDate: entry.meta?.tcDate || clinicToday(),
+                      tcTimeIn: entry.meta?.tcTimeIn || "", tcTimeOut: entry.meta?.tcTimeOut || "",
+                      tcDoctorName: entry.meta?.tcDoctorName || tcSigner.name, tcDoctorMmc: entry.meta?.tcDoctorMmc || tcSigner.mmc });
                     setMcDays(Number(entry.meta?.mcDays || 1));
                     setMcDiagnosis(entry.meta?.mcDiagnosis || "");
-                    setMcStartDate(entry.meta?.mcStartDate || new Date().toISOString().split("T")[0]);
+                    setMcStartDate(entry.meta?.mcStartDate || clinicToday());
                     const signer = recallSigner();
                     setMcDoctorName(entry.meta?.mcDoctorName || signer.name);
                     setMcDoctorMmc(entry.meta?.mcDoctorMmc || signer.mmc);
@@ -1117,10 +935,10 @@ export function OrderComposer({
               Fill out information below to complete document.
             </DialogDescription>
           </DialogHeader>
-          {editingDocumentKind === "time-chit" && timeChitEnabled && (
+          {editingDocumentKind === "time-chit" && (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-3">
-                {([ ["tcDate", "Attendance date", "date"], ["tcTimeIn", "Time in", "time"], ["tcTimeOut", "Time out", "time"], ["tcDoctorName", "Doctor's name", "text"] ] as const).map(([field, label, type]) => (
+                {([ ["tcDate", "Attendance date", "date"], ["tcTimeIn", "Time in", "time"], ["tcTimeOut", "Time out", "time"], ["tcDoctorName", "Doctor's name", "text"], ["tcDoctorMmc", "MMC registration no.", "text"] ] as const).map(([field, label, type]) => (
                   <div key={field}>
                     <Label htmlFor={`tc-${field}`}>{label}</Label>
                     <Input id={`tc-${field}`} type={type} value={tcDetails[field]}
@@ -1130,13 +948,12 @@ export function OrderComposer({
                 <p className="text-sm">Duration: {timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut) || "—"} hour(s)</p>
                 {timeChitError(tcDetails) && <p className="text-xs text-muted-foreground">{timeChitError(tcDetails)}</p>}
               </div>
-              <iframe title="Time Chit preview" sandbox="" className="h-[420px] w-full rounded-lg border bg-white"
-                srcDoc={fillTimeChitTemplate(tcTemplate, { ...tcDetails,
-                  tcDate: tcDetails.tcDate ? formatDisplayDate(new Date(tcDetails.tcDate)) : "",
-                  tcHours: timeChitHours(tcDetails.tcTimeIn, tcDetails.tcTimeOut) || "—",
-                  doctorName: tcDetails.tcDoctorName, date: formatDisplayDate(new Date()),
-                  patientName: patient?.fullName || "", patientNric: patient?.nric || "",
-                  clinicName: organization?.name || "", clinicAddress: organization?.address || "", clinicPhone: organization?.phone || "" })} />
+              <div className="space-y-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => printHtml(tcPreviewHtml)} disabled={Boolean(timeChitError(tcDetails))}>
+                  Print Time Chit
+                </Button>
+                <iframe title="Time Chit preview" sandbox="" className="h-[420px] w-full rounded-lg border bg-white" srcDoc={tcPreviewHtml} />
+              </div>
             </div>
           )}
           {editingDocumentKind === "mc" ? (
@@ -1219,17 +1036,7 @@ export function OrderComposer({
                 {mcPreviewHtml ? (
                   <iframe srcDoc={mcPreviewHtml} className="w-full h-full" title="MC preview" />
                 ) : (
-                  <div className="overflow-auto h-full">
-                    <McDocumentPreview
-                      patient={patient}
-                      issuedDate={formatDisplayDate(new Date())}
-                      startDate={formatDisplayDate(new Date(mcStartDate))}
-                      endDate={calcMcEndDate(mcStartDate, mcDays)}
-                      numDays={mcDays}
-                      doctorName={mcDoctorName}
-                      organization={organization}
-                    />
-                  </div>
+                  <p className="p-4 text-sm text-muted-foreground" role="status">Preparing preview...</p>
                 )}
               </div>
             </div>
@@ -1306,17 +1113,7 @@ export function OrderComposer({
                 {referralPreviewHtml ? (
                   <iframe srcDoc={referralPreviewHtml} className="w-full h-full" title="Referral preview" />
                 ) : (
-                  <div className="overflow-auto h-full">
-                    <ReferralDocumentPreview
-                      letterText={referralContent}
-                      organization={organization}
-                      metadata={{
-                        patientName: patient?.fullName ?? null,
-                        patientId: patient?.nric ?? null,
-                        toLine: referralTo,
-                      }}
-                    />
-                  </div>
+                  <p className="p-4 text-sm text-muted-foreground" role="status">Preparing preview...</p>
                 )}
               </div>
             </div>

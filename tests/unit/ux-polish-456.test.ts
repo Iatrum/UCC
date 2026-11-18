@@ -50,3 +50,10 @@ test('banner still alerts when only out-of-stock items exist (review fix)', () =
   expect(s.bannerNames).toEqual(['A']);
   expect(s.moreCount).toBe(0);
 });
+
+test('edge cases: stock 0, exactly at threshold, no threshold (0)', () => {
+  const s = summarizeLowStock([med('Zero', 0), med('At', 10), med('Above', 11), med('NoThr', 5, 0), med('ZeroNoThr', 0, 0)]);
+  expect(s.orderSoon.map((m) => m.name)).toEqual(['At']);
+  expect(s.outOfStock.map((m) => m.name)).toEqual(['Zero', 'ZeroNoThr']);
+  expect(s.inStock).toBe(3);
+});
