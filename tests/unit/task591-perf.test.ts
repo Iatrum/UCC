@@ -36,4 +36,43 @@ describe('patient consultation search (Task 591)', () => {
     expect(result.map((c) => c.id)).toEqual(['mine']);
     expect(seen).toHaveLength(1);
   });
+
+  const mkEnc = (id: string, clinic: string, patient: string, n: number) => ({
+    resourceType: 'Encounter', id, status: 'finished',
+    period: { start: new Date(Date.UTC(2026, 0, 1) + n * 60000).toISOString() },
+    identifier: [{ system: 'clinic', value: clinic }, { system: 'firebase-patient', value: patient }],
+  });
+
+  test('pages past 1000 encounters and batches child searches (<=100 refs per URL)', async () => {
+    const all = Array.from({ length: 1150 }, (_, i) => mkEnc(`e${i}`, 'fake-clinic', 'fake-p1', i));
+    const encCalls: number[] = [];
+    const refCounts: number[] = [];
+    const client = {
+      searchResources: async (type: string, params: any) => {
+        if (type === 'Encounter') {
+          const pairs: string[][] = Array.isArray(params) ? params : Object.entries(params);
+          const off = Number(pairs.find(([k]) => k === '_offset')?.[1] ?? 0);
+          encCalls.push(off);
+          return all.slice(off, off + 1000);
+        }
+        refCounts.push(String(params.encounter).split(',').length);
+        return [];
+      },
+    } as unknown as MedplumClient;
+    const result = await getPatientConsultationsFromMedplum('fake-p1', 'fake-clinic', client);
+    expect(result).toHaveLength(1150);
+    expect(encCalls).toEqual([0, 1000]);
+    expect(Math.max(...refCounts)).toBeLessThanOrEqual(100);
+  });
+
+  test('never returns another clinic or patient even if the server returns it', async () => {
+    const client = {
+      searchResources: async (type: string) =>
+        type === 'Encounter'
+          ? [mkEnc('ok', 'fake-clinic', 'fake-p1', 1), mkEnc('other-clinic', 'fake-clinic-b', 'fake-p1', 2), mkEnc('other-pt', 'fake-clinic', 'fake-p2', 3)]
+          : [],
+    } as unknown as MedplumClient;
+    const result = await getPatientConsultationsFromMedplum('fake-p1', 'fake-clinic', client);
+    expect(result.map((c) => c.id)).toEqual(['ok']);
+  });
 });
