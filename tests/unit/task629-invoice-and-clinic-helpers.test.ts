@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Invoice } from "@medplum/fhirtypes";
+import { OperationOutcomeError } from "@medplum/core";
 import { getInvoiceNumber, isOwnVersionOrClinicBump } from "../../lib/fhir/billing-service";
 import { checkoutSubtotal, displayInvoiceNumber, hasBillableItems } from "../../lib/billing/checkout-guards";
 import {
@@ -43,7 +44,7 @@ describe("isOwnVersionOrClinicBump (stock-deduction concurrency guard)", () => {
 describe("invoice number display", () => {
   test("stored number wins; falls back to id; null-safe", () => {
     const i = inv("1", { identifier: [{ system: "https://ucc.emr/invoice/number", value: "INV-20260101-ABC123" }] });
-    expect(getInvoiceNumber(i)).not.toBe("");
+    expect(getInvoiceNumber(i)).toBe("INV-20260101-ABC123");
     expect(getInvoiceNumber(inv("1"))).toBe("inv-1");
     expect(getInvoiceNumber(null)).toBe("");
     expect(displayInvoiceNumber("  ")).toBe("Assigned on completion");
@@ -100,8 +101,8 @@ describe("clinic scoping helpers", () => {
   });
   test("assertOrderClinic rejects before any read for a missing clinic or malformed ids", async () => {
     const medplum = { readResource: () => { throw new Error("must not read"); } } as any;
-    await expect(assertOrderClinic(medplum, "", "pat-1")).rejects.toBeDefined();
-    await expect(assertOrderClinic(medplum, "clinic-a", "Patient/../x")).rejects.toBeDefined();
-    await expect(assertOrderClinic(medplum, "clinic-a", "pat-1", "enc 1;drop")).rejects.toBeDefined();
+    await expect(assertOrderClinic(medplum, "", "pat-1")).rejects.toBeInstanceOf(OperationOutcomeError);
+    await expect(assertOrderClinic(medplum, "clinic-a", "Patient/../x")).rejects.toBeInstanceOf(OperationOutcomeError);
+    await expect(assertOrderClinic(medplum, "clinic-a", "pat-1", "enc 1;drop")).rejects.toBeInstanceOf(OperationOutcomeError);
   });
 });
