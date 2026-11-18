@@ -199,7 +199,7 @@ export default function InventoryPage() {
           <div className="grid gap-6 xl:grid-cols-[1.55fr_0.75fr]">
             <Card className="border-slate-200/80 shadow-sm">
               <CardContent className="space-y-5 p-5">
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid grid-cols-3 gap-2 md:gap-3">
                   <MetricCard
                     icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
                     label="In stock"
@@ -412,13 +412,13 @@ function MetricCard({
   hint: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center gap-2 text-sm text-slate-600">
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 sm:p-4">
+      <div className="flex items-center gap-1.5 text-xs sm:gap-2 sm:text-sm text-slate-600">
         {icon}
         <span>{label}</span>
       </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+      <p className="mt-2 text-xl sm:mt-3 sm:text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 hidden text-xs sm:block text-slate-500">{hint}</p>
     </div>
   );
 }
