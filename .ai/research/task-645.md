@@ -86,3 +86,6 @@ Free text reaches Medplum only as the *value* of fixed keys (`name:contains`, `p
 
 ## Tests
 `tests/unit/task645-api-audit.test.ts`: id/clinic shape tables; forged cookie -> `ForbiddenError` with no network call; `register-extensions` GET/POST and `audit-log` -> 401 anonymous (nothing called) and 403 with a forged clinic cookie; foreign catalog/procedure id -> `NotFoundError`. `clinic-boundary.test.ts` updated: void of a foreign invoice is now `NotFoundError` (was a generic "Access denied" error).
+
+## Task 646 review addendum
+Spot-checked 14 routes against code; table matches except admin-client routes with a body/query id (`follow-up/[id]`, `tasks/[id]`, `suppliers`, `settings/insurers`, `purchases`) passed the id unvalidated into `readResource` paths. Fixed with `assertSafeFhirId` (404 before any read); own-clinic ids are real FHIR ids so unaffected. G7/G8 remain product decisions.

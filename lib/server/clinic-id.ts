@@ -8,6 +8,8 @@
  * the request is refused.
  */
 
+import { NotFoundError } from '@/lib/server/route-helpers';
+
 /** Clinic subdomain or Organization id: starts alphanumeric, then letters, digits, `.` or `-`. */
 const CLINIC_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 
@@ -20,4 +22,9 @@ export function isValidClinicId(value: unknown): value is string {
 
 export function isSafeFhirId(value: unknown): value is string {
   return typeof value === 'string' && FHIR_ID_PATTERN.test(value);
+}
+
+/** Throws NotFoundError (404) for an id that cannot be a FHIR id, before it is used in a resource path. */
+export function assertSafeFhirId(value: unknown): asserts value is string {
+  if (!isSafeFhirId(value)) throw new NotFoundError('Not found');
 }
