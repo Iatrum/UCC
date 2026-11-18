@@ -6,7 +6,7 @@ import Link from "next/link";
 import { BillableConsultation } from '@/lib/types';
 import BillingTable from "@/components/billing/billing-table";
 import { useToast } from "@/components/ui/use-toast";
-import { CHECKOUT_NOTICE_STORAGE_KEY, type CheckoutStockNotice } from "@/lib/billing/checkout-stock";
+import { CHECKOUT_NOTICE_STORAGE_KEY, checkoutToastDescription, type CheckoutStockNotice } from "@/lib/billing/checkout-stock";
 
 interface OrdersClientProps {
   initialConsultations: BillableConsultation[];
@@ -43,9 +43,7 @@ export default function OrdersClient({ initialConsultations, otcContext, checkou
     if (notice) queueMicrotask(() => setStockNotice(notice));
     toast({
       title: notice ? "Checkout completed – check stock" : "Checkout completed",
-      description: `Invoice ${checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record"} was saved.${
-        notice ? " See the stock notice on this page." : ""
-      }`,
+      description: checkoutToastDescription(checkoutComplete.invoiceNumber || checkoutComplete.invoiceId || "record", notice),
     });
 
     const cleanUrl = new URL(window.location.href);
