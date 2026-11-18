@@ -87,6 +87,9 @@ function TemplatePanel({ type, html, onChange, onSave, onReset, isSaving }: Temp
             </Button>
           </div>
         </div>
+        <p className="mt-1.5 px-1 text-xs text-muted-foreground">
+          Keep every {"{{placeholder}}"} exactly as written (including the double braces), or the printed document will show blanks or raw text.
+        </p>
         {showVars && (
           <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-md border bg-muted/40 px-3 py-2">
             {vars.map((v) => (

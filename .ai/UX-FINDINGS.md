@@ -137,3 +137,9 @@ Method: read each OPEN item against current code (file/line evidence inline abov
 - Part 2 Low 16: `purchase-orders-panel.tsx` / `suppliers-panel.tsx` are still unimported dead code (removal belongs with the purchasing decision, `INVENTORY_PURCHASING_ENABLED=false`).
 - Part 2 Low 20: Document Templates still raw HTML, no "keep placeholders intact" warning.
 - Part 2 Low 21: user-edit page lists every branch as a checkbox (scaling).
+
+## Task 587 (Low leftovers)
+- Part 1 #7 history table clipped: already fixed (Task 446), verified, no change.
+- Part 1 #8 "Total visits / Last completed visit": already fixed (Task 446, consult-based labels), verified, no change.
+- Task 586 note: out-of-stock banner wording **fixed** (no threshold claim for out-of-stock).
+- Part 2 Low 20: "keep placeholders intact" helper text **added** (no editor redesign).

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { formatItemCount, isOrderSoon, isOutOfStock, summarizeLowStock } from "@/lib/inventory/stock-summary";
+import { formatItemCount, isOrderSoon, isOutOfStock, lowStockBannerStatus, summarizeLowStock } from "@/lib/inventory/stock-summary";
 import {
   AlertCircle,
   CheckCircle2,
@@ -183,7 +183,7 @@ export default function InventoryPage() {
                 </button>
               </>
             ) : null}{" "}
-            {stockSummary.attention.length === 1 ? "is" : "are"} at or below the minimum stock threshold.
+            {lowStockBannerStatus(stockSummary.outOfStock.length, stockSummary.orderSoon.length)}
             </span>
           </AlertDescription>
         </Alert>
