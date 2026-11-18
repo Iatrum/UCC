@@ -15,6 +15,10 @@ const { POST } = await import("@/app/api/follow-up/twilio/status/route");
 const URL_ = "https://example.test/api/follow-up/twilio/status";
 const TOKEN = "unit-test-token-not-real";
 const SID_EXT = "https://ucc.emr/communication/twilio-message-sid";
+const FU = {
+  category: [{ coding: [{ system: "https://ucc.emr/communication-category", code: "review-request" }] }],
+  identifier: [{ system: "clinic", value: "clinic-a" }],
+};
 const params = { MessageSid: "SM123", MessageStatus: "delivered", AccountSid: "ACfake" };
 
 function req(p: Record<string, string>, signature?: string, contentType = "application/x-www-form-urlencoded") {
@@ -30,7 +34,7 @@ beforeEach(() => {
   searchResources.mockClear();
   updateResource.mockClear();
   searchResources.mockImplementation(async () => [
-    { resourceType: "Communication", id: "c1", status: "in-progress", extension: [{ url: SID_EXT, valueString: "SM123" }] },
+    { ...FU, resourceType: "Communication", id: "c1", status: "in-progress", extension: [{ url: SID_EXT, valueString: "SM123" }] },
   ]);
 });
 afterEach(() => {
@@ -108,13 +112,22 @@ describe("POST /api/follow-up/twilio/status", () => {
   });
   test("terminal delivered state is not downgraded by a late callback", async () => {
     searchResources.mockImplementation(async () => [
-      { resourceType: "Communication", id: "c1", status: "completed", extension: [
+      { ...FU, resourceType: "Communication", id: "c1", status: "completed", extension: [
         { url: SID_EXT, valueString: "SM123" },
         { url: "https://ucc.emr/communication/delivery-status", valueString: "delivered" },
       ] },
     ]);
     const p = { ...params, MessageStatus: "sent" };
     await POST(req(p, computeTwilioSignature(TOKEN, URL_, p)));
+    expect(updateResource).not.toHaveBeenCalled();
+  });
+  test("SID match ignores non-follow-up and clinic-untagged Communications", async () => {
+    searchResources.mockImplementation(async () => [
+      { resourceType: "Communication", id: "x1", status: "in-progress", identifier: FU.identifier, extension: [{ url: SID_EXT, valueString: "SM123" }] },
+      { ...FU, identifier: [], resourceType: "Communication", id: "x2", status: "in-progress", extension: [{ url: SID_EXT, valueString: "SM123" }] },
+    ]);
+    const res = await POST(req(params, computeTwilioSignature(TOKEN, URL_, params)));
+    expect(await res.json()).toEqual({ success: true, found: false });
     expect(updateResource).not.toHaveBeenCalled();
   });
 });
