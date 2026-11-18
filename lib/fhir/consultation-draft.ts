@@ -3,6 +3,7 @@ import type { MedplumClient } from '@medplum/core';
 import type { DocumentReference } from '@medplum/fhirtypes';
 import { assertOrderClinic } from '@/lib/fhir/clinic-tenancy';
 import { ConflictError, ForbiddenError } from '@/lib/server/route-helpers';
+import { loadMe } from '@/lib/server/medplum-auth';
 
 const KEY_SYSTEM = 'urn:ucc:consultation-draft';
 export type DraftScope = {
@@ -13,7 +14,9 @@ const fresh = { cache: 'no-cache' as const, headers: { 'X-Medplum': 'extended' }
 export async function draftScope(
   medplum: MedplumClient, clinicId: string, patientId: string, draftId: string, consultationId?: string,
 ): Promise<DraftScope> {
-  const profile = await medplum.getProfileAsync();
+  // Shares the memoised GET /auth/me that requireClinicAuth already made for this token
+  // (getProfileAsync() issued a second, uncached one).
+  const { profile } = await loadMe(medplum);
   if (profile?.resourceType !== 'Practitioner' || !profile.id) throw new ForbiddenError('Practitioner required');
   await assertOrderClinic(medplum, clinicId, patientId, consultationId);
   return { medplum, clinicId, patientId, draftId, consultationId, practitioner: `Practitioner/${profile.id}` };

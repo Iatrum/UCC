@@ -5,6 +5,7 @@ import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,21 +20,37 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { shouldShowStartConsultButton, withSignedConsultation } from "@/lib/patients/profile-history";
-import { OrderComposer, buildSignedDocumentNote } from "@/components/orders/order-composer";
-import PatientDocuments from "@/components/patients/patient-documents";
-import { LabResultsView } from "@/components/labs/lab-results-view";
-import { ImagingResultsView } from "@/components/imaging/imaging-results-view";
 import { DiagnosisSearch } from "@/components/diagnosis-search";
 import { getMedications } from "@/lib/inventory";
 import { getProcedures } from "@/lib/procedures";
 import { formatPrescriptionLine } from "@/lib/prescriptions";
-import { getClinicalCatalog, type ClinicalCatalogItem } from "@/lib/clinical-catalog";
+import { buildSignedDocumentNote } from "@/lib/orders/signed-document-note";
+import { getClinicalCatalog } from "@/lib/clinical-catalog";
+import {
+  emptyComposerCatalogs, loadComposerCatalogs, shouldLoadComposerCatalogs, type ComposerCatalogs,
+} from "@/lib/orders/composer-catalogs";
 import { cn, formatDisplayDate } from "@/lib/utils";
 import type { Prescription, ProcedureRecord } from "@/lib/models";
 import type { SerializedPatient } from "@/components/patients/patient-card";
 import type { TreatmentPlanEntry, TreatmentPlanSummary } from "@/lib/treatment-plan";
 import type { QueueStatus } from "@/lib/types";
-import ReferralMCSection from "./referral-mc-section";
+
+// Heavy views only mount when their tab / drawer is used, so they stay out of the first-load bundle.
+const tabFallback = <div className="p-4 text-sm text-muted-foreground">Loading…</div>;
+const OrderComposer = dynamic(
+  () => import("@/components/orders/order-composer").then((m) => m.OrderComposer),
+  { loading: () => tabFallback },
+);
+const PatientDocuments = dynamic(() => import("@/components/patients/patient-documents"), { loading: () => tabFallback });
+const LabResultsView = dynamic(
+  () => import("@/components/labs/lab-results-view").then((m) => m.LabResultsView),
+  { loading: () => tabFallback },
+);
+const ImagingResultsView = dynamic(
+  () => import("@/components/imaging/imaging-results-view").then((m) => m.ImagingResultsView),
+  { loading: () => tabFallback },
+);
+const ReferralMCSection = dynamic(() => import("./referral-mc-section"), { loading: () => tabFallback });
 
 type ProfileTab = "history" | "labs-imaging" | "documents";
 type DrawerMode = "consult" | "treatment";
@@ -187,56 +204,24 @@ export default function PatientProfileWorkspace({
   const [treatmentEntries, setTreatmentEntries] = useState<TreatmentPlanEntry[]>([]);
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
   const [queueStatus, setQueueStatus] = useState<QueueStatus>(patient.queueStatus ?? null);
-  const [procedureOptions, setProcedureOptions] = useState<
-    { id: string; label: string; price?: number; codingSystem?: string; codingCode?: string; codingDisplay?: string }[]
-  >([]);
-  const [medicationOptions, setMedicationOptions] = useState<{ id: string; name: string; unitPrice: number }[]>([]);
-  const [labCatalog, setLabCatalog] = useState<ClinicalCatalogItem[]>([]);
-  const [imagingCatalog, setImagingCatalog] = useState<ClinicalCatalogItem[]>([]);
-  const [documentCatalog, setDocumentCatalog] = useState<ClinicalCatalogItem[]>([]);
+  const [catalogs, setCatalogs] = useState<ComposerCatalogs>(emptyComposerCatalogs);
+  const [catalogsRequested, setCatalogsRequested] = useState(false);
+  const { procedures: procedureOptions, medications: medicationOptions, labs: labCatalog,
+    imaging: imagingCatalog, documents: documentCatalog } = catalogs;
+
+  // The order composer is the only consumer: fetch its catalogs the first time the treatment drawer opens.
+  useEffect(() => {
+    if (shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogsRequested)) setCatalogsRequested(true);
+  }, [drawerMode, panelOpen, catalogsRequested]);
 
   useEffect(() => {
+    if (!catalogsRequested) return;
     let active = true;
-
-    (async () => {
-      try {
-        const [procedures, medications, labs, imaging, documents] = await Promise.all([
-          getProcedures(),
-          getMedications(),
-          getClinicalCatalog("lab"),
-          getClinicalCatalog("imaging"),
-          getClinicalCatalog("document"),
-        ]);
-        if (!active) return;
-        setProcedureOptions(
-          procedures.map((procedure) => ({
-            id: procedure.id,
-            label: procedure.name,
-            price: procedure.defaultPrice,
-            codingSystem: procedure.codingSystem,
-            codingCode: procedure.codingCode,
-            codingDisplay: procedure.codingDisplay,
-          }))
-        );
-        setMedicationOptions(
-          medications.map((medication) => ({
-            id: medication.id,
-            name: medication.name,
-            unitPrice: medication.unitPrice || 0,
-          }))
-        );
-        setLabCatalog(labs.filter((item) => item.active));
-        setImagingCatalog(imaging.filter((item) => item.active));
-        setDocumentCatalog(documents.filter((item) => item.active));
-      } catch (error) {
-        console.error("Failed to load treatment catalogs:", error);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+    loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog })
+      .then((loaded) => { if (active) setCatalogs(loaded); })
+      .catch((error) => console.error("Failed to load treatment catalogs:", error));
+    return () => { active = false; };
+  }, [catalogsRequested]);
 
   const updateQueueStatus = useCallback(async (status: Exclude<QueueStatus, null>) => {
     const response = await fetch("/api/queue", {
