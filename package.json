@@ -27,7 +27,8 @@
     "staging:up": "bash infra/staging/up.sh",
     "staging:down": "bash infra/staging/up.sh down",
     "staging:guard": "bash infra/staging/up.sh guard",
-    "staging:probe": "bash scripts/staging/probe.sh"
+    "staging:probe": "bash scripts/staging/probe.sh",
+    "staging:audit": "bun run scripts/staging/audit-exposure.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
