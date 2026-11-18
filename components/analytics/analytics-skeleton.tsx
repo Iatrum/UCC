@@ -6,37 +6,28 @@ export default function AnalyticsSkeleton() {
     <div className="space-y-6 pb-10" role="status" aria-busy="true" aria-label="Loading analytics">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Analytics</h1>
-        <p className="text-sm text-muted-foreground">Loading clinic figures…</p>
+        <p className="text-sm text-muted-foreground">Memuatkan angka klinik…</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="analytics-skeleton-metrics">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[104px] rounded-xl" />
-        ))}
-      </div>
-      <div className="grid gap-6 md:grid-cols-2" data-testid="analytics-skeleton-charts">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[280px] rounded-2xl" />
-        ))}
-        <Skeleton className="h-[300px] rounded-2xl md:col-span-2" />
-      </div>
+      <Skeleton className="h-10 w-full max-w-md rounded-xl" />
+      <AnalyticsBodySkeleton />
     </div>
   );
 }
 
-/** Cards + charts placeholder only (the heading is already on screen), for the page-level Suspense. */
+/** KPI + chart placeholders for one tab (heading, tabs and range filter are already on screen). */
 export function AnalyticsBodySkeleton() {
   return (
-    <div className="space-y-6" role="status" aria-busy="true" aria-label="Loading analytics">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="analytics-skeleton-metrics">
+    <div className="space-y-4 sm:space-y-6" role="status" aria-busy="true" aria-label="Loading analytics">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" data-testid="analytics-skeleton-metrics">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[104px] rounded-xl" />
+          <Skeleton key={i} className="h-[112px] rounded-xl" />
         ))}
       </div>
-      <div className="grid gap-6 md:grid-cols-2" data-testid="analytics-skeleton-charts">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[280px] rounded-2xl" />
-        ))}
-        <Skeleton className="h-[300px] rounded-2xl md:col-span-2" />
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-5" data-testid="analytics-skeleton-charts">
+        <Skeleton className="h-[280px] rounded-2xl lg:col-span-3" />
+        <Skeleton className="h-[280px] rounded-2xl lg:col-span-2" />
+        <Skeleton className="h-[280px] rounded-2xl lg:col-span-3" />
+        <Skeleton className="h-[280px] rounded-2xl lg:col-span-2" />
       </div>
     </div>
   );
