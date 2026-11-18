@@ -180,3 +180,9 @@ Method: worktree on PR #315's branch, `origin/dev` merged (already up to date). 
 - **Part 3 #24 (sidebar width on phones):** nav, out of scope, untouched.
 - **Part 3 #25 (inventory tiles stack on phones):** cosmetic, left (`app/(routes)/inventory/page.tsx:202`).
 - Part 1 #19 sidebar polish: out of scope.
+
+## Task 617 (re-verify Part 1 #7 / #8, 2026-11-18)
+Verified on current code (merged with origin/dev; no dev server needed, no app code changed):
+- **#7 history table clipped: NOT still real.** `patient-profile-workspace.tsx`: below `md` a card list is shown; from `md` up the table sits in `hidden overflow-x-auto md:block` with `min-w-[860px]`, so it scrolls horizontally inside its container instead of being clipped. The "still present" note on `66f596b` overlooked Task 446.
+- **#8 "Total visits / Last completed visit" before checkout: NOT still real.** The patient header (`patients/[id]/page.tsx`) now reads "Last consult" / "Total consults" (consult-based, `consultSummary`); no "completed visit" wording remains in `app/`, `components/`, `lib/`.
+- No fix made; composer, sidebar and nav untouched.
