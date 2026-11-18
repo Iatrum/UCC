@@ -709,7 +709,7 @@ export async function searchPatientsPageInMedplum(
   const trimmed = query.trim();
   if (!trimmed) return { patients: [], total: 0, page: pg, pageSize: size, capped: false };
   const clinicParams = clinicPatientParams(clinicId); // fails closed without a clinic
-  await resolveClinicTenant(medplum, clinicId);
+  await resolveClinicTenantMemo(medplum, clinicId);
 
   const base = { _count: String(PATIENT_SEARCH_WINDOW), _sort: '-_lastUpdated' };
   const queries: Record<string, string>[] = [
@@ -867,7 +867,7 @@ export async function countPatientsInMedplum(
   medplum: MedplumClient,
   extra: Record<string, string> = {}
 ): Promise<number | null> {
-  await resolveClinicTenant(medplum, clinicId);
+  await resolveClinicTenantMemo(medplum, clinicId);
   const bundle = await medplum.search('Patient', {
     ...clinicPatientParams(clinicId),
     ...extra,
@@ -898,7 +898,7 @@ export async function getPatientsPageFromMedplum(
   const pg = Math.max(Math.floor(page) || 1, 1);
   const offset = (pg - 1) * size;
   const params = clinicPatientParams(clinicId);
-  await resolveClinicTenant(medplum, clinicId);
+  await resolveClinicTenantMemo(medplum, clinicId);
   // Beyond Medplum's _offset ceiling, return an empty page instead of repeating the last reachable one.
   if (offset > PATIENT_MAX_OFFSET) return { patients: [], total: null, page: pg, pageSize: size };
   const bundle = await medplum.search('Patient', {

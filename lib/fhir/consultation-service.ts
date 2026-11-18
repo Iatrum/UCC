@@ -666,6 +666,17 @@ export function buildSavedConsultation(
   };
 }
 
+/** Search params for one patient's consultations; see getPatientConsultationsFromMedplum. */
+export function patientEncounterSearchParams(
+  firebasePatientId: string,
+  clinicId?: string | null
+): Array<[string, string]> {
+  const params: Array<[string, string]> = [];
+  if (clinicId) params.push(['identifier', `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`]);
+  params.push(['identifier', `firebase-patient|${firebasePatientId}`], ['_sort', '-date'], ['_count', '1000']);
+  return params;
+}
+
 /**
  * Get all consultations for a patient (by Firebase patient ID)
  */
@@ -677,18 +688,11 @@ export async function getPatientConsultationsFromMedplum(
   try {
     const client = medplum ?? (await getAdminMedplum());
 
-    // Find encounters scoped to the clinic Organization, then filter by patient identifier.
-    const searchParams: Record<string, string> = clinicId
-      ? {
-          identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-          _sort: '-date',
-        }
-      : {
-          identifier: `firebase-patient|${firebasePatientId}`,
-          _sort: '-date',
-        };
-
-    const encounters = await client.searchResources('Encounter', searchParams);
+    // Server-side filter on BOTH identifiers (repeated `identifier` params are ANDed): the clinic and the
+    // patient. Previously only the clinic identifier was sent and the patient was filtered afterwards, which
+    // read clinic-wide Encounters (default page of 20) on every profile load and silently dropped a patient's
+    // consultations once newer clinic encounters pushed them off that page (Task 591).
+    const encounters = await client.searchResources('Encounter', patientEncounterSearchParams(firebasePatientId, clinicId));
 
     const filtered = encounters.filter(
       (enc) =>
