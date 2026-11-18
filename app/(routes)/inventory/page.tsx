@@ -273,9 +273,9 @@ export default function InventoryPage() {
                             <Badge
                               variant="secondary"
                               className={
-                                item.stock === 0
+                                isOutOfStock(item)
                                   ? "bg-rose-100 text-rose-700"
-                                  : item.stock <= item.minimumStock
+                                  : isOrderSoon(item)
                                     ? "bg-amber-100 text-amber-700"
                                     : "bg-emerald-100 text-emerald-700"
                               }
