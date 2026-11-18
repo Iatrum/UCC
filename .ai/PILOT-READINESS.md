@@ -1,58 +1,92 @@
-# Pilot readiness checklist (Task 597, 2026-11-18)
+# Pilot readiness checklist (Task 625, 2026-11-18; supersedes Task 597 version)
 
-Docs only. Written from the repo and the existing notes; **nothing was run against a server** and no server, DNS, Traefik, Vercel or production container was touched. All build steps of `.ai/PLAN-network-lockdown-staging.md` (385a-d) are done; 385e is a decision, not code. Fake data only everywhere.
+Docs only. One list of what must be true before the **first clinic pilot**. Built from `.ai/PILOT-CHECK.md` (open items), `.ai/PLAN-network-lockdown-staging.md`, `.ai/RUNBOOK-task5-production-migration.md` and the owner decisions already made. Nothing here was run against a server; no production container, Traefik, DNS or Vercel setting was touched. Fake data only.
 
-## 1. Done (repo side), with evidence
+Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small task, one commit). **OWNER** = needs Hidayat or the clinic to decide or act; agents must not implement or run it.
 
-| Area | Status | Evidence |
-|---|---|---|
-| Staging compose, env template, start/stop/guard scripts (385a) | Done, never brought up on a real staging server | `infra/staging/`, `scripts/staging/`, `.ai/PLAN-staging-promotion-checklist.md` |
-| Safe-target preflight + idempotent staging seed (385b) | Done, unit-tested | `tests/unit/staging-preflight.test.ts`, `scripts/staging/bootstrap.ts` |
-| Staging gate adapter with baseline identity check (385c) | Done, unit-tested | `e2e/scripts/check-staging.sh`, `tests/unit/staging-gate.test.ts` |
-| Allowlist proxy rehearsed on loopback (385d) | Done: `staging:probe` ended `PROBE OK` (Traefik v3.5.0, Medplum 5.2.15) | plan step 385d, `infra/staging/rehearsal/dynamic/medplum-allowlist.yml`, `scripts/staging/probe.sh`, `tests/unit/staging-rehearsal.test.ts`, `.ai/reviews/task-579.md` |
-| Read-only exposure audit kit | Done, never run on the real host | `scripts/staging/audit-exposure.ts`, `tests/unit/staging-exposure.test.ts`, `.ai/reviews/task-571.md` |
-| Production Traefik allowlist runbook | Written, not applied | plan Part 3 |
-| Clinic isolation: write and update-by-id containment | Done | BACKLOG Tasks 396, 400, 482; `lib/fhir/write-containment.ts` |
-| Clinic AccessPolicy topology (non-superAdmin project) | Done on **dev only** | `.ai/RUNBOOK-task5-production-migration.md`, DECISIONS D47, `.ai/progress-task5.md` |
-| Device ingress needs per-device keys (POCT/imaging) | Done | BACKLOG Tasks 180, 355 |
-| Twilio status callback signature check | Done | BACKLOG Task 541, `app/api/follow-up/twilio/status/route.ts` |
-| Checkout stock auto-deduct, no double deduct | Done | Task 358/402 commits; `.ai/PILOT-CHECK.md` (branch Task 558, `dispense-checkout-ui` 4/4) |
-| `/api/labs/receive` 400 (not 500) on missing status; unknown/foreign order 404 with zero writes | Done | Tasks 566/572, `tests/unit/task566-labs-receive-validation.test.ts`, `tests/unit/task572-receive-not-found.test.ts` |
-| Staff walk register -> consult -> sign -> Lab tab -> checkout -> dispense | PASS as non-admin on dev | `.ai/PILOT-CHECK.md` (merged into this branch) |
+## Owner decisions already made (do not re-ask)
 
-## 2. Hidayat must do manually (server / DNS / Vercel / root)
+| Decision | Source |
+|---|---|
+| UCC app stays on Vercel | plan, owner decisions 16 Nov 2026 #1 |
+| Staging access: **SSH tunnel only**, no Tailscale for now | plan owner decision #2; Task 598 review |
+| Medplum self-registration closed (`registerEnabled=false`) | plan owner decision #3 |
+| Staging lives on this VPS for now, no second server | plan owner decision #5 |
+| **Yearly clinic subscriptions only** (no monthly plan) | Hidayat, owner decision (Task 625 brief); no code or billing flow depends on it yet |
+| **Time Chit always on, no toggle** | `.ai/DECISIONS.md` D-527 (Task 527) |
+| **MC and Time Chit share one template/renderer** | Task 549 (`lib/document-render.ts`), PR #307 merged |
 
-Follow `.ai/PLAN-network-lockdown-staging.md` Part 1 and Part 3 one step at a time, with console access and a snapshot first.
+## A. Application behaviour
 
-- [ ] Take a Hostinger snapshot and confirm console access (plan Part 1 step 1.1).
-- [ ] Run the inventory and the audit kit on the VPS and from outside (`bun run staging:audit`; plan 1.2/1.3). Fix what it flags.
-- [ ] ufw, sshd hardening and DOCKER-USER rules, each with an `at` rollback timer (plan 1.4 onward).
-- [ ] Production Traefik allowlist (Part 3). First check whether the API router is a dynamic file or Docker labels on `medplum-server`; the runbook covers both.
-- [ ] TLS/HSTS/redirect checks (cannot be rehearsed on loopback).
-- [ ] Admin UI reachable by SSH tunnel only (owner decision 2: no Tailscale for now; plan 1.6). If Tailscale is adopted later: `tailscale serve`, never `funnel`.
-- [ ] Run one real user invite through the allowlisted proxy on staging (`bun run staging:seed` first).
-- [ ] Production Task 5 migration (non-superAdmin clinic project + AccessPolicies) using `.ai/RUNBOOK-task5-production-migration.md`.
-- [ ] Firestore draft migration if still pending: `.ai/RUNBOOK-firestore-draft-migration.md`.
-- [ ] Bring up staging once (`.ai/PLAN-staging-promotion-checklist.md`), run `check-staging.sh` against it, and record sign-off in `.ai/STATE.md`.
-- [ ] Set production env and Vercel settings for the pilot clinic (Firebase project, OAuth client, device keys, `TWILIO_AUTH_TOKEN` plus `TWILIO_STATUS_CALLBACK_URL`). Agents do not touch these.
-- [ ] Decide 385e: second VPS (public staging host, Vercel preview project, true Traefik/TLS rehearsal). RAM budget in plan 2.3, risks in 2.6.
+| # | Item | Status | Evidence / next step |
+|---|---|---|---|
+| A1 | Staff walk register -> consult -> sign -> Lab tab -> checkout -> dispense (non-admin) | DONE | `.ai/PILOT-CHECK.md` (Task 558), `dispense-checkout-ui` 4/4 |
+| A2 | Checkout deducts stock once (no double deduct on retry) | DONE | Tasks 358/402 |
+| A3 | Analytics counts quantity, lab/imaging lines, all consultations; age/gender exact | DONE | PILOT-CHECK fixes 1-2; Task 564 `tests/unit/task564-analytics-exact.test.ts` |
+| A4 | `/api/labs/receive`: 400 on missing status, 404 on unknown/foreign order, no writes | DONE | Tasks 566/572; PILOT-CHECK #6 |
+| A5 | Admin/login redirect loop, rate-limit message, stock 500 | DONE | Task 412; PILOT-CHECK #9 |
+| A6 | Time Chit core, shares template with MC | DONE | D-527, Task 549 / #307 |
+| A7 | Time Chit walked once as a staff user (only unit/e2e specs so far) | CODE | Add it to a Playwright staff walk on dev (fake data); `tests/unit/time-chit.test.ts` exists |
+| A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
+| A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`patient-profile-workspace.tsx:80-84`, `bill-modal.tsx:154`) |
+| A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
+| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | CODE | Low priority, not user-visible; PILOT-CHECK #8 |
+| A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | CODE | Dev only; after the dev topology is in place (`.ai/progress-task5.md`) |
 
-## 3. Remaining gaps before a clinic pilot
+## B. Security and secrets
 
-| Gap | Why it matters | Evidence |
-|---|---|---|
-| Staging has **never been run end to end** on a real server (bring-up, seed, gate) | Gate adapter and scripts are unit-tested only | plan 385a/385c notes: "never run against a real staging stack" |
-| ~~385c exception list~~ done (Task 607): staging gate fails on any non-passed test not in `e2e/staging-exceptions.json` (empty by default) | Unreviewed skips can no longer pass | `e2e/scripts/compare.mjs`, `tests/unit/staging-gate.test.ts` |
-| Production network is unchanged until the manual steps above | Medplum API host currently forwards all paths | plan Part 3; the audit kit has not been run on the host |
-| Production AccessPolicy isolation not applied (dev only) | In a superAdmin project the policy is bypassed (D20/D47) | `.ai/RUNBOOK-task5-production-migration.md` |
-| Analytics "Revenue" counts ordered lines, not invoiced/paid amounts (needs a product decision). Age/gender charts are now exact (Task 564) | Pilot owners may read revenue as cash received | `.ai/PILOT-CHECK.md` item 3; `tests/unit/task564-analytics-exact.test.ts` |
-| Consultation Fee defaults to RM 0.00; no catalog-driven default | Clinic must set a price or checkout under-bills | `.ai/PILOT-CHECK.md` item 5 (`patient-profile-workspace.tsx:80-84`) |
-| No post-payment receipt view (toast and Bill preview only) | Confirm with the clinic whether a receipt is required | `.ai/PILOT-CHECK.md` item 7 |
-| Time Chit (now core, Task 527, with the unified MC/Time Chit renderer, Task 549) was not walked in the Task 558 staff walk; only unit/e2e specs cover it | Walk it once before the pilot | `.ai/PILOT-CHECK.md` table; `tests/unit/time-chit.test.ts` |
-| Successful invite through the proxy not rehearsed (only the 401 route check) | A broken allowlist would block user onboarding | plan 385d "Not rehearsed" |
-| Walk used a user without an AccessPolicy | Proves the flow as non-admin, not policy enforcement | `.ai/PILOT-CHECK.md` setup note |
-| Medplum login limit (5/min) can look like a wrong password in repeated e2e runs | Only a test nuisance; the UI message was fixed (Task 412) | `.ai/PILOT-CHECK.md` item 9 |
-| Version drift: docs aligned to 5.2.15 (Task 607); staging should pin 5.2.15 (`infra/staging/README.md`). Production version still to be checked by Hidayat | Pin and test the version production will run | plan step 385d |
+| # | Item | Status | Evidence / next step |
+|---|---|---|---|
+| B1 | Write/update-by-id clinic containment | DONE | Tasks 396, 400, 482 |
+| B2 | Per-device keys for POCT/imaging ingress | DONE | D-device keys (Tasks 180, 355) |
+| B3 | Twilio status callback signature check | DONE | Task 541 |
+| B4 | HTTP security headers, dependency audit | CODE (in review) | Task 599, PR #318 still open; merge is Hidayat's call |
+| B5 | **Rotate the old password still in git history** (removed from scripts in #318; history keeps it) | OWNER | #318 review (`.ai/reviews/task-600.md`). Rotate where it was used, then decide whether to rewrite history (never by an agent) |
+| B6 | Production env/Vercel settings for the pilot clinic (Firebase project, OAuth client, device keys, `TWILIO_AUTH_TOKEN`, `TWILIO_STATUS_CALLBACK_URL`) | OWNER | Agents do not touch these |
 
-## 4. Rules that must stay true in the pilot
+## C. Isolation: production Task 5 migration
+
+| # | Item | Status | Evidence / next step |
+|---|---|---|---|
+| C1 | Clinic AccessPolicy topology (non-superAdmin clinic project) on **dev** | DONE | `.ai/REVIEW-task5.md`, D47, `.ai/progress-task5.md` |
+| C2 | Verify read-only whether the production clinic project is superAdmin (owner Q4 unknown) | OWNER | Plan Part 1/open question 4; a superAdmin project bypasses the policy |
+| C3 | Live disposable fake-session revocation rehearsal (>100 Logins, 2 pages) | CODE | Needs a newly supplied dev super-admin login from Hidayat first; runbook "OUTSTANDING live" |
+| C4 | Exact-production-version rehearsal and current-head full browser gate | CODE | Runbook release hold; run on dev with fake data |
+| C5 | Deployment recovery card (previous artifact, restorer, tested DB restore, writer stop/reopen) | OWNER | Runbook release hold; cannot be invented by an agent |
+| C6 | Production cutover: operator project, `superAdmin=false`, policies, session revocation | OWNER | `.ai/RUNBOOK-task5-production-migration.md`; maintenance window, backups, checksum |
+| C7 | Firestore draft migration, if still pending | OWNER | `.ai/RUNBOOK-firestore-draft-migration.md` |
+
+## D. Network lockdown and staging (plan 385)
+
+| # | Item | Status | Evidence / next step |
+|---|---|---|---|
+| D1 | Staging compose, env template, scripts (385a); preflight + seed (385b); gate adapter (385c) | DONE | `infra/staging/`, `scripts/staging/`, `tests/unit/staging-*.test.ts` |
+| D2 | Allowlist proxy rehearsed on loopback (`PROBE OK`, Traefik 3.5.0, Medplum 5.2.15) | DONE | Task 578, `.ai/reviews/task-579.md` |
+| D3 | Staging gate exception list (fails on any unlisted skip) | DONE | Task 607, `e2e/staging-exceptions.json` |
+| D4 | Rehearse a **successful** user invite through the allowlisted proxy (only the 401 route check so far) | CODE | Loopback rehearsal, fake user; plan 385d "Not rehearsed" |
+| D5 | Bring staging up once on the VPS, seed, run `check-staging.sh`, record sign-off in STATE.md | OWNER | Touches the shared VPS; follow `.ai/PLAN-staging-promotion-checklist.md`. Never run end to end yet |
+| D6 | Confirm Hostinger console + snapshot restore exist (owner Q6 unknown) | OWNER | Required before any firewall change |
+| D7 | Host inventory + audit kit run on the VPS and from outside; fix what it flags | OWNER | Plan 1.3; `bun run staging:audit` (`scripts/staging/audit-exposure.ts`), never run on the real host |
+| D8 | ufw, sshd hardening, DOCKER-USER rules, each with an `at` rollback timer | OWNER | Plan 1.4-1.7 |
+| D9 | Admin UI reachable by SSH tunnel only; remove the Medplum App router after testing the tunnel on dev | OWNER | Plan 1.6; decision #2 |
+| D10 | Production Traefik allowlist (check first: dynamic file or Docker labels on `medplum-server`) | OWNER | Plan Part 3 |
+| D11 | TLS/HSTS/redirect checks (cannot be rehearsed on loopback) | OWNER | Plan 1.2 B |
+| D12 | Confirm `registerEnabled=false` on production | OWNER | Plan step 0, decision #3 |
+| D13 | Check the production Medplum version; pin staging/test on the same version (docs say 5.2.15) | OWNER | `infra/staging/README.md` |
+| D14 | Second VPS for true public staging (385e) | not needed | Decision #5: stay on this VPS; revisit only if RAM is short (plan 2.3) |
+
+## E. Business and clinic onboarding
+
+| # | Item | Status | Evidence / next step |
+|---|---|---|---|
+| E1 | Yearly-only subscription terms for the pilot clinic | OWNER | Decision made; contract/pricing/invoicing is Hidayat's. No code task until a billing flow is requested |
+| E2 | Pilot clinic created with its `clinic` identifier, modules (POCT/PACS default off) and staff via invite | OWNER | Admin > Clinics; invite goes through the allowlisted route (D4, D10) |
+| E3 | Analyser/imaging devices registered with keys, only if the pilot uses them | OWNER | POCT orderable only when the analyser is online, no manual entry |
+
+## F. Rules that must stay true in the pilot
+
 Composer unchanged; Lab/POCT results only in the Lab tab with no critical-result warning in the composer; POCT orderable only when the analyser is online, no manual entry; every clinical resource carries its `clinic` identifier and is never read across clinics; Firebase Storage stays.
+
+## Go / no-go
+
+Pilot can start when every **OWNER** line in B, C, D (except D14) is done or consciously waived by Hidayat, A8-A10 are decided, and the **CODE** lines A7, C3, C4, D4 have passed on dev. Everything marked DONE is already merged or in PR #309.
