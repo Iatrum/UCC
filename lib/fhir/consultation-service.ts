@@ -666,14 +666,19 @@ export function buildSavedConsultation(
   };
 }
 
+const PATIENT_ENCOUNTER_PAGE = 1000;
+const PATIENT_ENCOUNTER_MAX_PAGES = 10;
+
 /** Search params for one patient's consultations; see getPatientConsultationsFromMedplum. */
 export function patientEncounterSearchParams(
   firebasePatientId: string,
-  clinicId?: string | null
+  clinicId?: string | null,
+  offset = 0
 ): Array<[string, string]> {
   const params: Array<[string, string]> = [];
   if (clinicId) params.push(['identifier', `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`]);
   params.push(['identifier', `firebase-patient|${firebasePatientId}`], ['_sort', '-date'], ['_count', '1000']);
+  if (offset > 0) params.push(['_offset', String(offset)]);
   return params;
 }
 
@@ -692,7 +697,16 @@ export async function getPatientConsultationsFromMedplum(
     // patient. Previously only the clinic identifier was sent and the patient was filtered afterwards, which
     // read clinic-wide Encounters (default page of 20) on every profile load and silently dropped a patient's
     // consultations once newer clinic encounters pushed them off that page (Task 591).
-    const encounters = await client.searchResources('Encounter', patientEncounterSearchParams(firebasePatientId, clinicId));
+    // Paged (1000 per page, bounded) so a patient with a very long history is never silently truncated.
+    const encounters: Encounter[] = [];
+    for (let page = 0; page < PATIENT_ENCOUNTER_MAX_PAGES; page++) {
+      const batch = await client.searchResources(
+        'Encounter',
+        patientEncounterSearchParams(firebasePatientId, clinicId, page * PATIENT_ENCOUNTER_PAGE)
+      );
+      encounters.push(...batch);
+      if (batch.length < PATIENT_ENCOUNTER_PAGE) break;
+    }
 
     const filtered = encounters.filter(
       (enc) =>
@@ -702,14 +716,21 @@ export async function getPatientConsultationsFromMedplum(
 
     if (filtered.length === 0) return [];
 
-    const encounterRefs = filtered.map((e) => `Encounter/${e.id}`).join(',');
-
-    const [conditions, observations, procedures, medications] = await Promise.all([
-      client.searchResources('Condition', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-      client.searchResources('Observation', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-      client.searchResources('Procedure', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-      client.searchResources('MedicationRequest', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
-    ]);
+    // Children in batches of CHILD_BATCH encounters: one URL with up to 1000 refs would exceed header limits.
+    const conditions: Condition[] = [];
+    const observations: Observation[] = [];
+    const procedures: Procedure[] = [];
+    const medications: MedicationRequest[] = [];
+    for (let i = 0; i < filtered.length; i += CHILD_BATCH) {
+      const encounterRefs = filtered.slice(i, i + CHILD_BATCH).map((e) => `Encounter/${e.id}`).join(',');
+      const [c, o, p, m] = await Promise.all([
+        client.searchResources('Condition', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+        client.searchResources('Observation', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+        client.searchResources('Procedure', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+        client.searchResources('MedicationRequest', { encounter: encounterRefs, _count: BULK_CHILD_COUNT }),
+      ]);
+      conditions.push(...c); observations.push(...o); procedures.push(...p); medications.push(...m);
+    }
 
     const conditionsByEncounter = groupByEncounter(conditions);
     const observationsByEncounter = groupByEncounter(observations);
