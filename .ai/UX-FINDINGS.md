@@ -161,3 +161,7 @@ Method: branch of PR #315 merged with `origin/dev` (already up to date); one `ne
 25. **Inventory summary tiles stack one per row on a phone** and push the table far down. Cosmetic; leave until the redesign decision.
 
 No new High items. Automated check: 0 unlabelled form fields and 0 horizontal page overflow on the walked pages (the only unlabelled button was the Next.js dev-tools badge).
+
+## Task 603
+- Fixed `react-hooks/set-state-in-effect` in checkout-client.tsx: document preview HTML and loading flag are now derived from a result keyed by its inputs; the effect only sets state asynchronously. Behaviour preserved (stale HTML never shown, loading while pending, null on failure). Pure UI derivation, no new logic to unit-test.
+- Part 3 re-check: #22 already FIXED (grid-cols-1, verified in code). #23 (billing table cards on phones) needs a layout decision, #24 is sidebar/nav, #25 is cosmetic tile stacking: all deliberately left, not small/safe label/overflow/empty-state/wording fixes.
