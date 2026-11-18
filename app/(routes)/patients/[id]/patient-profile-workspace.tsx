@@ -27,7 +27,7 @@ import { formatPrescriptionLine } from "@/lib/prescriptions";
 import { buildSignedDocumentNote } from "@/lib/orders/signed-document-note";
 import { getClinicalCatalog } from "@/lib/clinical-catalog";
 import {
-  emptyComposerCatalogs, loadComposerCatalogs, shouldLoadComposerCatalogs, type ComposerCatalogs,
+  createComposerCatalogRequester, emptyComposerCatalogs, loadComposerCatalogs, shouldLoadComposerCatalogs, type ComposerCatalogs,
 } from "@/lib/orders/composer-catalogs";
 import { cn, formatDisplayDate } from "@/lib/utils";
 import type { Prescription, ProcedureRecord } from "@/lib/models";
@@ -205,17 +205,19 @@ export default function PatientProfileWorkspace({
   const [treatmentSummary, setTreatmentSummary] = useState<TreatmentPlanSummary>(emptyTreatmentSummary);
   const [queueStatus, setQueueStatus] = useState<QueueStatus>(patient.queueStatus ?? null);
   const [catalogs, setCatalogs] = useState<ComposerCatalogs>(emptyComposerCatalogs);
-  const catalogsRequested = useRef(false);
+  const catalogRequester = useRef<ReturnType<typeof createComposerCatalogRequester> | null>(null);
   const { procedures: procedureOptions, medications: medicationOptions, labs: labCatalog,
     imaging: imagingCatalog, documents: documentCatalog } = catalogs;
 
   // The order composer is the only consumer: fetch its catalogs the first time the treatment drawer opens.
   useEffect(() => {
-    if (!shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogsRequested.current)) return;
-    catalogsRequested.current = true;
-    loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog })
-      .then(setCatalogs)
-      .catch((error) => console.error("Failed to load treatment catalogs:", error));
+    catalogRequester.current ??= createComposerCatalogRequester(
+      () => loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog }),
+      setCatalogs,
+      (error) => console.error("Failed to load treatment catalogs:", error),
+    );
+    if (!shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogRequester.current.requested())) return;
+    catalogRequester.current.request();
   }, [drawerMode, panelOpen]);
 
   const updateQueueStatus = useCallback(async (status: Exclude<QueueStatus, null>) => {

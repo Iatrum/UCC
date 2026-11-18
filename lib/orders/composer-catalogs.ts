@@ -47,3 +47,27 @@ export async function loadComposerCatalogs(loaders: ComposerCatalogLoaders): Pro
     documents: documents.filter((i) => i.active),
   };
 }
+
+/**
+ * Once-only loader for the treatment drawer: concurrent calls (fast open/close/open) share one request,
+ * a success is never repeated, and a failure clears the latch so reopening the drawer retries
+ * (otherwise one transient error would leave the composer with empty catalogs until a page reload).
+ */
+export function createComposerCatalogRequester(
+  load: () => Promise<ComposerCatalogs>,
+  onLoaded: (catalogs: ComposerCatalogs) => void,
+  onError: (error: unknown) => void,
+) {
+  let state: 'idle' | 'loading' | 'done' = 'idle';
+  return {
+    requested: () => state !== 'idle',
+    request() {
+      if (state !== 'idle') return;
+      state = 'loading';
+      load().then(
+        (catalogs) => { state = 'done'; onLoaded(catalogs); },
+        (error) => { state = 'idle'; onError(error); },
+      );
+    },
+  };
+}

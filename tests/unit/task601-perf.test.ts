@@ -5,7 +5,7 @@ const realTenancy = { ...(await import('../../lib/fhir/clinic-tenancy')) };
 mock.module('../../lib/fhir/clinic-tenancy', () => ({ ...realTenancy, assertOrderClinic: async () => {} }));
 const { draftScope } = await import('../../lib/fhir/consultation-draft');
 const { loadMe } = await import('../../lib/server/medplum-auth');
-const { loadComposerCatalogs, shouldLoadComposerCatalogs, emptyComposerCatalogs } = await import('../../lib/orders/composer-catalogs');
+const { loadComposerCatalogs, shouldLoadComposerCatalogs, emptyComposerCatalogs, createComposerCatalogRequester } = await import('../../lib/orders/composer-catalogs');
 const { buildSignedDocumentNote } = await import('../../lib/orders/signed-document-note');
 afterAll(() => { mock.module('../../lib/fhir/clinic-tenancy', () => realTenancy); });
 
@@ -63,5 +63,46 @@ describe('signed document note (moved out of the composer bundle)', () => {
     const mc: any = { id: 'e1', catalogRef: 'letter-mc', name: 'MC', instruction: 'rest', meta: { mcDays: '2' } };
     expect(JSON.parse(buildSignedDocumentNote(mc)!)).toMatchObject({ kind: 'mc', mcDays: '2', status: 'completed', instruction: 'rest' });
     expect(buildSignedDocumentNote({ id: 'e2', catalogRef: 'svc-1', name: 'Dressing', instruction: 'daily' } as any)).toBe('daily');
+  });
+});
+
+describe('composer catalog requester edge cases (Task 602)', () => {
+  
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  test('fast repeated opens share one in-flight request and one result', async () => {
+    let calls = 0; const got: unknown[] = [];
+    const r = createComposerCatalogRequester(async () => { calls++; return emptyComposerCatalogs; }, (c: unknown) => got.push(c), () => {});
+    r.request(); r.request(); r.request();
+    expect(r.requested()).toBe(true);
+    await tick();
+    r.request();
+    expect(calls).toBe(1);
+    expect(got).toHaveLength(1);
+  });
+  test('a failure clears the latch so reopening retries and then succeeds', async () => {
+    let calls = 0; const errors: unknown[] = []; const got: unknown[] = [];
+    const r = createComposerCatalogRequester(
+      async () => { if (++calls === 1) throw new Error('boom'); return emptyComposerCatalogs; },
+      (c: unknown) => got.push(c), (e: unknown) => errors.push(e));
+    r.request(); await tick();
+    expect(errors).toHaveLength(1);
+    expect(r.requested()).toBe(false);
+    r.request(); await tick();
+    expect(calls).toBe(2);
+    expect(got).toHaveLength(1);
+  });
+  test('loader rejects when any single catalog fails (nothing half-populated)', async () => {
+    await expect(loadComposerCatalogs({
+      getProcedures: async () => [], getMedications: async () => [],
+      getClinicalCatalog: async (t) => { if (t === 'imaging') throw new Error('x'); return []; },
+    })).rejects.toThrow('x');
+  });
+  test('inactive-only and null unitPrice are handled', async () => {
+    const out = await loadComposerCatalogs({
+      getProcedures: async () => [], getMedications: async () => [{ id: 'm', name: 'N', unitPrice: undefined }],
+      getClinicalCatalog: async () => [{ id: 'a', active: false } as any],
+    });
+    expect(out.labs).toEqual([]);
+    expect(out.medications[0].unitPrice).toBe(0);
   });
 });
