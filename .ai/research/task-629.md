@@ -40,3 +40,14 @@ Already covered elsewhere (not re-tested): time-chit guard (time-chit.test), app
 Still untested: triage-service `updateQueueStatusForPatient`/`checkInPatientInTriage` status transitions (large mocked-Medplum surface), scheduling-service slot generation/booking, `updateAppointmentStatus` timestamp stamping, rescheduleAppointment status reset.
 
 Suspected bug (skipped test): `mcEndDate(start, 0.5)` returns the day before start. Low risk (UI sends integers).
+
+## Task 639 follow-up (remaining gaps closed)
+Reusable helper: `tests/unit/helpers/mock-medplum.ts` (in-memory read/search/create/update/post + `tenantResources(clinic)`; no clock, sequential ids). Time-dependent code uses bun's `setSystemTime` with fixed ISO literals.
+10. Triage queue transitions (`updateQueueStatusForPatient`, `checkInPatientInTriage`, legacy status fallback, foreign-clinic isolation) — tests/unit/task639-triage-queue-status.test.ts
+11. Scheduling slot generation / `findSlots` / book / manual-book overlap rules — tests/unit/task639-scheduling-slots.test.ts
+12. `updateAppointmentStatus` timestamp stamping and `rescheduleAppointment` end/status reset — tests/unit/task639-appointment-status.test.ts
+
+Real bug found and fixed: slot/appointment end times were computed with server-local `Date#setMinutes`, which skews across a DST change when the server TZ has DST (reproduced with `TZ=America/New_York`, 2030-11-03: slot grid lost slots, reschedule end +90 min instead of +45). Production (Asia/Kuala_Lumpur) has no DST so it was latent. Fixed in `generateSlotsForSchedule`, `manualBookAppointmentWithSlot`, `saveAppointmentToMedplum`, `rescheduleAppointment` using absolute-ms arithmetic; regression tests fail without the fix.
+
+Still untested: `getTriageQueueForToday` paging, `saveTriageEncounter` observations/vitals, `mcEndDate(start, 0.5)` suspected bug (above, unchanged).
+

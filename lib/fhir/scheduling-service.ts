@@ -216,8 +216,8 @@ export async function generateSlotsForSchedule(
 
   while (cursor < windowEnd) {
     const slotStart = new Date(cursor);
-    const slotEnd = new Date(slotStart);
-    slotEnd.setMinutes(slotEnd.getMinutes() + input.durationMinutes);
+    // Absolute-time arithmetic: Date#setMinutes works in server-local time and skews across DST changes.
+    const slotEnd = new Date(slotStart.getTime() + input.durationMinutes * 60_000);
     if (slotEnd > windowEnd) break;
 
     const startIso = slotStart.toISOString();
@@ -525,8 +525,7 @@ export async function manualBookAppointmentWithSlot(
     throw new Error("durationMinutes must be a positive number");
   }
 
-  const end = new Date(start);
-  end.setMinutes(end.getMinutes() + input.durationMinutes);
+  const end = new Date(start.getTime() + input.durationMinutes * 60_000);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
 
