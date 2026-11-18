@@ -501,12 +501,20 @@ export async function updateTwilioDeliveryStatus(
   status: string,
   error?: string
 ): Promise<FollowUp | null> {
+  // Twilio carries no clinic context, so the callback can only be matched by SID. Restrict the
+  // match to follow-up Communications that carry a clinic identifier, so other Communication
+  // kinds (or untagged resources) are never updated by this endpoint.
+  if (!messageSid) return null;
   const results = await medplum.searchResources("Communication", {
-    _count: "20",
+    category: `${FOLLOW_UP_CATEGORY_SYSTEM}|`,
+    _count: "200",
     _sort: "-_lastUpdated",
   });
   const comm = (results as Communication[]).find(
-    (candidate) => getExtensionString(candidate, TWILIO_MESSAGE_SID_EXTENSION_URL) === messageSid
+    (candidate) =>
+      candidate.category?.[0]?.coding?.[0]?.system === FOLLOW_UP_CATEGORY_SYSTEM &&
+      candidate.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && Boolean(id.value)) &&
+      getExtensionString(candidate, TWILIO_MESSAGE_SID_EXTENSION_URL) === messageSid
   );
   if (!comm) return null;
 
