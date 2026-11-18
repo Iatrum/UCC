@@ -27,8 +27,9 @@ already parallel, bounded and cached per clinic (Task 551), no N+1. Billable/che
 1. **Patient profile clinic-wide Encounter search (real bug + scale problem).** `getPatientConsultationsFromMedplum` searched
    `Encounter?identifier=clinic|X&_sort=-date` (default page of 20, full resources, no patient filter) and filtered by patient
    afterwards. Cost grows with the clinic's encounter count, and once 20 newer clinic encounters exist the patient's consultations
-   fall off the page: **before the fix 45 of 100 fake patients showed 0 consultations although they have one; after: all of them**
+   fall off the page: **before the fix only 4 of the 100 fake patients showed any consultation (5 of their 74 encounters); after the fix all 71 patients who have history show it (74 encounters; the other 29 have none)**
    (`/api/consultations?patientId=` over the 100 patients: 5 -> 74 consultations, 4 -> 71 patients with history).
+   *Corrected in Task 593: an earlier revision of this note said "45 of 100 showed 0"; the re-measure (see task-593.md) is 96 of 100 shown empty, 67 of them wrongly.*
    Same function feeds the profile page, `/api/consultations`, and smart-text summary.
    Fix: send both identifiers server-side (`identifier=clinic|X&identifier=firebase-patient|P`, ANDed - the same predicate the
    post-filter used) with `_count=1000`. Clinic isolation unchanged (clinic identifier stays in the query and `matchesClinic` still runs).
