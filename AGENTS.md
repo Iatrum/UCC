@@ -1,6 +1,6 @@
 # UCC agent rules (Codex, Claude Code, Dev)
 
-Stack: Next.js 16 (App Router), React 19, Medplum 5.2.8 (FHIR R4), Bun, Firebase Storage. PR base is `dev`, but agents NEVER push, touch the remote or open PRs.
+Stack: Next.js 16 (App Router), React 19, Medplum server 5.2.15 on dev (SDK `@medplum/core` ^5.1.13; FHIR R4), Bun, Firebase Storage. PR base is `dev`, but agents NEVER push, touch the remote or open PRs.
 
 ## Rules
 - Research and verify first: read the code and official docs (Medplum, Next.js 16, React 19, FHIR R4). Never guess an API. Notes go in `.ai/research/<task>.md` with links.

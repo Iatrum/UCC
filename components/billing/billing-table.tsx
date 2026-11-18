@@ -84,8 +84,8 @@ export default function BillingTable({ consultations, loading, error, onRetry }:
           <TableHeader>
             <TableRow>
               <TableHead>Patient Name</TableHead>
-              <TableHead>Consultation Date</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead className="hidden sm:table-cell">Consultation Date</TableHead>
+              <TableHead className="hidden sm:table-cell">Status</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -103,9 +103,13 @@ export default function BillingTable({ consultations, loading, error, onRetry }:
                     >
                       {consultation.patientFullName || 'N/A'}
                     </Link>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-normal text-muted-foreground sm:hidden">
+                      <span>{formatDisplayDate(consultation.date)}</span>
+                      {getStatusBadge(consultation.queueStatus)}
+                    </div>
                   </TableCell>
-                  <TableCell>{formatDisplayDate(consultation.date)}</TableCell>
-                  <TableCell>{getStatusBadge(consultation.queueStatus)}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{formatDisplayDate(consultation.date)}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{getStatusBadge(consultation.queueStatus)}</TableCell>
                   <TableCell className="text-right">
                     <Button asChild size="sm" variant="outline" className="relative z-10">
                       <Link

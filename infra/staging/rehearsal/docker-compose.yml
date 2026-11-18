@@ -1,0 +1,31 @@
+# Task 556 / plan 385d: loopback Traefik-equivalent in front of STAGING Medplum, to rehearse Part 1 steps 1.6/1.9
+# (allowlist routing, no dashboard, no Docker socket, no exposedByDefault) before touching production.
+# NOT started by CI or any task; an operator runs ./rehearse.sh. Fake data only.
+# Isolated: own container name, joins only the staging network, nothing named medplum-* / root-traefik-1,
+# no Docker socket (file provider only), nothing published except 127.0.0.1:8180. Not TLS (loopback; TLS/HSTS/redirect
+# cannot be rehearsed without a certificate and are checked on the real Traefik, see the plan).
+name: ucc-staging-rehearsal
+services:
+  ucc-stg-traefik:
+    image: traefik:${TRAEFIK_IMAGE_TAG:?set TRAEFIK_IMAGE_TAG (pinned, never latest)}
+    container_name: ucc-stg-traefik
+    restart: "no"
+    mem_limit: 128m
+    memswap_limit: 128m
+    command:
+      - --entrypoints.web.address=:8000
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --api=false
+      - --ping=false
+      - --log.level=INFO
+      - --accesslog=false
+    ports:
+      - "127.0.0.1:8180:8000"
+    volumes:
+      - ./dynamic:/etc/traefik/dynamic:ro
+    networks: [stg-net]
+networks:
+  stg-net:
+    external: true
+    name: ucc-staging_stg-net

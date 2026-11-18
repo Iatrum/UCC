@@ -1,0 +1,26 @@
+# ALLOWLIST routing for the Medplum API. Anything not matched gets Traefik's default 404, so there is no
+# blocklist to bypass (Medplum mounts its router at /, /api/, /projects/:id/, /api/projects/:id/; blocking only
+# /admin would leak). Add a prefix only after the rehearsal shows UCC needs it. Verify with scripts/staging/probe.sh.
+# /admin/* is deliberately NOT listed except ONE exact route: UCC's server-side invite calls
+# POST admin/projects/<id>/invite (lib/fhir/admin-service.ts, Task 578 finding). Deactivate uses FHIR ProjectMembership
+# (/fhir/), so it needs no /admin. The invite route is anchored (^...$), POST only, and has no /api/ or // forms.
+http:
+  routers:
+    medplum-api:
+      entryPoints: [web]
+      priority: 10
+      rule: >-
+        PathPrefix(`/auth/`) || PathPrefix(`/oauth2/`) || PathPrefix(`/fhir/`) ||
+        PathPrefix(`/.well-known/`) || PathPrefix(`/storage/`) || Path(`/healthcheck`)
+      service: medplum-api
+    medplum-invite:
+      entryPoints: [web]
+      priority: 20
+      rule: >-
+        Method(`POST`) && PathRegexp(`^/admin/projects/[A-Za-z0-9-]+/invite$`)
+      service: medplum-api
+  services:
+    medplum-api:
+      loadBalancer:
+        servers:
+          - url: http://ucc-stg-medplum:8103/

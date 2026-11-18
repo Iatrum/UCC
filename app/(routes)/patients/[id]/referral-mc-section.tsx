@@ -38,7 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { getPatientReferrals, deleteReferral, type Referral } from "@/lib/fhir/referral-client";
-import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
+import { fetchOrganizationDetails, resolveOrganizationDetails, type OrganizationDetails } from "@/lib/org";
 import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import type { ProcedureRecord } from "@/lib/models";
 
@@ -262,7 +262,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       template: html,
       details: doc.details,
       patient,
-      organization,
+      organization: await resolveOrganizationDetails(organization),
       issuedDate: doc.date,
     });
   }
@@ -277,17 +277,18 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
       html = DEFAULT_REFERRAL_TEMPLATE;
     }
+    const org = await resolveOrganizationDetails(organization);
     const toLine = [r.department, r.facility].filter(Boolean).join(", ") || "";
     return withPrintCss(fillDocumentTemplate(html, {
-      clinicLogo: clinicLogoHtml(organization?.logoUrl),
-      clinicName: organization?.name || "",
-      clinicAddress: organization?.address || "",
-      clinicPhone: organization?.phone || "",
+      clinicLogo: clinicLogoHtml(org?.logoUrl),
+      clinicName: org?.name || "",
+      clinicAddress: org?.address || "",
+      clinicPhone: org?.phone || "",
       patientName: patient.fullName || "",
       patientNric: patient.nric || "",
       patientAge: calcAge(patient.dateOfBirth),
       referralTo: toLine,
-      referralFrom: r.doctorName || organization?.name || "",
+      referralFrom: r.doctorName || org?.name || "",
       referralBody: multilineToHtml((r as any).letterText || ""),
       diagnosis: r.specialty || "",
       doctorName: r.doctorName || "",

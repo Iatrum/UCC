@@ -152,6 +152,8 @@ export function renderDocumentHtml(input: RenderDocumentInput): string {
 
   // A custom template may use a placeholder we do not know: never print a raw {{token}}.
   out = out.replace(/\{\{\w+\}\}/g, "");
+  // Hide letterhead lines whose value is empty (no orphan "Tel:" label, no blank address row).
+  out = out.replace(/<div class="clinic-meta">\s*(?:Tel:\s*)?<\/div>\s*/g, "");
 
   if (details.status === SIGNED_DOCUMENT_STATUS_VOIDED) {
     const when = details.voidedAt ? ` · ${escapeHtmlText(formatClinicDate(details.voidedAt))}` : "";

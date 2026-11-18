@@ -29,3 +29,12 @@ export function summarizeLowStock<T extends StockLevel>(items: T[]) {
     moreFilter: (outOfStock.length > BANNER_NAME_LIMIT ? "Out of stock" : "Order soon") as "Out of stock" | "Order soon",
   };
 }
+
+/** Banner verb phrase; out-of-stock items may have no threshold, so don't claim one for them. */
+export function lowStockBannerStatus(outOfStockCount: number, orderSoonCount: number): string {
+  const total = outOfStockCount + orderSoonCount;
+  const verb = total === 1 ? "is" : "are";
+  if (orderSoonCount === 0) return `${verb} out of stock.`;
+  if (outOfStockCount === 0) return `${verb} at or below the minimum stock threshold.`;
+  return `${verb} out of stock or at or below the minimum stock threshold.`;
+}

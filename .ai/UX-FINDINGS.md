@@ -137,3 +137,52 @@ Method: read each OPEN item against current code (file/line evidence inline abov
 - Part 2 Low 16: `purchase-orders-panel.tsx` / `suppliers-panel.tsx` are still unimported dead code (removal belongs with the purchasing decision, `INVENTORY_PURCHASING_ENABLED=false`).
 - Part 2 Low 20: Document Templates still raw HTML, no "keep placeholders intact" warning.
 - Part 2 Low 21: user-edit page lists every branch as a checkbox (scaling).
+
+## Task 587 (Low leftovers)
+- Part 1 #7 history table clipped: already fixed (Task 446), verified, no change.
+- Part 1 #8 "Total visits / Last completed visit": already fixed (Task 446, consult-based labels), verified, no change.
+- Task 586 note: out-of-stock banner wording **fixed** (no threshold claim for out-of-stock).
+- Part 2 Low 20: "keep placeholders intact" helper text **added** (no editor redesign).
+
+---
+
+# Part 3 (Task 595): phone-width pass over billing/checkout, inventory, settings, patients; admin from code (2026-11-18)
+
+Method: branch of PR #315 merged with `origin/dev` (already up to date); one `next dev --webpack` on :3595 (killed afterwards), dev Medplum `:8113`, fake patient "UX Audit Fake 057396", Playwright (wrapped in `timeout`) at 1366px and 390px, `doctor@ucc.local`. Walked `/orders`, `/orders/checkout/<id>`, `/inventory`, `/settings`, `/patients`. Auto-deduct, MC/referral and template behaviour were not re-walked: Part 2 covered them the same day and the current code still matches (`referral-mc-section.tsx` view/void dialogs and `insurer-manager.tsx` icon buttons have `aria-label`).
+
+**Limits.** The `/admin*` routes redirect to `/login` for this clinic account, and I did not log in as the Medplum admin (rate limit, secrets), so admin was read from code only. Purchases has no UI (Part 2 #16). No sidebar/nav change was made.
+
+## Medium
+22. **Checkout page overflowed on a phone.** Below `xl` the wrapper `grid gap-6` had no column template, so the implicit auto column grew to the fixed-width items table and the Patient/Invoice cards were clipped on the right at 390px (`app/(routes)/orders/checkout/[consultationId]/checkout-client.tsx:677`). **FIXED:** added `grid-cols-1` (`minmax(0,1fr)`); verified at 390px, cards now fit. Desktop layout (`xl:` templates) unchanged.
+
+## Low
+23. **Billing list on a phone hides the date, status and "Open checkout" button** off the right edge of the table (`components/billing/billing-table.tsx:80-130`; `ui/table.tsx:11` scrolls sideways with no hint). The patient name link still opens checkout, so it is usable. Fix (needs a layout decision, not done): stack rows as cards below `sm`.
+24. **The sidebar takes about 64px of a 390px screen** and page titles wrap ("Billing & Documents" on two lines). Nav, out of scope.
+25. **Inventory summary tiles stack one per row on a phone** and push the table far down. Cosmetic; leave until the redesign decision.
+
+No new High items. Automated check: 0 unlabelled form fields and 0 horizontal page overflow on the walked pages (the only unlabelled button was the Next.js dev-tools badge).
+
+## Task 603
+- Fixed `react-hooks/set-state-in-effect` in checkout-client.tsx: document preview HTML and loading flag are now derived from a result keyed by its inputs; the effect only sets state asynchronously. Behaviour preserved (stale HTML never shown, loading while pending, null on failure). Pure UI derivation, no new logic to unit-test.
+- Part 3 re-check: #22 already FIXED (grid-cols-1, verified in code). #23 (billing table cards on phones) needs a layout decision, #24 is sidebar/nav, #25 is cosmetic tile stacking: all deliberately left, not small/safe label/overflow/empty-state/wording fixes.
+
+---
+
+# Task 623: Low leftovers verdict (2026-11-18)
+
+Method: worktree on PR #315's branch, `origin/dev` merged (already up to date). Code read only; no dev server started. tsc and eslint on changed files clean; no unit tests cover these two presentational components.
+
+- **Referral row does not open a viewer:** **NOT A BUG (re-confirmed).** Signed MC, time chit and referral rows all call `openSignedDocumentViewer` (`app/(routes)/patients/[id]/referral-mc-section.tsx:299`, wired at `:374`), same viewer dialog, same loading state and error toast. Earlier misses were `next dev` cold-compile timing. CLOSED.
+- **Part 2 Low 16 (dead purchasing panels):** still real, `purchase-orders-panel.tsx` / `suppliers-panel.tsx` unimported. Not fixed: removal belongs to the purchasing decision, not a small safe fix.
+- **Part 2 Low 20 (templates raw HTML):** VERIFIED FIXED for the warning part: `components/settings/document-template-editor.tsx:91` says to keep every `{{placeholder}}` as written (Task 587). "Preview with a real patient" is a new feature, not done.
+- **Part 2 Low 21 (user-edit lists every branch):** **FIXED.** Clinic list now scrolls inside `max-h-64` and the label shows "N of M selected" (`app/(admin)/admin/users/[id]/user-edit-form.tsx:282-291`). Search box not added (would be new UI).
+- **Part 3 #23 (billing table hides date/status on phones):** **FIXED.** Below `sm` the Date and Status columns are hidden and shown under the patient name instead; the "Open checkout" button now sits next to the name without sideways scrolling (`components/billing/billing-table.tsx`). Desktop unchanged.
+- **Part 3 #24 (sidebar width on phones):** nav, out of scope, untouched.
+- **Part 3 #25 (inventory tiles stack on phones):** cosmetic, left (`app/(routes)/inventory/page.tsx:202`).
+- Part 1 #19 sidebar polish: out of scope.
+
+## Task 617 (re-verify Part 1 #7 / #8, 2026-11-18)
+Verified on current code (merged with origin/dev; no dev server needed, no app code changed):
+- **#7 history table clipped: NOT still real.** `patient-profile-workspace.tsx`: below `md` a card list is shown; from `md` up the table sits in `hidden overflow-x-auto md:block` with `min-w-[860px]`, so it scrolls horizontally inside its container instead of being clipped. The "still present" note on `66f596b` overlooked Task 446.
+- **#8 "Total visits / Last completed visit" before checkout: NOT still real.** The patient header (`patients/[id]/page.tsx`) now reads "Last consult" / "Total consults" (consult-based, `consultSummary`); no "completed visit" wording remains in `app/`, `components/`, `lib/`.
+- No fix made; composer, sidebar and nav untouched.

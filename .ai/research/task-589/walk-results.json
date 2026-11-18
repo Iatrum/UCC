@@ -1,0 +1,245 @@
+{
+ "facts": {
+  "run": "11180603",
+  "planPostStatus": 200,
+  "itemKeptRealPath": true,
+  "procedures": [
+   "MEDICAL CERTIFICATE (MC):completed",
+   "TIME CHIT:completed"
+  ],
+  "stockBefore": 494,
+  "total": "35.50",
+  "invoice": [
+   "balanced:35.5"
+  ],
+  "stockAfter": 493,
+  "dispenses": 1,
+  "results": [
+   {
+    "step": "01-login",
+    "ok": true
+   },
+   {
+    "step": "02-register",
+    "ok": true
+   },
+   {
+    "step": "03-checkin-triage",
+    "ok": true
+   },
+   {
+    "step": "04-start-consult-notes-diagnosis-sign",
+    "ok": true
+   },
+   {
+    "step": "05-composer-add-med-lab-mc-timechit",
+    "ok": true
+   },
+   {
+    "step": "06-sign-treatment",
+    "ok": true
+   },
+   {
+    "step": "07-lab-order-in-labs-tab-only",
+    "ok": true
+   },
+   {
+    "step": "08-documents-tab-mc-timechit",
+    "ok": false,
+    "note": "\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed |  | Locator: locator('iframe[title=\"Document preview\"]').contentFrame().getByText('TIME CHIT / SURAT MASA') | Expected: visible"
+   },
+   {
+    "step": "09-checkout-dispense-invoice",
+    "ok": true
+   },
+   {
+    "step": "10-analytics-ringkasan",
+    "ok": true
+   },
+   {
+    "step": "11-analytics-klinikal",
+    "ok": true
+   },
+   {
+    "step": "12-analytics-duit-operasi",
+    "ok": true
+   },
+   {
+    "step": "13-inventory",
+    "ok": true
+   }
+  ]
+ },
+ "results": [
+  {
+   "step": "01-login",
+   "ok": true
+  },
+  {
+   "step": "02-register",
+   "ok": true
+  },
+  {
+   "step": "03-checkin-triage",
+   "ok": true
+  },
+  {
+   "step": "04-start-consult-notes-diagnosis-sign",
+   "ok": true
+  },
+  {
+   "step": "05-composer-add-med-lab-mc-timechit",
+   "ok": true
+  },
+  {
+   "step": "06-sign-treatment",
+   "ok": true
+  },
+  {
+   "step": "07-lab-order-in-labs-tab-only",
+   "ok": true
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "ok": false,
+   "note": "\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed |  | Locator: locator('iframe[title=\"Document preview\"]').contentFrame().getByText('TIME CHIT / SURAT MASA') | Expected: visible"
+  },
+  {
+   "step": "09-checkout-dispense-invoice",
+   "ok": true
+  },
+  {
+   "step": "10-analytics-ringkasan",
+   "ok": true
+  },
+  {
+   "step": "11-analytics-klinikal",
+   "ok": true
+  },
+  {
+   "step": "12-analytics-duit-operasi",
+   "ok": true
+  },
+  {
+   "step": "13-inventory",
+   "ok": true
+  }
+ ],
+ "issues": [
+  {
+   "step": "01-login",
+   "kind": "http",
+   "text": "401 GET /api/auth/medplum-session"
+  },
+  {
+   "step": "01-login",
+   "kind": "console",
+   "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  },
+  {
+   "step": "01-login",
+   "kind": "http",
+   "text": "401 GET /api/auth/me"
+  },
+  {
+   "step": "01-login",
+   "kind": "console",
+   "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  },
+  {
+   "step": "07-lab-order-in-labs-tab-only",
+   "kind": "http",
+   "text": "503 POST /api/labs/subscription"
+  },
+  {
+   "step": "07-lab-order-in-labs-tab-only",
+   "kind": "console",
+   "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to fetch organization details: TypeError: Failed to fetch\n    at fetchOrganizationDetails (webpack-internal:///(app-pages-browser)/./lib/org.ts:8:32)\n    at ReferralMCSection.useEffect (webpack-internal:///(app-pages-browser)/./app/(routes)/patients/[id]/referral-mc-section.tsx:137:113)\n    a"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "TypeError: Failed to fetch\n    at PatientDocuments.useCallback[fetchDocs] (webpack-internal:///(app-pages-browser)/./components/patients/patient-documents.tsx:40:35)\n    at PatientDocuments.useEffect (webpack-internal:///(app-pages-browser)/./components/patients/patient-documents.tsx:81:26)"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "TypeError: Failed to fetch\n    at PatientDocuments.useCallback[fetchDocs] (webpack-internal:///(app-pages-browser)/./components/patients/patient-documents.tsx:40:35)\n    at PatientDocuments.useEffect (webpack-internal:///(app-pages-browser)/./components/patients/patient-documents.tsx:81:26)"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "WebSocket is already in CLOSING or CLOSED state."
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "08-documents-tab-mc-timechit",
+   "kind": "console",
+   "text": "WebSocket connection to 'ws://localhost:3210/_next/webpack-hmr?id=0ZnVuN3gHwNa9ES5OGOpV' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED"
+  },
+  {
+   "step": "09-checkout-dispense-invoice",
+   "kind": "http",
+   "text": "404 GET /api/billing"
+  },
+  {
+   "step": "09-checkout-dispense-invoice",
+   "kind": "console",
+   "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  },
+  {
+   "step": "09-checkout-dispense-invoice",
+   "kind": "http",
+   "text": "404 GET /api/billing"
+  },
+  {
+   "step": "09-checkout-dispense-invoice",
+   "kind": "console",
+   "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  }
+ ]
+}

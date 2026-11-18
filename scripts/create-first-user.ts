@@ -22,10 +22,15 @@ async function createFirstUser() {
   console.log('✅ Connected!\n');
 
   // User details
-  const email = 'dayatfactor@gmail.com';
-  const password = 'matn0r007';
+  const email = process.env.FIRST_USER_EMAIL;
+  const password = process.env.FIRST_USER_PASSWORD;
   const firstName = 'Hidayat';
   const lastName = 'Doctor';
+
+  if (!email || !password) {
+    console.error('Set FIRST_USER_EMAIL and FIRST_USER_PASSWORD in the environment.');
+    process.exit(1);
+  }
 
   try {
     // Check if user already exists
@@ -87,7 +92,7 @@ async function createFirstUser() {
     console.log('3. Go to: Admin → Users → Create New\n');
     console.log('4. Fill in:');
     console.log(`   Email: ${email}`);
-    console.log(`   Password: ${password}`);
+    console.log('   Password: (the value of FIRST_USER_PASSWORD)');
     console.log(`   Link to Practitioner: ${practitioner.id}\n`);
     console.log('5. Save\n');
     console.log('6. Try logging into your EMR:');
@@ -103,7 +108,7 @@ async function createFirstUser() {
     console.log('2. Login with admin credentials');
     console.log('3. Create Practitioner + User');
     console.log(`4. Use email: ${email}`);
-    console.log(`5. Use password: ${password}\n`);
+    console.log('5. Use the password from FIRST_USER_PASSWORD\n');
   }
 }
 

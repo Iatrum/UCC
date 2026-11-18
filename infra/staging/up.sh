@@ -8,6 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 P=ucc-staging
+export STG_UID=$(id -u) STG_GID=$(id -g)
 MIN=${STG_MIN_AVAILABLE_MB:-600}
 avail() { awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo; }
 case "${1:-up}" in
@@ -48,7 +49,7 @@ if [ ! -f secrets/medplum.config.json ]; then
         baseUrl: "http://127.0.0.1:8123/",
         appBaseUrl: "http://127.0.0.1:3000/",
         storageBaseUrl: "http://127.0.0.1:8123/storage/",
-        binaryStorage: "file:./binary/",
+        binaryStorage: "file:/run/ucc-binary/",
         signingKey: e.SIGNING_KEY, signingKeyPassphrase: e.SIGNING_PASSPHRASE,
         database: { host: "ucc-stg-pg", port: 5432, dbname: "medplum_staging", username: "medplum", password: e.POSTGRES_PASSWORD },
         redis: { host: "ucc-stg-redis", port: 6379, password: e.REDIS_PASSWORD },

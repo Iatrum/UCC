@@ -4,8 +4,8 @@
 # This bypasses the UI completely
 
 BASE_URL="http://localhost:8103"
-EMAIL="dayatfactor@gmail.com"
-PASSWORD="matn0r007"
+EMAIL="${MEDPLUM_EMAIL:?set MEDPLUM_EMAIL}"
+PASSWORD="${MEDPLUM_PASSWORD:?set MEDPLUM_PASSWORD}"
 
 echo "🔐 Creating Medplum Client Credentials via API"
 echo "==============================================="
@@ -23,7 +23,7 @@ echo ""
 echo "Instead of email/password, let's use a fixed access token:"
 echo ""
 echo "1. Open Medplum UI: http://localhost:3001"
-echo "2. Log in: dayatfactor@gmail.com / matn0r007"
+echo "2. Log in with the MEDPLUM_EMAIL account"
 echo "3. Open browser DevTools (F12)"
 echo "4. Go to Application → Local Storage → http://localhost:3001"
 echo "5. Find key 'activeLogin' or similar"

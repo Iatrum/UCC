@@ -9,7 +9,7 @@ echo ""
 
 # Configuration
 MEDPLUM_URL="${MEDPLUM_BASE_URL:-http://localhost:8103}"
-MEDPLUM_EMAIL="${MEDPLUM_EMAIL:-dayatfactor@gmail.com}"
+MEDPLUM_EMAIL="${MEDPLUM_EMAIL:?set MEDPLUM_EMAIL}"
 MEDPLUM_PASSWORD="${MEDPLUM_PASSWORD}"
 
 if [ -z "$MEDPLUM_PASSWORD" ]; then

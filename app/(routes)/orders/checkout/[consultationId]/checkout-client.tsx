@@ -395,8 +395,13 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const isSubmittingRef = useRef(false);
   const [billPreviewOpen, setBillPreviewOpen] = useState(false);
   const [documentPreviewItem, setDocumentPreviewItem] = useState<CheckoutItem | null>(null);
-  const [documentPreviewHtml, setDocumentPreviewHtml] = useState<string | null>(null);
-  const [documentPreviewLoading, setDocumentPreviewLoading] = useState(false);
+  const [documentPreviewResult, setDocumentPreviewResult] = useState<{
+    html: string | null;
+    item: unknown;
+    patient: unknown;
+    issuedDate: unknown;
+    organization: unknown;
+  } | null>(null);
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [effectivePatientId, setEffectivePatientId] = useState(patientId);
@@ -511,17 +516,26 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
 
   const previewPatient = details?.patient ?? null;
   const previewIssuedDate = details?.consultation?.date ?? null;
+  // Derived: a result only counts while it matches the current inputs, so stale HTML is never shown.
+  const previewResultCurrent =
+    !!documentPreviewItem &&
+    !!previewPatient &&
+    documentPreviewResult?.item === documentPreviewItem &&
+    documentPreviewResult.patient === previewPatient &&
+    documentPreviewResult.issuedDate === previewIssuedDate &&
+    documentPreviewResult.organization === organization;
+  const documentPreviewHtml = previewResultCurrent ? (documentPreviewResult?.html ?? null) : null;
+  const documentPreviewLoading = !!documentPreviewItem && !!previewPatient && !previewResultCurrent;
   useEffect(() => {
-    if (!documentPreviewItem || !previewPatient) {
-      setDocumentPreviewHtml(null);
-      return;
-    }
+    if (!documentPreviewItem || !previewPatient) return;
     let active = true;
-    setDocumentPreviewHtml(null);
-    setDocumentPreviewLoading(true);
+    const settle = (html: string | null) => {
+      if (active) {
+        setDocumentPreviewResult({ html, item: documentPreviewItem, patient: previewPatient, issuedDate: previewIssuedDate, organization });
+      }
+    };
     buildCheckoutDocumentHtml({ item: documentPreviewItem, patient: previewPatient, issuedDate: previewIssuedDate, organization })
-      .then((html) => { if (active) setDocumentPreviewHtml(html); })
-      .finally(() => { if (active) setDocumentPreviewLoading(false); });
+      .then(settle, () => settle(null));
     return () => {
       active = false;
     };
@@ -674,7 +688,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px] 2xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px] 2xl:grid-cols-[300px_minmax(0,1fr)_360px]">
         <div className="space-y-6">
           <Card>
             <CardContent className="space-y-5 pt-6">
