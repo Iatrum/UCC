@@ -28,7 +28,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A6 | Time Chit core, shares template with MC | DONE | D-527, Task 549 / #307 |
 | A7 | Time Chit walked once as a staff user (only unit/e2e specs so far) | CODE | Add it to a Playwright staff walk on dev (fake data); `tests/unit/time-chit.test.ts` exists |
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
-| A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`patient-profile-workspace.tsx:80-84`, `bill-modal.tsx:154`) |
+| A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
 | A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | CODE | Low priority, not user-visible; PILOT-CHECK #8 |
 | A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | CODE | Dev only; after the dev topology is in place (`.ai/progress-task5.md`) |
@@ -38,10 +38,10 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | # | Item | Status | Evidence / next step |
 |---|---|---|---|
 | B1 | Write/update-by-id clinic containment | DONE | Tasks 396, 400, 482 |
-| B2 | Per-device keys for POCT/imaging ingress | DONE | D-device keys (Tasks 180, 355) |
+| B2 | Per-device keys for POCT/imaging ingress | DONE | D45 (Task 180), Task 355 |
 | B3 | Twilio status callback signature check | DONE | Task 541 |
 | B4 | HTTP security headers, dependency audit | CODE (in review) | Task 599, PR #318 still open; merge is Hidayat's call |
-| B5 | **Rotate the old password still in git history** (removed from scripts in #318; history keeps it) | OWNER | #318 review (`.ai/reviews/task-600.md`). Rotate where it was used, then decide whether to rewrite history (never by an agent) |
+| B5 | **Rotate the old password still in git history** (removed from scripts in #318; history keeps it) | OWNER | #318 review (`.ai/reviews/task-600.md`, on the #318 branch only until it merges). Rotate where it was used, then decide whether to rewrite history (never by an agent) |
 | B6 | Production env/Vercel settings for the pilot clinic (Firebase project, OAuth client, device keys, `TWILIO_AUTH_TOKEN`, `TWILIO_STATUS_CALLBACK_URL`) | OWNER | Agents do not touch these |
 
 ## C. Isolation: production Task 5 migration
