@@ -674,7 +674,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px] 2xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px] 2xl:grid-cols-[300px_minmax(0,1fr)_360px]">
         <div className="space-y-6">
           <Card>
             <CardContent className="space-y-5 pt-6">

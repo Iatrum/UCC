@@ -143,3 +143,21 @@ Method: read each OPEN item against current code (file/line evidence inline abov
 - Part 1 #8 "Total visits / Last completed visit": already fixed (Task 446, consult-based labels), verified, no change.
 - Task 586 note: out-of-stock banner wording **fixed** (no threshold claim for out-of-stock).
 - Part 2 Low 20: "keep placeholders intact" helper text **added** (no editor redesign).
+
+---
+
+# Part 3 (Task 595): phone-width pass over billing/checkout, inventory, settings, patients; admin from code (2026-11-18)
+
+Method: branch of PR #315 merged with `origin/dev` (already up to date); one `next dev --webpack` on :3595 (killed afterwards), dev Medplum `:8113`, fake patient "UX Audit Fake 057396", Playwright (wrapped in `timeout`) at 1366px and 390px, `doctor@ucc.local`. Walked `/orders`, `/orders/checkout/<id>`, `/inventory`, `/settings`, `/patients`. Auto-deduct, MC/referral and template behaviour were not re-walked: Part 2 covered them the same day and the current code still matches (`referral-mc-section.tsx` view/void dialogs and `insurer-manager.tsx` icon buttons have `aria-label`).
+
+**Limits.** The `/admin*` routes redirect to `/login` for this clinic account, and I did not log in as the Medplum admin (rate limit, secrets), so admin was read from code only. Purchases has no UI (Part 2 #16). No sidebar/nav change was made.
+
+## Medium
+22. **Checkout page overflowed on a phone.** Below `xl` the wrapper `grid gap-6` had no column template, so the implicit auto column grew to the fixed-width items table and the Patient/Invoice cards were clipped on the right at 390px (`app/(routes)/orders/checkout/[consultationId]/checkout-client.tsx:677`). **FIXED:** added `grid-cols-1` (`minmax(0,1fr)`); verified at 390px, cards now fit. Desktop layout (`xl:` templates) unchanged.
+
+## Low
+23. **Billing list on a phone hides the date, status and "Open checkout" button** off the right edge of the table (`components/billing/billing-table.tsx:80-130`; `ui/table.tsx:11` scrolls sideways with no hint). The patient name link still opens checkout, so it is usable. Fix (needs a layout decision, not done): stack rows as cards below `sm`.
+24. **The sidebar takes about 64px of a 390px screen** and page titles wrap ("Billing & Documents" on two lines). Nav, out of scope.
+25. **Inventory summary tiles stack one per row on a phone** and push the table far down. Cosmetic; leave until the redesign decision.
+
+No new High items. Automated check: 0 unlabelled form fields and 0 horizontal page overflow on the walked pages (the only unlabelled button was the Next.js dev-tools badge).
