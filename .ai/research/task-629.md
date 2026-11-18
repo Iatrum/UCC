@@ -29,3 +29,14 @@ Not re-tested: MC/Time Chit shared template mapping (already covered by document
 - tests/unit/task629-invoice-and-clinic-helpers.test.ts (4–6)
 
 No real bug found; no tests skipped.
+
+## Task 633 follow-up (next gaps closed)
+Note: `.ai/reviews/task-630.md` does not exist on this branch; gap list taken from this file.
+7. `normalizeTreatmentPlanEntry` / `computeTreatmentPlanSummary` (RM rounding, clamps, update-merge) — tests/unit/task633-treatment-plan.test.ts
+8. `investigationBillItems` / `investigationBillingExtensions` (bad JSON / foreign ext filtering) and `lib/prescriptions` formatters — tests/unit/task633-investigation-billing-and-rx.test.ts
+9. `lib/clinic-dates` follow-up/MC date arithmetic (month/year/leap, MYT rollover, invalid input) — tests/unit/task633-clinic-dates-followup.test.ts
+
+Already covered elsewhere (not re-tested): time-chit guard (time-chit.test), appointment mutation containment.
+Still untested: triage-service `updateQueueStatusForPatient`/`checkInPatientInTriage` status transitions (large mocked-Medplum surface), scheduling-service slot generation/booking, `updateAppointmentStatus` timestamp stamping, rescheduleAppointment status reset.
+
+Suspected bug (skipped test): `mcEndDate(start, 0.5)` returns the day before start. Low risk (UI sends integers).
