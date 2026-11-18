@@ -227,6 +227,8 @@ export function OrderComposer({
   const [loadAttempt, setLoadAttempt] = React.useState(0);
   const [failedSaves, setFailedSaves] = React.useState<Record<string, () => Promise<void>>>({});
   const failedSavesRef = React.useRef(failedSaves);
+  // Latest-value ref kept in sync during render on purpose: moving it to an effect would change timing seen by in-flight saves.
+  // eslint-disable-next-line react-hooks/refs
   failedSavesRef.current = failedSaves;
   const [savingIds, setSavingIds] = React.useState<Record<string, number>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
@@ -418,6 +420,8 @@ export function OrderComposer({
 
   // Read the current callbacks without making parent renders restart hydration.
   const hydrationContext = React.useRef({ initialEntries, publishPlan });
+  // Latest-value ref (see failedSavesRef); effect-based sync would alter hydration timing.
+  // eslint-disable-next-line react-hooks/refs
   hydrationContext.current = { initialEntries, publishPlan };
 
   const loadDraft = React.useCallback(async () => {
@@ -549,6 +553,8 @@ export function OrderComposer({
         );
       } catch (error) {
         // Keep the doctor's item on screen: status says "Failed to save", Sign stays disabled, Retry replays it.
+        // Retry replays this call; the self-reference is resolved at call time, after initialisation.
+        // eslint-disable-next-line react-hooks/immutability
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry) }));
         toast({
           title: "Autosave failed",
@@ -564,7 +570,7 @@ export function OrderComposer({
         });
       }
     },
-    [consultationId, draftId, patientId, persistenceDisabled, publishPlan, toast, queuedFetch]
+    [consultationId, draftId, patientId, persistenceDisabled, publishPlan, toast, queuedFetch, disablePersistence]
   );
 
   const addCatalogItem = React.useCallback(
@@ -652,6 +658,8 @@ export function OrderComposer({
         );
       } catch (error) {
         if (!retrying) publishPlan(prev);
+        // Retry replays this call; the self-reference is resolved at call time, after initialisation.
+        // eslint-disable-next-line react-hooks/immutability
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry, true) }));
         toast({
           title: "Autosave failed",
@@ -667,7 +675,7 @@ export function OrderComposer({
         });
       }
     },
-    [draftId, patientId, consultationId, entries, persistenceDisabled, publishPlan, toast, queuedFetch]
+    [draftId, patientId, consultationId, entries, persistenceDisabled, publishPlan, toast, queuedFetch, disablePersistence]
   );
 
   function handlePickerRowClick(row: { tab: TreatmentPlanTab; item: CatalogItem; kindLabel: string }) {
