@@ -28,11 +28,32 @@ describe('Organization lookup overlaps the direct read and the identifier search
   }
 
   it('uses the search result for a slug id without waiting for the 404 first', async () => {
-    const { c } = client({});
-    const t0 = performance.now();
-    const tenant = await resolveClinicTenant(c, 'demo');
-    expect(tenant?.organizationId).toBe('search-org');
-    expect(performance.now() - t0).toBeLessThan(75); // serial read-then-search would be >= 80 ms
+    const { c, calls } = client({});
+    const pending = resolveClinicTenant(c, 'demo');
+    await Promise.resolve();
+    // Deterministic (no wall-clock): both Organization calls are issued before either settles.
+    expect(calls).toContain('read');
+    expect(calls).toContain('search:Organization');
+    expect((await pending)?.organizationId).toBe('search-org');
+  });
+
+  it('direct read wins over a successful search that returns a different org', async () => {
+    const { c } = client({ directOk: true });
+    expect((await resolveClinicTenant(c, 'org-uuid'))?.organizationId).toBe('direct-org');
+  });
+
+  it('memoised tenants are never shared across clinics', async () => {
+    const { resolveClinicTenantMemo } = await import('../../lib/fhir/clinic-tenancy');
+    const c: any = {
+      async readResource(_t: string, id: string) { throw new Error('404 ' + id); },
+      async searchOne(type: string, params: any) {
+        if (type === 'Organization') return { resourceType: 'Organization', id: 'org-' + String(params.identifier).split('|')[1] };
+        return { resourceType: 'HealthcareService', id: 'acct' };
+      },
+    };
+    const [a, b] = await Promise.all([resolveClinicTenantMemo(c, 'clinic-a'), resolveClinicTenantMemo(c, 'clinic-b')]);
+    expect(a?.organizationId).toBe('org-clinic-a');
+    expect(b?.organizationId).toBe('org-clinic-b');
   });
 
   it('prefers the direct read when it succeeds, even if the search fails', async () => {
@@ -66,12 +87,20 @@ describe('getPatientFromMedplum (Task 593)', () => {
   }
 
   it('runs the history searches alongside the tenant lookup', async () => {
+    const { c, calls } = client('demo');
+    const pending = getPatientFromMedplum('p1', 'demo', c);
+    await sleep(25); // Patient read (5 ms) done; tenant search (60 ms) still in flight
+    expect(calls).toContain('search:AllergyIntolerance');
+    expect(calls).toContain('search:Encounter');
+    expect((await pending)?.fullName).toBe('Fake Patient');
+  });
+
+  it('returns null (no unhandled rejection) when the Patient read fails first', async () => {
     const { c } = client('demo');
-    const t0 = performance.now();
-    const result = await getPatientFromMedplum('p1', 'demo', c);
-    expect(result?.fullName).toBe('Fake Patient');
-    // tenant ~60 ms || history ~40 ms after a 5 ms read -> ~65 ms; serial would be >= 105 ms.
-    expect(performance.now() - t0).toBeLessThan(95);
+    c.readResource = async (type: string) => { if (type === 'Patient') throw new Error('boom'); return { id: 'org' }; };
+    c.searchOne = async () => { await sleep(10); throw new Error('tenant boom'); };
+    expect(await getPatientFromMedplum('p1', 'demo', c)).toBeNull();
+    await sleep(30);
   });
 
   it('does not query history for a patient of another clinic', async () => {
