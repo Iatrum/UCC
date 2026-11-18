@@ -1,0 +1,229 @@
+import { test, expect, Page } from '@playwright/test';
+import { watch, shot, uiLogin, saveJson, Issue } from '../lib/app';
+import { byPatient } from '../lib/fhir';
+import { RUN } from '../lib/env';
+
+// Task 605: MC + Time Chit walk as a normal clinic user. Fake data only; every step recorded, walk continues past failures.
+test.use({ trace: 'off' });
+const issues: Issue[] = []; const results: { step: string; ok: boolean; note?: string }[] = []; const facts: Record<string, any> = { run: RUN };
+const name = `Walk605 Fake ${RUN}`;
+const nric = `9304${String(1 + Math.floor(Math.random() * 28)).padStart(2, '0')}-14-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+let cur = 'init';
+const frameText = async (page: Page, title: string) => (await page.frameLocator(`iframe[title="${title}"]`).locator('body').innerText({ timeout: 30_000 }));
+
+test('mc + time chit walk', async ({ browser }) => {
+  test.setTimeout(30 * 60_000);
+  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  await ctx.addInitScript(() => {
+    (window as any).__printed = [];
+    new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach((n: any) => {
+      if (n.tagName === 'IFRAME' && n.getAttribute('aria-hidden') === 'true') (window as any).__printed.push(n);
+    }))).observe(document, { childList: true, subtree: true });
+  });
+  const page: Page = await ctx.newPage(); watch(page, issues, () => cur);
+  const S = async (id: string, fn: () => Promise<void>) => {
+    cur = id;
+    try { await fn(); results.push({ step: id, ok: true }); await shot(page, id); }
+    catch (e: any) { results.push({ step: id, ok: false, note: String(e.message).split('\n').slice(0, 4).join(' | ').slice(0, 600) }); await shot(page, `FAIL-${id}`); }
+  };
+  const printedDoc = async () => page.evaluate(() => { const l = (window as any).__printed; return l.length ? l[l.length - 1].srcdoc as string : ''; });
+  const pick = async (q: string, re: RegExp) => {
+    await page.locator('input:visible').last().fill(q);
+    const btn = page.locator('button', { hasText: re }).filter({ hasText: 'RM' }).first();
+    await expect(btn).toBeVisible({ timeout: 30_000 }); await btn.click(); await page.waitForTimeout(1200);
+  };
+  const openTreatmentDoc = async (re: RegExp) => { await page.getByRole('button', { name: re }).filter({ hasNotText: 'RM' }).first().click(); };
+
+  await S('01-login', async () => {
+    await uiLogin(page);
+    const me = await (await page.request.get('/api/auth/me')).json();
+    facts.meKeys = Object.keys(me); facts.meRoleFields = JSON.stringify(me).replace(/"[^"]*@[^"]*"/g, '"<email>"').replace(/[0-9a-f-]{36}/g, '<id>').slice(0, 400);
+  });
+  await S('02-register', async () => {
+    await page.goto('/patients/new');
+    await expect(async () => { await page.fill('[name=fullName]', name); await page.fill('[name=nric]', nric); await expect(page.locator('[name=nric]')).toHaveValue(nric); }).toPass({ timeout: 30_000 });
+    await page.locator('[name=nric]').blur(); await page.selectOption('select', 'female').catch(() => {});
+    await page.fill('[name=email]', `walk605.${RUN}@example.test`); await page.fill('[name=phone]', '0123456789');
+    await page.fill('[name=address]', '1 Jalan Ujian, Kuala Lumpur'); await page.fill('[name=postalCode]', '50000');
+    await page.fill('[name="emergencyContact.name"]', 'Aminah Fake'); await page.fill('[name="emergencyContact.relationship"]', 'Spouse');
+    await page.fill('[name="emergencyContact.phone"]', '0198765432');
+    await page.getByRole('button', { name: 'Register Patient' }).click();
+    await page.waitForURL(/\/patients\/[0-9a-f-]{36}\/check-in/, { timeout: 120_000 });
+    facts.patientId = page.url().match(/patients\/([0-9a-f-]{36})/)![1];
+  });
+  await S('03-checkin-triage', async () => {
+    await page.fill('#chief-complaint', 'Fever and sore throat x3 days (walk605 fake)');
+    const vals = ['128', '82', '96', '18', '38.4', '98', '3', '70', '170']; const nums = page.locator('input[type=number]');
+    for (let i = 0; i < Math.min(vals.length, await nums.count()); i++) await nums.nth(i).fill(vals[i]);
+    await page.getByRole('button', { name: /Complete check-in/ }).click(); await page.waitForURL(/dashboard/, { timeout: 120_000 });
+    await expect(page.locator('tr', { hasText: name })).toBeVisible({ timeout: 60_000 });
+  });
+  await S('04-consult-sign', async () => {
+    await page.locator('tr', { hasText: name }).locator('button').last().click();
+    await page.getByRole('menuitem', { name: /Start Consultation/i }).click();
+    await page.waitForURL(new RegExp(facts.patientId), { timeout: 120_000 });
+    await page.getByRole('button', { name: 'Start consult' }).click();
+    await page.locator('[contenteditable=true]').first().click();
+    await page.keyboard.type('S: Fever, sore throat 3/7. A: Acute pharyngitis. P: MC 2 days. (walk605 fake)');
+    await page.locator('button', { hasText: 'Select or search diagnosis' }).click(); await page.keyboard.type('pharyng');
+    await page.locator('[role=option]', { hasText: 'J02.9' }).first().dispatchEvent('click');
+    await expect(page.locator('button', { hasText: 'Acute pharyngitis' })).toBeVisible();
+    await page.getByRole('button', { name: 'Sign', exact: true }).click();
+    await expect(page.getByText('Order', { exact: true })).toBeVisible({ timeout: 90_000 });
+  });
+  await S('05-create-mc', async () => {
+    await pick('medical', /medical certificate/i);
+    await page.getByText(/MEDICAL CERTIFICATE/).last().click();
+    const dlg = page.getByRole('dialog'); await expect(dlg).toBeVisible();
+    await dlg.getByPlaceholder('Dr. ...').fill('Dr Fake Walk');
+    const mmc = dlg.getByLabel(/MMC/i).first(); if (await mmc.count()) await mmc.fill('MMC-FAKE-605');
+    await shot(page, '05a-mc-dialog');
+    const days = dlg.getByLabel(/days/i).first(); facts.mcDaysField = await days.count();
+    if (facts.mcDaysField) await days.fill('2');
+    const txt = await frameText(page, 'MC preview'); facts.mcPreviewText = txt.replace(/\s+/g, ' ').slice(0, 700);
+    expect(txt).toContain(name); expect(txt).toContain('Dr Fake Walk'); expect(txt).not.toMatch(/\{\{|undefined|NaN/);
+    expect(txt).not.toMatch(/Acute pharyngitis/); // diagnosis hidden unless opted in
+    await dlg.getByRole('button', { name: 'Print MC' }).click(); await page.waitForTimeout(800);
+    const printed = await printedDoc(); facts.mcPrintTriggered = printed.includes('Dr Fake Walk'); expect(facts.mcPrintTriggered).toBe(true);
+    await dlg.getByRole('button', { name: 'Complete document' }).click(); await expect(dlg).toHaveCount(0);
+  });
+  await S('06-create-timechit', async () => {
+    await page.locator('input:visible').last().fill('time chit');
+    const tc = page.getByRole('button', { name: /TIME CHIT.*RM/i }); await expect(tc).toBeVisible({ timeout: 30_000 }); await tc.click();
+    await page.getByText('TIME CHIT', { exact: true }).last().click();
+    const dlg = page.getByRole('dialog'); await expect(dlg).toBeVisible();
+    // validation: out before in must be refused
+    await dlg.getByLabel('Attendance date').fill('2026-11-18'); await dlg.getByLabel('Time in', { exact: true }).fill('11:00');
+    await dlg.getByLabel('Time out', { exact: true }).fill('10:30'); await dlg.getByLabel("Doctor's name").fill('Dr Fake Walk');
+    await dlg.getByRole('button', { name: 'Complete document' }).click(); await expect(dlg).toBeVisible();
+    await expect(page.getByText('Time out must be after time in on the same day.').first()).toBeVisible({ timeout: 5000 });
+    await dlg.getByLabel('Time in', { exact: true }).fill('09:00'); await dlg.getByLabel('Time out', { exact: true }).fill('10:30');
+    await dlg.getByLabel('MMC registration no.').fill('MMC-FAKE-605');
+    await expect(dlg.getByText('Duration: 1.5 hour(s)')).toBeVisible();
+    const txt = await frameText(page, 'Time Chit preview'); facts.tcPreviewText = txt.replace(/\s+/g, ' ').slice(0, 700);
+    expect(txt).toContain(name); expect(txt).toContain('Dr Fake Walk'); expect(txt).toContain('MMC-FAKE-605'); expect(txt).not.toMatch(/\{\{|undefined|NaN/);
+    await dlg.getByRole('button', { name: 'Print Time Chit' }).click(); await page.waitForTimeout(800);
+    facts.tcPrintTriggered = (await printedDoc()).includes('09:00'); expect(facts.tcPrintTriggered).toBe(true);
+    await shot(page, '06a-timechit-dialog');
+    await dlg.getByRole('button', { name: 'Complete document' }).click(); await expect(dlg).toHaveCount(0);
+  });
+  await S('07-edit-before-sign', async () => {
+    // reopen the draft Time Chit and MC from the composer order list and change them
+    await page.locator('input:visible').last().fill('');
+    await page.locator('[role=button]', { hasText: 'TIME CHIT' }).first().click();
+    let dlg = page.getByRole('dialog'); await expect(dlg).toBeVisible();
+    await expect(dlg.getByLabel('Time out', { exact: true })).toHaveValue('10:30');
+    await expect(dlg.getByLabel('MMC registration no.')).toHaveValue('MMC-FAKE-605');
+    await dlg.getByLabel('Time out', { exact: true }).fill('11:00');
+    await expect(dlg.getByText('Duration: 2 hour(s)')).toBeVisible();
+    await dlg.getByRole('button', { name: 'Complete document' }).click(); await expect(dlg).toHaveCount(0);
+    await page.locator('[role=button]', { hasText: /MEDICAL CERTIFICATE/ }).first().click();
+    dlg = page.getByRole('dialog'); await expect(dlg).toBeVisible();
+    await expect(dlg.getByPlaceholder('Dr. ...')).toHaveValue('Dr Fake Walk');
+    const incl = dlg.getByLabel(/include diagnosis|diagnosis/i).first();
+    facts.mcDiagCheckbox = await incl.count();
+    await dlg.getByRole('button', { name: 'Complete document' }).click(); await expect(dlg).toHaveCount(0);
+    await shot(page, '07a-composer-docs');
+  });
+  await S('08-sign-and-fhir', async () => {
+    await page.getByRole('button', { name: 'Sign', exact: true }).click();
+    await expect.poll(async () => (await byPatient('Procedure', facts.patientId)).length, { timeout: 90_000 }).toBeGreaterThanOrEqual(2);
+    const proc = await byPatient('Procedure', facts.patientId);
+    const mc = proc.find((p: any) => /MEDICAL CERT/i.test(p.code?.text || '')); const tc = proc.find((p: any) => /TIME CHIT/i.test(p.code?.text || ''));
+    expect(mc).toBeTruthy(); expect(tc).toBeTruthy();
+    const note = (p: any) => JSON.parse(p.note?.[0]?.text || '{}');
+    facts.tcNote = { ...note(tc), tcDoctorMmc: '<set>' }; facts.mcNote = { ...note(mc), mcDoctorMmc: '<set>' };
+    expect(note(tc).tcTimeOut).toBe('11:00'); expect(note(tc).tcHours).toBe('2');
+    facts.procClinicTag = (tc.identifier || []).map((i: any) => i.system).concat((tc.meta?.tag || []).map((t: any) => t.system));
+  });
+  await S('09-documents-tab-history', async () => {
+    await page.goto(`/patients/${facts.patientId}`); await page.getByRole('tab', { name: 'Documents' }).click();
+    const tcBtn = page.getByRole('button', { name: /^Time Chit/ }).first(); await expect(tcBtn).toBeVisible({ timeout: 30_000 });
+    const mcBtn = page.getByRole('button', { name: /^(Medical Certificate|MC)/i }).first(); await expect(mcBtn).toBeVisible();
+    facts.docListText = (await page.locator('main').last().innerText()).replace(/\s+/g, ' ').slice(0, 400);
+    await tcBtn.click();
+    let txt = await frameText(page, 'Document preview'); facts.tcDocText = txt.replace(/\s+/g, ' ').slice(0, 500);
+    expect(txt).toContain('TIME CHIT'); expect(txt).toContain(name); expect(txt).toContain('11:00'); expect(txt).toContain('2 hour'); expect(txt).not.toMatch(/\{\{|undefined|NaN/);
+    await page.getByRole('button', { name: /Print \/ Save PDF/ }).click(); await page.waitForTimeout(800);
+    expect((await printedDoc()).includes('11:00')).toBe(true);
+    // real PDF of the rendered document
+    const html = await page.frameLocator('iframe[title="Document preview"]').locator('html').evaluate(e => e.ownerDocument.documentElement.outerHTML);
+    const p2 = await ctx.newPage(); await p2.setContent(html); const pdf = await p2.pdf({ format: 'A4', preferCSSPageSize: true, printBackground: true }); await p2.close();
+    facts.tcPdfBytes = pdf.length; facts.tcPdfPages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length; expect(facts.tcPdfPages).toBe(1);
+    await shot(page, '09a-timechit-preview'); await page.keyboard.press('Escape');
+    await mcBtn.click();
+    txt = await frameText(page, 'Document preview'); facts.mcDocText = txt.replace(/\s+/g, ' ').slice(0, 500);
+    expect(txt).toContain(name); expect(txt).toContain('Dr Fake Walk'); expect(txt).toContain('MMC-FAKE-605'); expect(txt).not.toMatch(/\{\{|undefined|NaN/);
+    await page.getByRole('button', { name: /Print \/ Save PDF/ }).click(); await page.waitForTimeout(800);
+    expect((await printedDoc()).includes('Dr Fake Walk')).toBe(true);
+    const html2 = await page.frameLocator('iframe[title="Document preview"]').locator('html').evaluate(e => e.ownerDocument.documentElement.outerHTML);
+    const p3 = await ctx.newPage(); await p3.setContent(html2); const pdf2 = await p3.pdf({ format: 'A4', preferCSSPageSize: true }); await p3.close();
+    facts.mcPdfPages = (pdf2.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length; expect(facts.mcPdfPages).toBe(1);
+    await shot(page, '09b-mc-preview'); await page.keyboard.press('Escape');
+  });
+  await S('10-edit-signed-refused', async () => {
+    // A signed document cannot be edited via the API (legal record): the server must answer 409.
+    const cons = await (await page.request.get(`/api/consultations?patientId=${facts.patientId}`)).json().catch(() => null);
+    facts.consListShape = cons ? Object.keys(cons).slice(0, 5) : null;
+    const list = (cons?.consultations || cons?.items || (Array.isArray(cons) ? cons : [])) as any[];
+    const c = list.find(x => (x.procedures || []).some((p: any) => /TIME CHIT/i.test(p.name || '')));
+    expect(c).toBeTruthy();
+    const tampered = c.procedures.map((p: any) => /TIME CHIT/i.test(p.name || '') ? { ...p, notes: p.notes.replace('"11:00"', '"12:00"') } : p);
+    const r = await page.request.patch('/api/consultations', { data: { consultationId: c.id, procedures: tampered } });
+    facts.editSignedStatus = r.status(); expect(r.status()).toBe(409);
+    facts.consultationId = c.id;
+  });
+  await S('11-void-timechit-and-mc', async () => {
+    await page.goto(`/patients/${facts.patientId}`); await page.getByRole('tab', { name: 'Documents' }).click();
+    for (const re of [/^Time Chit/, /^(Medical Certificate|MC)/i]) {
+      const row = page.getByRole('button', { name: re }).first(); await expect(row).toBeVisible({ timeout: 30_000 });
+      await page.getByRole('button', { name: 'Void document' }).first().click();
+      await page.getByLabel('Reason (optional)').fill('walk605 wrong details');
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Void', exact: true }).click();
+      await expect(page.getByText('Document voided')).toBeVisible({ timeout: 30_000 }); await page.waitForTimeout(1500);
+    }
+    await shot(page, '11a-voided-list');
+    await page.getByRole('button', { name: /^Time Chit/ }).first().click();
+    const txt = await frameText(page, 'Document preview'); expect(txt).toContain('VOID');
+    await expect(page.getByRole('button', { name: /Print \/ Save PDF/ })).toBeDisabled();
+    await shot(page, '11b-voided-preview'); await page.keyboard.press('Escape');
+  });
+  await S('12-reissue', async () => {
+    await page.goto(`/patients/${facts.patientId}`);
+    await page.getByRole('tab', { name: 'Treatment', exact: true }).click().catch(() => {});
+    facts.treatmentVisibleAfterSign = await page.getByRole('textbox', { name: 'Search treatment catalog' }).count();
+    expect(facts.treatmentVisibleAfterSign).toBeGreaterThan(0);
+    await pick('time chit', /TIME CHIT/i);
+    await page.getByText('TIME CHIT', { exact: true }).last().click();
+    const dlg = page.getByRole('dialog'); await expect(dlg).toBeVisible();
+    await dlg.getByLabel('Attendance date').fill('2026-11-18'); await dlg.getByLabel('Time in', { exact: true }).fill('09:00');
+    await dlg.getByLabel('Time out', { exact: true }).fill('11:30'); await dlg.getByLabel("Doctor's name").fill('Dr Fake Walk');
+    await expect(dlg.getByText('Duration: 2.5 hour(s)')).toBeVisible();
+    await dlg.getByRole('button', { name: 'Complete document' }).click(); await expect(dlg).toHaveCount(0);
+    await page.getByRole('button', { name: 'Sign', exact: true }).click();
+    await expect.poll(async () => (await byPatient('Procedure', facts.patientId)).filter((p: any) => /TIME CHIT/i.test(p.code?.text || '')).length, { timeout: 90_000 }).toBeGreaterThanOrEqual(2);
+    await page.goto(`/patients/${facts.patientId}`); await page.getByRole('tab', { name: 'Documents' }).click();
+    await page.waitForTimeout(2500);
+    const body = (await page.locator('main').last().innerText()).replace(/\s+/g, ' ');
+    facts.docsAfterReissue = body.slice(0, 600);
+    const issued = page.getByRole('button', { name: /^Time Chit/ });
+    facts.timeChitRows = await issued.count();
+    expect(facts.timeChitRows).toBeGreaterThanOrEqual(2);
+    // the new (non-voided) one prints
+    const rows = await issued.all(); let printable = 0;
+    for (const r of rows) { await r.click(); const t = await frameText(page, 'Document preview'); if (!t.includes('VOID') && t.includes('11:30')) printable++; await page.keyboard.press('Escape'); await page.waitForTimeout(300); }
+    expect(printable).toBe(1);
+  });
+  await S('13-history-elsewhere', async () => {
+    await page.goto(`/patients/${facts.patientId}`);
+    const tabs = await page.getByRole('tab').allInnerTexts(); facts.tabs = tabs;
+    for (const t of tabs.filter(t => /histor|visit|consult|timeline/i.test(t))) {
+      await page.getByRole('tab', { name: t, exact: true }).click(); await page.waitForTimeout(2000);
+      const body = await page.locator('main').last().innerText();
+      facts[`tab:${t}`] = { mc: /medical certificate|\bMC\b/i.test(body), timeChit: /time chit/i.test(body) };
+      await shot(page, `13-tab-${t.replace(/\W+/g, '')}`);
+    }
+  });
+  saveJson('walk605-results.json', { results, facts, issues: issues.slice(0, 60) });
+  console.log(JSON.stringify(results));
+});
