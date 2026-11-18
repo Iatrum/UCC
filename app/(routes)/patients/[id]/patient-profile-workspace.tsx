@@ -225,6 +225,7 @@ export default function PatientProfileWorkspace({
       },
     );
     if (!shouldLoadComposerCatalogs(drawerMode, panelOpen, catalogRequester.current.requested())) return;
+    setCatalogsSettled(false); // a retry after a failed load shows Loading… again
     catalogRequester.current.request();
   }, [drawerMode, panelOpen]);
 
