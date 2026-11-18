@@ -29,3 +29,29 @@ describe("security headers", () => {
     expect(nextConfig.poweredByHeader).toBe(false);
   });
 });
+
+describe("CSP keeps what the app loads working (Task 627 smoke-verified)", () => {
+  test("enforcing header, not report-only", async () => {
+    const h = await headerMap();
+    expect(h["Content-Security-Policy"]).toBeDefined();
+    expect(h["Content-Security-Policy-Report-Only"]).toBeUndefined();
+  });
+
+  test("srcDoc/blob document previews and PDF workers are allowed", async () => {
+    const csp = (await headerMap())["Content-Security-Policy"] as string;
+    expect(csp).toMatch(/frame-src [^;]*'self'[^;]*blob:[^;]*data:/);
+    expect(csp).toMatch(/worker-src [^;]*blob:/);
+    expect(csp).toMatch(/img-src [^;]*data:[^;]*blob:/);
+  });
+
+  test("Medplum HTTP + websocket origins are in connect-src", async () => {
+    const csp = (await headerMap())["Content-Security-Policy"] as string;
+    const connect = csp.split("; ").find((d) => d.startsWith("connect-src ")) as string;
+    expect(connect).toContain(new URL(process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || "http://localhost:8103").origin);
+    expect(connect).toMatch(/\bwss?:\/\/localhost:\d+|\bwss:/);
+  });
+
+  test("camera stays available to own origin (patient ID scan page)", async () => {
+    expect((await headerMap())["Permissions-Policy"]).toContain("camera=(self)");
+  });
+});
