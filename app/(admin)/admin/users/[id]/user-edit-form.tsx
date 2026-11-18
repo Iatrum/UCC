@@ -280,13 +280,15 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
             </div>
 
             <div className="space-y-2">
-              <Label>Clinic Assignments</Label>
+              <Label>
+                Clinic Assignments ({selectedOrgIds.size} of {clinics.length} selected)
+              </Label>
               {clinics.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No clinics available.
                 </p>
               ) : (
-                <div className="space-y-2 border rounded-md p-3">
+                <div className="max-h-64 space-y-2 overflow-y-auto border rounded-md p-3">
                   {clinics.map((clinic) => {
                     const checked = selectedOrgIds.has(clinic.id);
                     return (
