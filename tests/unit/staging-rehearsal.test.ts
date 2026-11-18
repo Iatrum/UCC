@@ -28,12 +28,17 @@ test('routing is an allowlist that never exposes admin or the dashboard', () => 
   expect(matchers.sort()).toEqual(['/.well-known/', '/auth/', '/fhir/', '/healthcheck', '/oauth2/', '/storage/']);
   expect(rule).not.toMatch(/admin|api|metrics|rawdata|dashboard/i);
   expect(rule).not.toContain('PathPrefix(`/`)');
+  // the single admin exception: UCC invite, POST only, anchored regex
+  const invite = d.slice(d.indexOf('medplum-invite:'), d.indexOf('services:'));
+  expect(invite).toContain('Method(`POST`)');
+  expect(invite).toContain('PathRegexp(`^/admin/projects/[A-Za-z0-9-]+/invite$`)');
+  expect((d.match(/\/admin/g) ?? []).length).toBe(1);
   expect(d).toContain('http://ucc-stg-medplum:8103/');
 });
 
 test('probe refuses non-staging bases and covers admin mount forms', () => {
   expect(probe).toContain('refusing non-staging base');
-  for (const p of ['/admin/projects', '/api/admin/projects', '/projects/x/admin/invite', '//admin/projects', '/%61dmin/projects']) {
+  for (const p of ['/admin/projects', '/api/admin/projects', '/projects/x/admin/invite', '//admin/projects', '/%61dmin/projects', '/admin/projects/x1/invite']) {
     expect(probe).toContain(p);
   }
 });
