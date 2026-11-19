@@ -11,6 +11,9 @@ describe("task 684 checkout preload", () => {
     expect(s).toContain(JSON.stringify(checkoutInvoiceUrl("c1")));
     expect(s).toContain(JSON.stringify(checkoutPlanUrl("p1", "c1")));
     expect(checkoutPlanUrl("p1", "c1")).toContain("draftId=profile-treatment-p1-c1");
+    // Task 685: preloaded reads keep the 15 s abort ceiling that fetchWithTimeout gives the normal path.
+    expect(s).toContain("AbortSignal.timeout(15000)");
+    expect(() => new Function(s)).not.toThrow();
   });
   test("non-FHIR ids are never embedded (script injection / no patientId)", () => {
     expect(checkoutPreloadScript("c1", "</script><script>alert(1)")).toBeNull();

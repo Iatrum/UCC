@@ -13,6 +13,8 @@ export const CHECKOUT_PRELOAD_KEY = "__uccCheckoutPreload";
 export const CHECKOUT_PRELOAD_MAX_AGE_MS = 15_000;
 /** If a preloaded read has not settled in this long, the client abandons it and fetches normally. */
 export const CHECKOUT_PRELOAD_WAIT_MS = 8_000;
+/** Same 15 s ceiling as fetchWithTimeout (headers AND body): a stalled preloaded body must end in the error + Retry state. */
+export const CHECKOUT_PRELOAD_ABORT_MS = 15_000;
 
 export function checkoutOrderUrl(consultationId: string, patientId: string): string {
   return `/api/orders?consultationId=${encodeURIComponent(consultationId)}${patientId ? `&patientId=${encodeURIComponent(patientId)}` : ""}`;
@@ -43,7 +45,7 @@ export function checkoutPreloadScript(consultationId: string, patientId: string)
   if (!SAFE_ID.test(consultationId) || !SAFE_ID.test(patientId)) return null;
   const lit = (v: string) => JSON.stringify(v).replace(/</g, "\\u003c");
   return (
-    `(function(){try{var g=function(u,o){return fetch(u,o).catch(function(){return null})};` +
+    `(function(){try{var g=function(u,o){o=o||{};try{o.signal=AbortSignal.timeout(${CHECKOUT_PRELOAD_ABORT_MS})}catch(e){}return fetch(u,o).catch(function(){return null})};` +
     `window.${CHECKOUT_PRELOAD_KEY}={consultationId:${lit(consultationId)},patientId:${lit(patientId)},startedAt:Date.now(),` +
     `order:g(${lit(checkoutOrderUrl(consultationId, patientId))}),` +
     `invoice:g(${lit(checkoutInvoiceUrl(consultationId))},{cache:"no-store"}),` +
