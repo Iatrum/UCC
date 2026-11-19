@@ -146,9 +146,9 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
                 </div>
                 <div className="grid grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_auto_auto_auto] gap-x-6 gap-y-1 text-sm mt-2">
                   <span className="text-muted-foreground">IC number</span>
-                  <span className="font-medium">{patient.nric || "—"}</span>
+                  <span className="break-words font-medium">{patient.nric || "—"}</span>
                   <span className="text-muted-foreground">Phone</span>
-                  <span className="font-medium">{patient.phone || "—"}</span>
+                  <span className="break-words font-medium">{patient.phone || "—"}</span>
 
                   <span className="text-muted-foreground">Age</span>
                   <span className="font-medium">{patientAge !== null ? `${patientAge} years` : "—"}</span>
