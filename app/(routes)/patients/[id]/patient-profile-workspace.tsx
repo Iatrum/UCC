@@ -819,7 +819,7 @@ export default function PatientProfileWorkspace({
                             {selectedConsultation.id && (
                               <div className="flex flex-wrap gap-2 border-t pt-3">
                                 <Button variant="outline" size="sm" asChild>
-                                  <Link href={`/consultations/${selectedConsultation.id}`}>Open full</Link>
+                                  <Link href={`/consultations/${selectedConsultation.id}`} prefetch={false}>Open full</Link>
                                 </Button>
                               </div>
                             )}
@@ -862,10 +862,10 @@ export default function PatientProfileWorkspace({
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                                     <Button variant="outline" size="sm" asChild>
-                                      <Link href={`/consultations/${consultation.id}`}>View</Link>
+                                      <Link href={`/consultations/${consultation.id}`} prefetch={false}>View</Link>
                                     </Button>
                                     <Button size="sm" asChild>
-                                      <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
+                                      <Link href={`/consultations/${consultation.id}/edit`} prefetch={false}>Edit</Link>
                                     </Button>
                                   </div>
                                 </TableCell>
@@ -933,7 +933,7 @@ export default function PatientProfileWorkspace({
                                       {consultation.id && (
                                         <div className="flex flex-wrap gap-2 border-t pt-3">
                                           <Button variant="outline" size="sm" asChild>
-                                            <Link href={`/consultations/${consultation.id}`}>Open full</Link>
+                                            <Link href={`/consultations/${consultation.id}`} prefetch={false}>Open full</Link>
                                           </Button>
                                         </div>
                                       )}

@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing patientId' }, { status: 400 });
     }
 
-    const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+    const patient = await getPatientFromMedplum(patientId, clinicId, medplum, { includeMedicalHistory: false });
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
