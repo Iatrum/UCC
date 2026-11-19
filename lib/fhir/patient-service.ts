@@ -5,7 +5,7 @@
  */
 
 import { withRegistrationTag, registeredThisMonthTagParam } from './patient-registration';
-import { MedplumClient } from '@medplum/core';
+import { isUnauthenticated, MedplumClient, OperationOutcomeError } from '@medplum/core';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import type {
   Patient as FHIRPatient,
@@ -849,6 +849,9 @@ export async function getAllPatientsFromMedplum(
       })
       .filter((patient) => patient.active !== false);
   } catch (error) {
+    if (error instanceof OperationOutcomeError && isUnauthenticated(error.outcome)) {
+      throw error;
+    }
     console.error('Failed to get patients from Medplum:', error);
     return [];
   }

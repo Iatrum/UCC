@@ -145,7 +145,7 @@ test('POCT online + Sign creates active Device ServiceRequest, preserves bill an
     await expect(page.getByText('Glucose (capillary)', { exact: true }).first()).toBeVisible();
     // Signed order must surface on the /poct worklist, not just the checkout screen.
     await page.goto('/poct');
-    await expect(page.getByText(f.patientName, { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: f.patientName, exact: true })).toBeVisible();
     const pendingStat = page.getByText('Pending', { exact: true }).locator('xpath=ancestor::*[@data-slot="card"]');
     const pendingCount = await pendingStat.getByText(/^\d+$/).innerText();
     expect(Number(pendingCount)).toBeGreaterThan(0);

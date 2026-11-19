@@ -1,16 +1,20 @@
 import fs from 'node:fs';
 import { test, expect, request, type Page, type APIResponse } from '@playwright/test';
-import { BASE, MEDPLUM, MEDPLUM_ADMIN, RUN } from '../lib/env';
+import { BASE, EVIDENCE, MEDPLUM, MEDPLUM_ADMIN, RUN } from '../lib/env';
 
-const OUT = '/workspace/ai-logs/admin-e2e';
+const OUT = `${EVIDENCE}/admin-audit`;
 // Do not inherit the doctor's state or record credentials in Playwright traces.
 test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot: 'off' });
 test.describe.configure({ mode: 'serial' });
 
 test('full local admin audit (one login)', async ({ browser }) => {
   test.setTimeout(15 * 60_000);
-  expect(BASE).toBe('http://localhost:3210');
-  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(new URL(MEDPLUM).origin);
+  const app = new URL(BASE);
+  expect(app.protocol).toBe('http:');
+  expect(['localhost', '127.0.0.1']).toContain(app.hostname);
+  expect(BASE.replace(/\/$/, '')).toBe(app.origin);
+  const medplumOrigin = new URL(MEDPLUM).origin;
+  expect(['http://localhost:8113', 'http://127.0.0.1:8113']).toContain(medplumOrigin);
   fs.mkdirSync(`${OUT}/shots`, { recursive: true });
   type Row = { function: string; result: string; evidence: string; cause: string };
   const rows: Row[] = [];
@@ -48,11 +52,12 @@ test('full local admin audit (one login)', async ({ browser }) => {
     return data;
   };
   const visit = async (path: string) => {
-    const r = await page.goto(path, { waitUntil: 'networkidle' });
+    const r = await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     if (!r || r.status() >= 400) throw new Error(`Navigation HTTP ${r?.status()}`);
     expect(page.url()).toContain('/admin');
-    await expect(page.locator('main')).toBeVisible();
-    await expect(page.locator('h1').or(page.getByText('Create Medplum ClientApplication', { exact: true }))).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main).toBeVisible();
+    await expect(main.getByRole('heading', { level: 1 }).or(main.getByText('Create Medplum ClientApplication', { exact: true }))).toBeVisible();
     const text = await page.locator('body').innerText();
     if (/Application error|Internal Server Error|Unable to load users|Runtime Error|This account is not a platform admin/i.test(text)) throw new Error('Page shows error state');
     if (await page.locator('nextjs-portal').evaluateAll(nodes => nodes.some(n => /Runtime Error|Build Error/.test(n.shadowRoot?.textContent || '')))) throw new Error('Next error overlay');
@@ -100,15 +105,16 @@ test('full local admin audit (one login)', async ({ browser }) => {
       if (msg.type() !== 'error') return;
       if (allowClientValidation400 &&
           msg.text() === 'Failed to load resource: the server responded with a status of 400 (Bad Request)' &&
-          msg.location().url === `${BASE}/api/admin/create-medplum-client`) return;
+          msg.location().url === `${app.origin}/api/admin/create-medplum-client`) return;
       issues.push(`console: ${msg.text()}`);
     });
     page.on('pageerror', e => issues.push(`pageerror: ${e.message}`));
     page.on('response', r => { if (r.status() >= 500) issues.push(`HTTP ${r.status()} ${new URL(r.url()).pathname}`); });
     // Refuse browser requests to external services, even when deployment settings contain external URLs.
+    const localOrigins = new Set([app.origin, `ws://${app.host}`, medplumOrigin]);
     await context.route('**/*', route => {
       const u = new URL(route.request().url());
-      return ['http://localhost:3210', 'http://localhost:8113', 'ws://localhost:3210'].includes(u.origin) || ['data:', 'blob:'].includes(u.protocol) ? route.continue() : route.abort();
+      return localOrigins.has(u.origin) || ['data:', 'blob:'].includes(u.protocol) ? route.continue() : route.abort();
     });
     for (const path of ['', '/clinics', '/clinics/new', '/organisation', '/organisation/new', '/users', '/users/invite', '/modules', '/settings', '/create-medplum-client']) {
       await step(`load /admin${path}`, `app/(admin)/admin${path || '/page.tsx'}`, () => visit(`/admin${path}`));
@@ -144,7 +150,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
       await visit(`/admin/clinics/${clinicId}`); await shot('clinic-detail');
       await page.locator('#name').fill(`${clinicName}-edited`); await page.locator('#phone').fill('0000000001');
       await page.locator('#address').fill(`Fake edited address ${RUN}`);
-      await submit(`/api/admin/clinics/${clinicId}`, 'PATCH', 'Save Changes');
+      await submit(`/api/admin/clinics/${clinicId}`, 'PATCH', 'Save details');
       await visit(`/admin/clinics/${clinicId}`);
       await expect(page.locator('#name')).toHaveValue(`${clinicName}-edited`);
     });
@@ -156,12 +162,12 @@ test('full local admin audit (one login)', async ({ browser }) => {
       if (!count) throw new Error('No module switches rendered; module registry may be unavailable');
       try {
         for (let i = 0; i < count; i++) { await switches.nth(i).click(); await shot(`module-${i + 1}-toggled`); }
-        await submit(`/api/admin/clinics/${clinicId}`, 'PATCH', 'Save Module Settings');
+        await submit(`/api/admin/clinics/${clinicId}`, 'PATCH', 'Save modules');
         const changed = (await json(await api.get(`/api/admin/clinics/${clinicId}`))).enabledModuleIds;
         expect(changed.slice().sort()).not.toEqual(original.slice().sort());
         await visit(`/admin/clinics/${clinicId}`);
         for (let i = 0; i < count; i++) await switches.nth(i).click();
-        await submit(`/api/admin/clinics/${clinicId}`, 'PATCH', 'Save Module Settings');
+        await submit(`/api/admin/clinics/${clinicId}`, 'PATCH', 'Save modules');
         expect((await json(await api.get(`/api/admin/clinics/${clinicId}`))).enabledModuleIds.slice().sort()).toEqual(original.slice().sort());
       } finally {
         await json(await api.patch(`/api/admin/clinics/${clinicId}`, { data: { name: `${clinicName}-edited`, parentId: orgId, phone: '0000000001', address: `Fake edited address ${RUN}`, enabledModuleIds: original } }));
@@ -198,7 +204,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
       await visit('/admin/settings'); expect(await page.locator('input,select,textarea,button[type="submit"]').count()).toBe(0);
     }, 'Settings shows runtime configuration; no editable settings/save endpoint.');
     await step('client creation validation', 'app/(routes)/api/admin/create-medplum-client/route.ts:17', async () => {
-      await visit('/admin/create-medplum-client'); await page.locator('#medplumUrl').fill('http://localhost:8113'); await page.locator('#email').fill(email);
+      await visit('/admin/create-medplum-client'); await page.locator('#medplumUrl').fill(medplumOrigin); await page.locator('#email').fill(email);
       const response = page.waitForResponse(r => r.url().endsWith('/api/admin/create-medplum-client') && r.request().method() === 'POST');
       allowClientValidation400 = true;
       try {
