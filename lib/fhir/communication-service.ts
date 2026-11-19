@@ -495,27 +495,41 @@ function normalizeTwilioStatus(status: string): FollowUpDeliveryStatus | null {
   }
 }
 
+/**
+ * Task 680: the StatusCallback given to Twilio carries the sending clinic as a query parameter.
+ * Twilio signs the full URL (including the query), so the clinic is tamper-proof once the
+ * signature verifies against this exact URL.
+ */
+export function buildTwilioStatusCallbackUrl(baseUrl: string | undefined, clinicId: string | undefined | null): string | undefined {
+  if (!baseUrl || !clinicId) return undefined;
+  const url = new URL(baseUrl);
+  url.searchParams.set("clinic", clinicId);
+  return url.toString();
+}
+
 export async function updateTwilioDeliveryStatus(
   medplum: MedplumClient,
   messageSid: string,
   status: string,
-  error?: string
+  error?: string,
+  clinicId?: string
 ): Promise<FollowUp | null> {
-  // Twilio carries no clinic context, so the callback can only be matched by SID. Restrict the
-  // match to follow-up Communications that carry a clinic identifier, so other Communication
-  // kinds (or untagged resources) are never updated by this endpoint.
-  if (!messageSid) return null;
+  // Task 680: the callback is matched by SID, but only inside the clinic the message was sent
+  // from (signed `clinic` query param). A missing clinic, or a stored record that is untagged,
+  // foreign or carries any conflicting clinic tag, is never written (fail closed, zero writes).
+  if (!messageSid || !clinicId) return null;
   const results = await medplum.searchResources("Communication", {
     category: `${FOLLOW_UP_CATEGORY_SYSTEM}|`,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _count: "200",
     _sort: "-_lastUpdated",
   });
-  const comm = (results as Communication[]).find(
-    (candidate) =>
-      candidate.category?.[0]?.coding?.[0]?.system === FOLLOW_UP_CATEGORY_SYSTEM &&
-      candidate.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && Boolean(id.value)) &&
-      getExtensionString(candidate, TWILIO_MESSAGE_SID_EXTENSION_URL) === messageSid
-  );
+  const comm = (results as Communication[]).find((candidate) => {
+    if (candidate.category?.[0]?.coding?.[0]?.system !== FOLLOW_UP_CATEGORY_SYSTEM) return false;
+    const tags = candidate.identifier?.filter((id) => id.system === CLINIC_IDENTIFIER_SYSTEM) ?? [];
+    if (tags.length === 0 || tags.some((id) => id.value !== clinicId)) return false;
+    return getExtensionString(candidate, TWILIO_MESSAGE_SID_EXTENSION_URL) === messageSid;
+  });
   if (!comm) return null;
 
   // Only documented Twilio message statuses are accepted; anything else is not written.
@@ -633,6 +647,7 @@ async function postTwilioMessage(params: {
   message: string;
   templateKey?: FollowUpTemplateKey;
   contentSid?: string;
+  clinicId?: string;
 }): Promise<{ sid: string; status: string }> {
   if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_WHATSAPP_FROM) {
     throw new Error("Twilio WhatsApp is not configured");
@@ -645,9 +660,8 @@ async function postTwilioMessage(params: {
     To: `whatsapp:+${normalizeWhatsAppPhone(params.to)}`,
     Body: params.message,
   });
-  if (env.TWILIO_STATUS_CALLBACK_URL) {
-    body.set("StatusCallback", env.TWILIO_STATUS_CALLBACK_URL);
-  }
+  const statusCallback = buildTwilioStatusCallbackUrl(env.TWILIO_STATUS_CALLBACK_URL, params.clinicId);
+  if (statusCallback) body.set("StatusCallback", statusCallback);
   const contentSid = params.contentSid ||
     (params.templateKey === "google-review-request"
       ? env.TWILIO_REVIEW_TEMPLATE_CONTENT_SID
@@ -689,6 +703,7 @@ export async function sendFollowUpWithTwilio(medplum: MedplumClient, id: string,
 
   try {
     const result = await postTwilioMessage({
+      clinicId,
       to: followUp.patientPhone,
       message: followUp.message,
       templateKey: followUp.templateKey,
