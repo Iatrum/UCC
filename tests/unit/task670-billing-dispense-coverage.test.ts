@@ -174,6 +174,20 @@ describe("checkout stock deduction and audit", () => {
   });
 });
 
+describe("clinic filter is enforced in code, not only by the search query", () => {
+  test("a search that leaks the other clinic's catalogue still never deducts its stock", async () => {
+    const fake = makeFake([med("m1", "Paracetamol", 100, "clinic-a"), med("mx", "Paracetamol", 50, "clinic-b")]);
+    const leaky: any = Object.create(fake);
+    leaky.searchResources = async (type: string) =>
+      type === "Medication" ? [fake.db.get("Medication/m1"), fake.db.get("Medication/mx")] : fake.searchResources(type, {});
+    // Both clinics' items match by name; only the clinic-a one may be considered, so the match is unique.
+    const r = await deductStockForCheckout(leaky, { clinicId: "clinic-a", consultationId: "enc1", patientId: "p1", items: [{ name: "Paracetamol", type: "Item", quantity: 2 }] });
+    expect(readStock(fake.db.get("Medication/mx"))).toBe(50);
+    expect(readStock(fake.db.get("Medication/m1"))).toBe(98);
+    expect(r.unresolved).toEqual([]);
+  });
+});
+
 describe("isOwnVersionOrClinicBump", () => {
   const inv = (versionId: string | undefined, total = 10, status = "balanced") =>
     ({ resourceType: "Invoice", status, meta: versionId ? { versionId } : undefined, totalGross: { value: total }, totalNet: { value: total }, lineItem: [{ sequence: 1 }] }) as any;
@@ -289,8 +303,8 @@ describe("completeCheckoutInvoice edge cases", () => {
   });
 
   test("the other clinic's visit, patient and stock are unreachable", async () => {
-    await expect(completeCheckoutInvoice(mock.client, input({ consultationId: "encb", patientId: "pb" }))).rejects.toThrow();
-    await expect(completeCheckoutInvoice(mock.client, input({ patientId: "pb" }))).rejects.toThrow();
+    await expect(completeCheckoutInvoice(mock.client, input({ consultationId: "encb", patientId: "pb" }))).rejects.toThrow(/Forbidden|not found|Access denied/i);
+    await expect(completeCheckoutInvoice(mock.client, input({ patientId: "pb" }))).rejects.toThrow(/Forbidden|not found|Access denied/i);
     expect(mock.creates("Invoice")).toHaveLength(0);
     expect(stockOf("mb")).toBe(10);
     await completeCheckoutInvoice(mock.client, input());
