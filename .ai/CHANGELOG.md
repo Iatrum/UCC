@@ -5,8 +5,6 @@ The dashboard title and description now show immediately while the queue loads, 
 
 ## 2026-11-19 — Task 665: faster dashboard queue and patient workspace
 The dashboard loads the clinic queue on the server. Staff still see loading and retry states, and the queue refreshes on demand and every 30 seconds. The patient profile loads the notes editor when Consult opens. Treatment search accepts typing while the catalogs load after the composer mounts. Benchmark results are in `.ai/research/task-665.md`.
-## 2026-11-19 — Task 665: faster dashboard queue and patient workspace
-The dashboard loads the clinic queue on the server. Staff still see loading and retry states, and the queue refreshes on demand and every 30 seconds. The patient profile loads the notes editor when Consult opens. Treatment search accepts typing while the catalogs load after the composer mounts. Benchmark results are in `.ai/research/task-665.md`.
 
 ## 2026-11-19 — Task 659: less console noise on pilot screens (A11)
 The Lab tab no longer re-tries live updates on every 30 s poll when the subscription service answers 503 (results keep polling; Refresh re-checks). Checkout asks for an existing bill with `optional=true`, so "no bill yet" is a normal 200 instead of a 404. The patient documents list cancels its request when you leave the page and no longer logs or toasts that cancel; real failures still do. Composer and sidebar untouched. Notes: `.ai/research/task-659.md`.
