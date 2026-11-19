@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
+
 export interface Medication {
   id: string;
   name: string;
@@ -26,6 +28,17 @@ export async function getMedications(): Promise<Medication[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Like getMedications but throws on timeout/network/HTTP failure so callers can show an
+ * error + Retry (and keep previously loaded stock) instead of rendering an empty list.
+ */
+export async function fetchMedicationsStrict(): Promise<Medication[]> {
+  const res = await fetchWithTimeout('/api/inventory');
+  if (!res.ok) throw new Error('Failed to load inventory.');
+  const data = await res.json();
+  return data.medications ?? [];
 }
 
 export async function getMedicationById(id: string): Promise<Medication | null> {

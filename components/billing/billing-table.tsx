@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table';
 import { formatDisplayDate } from '@/lib/utils';
 import { BillableConsultation, QueueStatus } from '@/lib/types';
+import { resolveLoadView, showStaleBanner } from '@/lib/load-state';
 
 interface BillingTableProps {
   consultations: BillableConsultation[];
@@ -46,7 +47,10 @@ export default function BillingTable({ consultations, loading, error, onRetry }:
     );
   }, [consultations, searchQuery]);
 
-  if (loading) {
+  const view = resolveLoadView({ loading: Boolean(loading), error: error ?? null, hasData: consultations.length > 0 });
+  const staleBanner = showStaleBanner({ error: error ?? null, hasData: consultations.length > 0 });
+
+  if (view === 'loading') {
     return (
       <div role="status" aria-live="polite" className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-10 text-center text-sm text-muted-foreground">
         Loading billable consultations...
@@ -54,7 +58,7 @@ export default function BillingTable({ consultations, loading, error, onRetry }:
     );
   }
 
-  if (error) {
+  if (view === 'error') {
     return (
       <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
         <p>{error}</p>
@@ -69,6 +73,16 @@ export default function BillingTable({ consultations, loading, error, onRetry }:
 
   return (
     <div>
+      {staleBanner ? (
+        <div role="status" aria-live="polite" className="mb-4 flex items-center justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          <span>{error} Showing the last loaded list.</span>
+          {onRetry ? (
+            <Button variant="outline" size="sm" disabled={loading} onClick={() => void onRetry()}>
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="relative w-full mb-4">
         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <Input

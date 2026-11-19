@@ -20,6 +20,8 @@ import { BillableConsultation } from "@/lib/types";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { loadQueueOnce } from "@/lib/dashboard/queue-load";
 import QueueState from "@/components/dashboard/queue-state";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { describeFetchError } from "@/lib/load-state";
 
 interface RawAppointment {
   id: string;
@@ -76,7 +78,7 @@ export default function Dashboard() {
     setApptLoading(true);
     setApptError(null);
     try {
-      const response = await fetch('/api/appointments');
+      const response = await fetchWithTimeout('/api/appointments');
       if (!response.ok) throw new Error(`Failed to fetch appointments`);
       const result = await response.json();
       const raw: RawAppointment[] = result.appointments || [];
@@ -92,7 +94,7 @@ export default function Dashboard() {
       setAppointments(mapped);
     } catch (err) {
       console.error('Error loading appointments:', err);
-      if (mountedRef.current && !unloadingRef.current) setApptError('Failed to load appointments.');
+      if (mountedRef.current && !unloadingRef.current) setApptError(describeFetchError(err, 'Failed to load appointments.'));
     } finally {
       if (mountedRef.current) setApptLoading(false);
     }
@@ -102,13 +104,13 @@ export default function Dashboard() {
     setConsultationsLoading(true);
     setConsultationsError(null);
     try {
-      const response = await fetch('/api/orders/billable');
+      const response = await fetchWithTimeout('/api/orders/billable');
       if (!response.ok) throw new Error('Failed to fetch consultations');
       const result = await response.json();
       setConsultations(result.consultations || []);
     } catch (err) {
       console.error('Error loading consultations:', err);
-      if (mountedRef.current && !unloadingRef.current) setConsultationsError('Failed to load billable consultations.');
+      if (mountedRef.current && !unloadingRef.current) setConsultationsError(describeFetchError(err, 'Failed to load billable consultations.'));
     } finally {
       if (mountedRef.current) setConsultationsLoading(false);
     }
