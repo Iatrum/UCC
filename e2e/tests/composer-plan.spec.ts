@@ -15,6 +15,9 @@ async function fixture(request: APIRequestContext) {
 }
 async function open(page: Page, patientId: string) {
   await page.goto(`/patients/${patientId}`);
+  await openTreatment(page);
+}
+async function openTreatment(page: Page) {
   const tab = page.getByRole('tab', { name: 'Treatment', exact: true });
   await expect(async () => {
     await tab.click();
@@ -26,6 +29,37 @@ async function add(page: Page) {
   await page.locator('button', { hasText: /Paracetamol/ }).filter({ hasText: 'RM' }).first().click();
 }
 const status = (page: Page) => page.getByTestId('composer-save-status');
+
+test('Treatment accepts search input while the on-demand inventory catalog is pending', async ({ page, request }) => {
+  const patientId = await fixture(request);
+  let inventoryRequested = false;
+  let releaseInventory!: () => void;
+  const inventoryGate = new Promise<void>(resolve => { releaseInventory = resolve; });
+  await page.route(/\/api\/inventory(?:\?|$)/, async route => {
+    inventoryRequested = true;
+    await inventoryGate;
+    await route.continue();
+  });
+
+  try {
+    await page.goto(`/patients/${patientId}`);
+    await expect(page.getByRole('tab', { name: 'Treatment', exact: true })).toBeVisible();
+    expect(inventoryRequested).toBe(false);
+    await openTreatment(page);
+    await expect.poll(() => inventoryRequested).toBe(true);
+
+    const search = page.getByRole('textbox', { name: 'Search treatment catalog' });
+    await search.pressSequentially('para');
+    await expect(search).toHaveValue('para');
+    await expect(page.getByText('Loading…', { exact: true })).toBeVisible();
+
+    releaseInventory();
+    await expect(page.getByRole('button', { name: /Paracetamol.*RM/ }).first()).toBeVisible();
+    await expect(search).toHaveValue('para');
+  } finally {
+    releaseInventory();
+  }
+});
 
 test('real plan route (no stub): item is saved, survives reload, status is server-saved', async ({ page, request }) => {
   const patientId = await fixture(request);
