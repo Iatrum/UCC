@@ -300,8 +300,8 @@ describe("clinic scoping on checkout and invoice reads", () => {
     });
 
     test("void/delete of another clinic's invoice is denied and changes nothing", async () => {
-      await expect(voidInvoice(mock.client, "inv-b", CLINIC_A)).rejects.toThrow(/Access denied/);
-      await expect(deleteInvoice(mock.client, "inv-b", CLINIC_A)).rejects.toThrow(/Access denied/);
+      await expect(voidInvoice(mock.client, "inv-b", CLINIC_A)).rejects.toThrow(/Invoice not found/);
+      await expect(deleteInvoice(mock.client, "inv-b", CLINIC_A)).rejects.toThrow(/Invoice not found/);
       expect((mock.stored("Invoice", "inv-b") as any).status).toBe("balanced");
       expect(mock.writes).toHaveLength(0);
     });
