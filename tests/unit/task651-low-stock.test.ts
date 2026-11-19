@@ -30,3 +30,10 @@ test('summary tiles/banner ignore unthresholded items unless out of stock', () =
   expect(s.outOfStock.map((x) => x.name)).toEqual(['A', 'D']);
   expect(s.attention.map((x) => x.name)).toEqual(['A', 'D', 'C']);
 });
+
+test('edge matrix stock/min: 0/0, 0/5, 5/5, 6/5', () => {
+  expect([isLowStock(m(0, 0)), isOutOfStock(m(0, 0))]).toEqual([false, true]);
+  expect([isLowStock(m(0, 5)), isOutOfStock(m(0, 5))]).toEqual([false, true]);
+  expect([isLowStock(m(5, 5)), isOutOfStock(m(5, 5))]).toEqual([true, false]);
+  expect([isLowStock(m(6, 5)), isOutOfStock(m(6, 5))]).toEqual([false, false]);
+});
