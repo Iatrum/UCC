@@ -43,7 +43,14 @@ describe("Task 659 (2): billing lookup 404 means no bill yet", () => {
   test("200 with number -> string; 200 with null number -> null; 500 -> null", async () => {
     expect(await readExistingInvoiceNumber(res(200, { invoiceNumber: 42 }))).toBe("42");
     expect(await readExistingInvoiceNumber(res(200, { invoiceNumber: null }))).toBeNull();
-    expect(await readExistingInvoiceNumber(res(500, {}))).toBeNull();
+    const warn = console.warn; const warned: unknown[] = []; console.warn = (...a: unknown[]) => { warned.push(a); };
+    try { expect(await readExistingInvoiceNumber(res(500, {}))).toBeNull(); } finally { console.warn = warn; }
+    expect(warned.length).toBe(1); // a real failure is not silent
+  });
+  test("404 does not warn", async () => {
+    const warn = console.warn; let n = 0; console.warn = () => { n++; };
+    try { await readExistingInvoiceNumber(res(404, {})); } finally { console.warn = warn; }
+    expect(n).toBe(0);
   });
   test("unparsable body -> null", async () => {
     expect(await readExistingInvoiceNumber({ status: 200, ok: true, json: async () => { throw new Error("bad"); } })).toBeNull();

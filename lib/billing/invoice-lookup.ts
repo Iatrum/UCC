@@ -3,7 +3,8 @@ export type InvoiceLookup = { status: number; ok: boolean; json: () => Promise<u
 
 /** Invoice number of an existing bill, or null when none exists yet (404, or an empty/failed lookup). Never throws. */
 export async function readExistingInvoiceNumber(response: InvoiceLookup): Promise<string | null> {
-  if (!response.ok) return null; // 404 = no bill yet; other failures: checkout works without the number
+  if (response.status === 404) return null; // expected: no bill yet
+  if (!response.ok) { console.warn(`Invoice lookup failed (${response.status}); continuing without an invoice number`); return null; } // real failure: stay visible, checkout still works
   const payload = (await response.json().catch(() => null)) as { invoiceNumber?: unknown } | null;
   return payload?.invoiceNumber ? String(payload.invoiceNumber) : null;
 }
