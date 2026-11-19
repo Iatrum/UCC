@@ -35,3 +35,22 @@ The read-only clinic audit found the same pre-existing fixture issues reported b
 - All five `composer-plan.spec.ts` tests passed. The full gate also passed the existing dashboard error and retry specs, the staff membership isolation and rollback scenario, and the Lab results visibility check in the composer.
 - The first gate attempt hit a build exception with the prior benchmark build directory in place. A clean gate build passed.
 - `e2e/scripts/check-all.sh task-707` recorded 72 passed, 20 failed and 6 skipped. The comparator found zero new failures or missing tests against the saved Task 665 baseline. The overall gate exited 1 because the fixture audit still flags the same invalid Patient clinic identifier and account assignment found before the run.
+
+## Task 717 — Independent verification of Task 716
+
+Reviewed PR #341 at `b141693` against `origin/dev` at `b22d32e`. Recalculating Task 716's saved samples reproduced the PR body's historical table. The independent rerun used the same warm navigation method, with 12 counterbalanced production build pairs and 36 Dashboard samples per build. Six pairs also covered Inventory and Billing, with 18 samples per build per screen. Canonical tab response fingerprints and visible queue row counts matched within every pair. [Research and protocol](research/task-717.md)
+
+| Screen or milestone | Warm samples per build | Usable dev → PR (ms) | LCP dev → PR (ms) | Browser requests dev → PR | API requests dev → PR |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Dashboard queue | 36 | 336.0 [310.0–375.2] → 337.2 [303.0–365.3] | 116 [103–136] → 112 [91–153] | 55 → 54 | 4 → 4 |
+| Dashboard all data | 36 | 552.7 [523.1–601.2] → 540.7 [508.9–595.5] | Same navigation | Same navigation | Same navigation |
+| Inventory | 18 | 298.8 [277.6–329.3] → 289.5 [267.5–307.4] | 324 [312–355] → 312 [287–332] | 51 → 50 | 3 → 3 |
+| Billing | 18 | 320.4 [280.0–360.0] → 286.5 [268.4–307.2] | 346 [301–392] → 310 [289–328] | 58 → 58 | 3 → 3 |
+
+Timings are median [25th–75th percentile]. Request counts are medians. The median paired PR-minus-dev differences were −2.8 ms for Dashboard usability, −2 ms for LCP and −31.7 ms for all data. Their exploratory pair-bootstrap 95% intervals were −24.6 to +26.8 ms, −16 to +24 ms and −63.5 to +22.2 ms. The ordinary loopback measurements leave the size and direction of the Dashboard timing effect uncertain. The Task 716 LCP candidate was reproduced in every run. It painted before either tab request in 34/36 dev and 35/36 PR navigations. Both builds made zero browser queue GETs.
+
+The three Dashboard tabs rendered matching element structure, classes and headings on the same fake clinic data. The application diff changes only the scheduling of the background reads. The handlers for `GET /api/appointments` and `GET /api/orders/billable` still call `requireClinicAuth` before the scoped reads. In both builds, both routes returned 200 with their expected collections for the assigned clinic, 401 with only the clinic cookie and 403 with a valid session for an unassigned clinic.
+
+The first attempt at pair 12 stopped after the standalone API checker omitted Secure cookies on HTTP loopback. The checker then sent the fake session cookies explicitly, and both sides of pair 12 were rerun. Only the complete replacement pair contributed to the table.
+
+`tsc --noEmit`, repository lint, focused ESLint and the production build passed. All 1,227 unit tests passed. The full `e2e/scripts/check-all.sh task-717` run recorded 72 passed, 20 failed and 6 skipped, with zero new browser failures or missing tests against the saved Task 665 baseline. The Task 706 concurrency spec, Dashboard retry tests, composer plan and Lab visibility tests, and both clinic isolation scenarios passed. The gate exited 1 on the same two fake-fixture audit findings as Task 716, one Patient clinic identifier and one account assignment. All benchmark and gate Next process groups exited, and port 3717 closed.
