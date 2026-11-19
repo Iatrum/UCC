@@ -20,16 +20,20 @@ function fixture(type: string, clinic: string | undefined = 'clinic-a') {
     ],
   };
   const writes: any[] = [], reads: any[] = [];
+  const searches: { resourceType: string; query: { identifier: string } }[] = [];
   const client = {
     async readResource(resourceType: string, id: string, options: unknown) {
       reads.push({ resourceType, id, options });
-      if (resourceType === 'Organization') return { resourceType, id };
       return structuredClone(original);
+    },
+    async searchResources(resourceType: string, query: { identifier: string }) {
+      searches.push({ resourceType, query });
+      return [{ resourceType: 'Organization', id: 'fake-org', identifier: [{ system: 'clinic', value: 'clinic-a' }] }];
     },
     async updateResource(resource: any) { writes.push(resource); return resource; },
     async deleteResource(resourceType: string, id: string) { writes.push({ deleted: resourceType, id }); },
   } as unknown as MedplumClient;
-  return { client, original, writes, reads };
+  return { client, original, writes, reads, searches };
 }
 const cases = [
   { name: 'document', type: 'DocumentReference', run: (m: MedplumClient, clinicId?: string) => updatePatientDocument(m, 'fake-record', { title: 'New title', clinicId }), check: (r: any) => expect(r.content[0].attachment.title).toBe('New title') },
@@ -148,7 +152,7 @@ describe('Task 400 update-by-id clinic containment', () => {
         const result = await sendFollowUpWithTwilio(f.client, 'fake-record', 'clinic-a');
         expect(sent).toBe(1);
         expect(result.status).toBe('in-progress');
-        expect(f.reads.filter(r => r.resourceType === 'Organization').map(r => r.id)).toEqual(['clinic-a']);
+        expect(f.searches).toMatchObject([{ resourceType: 'Organization', query: { identifier: 'clinic|clinic-a' } }]);
         expect(f.writes).toHaveLength(1);
         expect(f.writes[0].identifier).toEqual(f.original.identifier);
         expect(f.writes[0].meta).toEqual(f.original.meta);

@@ -317,23 +317,21 @@ export async function updateFollowUpSettings(
     ...stringExt(FOLLOW_UP_TWILIO_REVIEW_CONTENT_SID_EXTENSION_URL, input.twilioReviewContentSid),
     ...stringExt(FOLLOW_UP_TWILIO_APPOINTMENT_CONTENT_SID_EXTENSION_URL, input.twilioAppointmentContentSid),
   ];
-  const updated = await medplum.updateResource({
+  await medplum.updateResource({
     ...org,
     extension: replaceExtensionsRemoving(org.extension, removeUrls, updates),
   });
-  return getFollowUpSettings(medplum, updated.id);
+  return getFollowUpSettings(medplum, clinicId);
 }
 
 async function readClinicOrganization(medplum: MedplumClient, clinicId: string): Promise<Organization | null> {
-  try {
-    return await medplum.readResource("Organization", clinicId) as Organization;
-  } catch {
-    const organizations = await medplum.searchResources("Organization", {
-      identifier: `clinic|${clinicId}`,
-      _count: "1",
-    });
-    return (organizations?.[0] as Organization | undefined) ?? null;
-  }
+  const organizations = await medplum.searchResources("Organization", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }, { cache: "no-cache" });
+  return organizations?.find((org) => org.identifier?.some(
+    (id) => id.system === CLINIC_IDENTIFIER_SYSTEM && id.value === clinicId
+  )) ?? null;
 }
 
 export async function createFollowUp(
@@ -419,7 +417,7 @@ export async function getAllFollowUps(
     ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
     _sort: "-_lastUpdated",
     _count: "200",
-  });
+  }, { cache: "no-cache" });
   const followUps = (results as Communication[])
     .filter((c) => c.category?.[0]?.coding?.[0]?.system === FOLLOW_UP_CATEGORY_SYSTEM)
     .map(mapCommunicationToFollowUp);
