@@ -115,6 +115,15 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
 
 const TEMPLATE_FETCH_TIMEOUT_MS = 15_000;
 
+// Task 687: the shared fetchOrganizationDetails() swallows failures into null (a clinic may legitimately have no
+// organization). For a printable document a failed/timed-out read must surface error + Retry, not a blank letterhead.
+async function fetchOrganizationStrict(): Promise<OrganizationDetails | null> {
+  const res = await fetchWithTimeout("/api/organization", { cache: "no-store" }, TEMPLATE_FETCH_TIMEOUT_MS);
+  const data = await res.json();
+  if (!res.ok || !data?.success) throw new Error("Could not load clinic details for the document.");
+  return data.organization ?? null;
+}
+
 export default function ReferralMCSection({ patient, consultations = [] }: ReferralMCSectionProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -268,7 +277,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       template: html,
       details: doc.details,
       patient,
-      organization: await resolveOrganizationDetails(organization),
+      organization: await resolveOrganizationDetails(organization, fetchOrganizationStrict),
       issuedDate: doc.date,
     });
   }
@@ -283,7 +292,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
       html = DEFAULT_REFERRAL_TEMPLATE;
     }
-    const org = await resolveOrganizationDetails(organization);
+    const org = await resolveOrganizationDetails(organization, fetchOrganizationStrict);
     const toLine = [r.department, r.facility].filter(Boolean).join(", ") || "";
     return withPrintCss(fillDocumentTemplate(html, {
       clinicLogo: clinicLogoHtml(org?.logoUrl),
