@@ -5,6 +5,8 @@ import Link from "next/link";
 import { CalendarDays, List } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { describeFetchError } from "@/lib/load-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import UpcomingAppointmentsTable, { normalizeAppointmentStatus } from "@/modules/appointments/components/upcoming-appointments-table";
 import AppointmentsCalendarView, { type ViewMode } from "@/components/appointments/calendar-view";
@@ -29,8 +31,9 @@ interface Appointment {
 
 const activeStatuses: AppointmentStatus[] = ["scheduled", "checked_in"];
 
-async function getAppointments(signal?: AbortSignal): Promise<Appointment[]> {
-  const response = await fetch("/api/appointments", { credentials: "include", signal });
+// Task 686: a stalled read ends in the existing error + Retry state instead of an endless "Loading appointments...".
+async function getAppointments(): Promise<Appointment[]> {
+  const response = await fetchWithTimeout("/api/appointments", { credentials: "include" }, 20_000);
   const data = await response.json();
 
   if (!response.ok || !data.success) {
@@ -64,12 +67,14 @@ export default function AppointmentsRootPage() {
     setError(null);
     setLoading(true);
     try {
-      const data = await getAppointments(signal);
+      const data = await getAppointments();
+      if (signal?.aborted) return;
       setAppointments(data);
     } catch (err) {
       if (signal?.aborted) return;
       console.error("Failed to load appointments", err);
-      setError("Unable to load appointments right now. Please try again.");
+      const reason = describeFetchError(err, "");
+      setError(reason ? `Unable to load appointments. ${reason}` : "Unable to load appointments right now. Please try again.");
     } finally {
       if (!signal?.aborted) {
         setLoading(false);

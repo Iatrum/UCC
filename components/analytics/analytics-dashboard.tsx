@@ -5,6 +5,7 @@ import { Suspense, use, useCallback, useEffect, useRef, useState } from "react";
 import type { ClinicalData, MoneyOpsData, SummaryData, TabKey } from "@/lib/analytics/queries";
 import { RANGE_KEYS, RANGE_LABELS, type RangeKey } from "@/lib/analytics/range";
 import { Button } from "@/components/ui/button";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { cn } from "@/lib/utils";
 import { AnalyticsBodySkeleton } from "./analytics-skeleton";
 import { EmptyState } from "./primitives";
@@ -37,13 +38,13 @@ export default function AnalyticsDashboard({ initial }: { initial: Promise<Initi
     requested.current.add(key);
     const put = (e: Entry | null) => setStore((s) => { const n = { ...s }; if (e) n[key] = e; else delete n[key]; return n; });
     put({ status: "loading" });
-    fetch(`/api/analytics/${t}?range=${r}`, { credentials: "same-origin" })
+    fetchWithTimeout(`/api/analytics/${t}?range=${r}`, { credentials: "same-origin" }, 20_000)
       .then(async (res) => {
         if (!res.ok) throw new Error(res.status === 401 ? "Sesi tamat. Sila log masuk semula." : "Gagal memuatkan data.");
         return res.json();
       })
       .then((data) => put({ status: "ok", data }))
-      .catch((e) => { requested.current.delete(key); put({ status: "error", message: e?.message || "Gagal memuatkan data." }); });
+      .catch((e) => { requested.current.delete(key); put({ status: "error", message: e?.name === "AbortError" ? "Sambungan perlahan: permintaan tamat masa." : e instanceof TypeError ? "Tiada sambungan internet." : e?.message || "Gagal memuatkan data." }); });
   }, []);
 
   const showInitial = fresh && tab === "summary" && range === "7d";

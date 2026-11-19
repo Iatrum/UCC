@@ -2,6 +2,10 @@
  * Client-side wrapper for Patient API (Medplum FHIR)
  * Use this in your React components
  */
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+
+/** Reads only (list/search/stats): a stalled request ends in the page error + Retry state. */
+const PATIENT_READ_TIMEOUT_MS = 20_000;
 
 export interface PatientInput {
   fullName: string;
@@ -203,10 +207,10 @@ export interface PatientsPage {
 
 /** One server-side page of the clinic's patients, with exact total when available. */
 export async function getPatientsPage(page: number, pageSize = 25, clinicId?: string): Promise<PatientsPage> {
-  const response = await fetch(`/api/patients?page=${page}&pageSize=${pageSize}`, {
+  const response = await fetchWithTimeout(`/api/patients?page=${page}&pageSize=${pageSize}`, {
     credentials: 'include',
     headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
-  });
+  }, PATIENT_READ_TIMEOUT_MS);
   const data = await readJson(response);
   if (!response.ok || !data.success) {
     throw new Error(typeof data.error === 'string' ? data.error : `Failed to get patients (${response.status})`);
@@ -221,10 +225,10 @@ export async function getPatientsPage(page: number, pageSize = 25, clinicId?: st
 
 /** Clinic-scoped real patient counts. `null` = server gave no exact total. */
 export async function getPatientStats(clinicId?: string): Promise<{ total: number | null; newThisMonth: number | null }> {
-  const response = await fetch('/api/patients?stats=1', {
+  const response = await fetchWithTimeout('/api/patients?stats=1', {
     credentials: 'include',
     headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined,
-  });
+  }, PATIENT_READ_TIMEOUT_MS);
   const data = await readJson(response);
   if (!response.ok || !data.success) {
     throw new Error(typeof data.error === 'string' ? data.error : `Failed to get patient stats (${response.status})`);
@@ -242,9 +246,10 @@ export async function searchPatientsPage(
   pageSize = 25,
   clinicId?: string
 ): Promise<PatientsPage & { capped: boolean }> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `/api/patients?search=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}`,
-    { credentials: 'include', headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined }
+    { credentials: 'include', headers: clinicId ? { 'X-Clinic-Id': clinicId } : undefined },
+    PATIENT_READ_TIMEOUT_MS
   );
   const data = await readJson(response);
   if (!response.ok || !data.success) {

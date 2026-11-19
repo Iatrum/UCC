@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+
 export interface OrganizationDetails {
   logoUrl?: string | null;
   name?: string | null;
@@ -7,7 +9,7 @@ export interface OrganizationDetails {
 
 export async function fetchOrganizationDetails(): Promise<OrganizationDetails | null> {
   try {
-    const response = await fetch("/api/organization", { cache: "no-store" });
+    const response = await fetchWithTimeout("/api/organization", { cache: "no-store" }, 15_000);
     const data = await response.json();
     if (!response.ok || !data?.success) {
       return null;

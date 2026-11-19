@@ -4,6 +4,8 @@ import { fillDocumentTemplate, mcDiagnosisVisible, signedDocumentKind as kindFro
 import { calcAge, clinicLogoHtml, multilineToHtml, renderDocumentHtml, withPrintCss } from "@/lib/document-render";
 import { formatClinicDate, mcDaysLabel } from "@/lib/clinic-dates";
 import { printHtml } from "@/lib/print-html";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { describeFetchError } from "@/lib/load-state";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Download, FileText, Loader2, Trash2 } from "lucide-react";
@@ -111,6 +113,8 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
   );
 }
 
+const TEMPLATE_FETCH_TIMEOUT_MS = 15_000;
+
 export default function ReferralMCSection({ patient, consultations = [] }: ReferralMCSectionProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -127,6 +131,8 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [viewingHtml, setViewingHtml] = useState<string | null>(null);
   const [viewingHtmlLoading, setViewingHtmlLoading] = useState(false);
+  // Task 686: a stalled/failed template load shows an inline error + Retry instead of a blank dialog.
+  const [viewingHtmlError, setViewingHtmlError] = useState<string | null>(null);
   const signedDocuments = getSignedDocuments(consultations);
 
   const loadReferrals = useCallback(() => {
@@ -247,7 +253,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   }
 
   async function buildDocumentHtml(doc: SignedDocument): Promise<string> {
-    const res = await fetch(`/api/document-templates?type=${doc.kind}`);
+    const res = await fetchWithTimeout(`/api/document-templates?type=${doc.kind}`, {}, TEMPLATE_FETCH_TIMEOUT_MS);
     let html: string;
     if (res.ok) {
       html = (await res.json()).html;
@@ -268,7 +274,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   }
 
   async function buildLegacyReferralHtml(r: Referral): Promise<string> {
-    const res = await fetch("/api/document-templates?type=referral");
+    const res = await fetchWithTimeout("/api/document-templates?type=referral", {}, TEMPLATE_FETCH_TIMEOUT_MS);
     let html: string;
     if (res.ok) {
       html = (await res.json()).html;
@@ -300,11 +306,13 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   async function openSignedDocumentViewer(doc: SignedDocument) {
     setViewingSigned(doc);
     setViewingHtml(null);
+    setViewingHtmlError(null);
     setViewingHtmlLoading(true);
     try {
       const html = await buildDocumentHtml(doc);
       setViewingHtml(html);
     } catch (err: any) {
+      setViewingHtmlError(describeFetchError(err, "Could not load document preview."));
       toast({
         title: "Preview failed",
         description: err?.message || "Could not load document preview.",
@@ -318,11 +326,13 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   async function openLegacyReferralViewer(r: Referral) {
     setViewing(r);
     setViewingHtml(null);
+    setViewingHtmlError(null);
     setViewingHtmlLoading(true);
     try {
       const html = await buildLegacyReferralHtml(r);
       setViewingHtml(html);
     } catch (err: any) {
+      setViewingHtmlError(describeFetchError(err, "Could not load document preview."));
       toast({
         title: "Preview failed",
         description: err?.message || "Could not load document preview.",
@@ -541,6 +551,12 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                   <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
                 </div>
               )}
+              {!viewingHtmlLoading && !viewingHtml && viewingHtmlError && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center" role="alert">
+                  <p className="text-sm text-destructive">{viewingHtmlError}</p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => viewingSigned && void openSignedDocumentViewer(viewingSigned)}>Retry</Button>
+                </div>
+              )}
               {!viewingHtmlLoading && viewingHtml && (
                 <iframe
                   srcDoc={viewingHtml}
@@ -595,6 +611,12 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
+                </div>
+              )}
+              {!viewingHtmlLoading && !viewingHtml && viewingHtmlError && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center" role="alert">
+                  <p className="text-sm text-destructive">{viewingHtmlError}</p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => viewing && void openLegacyReferralViewer(viewing)}>Retry</Button>
                 </div>
               )}
               {!viewingHtmlLoading && viewingHtml && (
