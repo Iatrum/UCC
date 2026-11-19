@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { receiveImagingStudy, type ImagingStudyData } from '@/lib/fhir/imaging-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
-import { AuthError, ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
+import { guardIngressRequest, readJsonBody, asObject, ingressErrorResponse, validateStudyPayload } from '@/lib/server/device-ingress-http';
 
 export const runtime = 'nodejs';
 
@@ -23,38 +23,21 @@ interface ReceiveImagingStudyRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReceiveImagingStudyRequest = await request.json();
+    const blocked = guardIngressRequest(request, 'imaging-receive');
+    if (blocked) return blocked;
+    const body = (asObject(await readJsonBody(request)) ?? {}) as Partial<ReceiveImagingStudyRequest>;
 
     // Fail closed: the calling X-ray Device is authenticated by its own key; its clinic scopes every write.
     const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'pacs');
 
-    // Validate required fields
-    if (!body.serviceRequestId) {
-      return NextResponse.json(
-        { error: 'serviceRequestId is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!body.study) {
-      return NextResponse.json(
-        { error: 'study data is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!body.study.studyUid) {
-      return NextResponse.json(
-        { error: 'study.studyUid is required' },
-        { status: 400 }
-      );
-    }
+    const invalid = validateStudyPayload(body.serviceRequestId, body.study);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
     // Process the imaging study
     const medplum = await getAdminMedplum();
     const studyId = await receiveImagingStudy(
-      body.serviceRequestId,
-      body.study,
+      body.serviceRequestId as string,
+      body.study as ImagingStudyData,
       medplum,
       device.clinicId
     );
@@ -65,19 +48,8 @@ export async function POST(request: NextRequest) {
       message: 'Imaging study received and stored successfully',
     });
 
-  } catch (error: any) {
-    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
-    if (error instanceof NotFoundError) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
-    console.error('Error receiving imaging study:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to receive imaging study',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return ingressErrorResponse(error, 'imaging/receive', 'Failed to receive imaging study');
   }
 }
 

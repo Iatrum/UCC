@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestXrayStudy, type XrayStudyMessage } from '@/lib/pacs/xray-device-bot';
-import { AuthError, ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
+import { guardIngressRequest, readJsonBody, asObject, ingressErrorResponse, validateStudyPayload } from '@/lib/server/device-ingress-http';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
@@ -26,20 +26,18 @@ interface ReceiveXrayStudyRequest extends XrayStudyMessage {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReceiveXrayStudyRequest = await request.json();
+    const blocked = guardIngressRequest(request, 'imaging-message');
+    if (blocked) return blocked;
+    const body = (asObject(await readJsonBody(request)) ?? {}) as Partial<ReceiveXrayStudyRequest>;
 
     // Fail closed: the calling Device is authenticated by its own key; its clinic scopes every write.
     const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'pacs');
 
-    if (!body.serviceRequestId) {
-      return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 });
-    }
-    if (!body.study?.studyUid) {
-      return NextResponse.json({ error: 'study.studyUid is required' }, { status: 400 });
-    }
+    const invalid = validateStudyPayload(body.serviceRequestId, body.study);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
     const medplum = await getAdminMedplum();
-    const result = await ingestXrayStudy({ serviceRequestId: body.serviceRequestId, study: body.study }, medplum, device.clinicId);
+    const result = await ingestXrayStudy({ serviceRequestId: body.serviceRequestId as string, study: body.study as XrayStudyMessage['study'] }, medplum, device.clinicId);
 
     return NextResponse.json({
       success: true,
@@ -47,15 +45,7 @@ export async function POST(request: NextRequest) {
       imagingStudyId: result.imagingStudyId,
       message: 'X-ray study received and stored successfully',
     });
-  } catch (error: any) {
-    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
-    if (error instanceof ForbiddenError || error instanceof ConflictError) {
-      return NextResponse.json({ error: error.message }, { status: error instanceof ForbiddenError ? 403 : 409 });
-    }
-
-    return NextResponse.json(
-      { error: 'Failed to receive X-ray study', details: error.message },
-      { status: 400 }
-    );
+  } catch (error) {
+    return ingressErrorResponse(error, 'imaging/receive/message', 'X-ray study could not be processed', 400);
   }
 }

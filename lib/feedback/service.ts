@@ -165,6 +165,8 @@ const SCREENSHOT_MAX_BYTES = 1_000_000;
 /** Validate a base64 data URL as a real PNG/JPEG within the size cap. Returns null when invalid. */
 export function parseScreenshot(dataUrl: unknown): { contentType: string; data: Buffer } | null {
   if (typeof dataUrl !== "string") return null;
+  // Reject oversized strings before running the regex or decoding (base64 is ~4/3 of the bytes).
+  if (dataUrl.length > Math.ceil((SCREENSHOT_MAX_BYTES * 4) / 3) + 64) return null;
   const m = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
   if (!m) return null;
   const data = Buffer.from(m[2], "base64");

@@ -14,8 +14,9 @@
  */
 import { NextRequest, NextResponse, after } from 'next/server';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
-import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
-import { fetchOrthancStudy, isOrthancId, pacsServesClinic, requirePacsConfig, PacsUpstreamError, type PacsConfig } from '@/lib/pacs/orthanc-client';
+import { ForbiddenError } from '@/lib/server/route-helpers';
+import { guardIngressRequest, readJsonBody, asObject, ingressErrorResponse } from '@/lib/server/device-ingress-http';
+import { fetchOrthancStudy, isOrthancId, pacsServesClinic, requirePacsConfig, PacsUpstreamError, PacsNotConfiguredError, type PacsConfig } from '@/lib/pacs/orthanc-client';
 import { ingestPacsStudyForDevice } from '@/lib/pacs/device-ingress';
 import { handlePacsRouteError } from '@/lib/pacs/route-errors';
 
@@ -48,7 +49,9 @@ async function ingestWithRetry(config: PacsConfig, orthancStudyId: string, clini
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({})) as { orthancStudyId?: unknown };
+    const blocked = guardIngressRequest(request, 'pacs-orthanc-study', 4 * 1024);
+    if (blocked) return blocked;
+    const body = (asObject(await readJsonBody(request, 4 * 1024)) ?? {}) as { orthancStudyId?: unknown };
     // Fail closed, and authenticate before anything else (bad JSON without a key is still 401).
     const device = await authenticateDeviceKey(extractDeviceKey(request), 'pacs');
     const config = requirePacsConfig();
@@ -73,8 +76,9 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ accepted: true }, { status: 202 });
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
-    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
-    return handlePacsRouteError(error, 'pacs/orthanc/study');
+    if (error instanceof PacsNotConfiguredError || error instanceof PacsUpstreamError) {
+      return handlePacsRouteError(error, 'pacs/orthanc/study');
+    }
+    return ingressErrorResponse(error, 'pacs/orthanc/study', 'Failed to process study');
   }
 }
