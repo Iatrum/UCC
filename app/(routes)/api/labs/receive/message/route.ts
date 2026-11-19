@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestAnalyserMessage, type AnalyserMessageFormat } from '@/lib/poct/analyser-bot';
-import { AuthError, ForbiddenError, ConflictError } from '@/lib/server/route-helpers';
+import { guardIngressRequest, readJsonBody, asObject, ingressErrorResponse } from '@/lib/server/device-ingress-http';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 
@@ -26,7 +26,9 @@ interface ReceiveAnalyserMessageRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReceiveAnalyserMessageRequest = await request.json();
+    const blocked = guardIngressRequest(request, 'labs-message');
+    if (blocked) return blocked;
+    const body = (asObject(await readJsonBody(request)) ?? {}) as Partial<ReceiveAnalyserMessageRequest>;
 
     // Fail closed: the calling Device is authenticated by its own key; its clinic scopes every write.
     const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'poct');
@@ -47,15 +49,8 @@ export async function POST(request: NextRequest) {
       diagnosticReportId: result.diagnosticReportId,
       message: 'Analyser message received and stored successfully',
     });
-  } catch (error: any) {
-    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
-    if (error instanceof ForbiddenError || error instanceof ConflictError) {
-      return NextResponse.json({ error: error.message }, { status: error instanceof ForbiddenError ? 403 : 409 });
-    }
-
-    return NextResponse.json(
-      { error: 'Failed to receive analyser message', details: error.message },
-      { status: 400 }
-    );
+  } catch (error) {
+    // A malformed analyser message / unknown order is a client error; the exact reason stays in the server log.
+    return ingressErrorResponse(error, 'labs/receive/message', 'Analyser message could not be processed', 400);
   }
 }

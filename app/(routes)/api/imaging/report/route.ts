@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createImagingReport } from '@/lib/fhir/imaging-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
-import { AuthError, ForbiddenError } from '@/lib/server/route-helpers';
+import { guardIngressRequest, readJsonBody, asObject, ingressErrorResponse, validateReportText } from '@/lib/server/device-ingress-http';
 
 export const runtime = 'nodejs';
 
@@ -27,7 +27,9 @@ interface CreateImagingReportRequest {
 export async function POST(request: NextRequest) {
   try {
     // Parse leniently so authentication is always evaluated first (no key => 401, even for a bad body).
-    const body: Partial<CreateImagingReportRequest> | null = await request.json().catch(() => null);
+    const blocked = guardIngressRequest(request, 'imaging-report');
+    if (blocked) return blocked;
+    const body = asObject(await readJsonBody(request)) as Partial<CreateImagingReportRequest> | null;
 
     // Fail closed: same per-device key auth as /api/imaging/receive. The Device's clinic (and the
     // PACS module toggle for that clinic) scopes the write; nothing about clinic is read from the body.
@@ -45,12 +47,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!body.findings || !body.impression) {
-      return NextResponse.json(
-        { error: 'findings and impression are required' },
-        { status: 400 }
-      );
-    }
+    const invalidText = validateReportText(body.findings, body.impression, body.radiologist);
+    if (invalidText) return NextResponse.json({ error: invalidText }, { status: 400 });
 
     if (body.status !== undefined && body.status !== 'preliminary' && body.status !== 'final') {
       return NextResponse.json(
@@ -63,8 +61,8 @@ export async function POST(request: NextRequest) {
     const medplum = await getAdminMedplum();
     const reportId = await createImagingReport(
       body.imagingStudyId,
-      body.findings,
-      body.impression,
+      body.findings as string,
+      body.impression as string,
       body.status || 'final',
       body.radiologist,
       medplum,
@@ -77,18 +75,8 @@ export async function POST(request: NextRequest) {
       message: 'Imaging report created successfully',
     });
 
-  } catch (error: any) {
-    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
-    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
-    console.error('Error creating imaging report:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to create imaging report',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return ingressErrorResponse(error, 'imaging/report', 'Failed to create imaging report');
   }
 }
 

@@ -29,6 +29,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
     }
 
+    // Checkout only needs demographics/billing fields, not the allergy/condition/medication/last-visit searches
+    // (4 extra FHIR round trips); skip them (Task 678).
+    const readPatient = (id: string) => getPatientFromMedplum(id, clinicId, medplum, { includeMedicalHistory: false });
+    // When the link carries patientId, read the patient concurrently with the consultation. It is only used if it
+    // matches the consultation's own patient (resolveCheckoutPatientId below), and the read is clinic-scoped.
+    const speculativePatient = patientId ? readPatient(patientId) : null;
+    speculativePatient?.catch(() => undefined);
+
     // Clinic-scoped: a consultation from another clinic reads as null here.
     const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
     if (!consultation) {
@@ -41,7 +49,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
-    const patient = await getPatientFromMedplum(resolvedPatientId, clinicId, medplum);
+    const patient = await (speculativePatient && resolvedPatientId === patientId ? speculativePatient : readPatient(resolvedPatientId));
     if (!patient) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }

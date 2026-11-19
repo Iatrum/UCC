@@ -13,6 +13,7 @@ mock.module("@/lib/server/medplum-admin", () => ({
 const { POST } = await import("@/app/api/follow-up/twilio/status/route");
 
 const URL_ = "https://example.test/api/follow-up/twilio/status";
+const SIGNED = `${URL_}?clinic=clinic-a`; // sending clinic is part of the signed StatusCallback URL
 const TOKEN = "unit-test-token-not-real";
 const SID_EXT = "https://ucc.emr/communication/twilio-message-sid";
 const FU = {
@@ -24,7 +25,7 @@ const params = { MessageSid: "SM123", MessageStatus: "delivered", AccountSid: "A
 function req(p: Record<string, string>, signature?: string, contentType = "application/x-www-form-urlencoded") {
   const headers: Record<string, string> = { "content-type": contentType };
   if (signature !== undefined) headers["x-twilio-signature"] = signature;
-  return new NextRequest(URL_, { method: "POST", headers, body: new URLSearchParams(p).toString() });
+  return new NextRequest(SIGNED, { method: "POST", headers, body: new URLSearchParams(p).toString() });
 }
 
 const saved = { t: process.env.TWILIO_AUTH_TOKEN, u: process.env.TWILIO_STATUS_CALLBACK_URL };
@@ -61,21 +62,21 @@ describe("twilio signature helper", () => {
 
 describe("POST /api/follow-up/twilio/status", () => {
   test("valid signature updates the Communication matched by MessageSid", async () => {
-    const res = await POST(req(params, computeTwilioSignature(TOKEN, URL_, params)));
+    const res = await POST(req(params, computeTwilioSignature(TOKEN, SIGNED, params)));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true, found: true });
     expect(updateResource).toHaveBeenCalledTimes(1);
   });
   test("signs over TWILIO_STATUS_CALLBACK_URL, not the proxied request URL", async () => {
-    const proxied = new NextRequest("http://127.0.0.1:3000/api/follow-up/twilio/status", {
+    const proxied = new NextRequest("http://127.0.0.1:3000/api/follow-up/twilio/status?clinic=clinic-a", {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": computeTwilioSignature(TOKEN, URL_, params) },
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": computeTwilioSignature(TOKEN, SIGNED, params) },
       body: new URLSearchParams(params).toString(),
     });
     expect((await POST(proxied)).status).toBe(200);
-    const wrong = new NextRequest(URL_, {
+    const wrong = new NextRequest(SIGNED, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": computeTwilioSignature(TOKEN, "http://127.0.0.1:3000/api/follow-up/twilio/status", params) },
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": computeTwilioSignature(TOKEN, "http://127.0.0.1:3000/api/follow-up/twilio/status?clinic=clinic-a", params) },
       body: new URLSearchParams(params).toString(),
     });
     expect((await POST(wrong)).status).toBe(403);
@@ -87,40 +88,40 @@ describe("POST /api/follow-up/twilio/status", () => {
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("invalid signature or tampered params => 403, zero writes", async () => {
-    const sig = computeTwilioSignature(TOKEN, URL_, params);
+    const sig = computeTwilioSignature(TOKEN, SIGNED, params);
     expect((await POST(req(params, "bogus"))).status).toBe(403);
     expect((await POST(req({ ...params, MessageStatus: "failed" }, sig))).status).toBe(403);
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("signature made with another token => 403", async () => {
-    expect((await POST(req(params, computeTwilioSignature("other", URL_, params)))).status).toBe(403);
+    expect((await POST(req(params, computeTwilioSignature("other", SIGNED, params)))).status).toBe(403);
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("unset auth token fails closed even with a signature computed from empty key", async () => {
     delete process.env.TWILIO_AUTH_TOKEN;
-    const res = await POST(req(params, computeTwilioSignature("", URL_, params)));
+    const res = await POST(req(params, computeTwilioSignature("", SIGNED, params)));
     expect(res.status).toBe(403);
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("unset callback URL fails closed", async () => {
     delete process.env.TWILIO_STATUS_CALLBACK_URL;
-    expect((await POST(req(params, computeTwilioSignature(TOKEN, URL_, params)))).status).toBe(403);
+    expect((await POST(req(params, computeTwilioSignature(TOKEN, SIGNED, params)))).status).toBe(403);
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("JSON bodies are rejected (unsigned format)", async () => {
-    const r = new NextRequest(URL_, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) });
+    const r = new NextRequest(SIGNED, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) });
     expect((await POST(r)).status).toBe(403);
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("signed but unknown status value is not written", async () => {
     const p = { ...params, MessageStatus: "pwned" };
-    const res = await POST(req(p, computeTwilioSignature(TOKEN, URL_, p)));
+    const res = await POST(req(p, computeTwilioSignature(TOKEN, SIGNED, p)));
     expect(res.status).toBe(200);
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("signed callback for unknown MessageSid writes nothing", async () => {
     searchResources.mockImplementation(async () => []);
-    const res = await POST(req(params, computeTwilioSignature(TOKEN, URL_, params)));
+    const res = await POST(req(params, computeTwilioSignature(TOKEN, SIGNED, params)));
     expect(await res.json()).toEqual({ success: true, found: false });
     expect(updateResource).not.toHaveBeenCalled();
   });
@@ -132,7 +133,7 @@ describe("POST /api/follow-up/twilio/status", () => {
       ] },
     ]);
     const p = { ...params, MessageStatus: "sent" };
-    await POST(req(p, computeTwilioSignature(TOKEN, URL_, p)));
+    await POST(req(p, computeTwilioSignature(TOKEN, SIGNED, p)));
     expect(updateResource).not.toHaveBeenCalled();
   });
   test("SID match ignores non-follow-up and clinic-untagged Communications", async () => {
@@ -140,7 +141,7 @@ describe("POST /api/follow-up/twilio/status", () => {
       { resourceType: "Communication", id: "x1", status: "in-progress", identifier: FU.identifier, extension: [{ url: SID_EXT, valueString: "SM123" }] },
       { ...FU, identifier: [], resourceType: "Communication", id: "x2", status: "in-progress", extension: [{ url: SID_EXT, valueString: "SM123" }] },
     ]);
-    const res = await POST(req(params, computeTwilioSignature(TOKEN, URL_, params)));
+    const res = await POST(req(params, computeTwilioSignature(TOKEN, SIGNED, params)));
     expect(await res.json()).toEqual({ success: true, found: false });
     expect(updateResource).not.toHaveBeenCalled();
   });

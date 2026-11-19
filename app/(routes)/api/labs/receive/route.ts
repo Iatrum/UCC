@@ -12,7 +12,7 @@ import { receiveLabResults, type LabResult } from '@/lib/fhir/lab-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { authenticateDeviceKey, extractDeviceKey } from '@/lib/fhir/device-keys';
 import { validateLabReceiveResults } from '@/lib/fhir/lab-receive-validation';
-import { AuthError, ForbiddenError, NotFoundError } from '@/lib/server/route-helpers';
+import { guardIngressRequest, readJsonBody, asObject, ingressErrorResponse } from '@/lib/server/device-ingress-http';
 
 export const runtime = 'nodejs';
 
@@ -26,9 +26,10 @@ interface ReceiveLabResultsRequest {
 export async function POST(request: NextRequest) {
   try {
     // Parse leniently so authentication still runs first; a bad body is reported as 400 after auth.
-    let parsed: unknown = null;
-    try { parsed = await request.json(); } catch { /* handled below */ }
-    const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Partial<ReceiveLabResultsRequest>;
+    const blocked = guardIngressRequest(request, 'labs-receive');
+    if (blocked) return blocked;
+    const parsed = await readJsonBody(request);
+    const body = (asObject(parsed) ?? {}) as Partial<ReceiveLabResultsRequest>;
 
     // Fail closed: the calling analyser Device is authenticated by its own key; its clinic scopes every write.
     const device = await authenticateDeviceKey(extractDeviceKey(request, body.apiKey), 'poct');
@@ -66,19 +67,8 @@ export async function POST(request: NextRequest) {
       message: 'Lab results received and stored successfully',
     });
 
-  } catch (error: any) {
-    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: 401 });
-    if (error instanceof NotFoundError) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
-    console.error('Error receiving lab results:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to receive lab results',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return ingressErrorResponse(error, 'labs/receive', 'Failed to receive lab results');
   }
 }
 

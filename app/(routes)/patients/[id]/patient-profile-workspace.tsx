@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 import { useRouter } from "next/navigation";
@@ -9,7 +9,6 @@ import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Table,
@@ -37,6 +36,10 @@ import type { QueueStatus } from "@/lib/types";
 
 // Heavy views only mount when their tab / drawer is used, so they stay out of the first-load bundle.
 const tabFallback = <div className="p-4 text-sm text-muted-foreground">Loading…</div>;
+const RichTextEditor = dynamic(
+  () => import("@/components/ui/rich-text-editor").then((m) => m.RichTextEditor),
+  { loading: () => tabFallback },
+);
 const OrderComposer = dynamic(
   () => import("@/components/orders/order-composer").then((m) => m.OrderComposer),
   { loading: () => tabFallback },
@@ -211,13 +214,15 @@ export default function PatientProfileWorkspace({
   const { procedures: procedureOptions, medications: medicationOptions, labs: labCatalog,
     imaging: imagingCatalog, documents: documentCatalog } = catalogs;
 
-  // The order composer is the only consumer: fetch its catalogs the first time the treatment drawer opens.
-  useEffect(() => {
+  // The mounted Treatment composer invokes this when the browser is idle.
+  const requestTreatmentCatalogs = useCallback(() => {
     catalogRequester.current ??= createComposerCatalogRequester(
       () => loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog }),
       (loaded) => {
-        setCatalogs(loaded);
-        setCatalogsSettled(true);
+        startTransition(() => {
+          setCatalogs(loaded);
+          setCatalogsSettled(true);
+        });
       },
       (error) => {
         console.error("Failed to load treatment catalogs:", error);
@@ -1033,6 +1038,7 @@ export default function PatientProfileWorkspace({
                         packages={emptyPackages}
                         documents={treatmentDocumentsCatalog}
                         loadingCatalog={!catalogsSettled}
+                        onLoadCatalogs={requestTreatmentCatalogs}
                         onPlanChange={handleTreatmentPlanChange}
                         onUnsavedChange={setTreatmentUnsaved}
                         submitLabel="Sign"

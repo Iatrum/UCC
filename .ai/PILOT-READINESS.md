@@ -30,8 +30,8 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
-| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | DONE (Task 659, PR pending) | 503: client stops re-POSTing after the first 503 (manual Refresh re-checks); billing lookup uses `optional=true` (200, no bill yet); documents fetch aborted on unmount and silent. Residual: the browser itself logs the single first 503 network line (server contract kept, e2e relies on it). Notes `.ai/research/task-659.md` |
-| A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | CODE | Dev only; after the dev topology is in place (`.ai/progress-task5.md`) |
+| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | DONE (Task 659, PR #326) | 503: client stops re-POSTing after the first 503 (manual Refresh re-checks); billing lookup uses `optional=true` (200, no bill yet); documents fetch aborted on unmount and silent. Residual: the browser itself logs the single first 503 network line (server contract kept, e2e relies on it). Notes `.ai/research/task-659.md` |
+| A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | DONE (dev) | Task 661: `.ai/research/task-661.md`. Fake staff with clinic `access[]` in the non-superAdmin project ran register → consult → sign → Lab tab → checkout → dispense (13/13 steps), and the same token was denied reading/writing a second clinic's patient (404/403, 0 search hits). Production still needs the manual Task 5 migration (B-section items) |
 
 ## B. Security and secrets
 
@@ -51,7 +51,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | C1 | Clinic AccessPolicy topology (non-superAdmin clinic project) on **dev** | DONE | `.ai/REVIEW-task5.md`, D47, `.ai/progress-task5.md` |
 | C2 | Verify read-only whether the production clinic project is superAdmin (owner Q4 unknown) | OWNER | Plan Part 1/open question 4; a superAdmin project bypasses the policy |
 | C3 | Live disposable fake-session revocation rehearsal (>100 Logins, 2 pages) | CODE | Needs a newly supplied dev super-admin login from Hidayat first; runbook "OUTSTANDING live" |
-| C4 | Exact-production-version rehearsal and current-head full browser gate | CODE | Runbook release hold; run on dev with fake data |
+| C4 | Exact-production-version rehearsal and current-head full browser gate | CODE (release hold) | Task 668 ran on fake-data dev. Main `7b024d1` was blocked at staff registration by the dev AccessPolicy. Dev `12df445` gate failed (62 passed, 22 failed, 12 skipped). Production Medplum version parity remains unverified. [Task 668 evidence](research/task-668.md) |
 | C5 | Deployment recovery card (previous artifact, restorer, tested DB restore, writer stop/reopen) | OWNER | Runbook release hold; cannot be invented by an agent |
 | C6 | Production cutover: operator project, `superAdmin=false`, policies, session revocation | OWNER | `.ai/RUNBOOK-task5-production-migration.md`; maintenance window, backups, checksum |
 | C7 | Firestore draft migration, if still pending | OWNER | `.ai/RUNBOOK-firestore-draft-migration.md` |
