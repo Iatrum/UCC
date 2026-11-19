@@ -48,3 +48,26 @@ larger benefit should show with real network/Medplum latency. Dashboard/patient 
 ## Verification
 `tsc --noEmit` clean. `bun test tests/unit/task4* task5* task6*`: 488 pass, 2 fail — the same 2 fail on unmodified origin/dev
 (clinic-scoping invoice void; generateSlots cross-clinic), unrelated.
+
+## Task 679 — independent re-measurement (review)
+Same method, fresh production builds of origin/dev (before) and this branch (after), one server on :3679 (3 GB heap), fake data,
+Playwright harness, 9 warm runs per page, order before1/after1/before2/after2. Medians:
+
+| Metric | before (r1 / r2) | after (r1 / r2) |
+|---|---|---|
+| Checkout usable | 1218 / 1185 ms | 726 / 802 ms (r2 bimodal: 5/9 runs 712-802, 4/9 runs 1218-1395) |
+| Checkout LCP | 844 / 800 ms | 740 / 812 ms |
+| `/api/orders` in-page fetch duration | 361 / 253 ms | 164 / 169 ms |
+| Requests / KB | 61 / 559-562 | 61 / 564-565 |
+| Analytics usable / LCP (code unchanged) | 666 / 252, 458 / 240 | 498 / 236, 452 / 252 |
+| Dashboard FCP (unchanged) | 168 / 188 | 200 / 172 |
+| Patient usable / LCP (unchanged) | 228/556, 236/572 | 244/568, 220/564 |
+
+Correction to the 678 table: the checkout gain is larger and more consistent than the "1171 → 1142" harness median suggested
+(≈ -400 to -500 ms usable in the good mode; the after-build is bimodal, before-build is not). Analytics/dashboard/patient
+differences are noise (code untouched).
+
+Equivalence checks: `bun test tests/unit` 1034 pass / 2 fail, identical 2 failures on origin/dev; `tsc --noEmit` clean;
+`GET /api/orders` payload identical between builds except `patient.lastVisit` (not read by checkout; the order composer, the only
+`medicalHistory` consumer, is not on this page); wrong `patientId` → 404 on both; `/api/analytics/summary` byte-identical;
+e2e `dispense-checkout-ui` + `dispense-checkout` (fake checkout, payment, stock deduct once, idempotent retry, void, concurrency) 8 pass / 1 skipped on the patched build.
