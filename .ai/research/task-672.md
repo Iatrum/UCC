@@ -27,3 +27,26 @@ Each cell shows **usable min / median / max · median LCP / document TTFB**, in 
 | Analytics | 1281/1351/1450 · 688/16 | 1060/1090/1473 · 188/17 | 1055/1169/1662 · 160/38 |
 
 Treatment click to editable search, excluding profile navigation, had medians of 128, 272, 210 ms in the same order.
+
+## Task 673 independent re-run
+Same harness (`bench.cjs`, with `UCC_VERIFY_ON_DEMAND=1`), fresh `next build --webpack` + `next start` of `origin/dev` `12df445` and of this branch, fake-data dev Medplum, 2 passes each (warm-up + 5 runs). Cells are median usable ms (pass 1 / pass 2) · median LCP / document TTFB (pass 1).
+
+| Route | dev `12df445` | this branch |
+| --- | ---: | ---: |
+| Dashboard and queue | 597 / 562 · 88/22 | 492 / 511 · 216/111 |
+| Patients list | 306 / 287 | 313 / 307 |
+| Patient profile | 434 / 428 | 701 / 470 (outlier runs up to 1135) |
+| Profile to Treatment search (composer) | 630 / 758 | 643 / 704 |
+| Treatment click to editable search | 245 / 220 | 176 / 259 |
+| Billing | 433 / 427 | 510 / 485 |
+| Checkout | 998 / 514 | 1020 / 1014 |
+| Inventory | 372 / 390 | 380 / 365 |
+| Analytics | 1048 / 1018 | 1071 / 1101 |
+
+Findings:
+- The stored raw data (`metrics-*672.jsonl`) reproduces the earlier table exactly, but a fresh run reproduces only part of it.
+- Dashboard usable time is about 50-100 ms faster than dev (reproduced in both passes). LCP and TTFB are worse than dev (about 220 vs 90 ms LCP, about 100 vs 25 ms TTFB), as already disclosed.
+- Composer and profile show no reproducible gain over dev; Treatment click to search is within noise.
+- Billing, Checkout, Inventory and Analytics have no code changes in this diff. Their earlier "gains" over dev (e.g. Inventory 296 vs 396 ms) did not reproduce and were run-to-run noise. They are not regressed either (all within noise of dev).
+- Catalog requests: the harness asserted none on profile load and all five after Treatment opens (exit 0 on both passes).
+- `tsc --noEmit` clean; 72 focused unit tests pass.
