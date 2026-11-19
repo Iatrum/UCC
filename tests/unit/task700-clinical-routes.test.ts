@@ -114,7 +114,11 @@ describe('POST /api/patients registration', () => {
 
     expect(response.status).toBe(200);
     const result = await response.json();
-    expect(result).toMatchObject({ success: true, patientId: 'patient-1' });
+    expect(result).toEqual({
+      success: true,
+      patientId: 'patient-1',
+      message: 'Patient saved to FHIR successfully',
+    });
     expect(medplum.creates('Patient')).toEqual([
       expect.objectContaining({
         id: result.patientId,
@@ -140,6 +144,10 @@ describe('queue check-in and triage routes', () => {
     const [encounter] = medplum.creates('Encounter');
     expect(encounter).toMatchObject({ status: 'arrived', subject: { reference: `Patient/${patientId}` } });
     const encounterId = encounter.id!;
+    const foreignVisit = { ...encounter, id: 'fake-foreign-visit', status: 'finished', identifier: [foreign] };
+    medplum.db.set(`Encounter/${foreignVisit.id}`, foreignVisit);
+    const search = spyOn(medplum.client, 'searchResources');
+    spies.push(search);
 
     const triaged = await triage.POST(request('triage', { patientId, triageLevel: 3, chiefComplaint: 'Fake complaint' }));
     expect(triaged.status).toBe(200);
@@ -151,6 +159,14 @@ describe('queue check-in and triage routes', () => {
       { url: 'triageBy', valueString: 'Fake Triage Staff' },
       { url: 'isTriaged', valueBoolean: true },
     ]));
+    expect(medplum.creates('Observation')).toEqual([
+      expect.objectContaining({
+        identifier: [own],
+        subject: { reference: `Patient/${patientId}` },
+        encounter: { reference: `Encounter/${encounterId}` },
+        valueString: 'Fake complaint',
+      }),
+    ]);
 
     const update = await queue.PATCH(request('queue', { patientId, status: 'in_consultation' }, 'PATCH'));
     expect(update.status).toBe(200);
@@ -166,6 +182,15 @@ describe('queue check-in and triage routes', () => {
     const clearedVisit = await medplum.client.readResource('Encounter', encounterId);
     expect(clearedVisit.status).toBe('finished');
     expect(queueExtension(clearedVisit).map(({ url }) => url)).not.toContain('queueStatus');
+    expect(medplum.updates('Encounter').map(({ id }) => id)).toEqual([
+      encounterId, encounterId, encounterId,
+    ]);
+    const encounterSearches = search.mock.calls.filter(([type]) => type === 'Encounter');
+    expect(encounterSearches).toHaveLength(3);
+    for (const [, params] of encounterSearches) {
+      expect(params).toMatchObject({ subject: `Patient/${patientId}`, identifier: `clinic|${CLINIC_A}` });
+    }
+    expect(medplum.stored('Encounter', foreignVisit.id)).toEqual(foreignVisit);
   });
 
   it('rejects check-in to another clinic’s patient even if the body names that clinic', async () => {
@@ -185,15 +210,29 @@ describe('queue check-in and triage routes', () => {
     expect(medplum.writes).toEqual([]);
   });
 
-  it('rejects an unknown queue status and leaves the active visit untouched', async () => {
+  it('rejects triage for a foreign patient without writing an encounter or observation', async () => {
+    const response = await triage.POST(request('triage', {
+      patientId: foreignPatientId, triageLevel: 3, chiefComplaint: 'Fake complaint',
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Patient not found' });
+    expect(medplum.writes).toEqual([]);
+  });
+
+  it.each([
+    ['an unknown string', 'unknown-status'],
+    ['a boolean', false],
+  ] as const)('rejects %s as a queue status without changing the active visit', async (_case, status) => {
     const checkIn = await queue.POST(request('queue', { patientId }));
     expect(checkIn.status).toBe(200);
     const [encounter] = medplum.creates('Encounter');
     medplum.writes.length = 0;
 
-    const response = await queue.PATCH(request('queue', { patientId, status: 'unknown-status' }, 'PATCH'));
+    const response = await queue.PATCH(request('queue', { patientId, status }, 'PATCH'));
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ success: false, error: 'Invalid queue status' });
     expect(medplum.writes).toEqual([]);
     expect(medplum.stored('Encounter', encounter.id!)).toEqual(encounter);
   });
@@ -226,6 +265,8 @@ describe('appointment booking and cancellation routes', () => {
         ]),
       }),
     ]);
+    const [reminder] = medplum.creates('Communication');
+    expect(reminder.identifier.filter(({ system }: { system: string }) => system === 'clinic')).toEqual([own]);
   });
 
   it('returns a successful booking when reminder persistence fails', async () => {
