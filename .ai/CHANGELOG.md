@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-19 — Task 673: independent re-run of the Task 672 benchmark
+A fresh re-run confirms a modest dashboard speed-up and no slowdown for billing, checkout, inventory or analytics. The earlier large gains on those pages were noise and are corrected in the PR. No code change.
+
 ## 2026-11-19 — Task 672: dashboard title paints with the loading shell
 The dashboard title and description now show immediately while the queue loads, so the page looks ready sooner. No behaviour change.
 
