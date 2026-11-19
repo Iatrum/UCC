@@ -689,7 +689,7 @@ export default function PatientProfileWorkspace({
   return (
     <>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-3">
-        <TabsList className="w-auto">
+        <TabsList className="w-auto max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
           <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
           <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
@@ -827,13 +827,13 @@ export default function PatientProfileWorkspace({
                         )}
                       </div>
                       <div className="hidden overflow-x-auto md:block">
-                        <Table className="min-w-[860px]">
+                        <Table className="min-w-[760px]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
-                            <TableHead className="min-w-[200px]">Complaint</TableHead>
-                            <TableHead className="min-w-[200px]">Diagnosis</TableHead>
+                            <TableHead className="min-w-[160px]">Complaint</TableHead>
+                            <TableHead className="min-w-[160px]">Diagnosis</TableHead>
                             <TableHead>Prescriptions</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
@@ -856,8 +856,8 @@ export default function PatientProfileWorkspace({
                               >
                                 <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
                                 <TableCell>Consultation</TableCell>
-                                <TableCell className="min-w-[200px] max-w-[260px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
-                                <TableCell className="min-w-[200px] max-w-[260px] truncate">{consultation.diagnosis}</TableCell>
+                                <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
+                                <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
                                 <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
