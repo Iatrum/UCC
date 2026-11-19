@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 import { useRouter } from "next/navigation";
@@ -219,8 +219,10 @@ export default function PatientProfileWorkspace({
     catalogRequester.current ??= createComposerCatalogRequester(
       () => loadComposerCatalogs({ getProcedures, getMedications, getClinicalCatalog }),
       (loaded) => {
-        setCatalogs(loaded);
-        setCatalogsSettled(true);
+        startTransition(() => {
+          setCatalogs(loaded);
+          setCatalogsSettled(true);
+        });
       },
       (error) => {
         console.error("Failed to load treatment catalogs:", error);
