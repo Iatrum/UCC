@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { fetchDocumentTemplate } from "../../lib/document-template-client";
 import { fetchWithTimeout } from "../../lib/fetch-with-timeout";
 import { describeFetchError, resolveLoadView, showStaleBanner } from "../../lib/load-state";
 
@@ -19,4 +20,26 @@ describe("Task 686 slow-network helpers used by patients list / analytics / docu
     expect(showStaleBanner({ error: "e", hasData: true })).toBe(true);
     expect(resolveLoadView({ loading: false, error: "e", hasData: false })).toBe("error");
   });
+});
+
+describe("document template request failure and retry", () => {
+  for (const kind of ["mc", "time-chit", "referral"] as const) {
+    it(`rejects an HTTP failure and returns the clinic template on retry for ${kind}`, async () => {
+      const html = "<p>Clinic template</p>";
+      const fetchSpy = spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response("Unavailable", { status: 503 }))
+        .mockResolvedValueOnce(Response.json({ html }));
+
+      try {
+        await expect(fetchDocumentTemplate(kind)).rejects.toThrow("Could not load the document template.");
+        await expect(fetchDocumentTemplate(kind)).resolves.toBe(html);
+        expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
+          `/api/document-templates?type=${kind}`,
+          `/api/document-templates?type=${kind}`,
+        ]);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+  }
 });

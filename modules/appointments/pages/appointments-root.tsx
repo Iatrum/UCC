@@ -181,12 +181,6 @@ export default function AppointmentsRootPage() {
         </Card>
       </section>
 
-      {error ? (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
-
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
@@ -238,10 +232,11 @@ export default function AppointmentsRootPage() {
           )}
         </div>
 
-        {view === "list" ? (
+        {error || view === "list" ? (
           <UpcomingAppointmentsTable
-            appointments={upcomingAppointments}
+            appointments={error ? [] : upcomingAppointments}
             loading={loading}
+            error={error}
             onRefresh={loadAppointments}
           />
         ) : (

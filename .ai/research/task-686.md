@@ -48,3 +48,11 @@ Differences are within run-to-run noise (spread of runs ~±100–300 ms); no reg
 - 2 unit tests in `clinic scoping on checkout and invoice reads` fail on origin/dev too (pre-existing, unrelated).
 
 Verification: `tsc -p tsconfig.lint.json` clean, ESLint on changed files clean, `bun test tests/unit` 1037 pass / 2 pre-existing fail. Dev server killed (port 3686 free).
+
+## Task 698 follow-up
+
+The signed-document and legacy-referral viewers shared an HTTP error that substituted a built-in template. Both now pass non-2xx responses to the existing preview error and Retry path. Successful responses still use the template supplied by the clinic-scoped API for the requested document kind.
+
+Appointments now uses its existing error card and Retry for a failed load in either view. The error card replaces the list or calendar while the error is active.
+
+References: [Fetch status](https://fetch.spec.whatwg.org/#ok-status), [Next.js App Router error handling](https://nextjs.org/docs/app/getting-started/error-handling), [React conditional rendering](https://react.dev/learn/conditional-rendering), [Medplum 5.2.8](https://github.com/medplum/medplum/releases/tag/v5.2.8), [FHIR R4 REST API](https://www.hl7.org/fhir/R4/http.html), [DICOM PS3.18](https://dicom.nema.org/medical/dicom/current/output/html/part18.html).

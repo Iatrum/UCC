@@ -2,6 +2,7 @@
 
 import { fillDocumentTemplate, mcDiagnosisVisible, signedDocumentKind as kindFromProcedure, SIGNED_DOCUMENT_STATUS_VOIDED } from "@/lib/clinical-documents";
 import { calcAge, clinicLogoHtml, multilineToHtml, renderDocumentHtml, withPrintCss } from "@/lib/document-render";
+import { fetchDocumentTemplate } from "@/lib/document-template-client";
 import { formatClinicDate, mcDaysLabel } from "@/lib/clinic-dates";
 import { printHtml } from "@/lib/print-html";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
@@ -41,7 +42,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { getPatientReferrals, deleteReferral, type Referral } from "@/lib/fhir/referral-client";
 import { fetchOrganizationDetails, resolveOrganizationDetails, type OrganizationDetails } from "@/lib/org";
-import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import type { ProcedureRecord } from "@/lib/models";
 
 const formatDateLabel = (value: Date | string | null | undefined): string | null => formatClinicDate(value) || null;
@@ -113,12 +113,10 @@ function getSignedDocuments(consultations: ReferralMCSectionProps["consultations
   );
 }
 
-const TEMPLATE_FETCH_TIMEOUT_MS = 15_000;
-
 // Task 687: the shared fetchOrganizationDetails() swallows failures into null (a clinic may legitimately have no
 // organization). For a printable document a failed/timed-out read must surface error + Retry, not a blank letterhead.
 async function fetchOrganizationStrict(): Promise<OrganizationDetails | null> {
-  const res = await fetchWithTimeout("/api/organization", { cache: "no-store" }, TEMPLATE_FETCH_TIMEOUT_MS);
+  const res = await fetchWithTimeout("/api/organization", { cache: "no-store" }, 15_000);
   const data = await res.json();
   if (!res.ok || !data?.success) throw new Error("Could not load clinic details for the document.");
   return data.organization ?? null;
@@ -262,15 +260,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   }
 
   async function buildDocumentHtml(doc: SignedDocument): Promise<string> {
-    const res = await fetchWithTimeout(`/api/document-templates?type=${doc.kind}`, {}, TEMPLATE_FETCH_TIMEOUT_MS);
-    let html: string;
-    if (res.ok) {
-      html = (await res.json()).html;
-    } else {
-      const body = await res.json().catch(() => null);
-      console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
-      html = doc.kind === "time-chit" ? DEFAULT_TIME_CHIT_TEMPLATE : doc.kind === "mc" ? DEFAULT_MC_TEMPLATE : DEFAULT_REFERRAL_TEMPLATE;
-    }
+    const html = await fetchDocumentTemplate(doc.kind);
     // doc.date is the consultation (issue) date: a reprint never shows today's date.
     return renderDocumentHtml({
       kind: doc.kind,
@@ -283,15 +273,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   }
 
   async function buildLegacyReferralHtml(r: Referral): Promise<string> {
-    const res = await fetchWithTimeout("/api/document-templates?type=referral", {}, TEMPLATE_FETCH_TIMEOUT_MS);
-    let html: string;
-    if (res.ok) {
-      html = (await res.json()).html;
-    } else {
-      const body = await res.json().catch(() => null);
-      console.warn("Template fetch failed:", body?.error ?? `HTTP ${res.status}`, "— using default");
-      html = DEFAULT_REFERRAL_TEMPLATE;
-    }
+    const html = await fetchDocumentTemplate("referral");
     const org = await resolveOrganizationDetails(organization, fetchOrganizationStrict);
     const toLine = [r.department, r.facility].filter(Boolean).join(", ") || "";
     return withPrintCss(fillDocumentTemplate(html, {
