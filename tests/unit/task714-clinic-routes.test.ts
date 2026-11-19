@@ -156,6 +156,38 @@ describe("clinic document templates and follow-up settings", () => {
     expect((await settings.PUT(request(settingsPath, "PUT", { deliveryMode: "manual" }))).status).toBe(401);
     expect(medplum.writes).toEqual([]);
   });
+
+  test("clinic settings reject an Organization tagged for two clinics", async () => {
+    const org = medplum.stored("Organization", `org-${CLINIC_A}`)!;
+    org.identifier = [...tagged(CLINIC_A), ...tagged(CLINIC_B)];
+    org.extension.push({ url: reviewUrl, valueString: "Ambiguous review" });
+
+    const template = await templates.GET(request(`${templatePath}?type=mc`));
+    expect(await template.json()).toEqual({ html: getDefaultTemplate("mc") });
+    const followUp = await settings.GET(request(settingsPath));
+    expect((await followUp.json()).settings.reviewTemplate).not.toBe("Ambiguous review");
+
+    admin = true;
+    expect((await templates.POST(request(templatePath, "POST", { type: "mc", html: "<p>Fake</p>" }))).status).toBe(500);
+    expect((await settings.PUT(request(settingsPath, "PUT", { deliveryMode: "manual" }))).status).toBe(500);
+    expect(medplum.writes).toEqual([]);
+  });
+
+  test("saving manual delivery overrides a Twilio environment default for that clinic", async () => {
+    const original = env.FOLLOW_UP_DELIVERY_MODE;
+    env.FOLLOW_UP_DELIVERY_MODE = "twilio";
+    try {
+      admin = true;
+      const saved = await settings.PUT(request(settingsPath, "PUT", { deliveryMode: "manual" }));
+      expect(saved.status).toBe(200);
+      expect((await saved.json()).settings.deliveryMode).toBe("manual");
+      expect((await (await settings.GET(request(settingsPath))).json()).settings.deliveryMode).toBe("manual");
+      clinicId = CLINIC_B;
+      expect((await (await settings.GET(request(settingsPath))).json()).settings.deliveryMode).toBe("twilio");
+    } finally {
+      env.FOLLOW_UP_DELIVERY_MODE = original;
+    }
+  });
 });
 
 test("a saved clinic toggle gates the X-ray device route and leaves Time Chit available", async () => {
@@ -288,7 +320,7 @@ describe("follow-up send and scheduling", () => {
 
   test("unknown actions return 400 without changing the record or sending", async () => {
     const { id } = await schedule();
-    expect((await patch(id, { action: "unknown" })).status).toBe(400);
+    expect((await patch(id, { action: "unknown", status: "completed" })).status).toBe(400);
     expect(medplum.updates()).toEqual([]);
     expect(send).not.toHaveBeenCalled();
   });
@@ -299,18 +331,24 @@ describe("follow-up send and scheduling", () => {
     const future = await schedule();
     const stopped = await schedule();
     const completed = await schedule();
+    const ambiguous = await schedule();
+    medplum.stored("Communication", ambiguous.id)!.identifier = [...tagged(CLINIC_A), ...tagged(CLINIC_B)];
     medplum.stored("Communication", stopped.id)!.status = "stopped";
     medplum.stored("Communication", completed.id)!.status = "completed";
     clinicId = CLINIC_B;
     const foreign = await schedule();
     clinicId = CLINIC_A;
 
-    for (const id of [eligible.id, manual.id, foreign.id, stopped.id, completed.id]) {
+    for (const id of [eligible.id, manual.id, foreign.id, stopped.id, completed.id, ambiguous.id]) {
       const record = medplum.stored("Communication", id)!;
       const date = (record.extension as Extension[]).find((ext) => ext.valueDateTime === payload.dueDate)!;
       date.valueDateTime = "2000-01-01T00:00:00.000Z";
     }
 
+    const listed = await followUps.GET(request(path));
+    expect((await listed.json()).followUps.map((row: { id: string }) => row.id)).toEqual([
+      eligible.id, manual.id, future.id, stopped.id, completed.id,
+    ]);
     const process = () => due.POST(request(`${path}/process-due`, "POST"));
     const sent = await process();
     expect(sent.status).toBe(200);
