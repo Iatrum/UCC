@@ -20,6 +20,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
   const rows: Row[] = [];
   let nn = 0, page: Page;
   const issues: string[] = [];
+  let reportedIssueCount = 0;
   let allowClientValidation400 = false;
   let orgId = '', clinicId = '', userId = '';
   const orgName = `e2e-${RUN}-organisation`, clinicName = `e2e-${RUN}-clinic`;
@@ -35,11 +36,11 @@ test('full local admin audit (one login)', async ({ browser }) => {
   };
   const step = async (name: string, cause: string, fn: () => Promise<void>, absent = '') => {
     await test.step(name, async () => {
-      const start = issues.length;
       let error = '';
       try { await fn(); } catch (e) { error = e instanceof Error ? e.message : String(e); }
       const evidence = page ? await shot(name).catch(() => 'screenshot unavailable') : 'no browser';
-      const errors = issues.slice(start);
+      const errors = issues.slice(reportedIssueCount);
+      reportedIssueCount = issues.length;
       const detail = [error, ...errors].filter(Boolean).join('; ');
       rows.push({ function: name, result: detail ? 'BROKEN' : absent ? 'NOT PRESENT' : 'WORKS', evidence: `${evidence}${detail ? ` — ${detail}` : absent ? ` — ${absent}` : ''}`, cause: detail || absent ? cause : '—' });
       expect.soft(detail, name).toBe('');
@@ -54,7 +55,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
   const visit = async (path: string) => {
     const r = await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     if (!r || r.status() >= 400) throw new Error(`Navigation HTTP ${r?.status()}`);
-    expect(page.url()).toContain('/admin');
+    await expect(page).toHaveURL(new URL(path, app.origin).href);
     const main = page.getByRole('main');
     await expect(main).toBeVisible();
     await expect(main.getByRole('heading', { level: 1 }).or(main.getByText('Create Medplum ClientApplication', { exact: true }))).toBeVisible();
@@ -279,6 +280,7 @@ test('full local admin audit (one login)', async ({ browser }) => {
         if (url) await api.delete(url, { data }).catch(() => {});
       }
       await page.context().close();
+      expect.soft(issues.slice(reportedIssueCount), 'browser errors after the final audit step').toEqual([]);
     }
     const escape = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 5000);
     fs.writeFileSync(`${OUT}/FINDINGS.md`, `# Local admin E2E — RUN ${RUN}\n\nOne isolated admin login; no retries, no doctor global setup, no external navigation. Screenshots relative to this report.\n\n| Function | Result | Evidence | Suspected root cause file:line |\n|---|---|---|---|\n${rows.map(r => `| ${escape(r.function)} | ${r.result} | ${escape(r.evidence)} | ${escape(r.cause)} |`).join('\n')}\n\nSummary: ${rows.filter(r => r.result === 'WORKS').length} WORKS, ${rows.filter(r => r.result === 'BROKEN').length} BROKEN, ${rows.filter(r => r.result === 'NOT PRESENT').length} NOT PRESENT/explicit coverage limitations. Client success cannot be verified within the one-login constraint. Full gate results are recorded separately in the task research notes.\n`);
