@@ -51,7 +51,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | C1 | Clinic AccessPolicy topology (non-superAdmin clinic project) on **dev** | DONE | `.ai/REVIEW-task5.md`, D47, `.ai/progress-task5.md` |
 | C2 | Verify read-only whether the production clinic project is superAdmin (owner Q4 unknown) | OWNER | Plan Part 1/open question 4; a superAdmin project bypasses the policy |
 | C3 | Live disposable fake-session revocation rehearsal (>100 Logins, 2 pages) | CODE | Needs a newly supplied dev super-admin login from Hidayat first; runbook "OUTSTANDING live" |
-| C4 | Exact-production-version rehearsal and current-head full browser gate | CODE | Runbook release hold; run on dev with fake data |
+| C4 | Exact-production-version rehearsal and current-head full browser gate | CODE (release hold) | Task 668 ran on fake-data dev. Main `7b024d1` was blocked at staff registration by the dev AccessPolicy. Dev `12df445` gate failed (62 passed, 22 failed, 12 skipped). Production Medplum version parity remains unverified. [Task 668 evidence](research/task-668.md) |
 | C5 | Deployment recovery card (previous artifact, restorer, tested DB restore, writer stop/reopen) | OWNER | Runbook release hold; cannot be invented by an agent |
 | C6 | Production cutover: operator project, `superAdmin=false`, policies, session revocation | OWNER | `.ai/RUNBOOK-task5-production-migration.md`; maintenance window, backups, checksum |
 | C7 | Firestore draft migration, if still pending | OWNER | `.ai/RUNBOOK-firestore-draft-migration.md` |
