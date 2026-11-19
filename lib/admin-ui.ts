@@ -28,12 +28,12 @@ export function matchesSearch(query: string | undefined | null, fields: Array<st
 
 export function visibleClinicAssignments(
   clinics: readonly ClinicSummary[],
-  selectedIds: ReadonlySet<string>,
+  assignedIds: ReadonlySet<string>,
   query: string,
 ): ClinicSummary[] {
   return clinics
     .filter((clinic) => matchesSearch(query, [clinic.name, clinic.subdomain]))
-    .sort((a, b) => Number(selectedIds.has(b.id)) - Number(selectedIds.has(a.id)));
+    .sort((a, b) => Number(assignedIds.has(b.id)) - Number(assignedIds.has(a.id)));
 }
 
 export function userEditPayload(

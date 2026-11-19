@@ -57,7 +57,8 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
     new Set(user.organizationIds)
   );
   const [clinicSearch, setClinicSearch] = useState("");
-  const visibleClinics = visibleClinicAssignments(clinics, selectedOrgIds, clinicSearch);
+  // Order by saved assignments so toggling a checkbox keeps its place in the tab sequence.
+  const visibleClinics = visibleClinicAssignments(clinics, new Set(user.organizationIds), clinicSearch);
 
   const handleChange =
     (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -279,9 +280,7 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
             </div>
 
             <fieldset className="min-w-0 space-y-2">
-              <legend className="mb-2 text-sm font-medium">
-                Clinic Assignments (<span aria-live="polite">{selectedOrgIds.size} selected</span>)
-              </legend>
+              <legend className="mb-2 text-sm font-medium">Clinic Assignments</legend>
               {clinics.length > 0 && (
                 <Input
                   type="search"
@@ -296,11 +295,15 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
                   }}
                 />
               )}
-              {visibleClinics.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {clinics.length === 0 ? "No clinics available." : "No clinics match your search."}
-                </p>
-              ) : (
+              <p role="status" className="text-sm text-muted-foreground">
+                {selectedOrgIds.size} selected
+                {clinics.length === 0
+                  ? " · No clinics available."
+                  : visibleClinics.length === 0
+                    ? " · No clinics match your search."
+                    : clinicSearch.trim() && ` · ${visibleClinics.length} matching ${visibleClinics.length === 1 ? "clinic" : "clinics"}`}
+              </p>
+              {visibleClinics.length > 0 && (
                 <div className="max-h-64 space-y-2 overflow-y-auto border rounded-md p-3">
                   {visibleClinics.map((clinic) => {
                     const checked = selectedOrgIds.has(clinic.id);
@@ -315,7 +318,7 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
                             toggleOrg(clinic.id, v === true)
                           }
                         />
-                        <span className="flex-1 text-sm">
+                        <span className="min-w-0 flex-1 wrap-anywhere text-sm">
                           {clinic.name}{" "}
                           <span className="text-muted-foreground text-xs">
                             ({clinic.subdomain})
