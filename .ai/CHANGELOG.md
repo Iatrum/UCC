@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-19 — Task 657: Time Chit walked as a non-admin staff user (A7 done)
+New Playwright walk on dev (fake data): a plain staff user issues a Time Chit, the preview/print shows the right patient, letterhead, date and time range, and a signed Time Chit can't be edited or deleted (409). No app code changed. The walk also showed that the letterhead comes from the first parent organisation, not the signed-in clinic; logged in BACKLOG for a decision. Notes: `.ai/research/task-657.md`.
+
 ## 2026-11-18 — Task 570: read-only exposure audit kit for the lockdown runbook (plan 385d, part 2)
 New `bun run staging:audit` checks pasted command output (`docker ps`, `ss`, outside `nmap`) and compose files for anything published beyond loopback / 80 / 443, Docker socket mounts, host networking, `:latest` images and Traefik dashboard flags. It only reads text; it runs nothing and touches no server. The repo's own staging, rehearsal and PACS compose files pass. Step 385e (second VPS) is a decision for Hidayat, so no code was written for it. Unit-tested; never run against the real VPS.
 

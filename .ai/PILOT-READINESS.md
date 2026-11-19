@@ -26,7 +26,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A4 | `/api/labs/receive`: 400 on missing status, 404 on unknown/foreign order, no writes | DONE | Tasks 566/572; PILOT-CHECK #6 |
 | A5 | Admin/login redirect loop, rate-limit message, stock 500 | DONE | Task 412; PILOT-CHECK #9 |
 | A6 | Time Chit core, shares template with MC | DONE | D-527, Task 549 / #307 |
-| A7 | Time Chit walked once as a staff user (only unit/e2e specs so far) | CODE | Add it to a Playwright staff walk on dev (fake data); `tests/unit/time-chit.test.ts` exists |
+| A7 | Time Chit walked once as a staff user (only unit/e2e specs so far) | DONE | Task 657: `e2e/tests/time-chit-staff.spec.ts` passed on dev as a non-admin invited staff user (issue, composer + Documents preview/print show patient, NRIC, letterhead, 14 Nov 2026, 09:15-11:45; signed edit/delete -> 409, resend -> 200). Notes `.ai/research/task-657.md`, screenshot `.ai/evidence/task-657-time-chit-staff-preview.png`. Open finding: letterhead = first parent org, not the caller's clinic (see notes; BACKLOG) |
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
