@@ -63,7 +63,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | D1 | Staging compose, env template, scripts (385a); preflight + seed (385b); gate adapter (385c) | DONE | `infra/staging/`, `scripts/staging/`, `tests/unit/staging-*.test.ts` |
 | D2 | Allowlist proxy rehearsed on loopback (`PROBE OK`, Traefik 3.5.0, Medplum 5.2.15) | DONE | Task 578, `.ai/reviews/task-579.md` |
 | D3 | Staging gate exception list (fails on any unlisted skip) | DONE | Task 607, `e2e/staging-exceptions.json` |
-| D4 | Rehearse a **successful** user invite through the allowlisted proxy (only the 401 route check so far) | CODE | Loopback rehearsal, fake user; plan 385d "Not rehearsed" |
+| D4 | Successful user invite through the allowlisted proxy | DONE (dev, loopback) | Task 663: `bun run staging:invite-rehearsal` = `INVITE REHEARSAL OK` (invite 200, invited user logs in, other admin routes 404, duplicate 409). `.ai/research/task-663.md`. Still repeat once on real staging (D5) |
 | D5 | Bring staging up once on the VPS, seed, run `check-staging.sh`, record sign-off in STATE.md | OWNER | Touches the shared VPS; follow `.ai/PLAN-staging-promotion-checklist.md`. Never run end to end yet |
 | D6 | Confirm Hostinger console + snapshot restore exist (owner Q6 unknown) | OWNER | Required before any firewall change |
 | D7 | Host inventory + audit kit run on the VPS and from outside; fix what it flags | OWNER | Plan 1.3; `bun run staging:audit` (`scripts/staging/audit-exposure.ts`), never run on the real host |
