@@ -18,6 +18,7 @@ import BillingTable from "@/components/billing/billing-table";
 import type { BillableConsultation } from "@/lib/types";
 import { useMedplumAuth } from "@/lib/auth-medplum";
 import { loadQueueOnce, type QueuePatient } from "@/lib/dashboard/queue-load";
+import { DashboardHeader } from "./dashboard-header";
 import QueueState from "@/components/dashboard/queue-state";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { describeFetchError } from "@/lib/load-state";
@@ -166,14 +167,7 @@ export default function DashboardClient({ initialQueue }: { initialQueue: QueueP
 
   return (
     <div className="space-y-6 pb-10">
-      <div className="space-y-2">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Live clinic queue, upcoming appointments, and documents ready for billing.
-          </p>
-        </div>
-      </div>
+      <DashboardHeader />
 
       {error ? (
         <div role="status" aria-live="polite" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
