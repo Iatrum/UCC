@@ -1,4 +1,6 @@
-/** Pure helpers for the admin screens (Task 510). */
+import type { ClinicSummary } from "@/lib/fhir/admin-service";
+
+/** Pure helpers for the admin screens. */
 
 /** Trimmed env value, or null when unset/blank ("not configured"). */
 export function configuredValue(value: string | undefined | null): string | null {
@@ -22,6 +24,23 @@ export function matchesSearch(query: string | undefined | null, fields: Array<st
   const q = (query ?? "").trim().toLowerCase();
   if (!q) return true;
   return fields.some((f) => (f ?? "").toLowerCase().includes(q));
+}
+
+export function visibleClinicAssignments(
+  clinics: readonly ClinicSummary[],
+  selectedIds: ReadonlySet<string>,
+  query: string,
+): ClinicSummary[] {
+  return clinics
+    .filter((clinic) => matchesSearch(query, [clinic.name, clinic.subdomain]))
+    .sort((a, b) => Number(selectedIds.has(b.id)) - Number(selectedIds.has(a.id)));
+}
+
+export function userEditPayload(
+  { firstName, lastName }: { firstName: string; lastName: string },
+  selectedIds: ReadonlySet<string>,
+) {
+  return { firstName, lastName, organizationIds: Array.from(selectedIds) };
 }
 
 export function firstParam(value: string | string[] | undefined): string {
