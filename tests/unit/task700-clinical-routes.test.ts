@@ -103,6 +103,47 @@ describe('POST /api/patients registration', () => {
     expect(medplum.writes).toEqual([]);
   });
 
+  it.each([
+    ['managingOrganization', { managingOrganization: { reference: `Organization/${CLINIC_A}` } }],
+    ['account compartment', { meta: { compartment: [{ reference: `HealthcareService/${CLINIC_A}` }] } }],
+  ])('returns a conflict for a legacy patient owned by this clinic via %s without a clinic tag (Task 702)', async (_label, ownership) => {
+    medplum.db.set('Patient/fake-legacy-patient', {
+      resourceType: 'Patient', id: 'fake-legacy-patient',
+      identifier: [{ system: 'ic', value: registration.nric }],
+      name: [{ text: 'Fake Legacy Patient' }],
+      ...ownership,
+    });
+
+    const response = await patients.POST(request('patients', registration));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'DUPLICATE_NRIC', existingPatientId: 'fake-legacy-patient' });
+    expect(medplum.writes).toEqual([]);
+  });
+
+  it('scopes the duplicate lookup to the clinic at the source so foreign patients are never read (Task 702)', async () => {
+    medplum.db.set(`Patient/${foreignPatientId}`, {
+      resourceType: 'Patient', id: foreignPatientId,
+      identifier: [foreign, { system: 'nric', value: registration.nric }],
+      managingOrganization: { reference: `Organization/org-${CLINIC_B}` },
+    });
+
+    const response = await patients.POST(request('patients', registration));
+
+    expect(response.status).toBe(200);
+    const patientSearches = medplum.searches.filter((s) => s.type === 'Patient');
+    expect(patientSearches.length).toBeGreaterThan(0);
+    for (const search of patientSearches) {
+      const keys = search.params.map(([k]) => k);
+      const scoped =
+        search.params.some(([k, v]) => k === 'identifier' && v === `clinic|${CLINIC_A}`) ||
+        keys.includes('organization') ||
+        keys.includes('_compartment');
+      expect(scoped).toBe(true);
+      expect(search.params.flat().join(' ')).not.toContain(CLINIC_B);
+    }
+  });
+
   it('registers in the authenticated clinic when only another clinic has the same identifier', async () => {
     const foreignPatient = {
       resourceType: 'Patient', id: foreignPatientId,
