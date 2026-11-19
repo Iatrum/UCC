@@ -56,19 +56,29 @@ async function findClinicOrganization(
   medplum: MedplumClient,
   clinicId: string
 ): Promise<Organization | undefined> {
+  // The clinic id is usually the subdomain slug (direct read 404s), so the identifier search is the
+  // common path. Start both together instead of waiting for the 404 first (Task 593); the direct read
+  // still wins when it succeeds, and a failing search is only surfaced when the direct read did not.
+  const search = medplum.searchOne("Organization", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }) as Promise<Organization | undefined>;
+  const searchSettled = search.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
   try {
     const direct = await medplum.readResource("Organization", clinicId);
     if (direct.id) {
       return direct;
     }
   } catch {
-    // The clinic id is usually the subdomain slug, not an Organization id.
+    // Not an Organization id.
   }
 
-  return await medplum.searchOne("Organization", {
-    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
-    _count: "1",
-  }) as Organization | undefined;
+  const result = await searchSettled;
+  if (!result.ok) throw result.error;
+  return result.value;
 }
 
 async function findClinicAccount(

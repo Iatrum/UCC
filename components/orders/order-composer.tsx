@@ -1,5 +1,6 @@
 "use client";
 
+import { getCatalogSearchState } from "@/lib/orders/catalog-search-state";
 import { mergeUnsavedEntries, planWriteOutcome } from "@/lib/plan-save-state";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 
@@ -31,6 +32,7 @@ import {
 } from "@/lib/treatment-plan";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
 import { timeChitHours, timeChitError } from "@/lib/time-chit";
+import { buildSignedDocumentNote, documentKind } from "@/lib/orders/signed-document-note";
 import { buildReferralBody, mcDiagnosisVisible } from "@/lib/clinical-documents";
 import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import { formatClinicDate, clinicToday } from "@/lib/clinic-dates";
@@ -93,13 +95,6 @@ function kindLabelForTab(tab: TreatmentPlanTab): string {
   }
 }
 
-function documentKind(item: CatalogItem): "mc" | "referral" | "time-chit" | null {
-  if (item.meta?.kind === "time-chit" || item.id === "letter-time-chit") return "time-chit";
-  if (item.meta?.kind === "mc" || item.id === "letter-mc") return "mc";
-  if (item.meta?.kind === "referral" || item.id === "letter-referral") return "referral";
-  return null;
-}
-
 function documentDisplayName(item: CatalogItem): string {
   const kind = documentKind(item);
   if (kind === "time-chit") return "TIME CHIT";
@@ -151,31 +146,7 @@ function buildReferralDefaultContent({
   });
 }
 
-export function buildSignedDocumentNote(entry: TreatmentPlanEntry): string | undefined {
-  const kind = documentKind({ id: entry.catalogRef || "", name: entry.name, meta: entry.meta });
-  if (!kind) return entry.instruction;
-
-  return JSON.stringify({
-    kind,
-    status: entry.meta?.documentStatus || "completed",
-    title: entry.name,
-    instruction: entry.instruction || "",
-    tcDate: entry.meta?.tcDate || "", tcTimeIn: entry.meta?.tcTimeIn || "",
-    tcTimeOut: entry.meta?.tcTimeOut || "", tcHours: entry.meta?.tcHours || "", tcDoctorName: entry.meta?.tcDoctorName || "", tcDoctorMmc: entry.meta?.tcDoctorMmc || "",
-    mcDays: entry.meta?.mcDays || "",
-    mcDiagnosis: entry.meta?.mcDiagnosis || "",
-    mcStartDate: entry.meta?.mcStartDate || "",
-    mcDoctorName: entry.meta?.mcDoctorName || "",
-    mcDoctorMmc: entry.meta?.mcDoctorMmc || "",
-    mcIncludeDiagnosis: entry.meta?.mcIncludeDiagnosis || "",
-    referralDoctorName: entry.meta?.referralDoctorName || "",
-    referralDoctorMmc: entry.meta?.referralDoctorMmc || "",
-    referralTo: entry.meta?.referralTo || "",
-    referralDiagnosis: entry.meta?.referralDiagnosis || "",
-    referralContent: entry.meta?.referralContent || "",
-  });
-}
-
+export { buildSignedDocumentNote };
 
 const SIGNER_KEY = "ucc.document-signer";
 /** Remember the last doctor name / MMC number typed on an MC or referral (browser-local, not clinic data). */
@@ -227,6 +198,8 @@ export function OrderComposer({
   const [loadAttempt, setLoadAttempt] = React.useState(0);
   const [failedSaves, setFailedSaves] = React.useState<Record<string, () => Promise<void>>>({});
   const failedSavesRef = React.useRef(failedSaves);
+  // Latest-value ref kept in sync during render on purpose: moving it to an effect would change timing seen by in-flight saves.
+  // eslint-disable-next-line react-hooks/refs
   failedSavesRef.current = failedSaves;
   const [savingIds, setSavingIds] = React.useState<Record<string, number>>({});
   const [persistenceDisabled, setPersistenceDisabled] = React.useState(!persistDrafts);
@@ -418,6 +391,8 @@ export function OrderComposer({
 
   // Read the current callbacks without making parent renders restart hydration.
   const hydrationContext = React.useRef({ initialEntries, publishPlan });
+  // Latest-value ref (see failedSavesRef); effect-based sync would alter hydration timing.
+  // eslint-disable-next-line react-hooks/refs
   hydrationContext.current = { initialEntries, publishPlan };
 
   const loadDraft = React.useCallback(async () => {
@@ -549,6 +524,8 @@ export function OrderComposer({
         );
       } catch (error) {
         // Keep the doctor's item on screen: status says "Failed to save", Sign stays disabled, Retry replays it.
+        // Retry replays this call; the self-reference is resolved at call time, after initialisation.
+        // eslint-disable-next-line react-hooks/immutability
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => persistEntry(entry) }));
         toast({
           title: "Autosave failed",
@@ -564,7 +541,7 @@ export function OrderComposer({
         });
       }
     },
-    [consultationId, draftId, patientId, persistenceDisabled, publishPlan, toast, queuedFetch]
+    [consultationId, draftId, patientId, persistenceDisabled, publishPlan, toast, queuedFetch, disablePersistence]
   );
 
   const addCatalogItem = React.useCallback(
@@ -652,6 +629,8 @@ export function OrderComposer({
         );
       } catch (error) {
         if (!retrying) publishPlan(prev);
+        // Retry replays this call; the self-reference is resolved at call time, after initialisation.
+        // eslint-disable-next-line react-hooks/immutability
         setFailedSaves((prev) => ({ ...prev, [pendingKey]: () => removeEntry(entry, true) }));
         toast({
           title: "Autosave failed",
@@ -667,7 +646,7 @@ export function OrderComposer({
         });
       }
     },
-    [draftId, patientId, consultationId, entries, persistenceDisabled, publishPlan, toast, queuedFetch]
+    [draftId, patientId, consultationId, entries, persistenceDisabled, publishPlan, toast, queuedFetch, disablePersistence]
   );
 
   function handlePickerRowClick(row: { tab: TreatmentPlanTab; item: CatalogItem; kindLabel: string }) {
@@ -753,6 +732,12 @@ export function OrderComposer({
     [entries, persistEntry, publishPlan]
   );
 
+  const searchState = getCatalogSearchState({
+    loading: loadingCatalog,
+    query: searchQuery,
+    resultCount: filteredPickerRows.length,
+  });
+
   return (
     <div className="flex h-full flex-col md:sticky md:top-2">
       <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -768,10 +753,10 @@ export function OrderComposer({
             />
           </div>
 
-          {loadingCatalog ? (
-            <p className="text-xs text-muted-foreground">Loading catalog…</p>
+          {searchState === "loading" ? (
+            <p className="text-xs text-muted-foreground" role="status">Loading…</p>
           ) : null}
-          {searchQuery.trim() && !loadingCatalog && filteredPickerRows.length === 0 ? (
+          {searchState === "empty" ? (
             <p className="text-xs text-muted-foreground">No matches.</p>
           ) : null}
           {filteredPickerRows.length > 0 ? (

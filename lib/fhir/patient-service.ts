@@ -540,17 +540,22 @@ export async function getPatientFromMedplum(
   try {
     const client = medplum ?? (await getAdminMedplum());
     // Tenant lookup and Patient read are independent: run them concurrently (Task 537).
-    const [, fhirPatient] = await Promise.all([
-      resolveClinicTenantMemo(client, clinicId),
-      client.readResource('Patient', patientId),
-    ]);
+    const tenantPromise = resolveClinicTenantMemo(client, clinicId);
+    // A rejection is surfaced by the await below; this only prevents an unhandled-rejection warning
+    // if the Patient read throws first.
+    tenantPromise.catch(() => undefined);
+    const fhirPatient = await client.readResource('Patient', patientId);
     if (!matchesClinic(fhirPatient, clinicId)) {
+      await tenantPromise;
       return null;
     }
     const patientData = fhirPatientToPatientData(fhirPatient);
 
     if (includeMedicalHistory) {
-      const [allergies, conditions, medications, recentEncounters] = await Promise.all([
+      // The history searches only need the (clinic-checked) patient id, so they run alongside the tenant
+      // lookup instead of after it (Task 593). The tenant is still awaited before anything is returned.
+      const [, allergies, conditions, medications, recentEncounters] = await Promise.all([
+        tenantPromise,
         client.searchResources('AllergyIntolerance', { patient: `Patient/${patientId}` }),
         client.searchResources('Condition', { subject: `Patient/${patientId}` }),
         client.searchResources('MedicationStatement', { subject: `Patient/${patientId}` }),
@@ -561,6 +566,8 @@ export async function getPatientFromMedplum(
       patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
       const visitDate = recentEncounters.length > 0 ? (recentEncounters[0] as any)?.period?.start : null;
       if (visitDate) patientData.lastVisit = new Date(visitDate);
+    } else {
+      await tenantPromise;
     }
 
     return patientData;
@@ -709,7 +716,7 @@ export async function searchPatientsPageInMedplum(
   const trimmed = query.trim();
   if (!trimmed) return { patients: [], total: 0, page: pg, pageSize: size, capped: false };
   const clinicParams = clinicPatientParams(clinicId); // fails closed without a clinic
-  await resolveClinicTenant(medplum, clinicId);
+  await resolveClinicTenantMemo(medplum, clinicId);
 
   const base = { _count: String(PATIENT_SEARCH_WINDOW), _sort: '-_lastUpdated' };
   const queries: Record<string, string>[] = [
@@ -867,7 +874,7 @@ export async function countPatientsInMedplum(
   medplum: MedplumClient,
   extra: Record<string, string> = {}
 ): Promise<number | null> {
-  await resolveClinicTenant(medplum, clinicId);
+  await resolveClinicTenantMemo(medplum, clinicId);
   const bundle = await medplum.search('Patient', {
     ...clinicPatientParams(clinicId),
     ...extra,
@@ -898,7 +905,7 @@ export async function getPatientsPageFromMedplum(
   const pg = Math.max(Math.floor(page) || 1, 1);
   const offset = (pg - 1) * size;
   const params = clinicPatientParams(clinicId);
-  await resolveClinicTenant(medplum, clinicId);
+  await resolveClinicTenantMemo(medplum, clinicId);
   // Beyond Medplum's _offset ceiling, return an empty page instead of repeating the last reachable one.
   if (offset > PATIENT_MAX_OFFSET) return { patients: [], total: null, page: pg, pageSize: size };
   const bundle = await medplum.search('Patient', {
