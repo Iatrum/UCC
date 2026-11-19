@@ -91,10 +91,12 @@ check('duplicate invite is rejected by Medplum (not 2xx)', dup.status >= 400, `H
 if (membership) {
   const d1 = await json(DIRECT, 'DELETE', `/admin/projects/${admin.projectId}/members/${membership}`, undefined, admin.token);
   console.log(`cleanup membership: HTTP ${d1.status}`);
+  if (d1.status >= 300) failed = 1;
 }
 if (practitionerRef) {
   const d2 = await json(DIRECT, 'DELETE', `/fhir/R4/${practitionerRef}`, undefined, admin.token);
   console.log(`cleanup practitioner: HTTP ${d2.status}`);
+  if (d2.status >= 300) failed = 1;
 }
 console.log(failed ? 'INVITE REHEARSAL FAIL' : 'INVITE REHEARSAL OK');
 process.exit(failed);
