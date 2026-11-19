@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Calendar } from "lucide-react";
@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
+import { resolveLoadView, showStaleBanner } from "@/lib/load-state";
 
 type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled" | "no_show";
 
@@ -95,9 +96,13 @@ export default function UpcomingAppointmentsTable({ appointments, loading, error
   const router = useRouter();
   const { toast } = useToast();
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
+  const checkInInFlight = useRef(false);
 
   async function handleCheckIn(appointment: UpcomingAppointment) {
     if (!appointment.id || !appointment.patientId) return;
+    // Ref guard: a second tap before React re-renders must not send a duplicate PATCH on slow links.
+    if (checkInInFlight.current) return;
+    checkInInFlight.current = true;
     setCheckingIn(appointment.id);
     try {
       const res = await fetch("/api/appointments", {
@@ -119,11 +124,15 @@ export default function UpcomingAppointmentsTable({ appointments, loading, error
         variant: "destructive",
       });
     } finally {
+      checkInInFlight.current = false;
       setCheckingIn(null);
     }
   }
 
-  if (loading) {
+  const view = resolveLoadView({ loading: Boolean(loading), error: error ?? null, hasData: appointments.length > 0 });
+  const staleBanner = showStaleBanner({ error: error ?? null, hasData: appointments.length > 0 });
+
+  if (view === "loading") {
     return (
       <Card>
         <CardContent className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
@@ -133,7 +142,7 @@ export default function UpcomingAppointmentsTable({ appointments, loading, error
     );
   }
 
-  if (error) {
+  if (view === "error") {
     return (
       <Card>
         <CardContent
@@ -163,6 +172,17 @@ export default function UpcomingAppointmentsTable({ appointments, loading, error
   }
 
   return (
+    <div className="space-y-2">
+    {staleBanner ? (
+      <div role="status" aria-live="polite" className="flex items-center justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <span>{error} Showing the last loaded appointments.</span>
+        {onRefresh ? (
+          <Button variant="outline" size="sm" disabled={loading} onClick={() => void onRefresh()}>
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    ) : null}
     <div className="rounded-md border">
       <Table>
         <TableHeader>
@@ -221,6 +241,7 @@ export default function UpcomingAppointmentsTable({ appointments, loading, error
           })}
         </TableBody>
       </Table>
+    </div>
     </div>
   );
 }

@@ -66,12 +66,8 @@ export async function saveAppointmentToMedplum(
     ? appointmentData.scheduledAt
     : appointmentData.scheduledAt.toISOString();
 
-  const endTime = new Date(scheduledTime);
-  if (appointmentData.durationMinutes) {
-    endTime.setMinutes(endTime.getMinutes() + appointmentData.durationMinutes);
-  } else {
-    endTime.setMinutes(endTime.getMinutes() + 30);
-  }
+  // Absolute-time arithmetic (Date#setMinutes is server-local and skews across DST changes).
+  const endTime = new Date(new Date(scheduledTime).getTime() + (appointmentData.durationMinutes || 30) * 60_000);
 
   const fhirAppointment: FHIRAppointment = withClinicIdentifier<FHIRAppointment>({
     resourceType: 'Appointment',
@@ -346,8 +342,7 @@ export async function rescheduleAppointment(
   const appointment = await readAppointmentForMutation(medplum, appointmentId, clinicId);
   const startIso = typeof scheduledAt === 'string' ? new Date(scheduledAt).toISOString() : scheduledAt.toISOString();
   const duration = appointment.minutesDuration ?? 30;
-  const end = new Date(startIso);
-  end.setMinutes(end.getMinutes() + duration);
+  const end = new Date(new Date(startIso).getTime() + duration * 60_000);
 
   await medplum.updateResource({
     ...appointment,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,6 +38,7 @@ const SELF_PAY_OPTION = { value: "self_pay", label: "Self-pay" };
 export default function TriageForm({ patient, stayAfterSubmit = false }: TriageFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
   const [panelOptions, setPanelOptions] = useState<Insurer[]>([]);
 
   useEffect(() => {
@@ -93,6 +94,9 @@ export default function TriageForm({ patient, stayAfterSubmit = false }: TriageF
       return;
     }
 
+    // Ref guard: a double-tap / Enter before re-render must not POST a second check-in.
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
     setSubmitting(true);
 
     try {
@@ -152,6 +156,7 @@ export default function TriageForm({ patient, stayAfterSubmit = false }: TriageF
         variant: "destructive",
       });
     } finally {
+      submitInFlight.current = false;
       setSubmitting(false);
     }
   };

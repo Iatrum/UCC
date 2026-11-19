@@ -1,5 +1,6 @@
 "use client";
 
+import { readExistingInvoiceNumber } from "@/lib/billing/invoice-lookup";
 import { checkoutSubtotal, displayInvoiceNumber, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import {
   buildStockNotice,
@@ -55,6 +56,8 @@ import type { TreatmentPlanEntry } from "@/lib/treatment-plan";
 import { renderDocumentHtml } from "@/lib/document-render";
 import { DEFAULT_TIME_CHIT_TEMPLATE, DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE } from "@/lib/document-templates";
 import { printHtml } from "@/lib/print-html";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { describeFetchError } from "@/lib/load-state";
 import { fetchOrganizationDetails, type OrganizationDetails } from "@/lib/org";
 
 type CheckoutClientProps = {
@@ -392,6 +395,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const isSubmittingRef = useRef(false);
   const [billPreviewOpen, setBillPreviewOpen] = useState(false);
   const [documentPreviewItem, setDocumentPreviewItem] = useState<CheckoutItem | null>(null);
@@ -423,7 +427,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       try {
         // The patient comes from the consultation (clinic-scoped on the server),
         // so the link works without ?patientId=.
-        const orderResponse = await fetch(
+        const orderResponse = await fetchWithTimeout(
           `/api/orders?consultationId=${encodeURIComponent(consultationId)}${
             patientId ? `&patientId=${encodeURIComponent(patientId)}` : ""
           }`
@@ -438,16 +442,16 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         }
         const resolvedPatientId = String(payload.consultation.patientId || payload.patient.id || patientId);
         const [invoiceResponse, draftResponse] = await Promise.all([
-          fetch(
-            `/api/billing?consultationId=${encodeURIComponent(consultationId)}`,
+          fetchWithTimeout(
+            `/api/billing?consultationId=${encodeURIComponent(consultationId)}&optional=true`,
             { cache: "no-store" }
           ),
-          fetch(
+          fetchWithTimeout(
             `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${resolvedPatientId}-${consultationId}`)}&patientId=${encodeURIComponent(resolvedPatientId)}&consultationId=${encodeURIComponent(consultationId)}`,
             { cache: "no-store" }
           ),
         ]);
-        const invoicePayload = await invoiceResponse.json().catch(() => ({}));
+        const existingInvoiceNumber = await readExistingInvoiceNumber(invoiceResponse);
         const draftPayload = await draftResponse.json().catch(() => ({}));
 
         if (active) {
@@ -459,13 +463,11 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
               ? draftPayload.plan?.entries || []
               : [],
           });
-          if (invoiceResponse.ok && invoicePayload?.invoiceNumber) {
-            setInvoiceNumber(String(invoicePayload.invoiceNumber));
-          }
+          if (existingInvoiceNumber) setInvoiceNumber(existingInvoiceNumber);
         }
       } catch (err) {
         if (active) {
-          setError(err instanceof Error ? err.message : "Failed to load checkout details.");
+          setError(describeFetchError(err, "Failed to load checkout details."));
         }
       } finally {
         if (active) {
@@ -479,7 +481,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
     return () => {
       active = false;
     };
-  }, [consultationId, patientId]);
+  }, [consultationId, patientId, reloadKey]);
 
   // Read-only stock preview (Task 504). Best effort: checkout works without it.
   useEffect(() => {
@@ -623,6 +625,11 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
             <CardTitle>Checkout unavailable</CardTitle>
             <CardDescription>{error || "The selected consultation could not be loaded."}</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+              Retry
+            </Button>
+          </CardContent>
         </Card>
       </main>
     );

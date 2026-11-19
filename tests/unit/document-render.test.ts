@@ -125,6 +125,13 @@ describe('signed document family', () => {
     const tcNote = JSON.stringify({ kind: 'time-chit', tcHours: '1' });
     expect(signedDocumentMutationError([{ notes: tcNote }], [])).not.toBeNull();
   });
+  test('Task 637: re-sending the stored Time Chit is allowed; the unsigned template line (tcHours 999) is a 409-class edit', () => {
+    const details = { kind: 'time-chit', tcDate: '2026-11-14', tcTimeIn: '09:00', tcTimeOut: '10:30', tcDoctorName: 'Dr Fake', title: 'TIME CHIT', status: 'completed' };
+    const stored = JSON.stringify({ ...details, tcHours: '1.5' }); // server recomputes tcHours on save
+    const staleLine = JSON.stringify({ ...details, tcHours: '999' });
+    expect(signedDocumentMutationError([{ notes: stored }], [{ notes: stored }])).toBeNull();
+    expect(signedDocumentMutationError([{ notes: stored }], [{ notes: staleLine }])).not.toBeNull();
+  });
   test('voiding keeps the record; editing while voiding or re-voiding is refused', () => {
     const voided = JSON.stringify({ kind: 'mc', mcDays: '1', status: 'voided', voidedAt: '2026-11-17T01:00:00Z', voidReason: 'typo' });
     expect(signedDocumentMutationError([{ notes: mc }], [{ notes: voided }])).toBeNull();

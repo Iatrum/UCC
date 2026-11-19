@@ -1,6 +1,7 @@
 import { OperationOutcomeError, forbidden, type MedplumClient } from "@medplum/core";
 import { assertPatientInClinic } from "@/lib/fhir/write-containment";
 import type { Appointment, Patient, Practitioner, Schedule, Slot } from "@medplum/fhirtypes";
+import { ForbiddenError } from "@/lib/server/route-helpers";
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
@@ -186,7 +187,8 @@ export async function generateSlotsForSchedule(
   const schedule = await medplum.readResource("Schedule", input.scheduleId);
   const { clinicId: scheduleClinicId } = parseScheduleIdentifier(schedule);
   if (scheduleClinicId !== clinicId) {
-    throw new Error("Schedule does not belong to this clinic");
+    // Caller-supplied reference in a payload: 403 (Task 422 rule 2).
+    throw new ForbiddenError("Schedule unavailable in current clinic");
   }
 
   const windowStart = new Date(input.start);
@@ -216,8 +218,8 @@ export async function generateSlotsForSchedule(
 
   while (cursor < windowEnd) {
     const slotStart = new Date(cursor);
-    const slotEnd = new Date(slotStart);
-    slotEnd.setMinutes(slotEnd.getMinutes() + input.durationMinutes);
+    // Absolute-time arithmetic: Date#setMinutes works in server-local time and skews across DST changes.
+    const slotEnd = new Date(slotStart.getTime() + input.durationMinutes * 60_000);
     if (slotEnd > windowEnd) break;
 
     const startIso = slotStart.toISOString();
@@ -525,8 +527,7 @@ export async function manualBookAppointmentWithSlot(
     throw new Error("durationMinutes must be a positive number");
   }
 
-  const end = new Date(start);
-  end.setMinutes(end.getMinutes() + input.durationMinutes);
+  const end = new Date(start.getTime() + input.durationMinutes * 60_000);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
 

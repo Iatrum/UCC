@@ -11,6 +11,7 @@ import { REFRESH_COOKIE, SESSION_COOKIE } from '@/lib/server/cookie-constants';
 import { AuthError, ClinicContextError, ForbiddenError } from '@/lib/server/route-helpers';
 import { env } from '@/lib/env';
 import { authMemo } from '@/lib/server/auth-memo';
+import { isValidClinicId } from '@/lib/server/clinic-id';
 // Re-export so callers can import getAdminMedplum from either file.
 export { getAdminMedplum } from './medplum-admin';
 
@@ -383,6 +384,9 @@ export async function requireClinicPageAuth(
   if (!clinicId) {
     redirect(`/login?error=clinic_required&next=${encodeURIComponent(nextPath)}`);
   }
+  if (!isValidClinicId(clinicId)) {
+    redirect(`/login?error=clinic_forbidden&next=${encodeURIComponent(nextPath)}`);
+  }
 
   try {
     await assertClinicAssignment(medplum, profile, clinicId);
@@ -421,6 +425,10 @@ export async function requireClinicAuth(
       );
     }
 
+    if (!isValidClinicId(clinicId)) {
+      throw new ForbiddenError('Invalid clinic context.');
+    }
+
     return {
       medplum: await getAdminMedplum(),
       clinicId,
@@ -436,6 +444,11 @@ export async function requireClinicAuth(
     throw new ClinicContextError(
       'No clinic context. Open the app from your clinic subdomain (for example clinic.example.com), or sign in again from localhost so a clinic can be selected.'
     );
+  }
+
+  // Fail closed (403) before the id reaches any search string: the clinic cookie is client-writable.
+  if (!isValidClinicId(clinicId)) {
+    throw new ForbiddenError('Invalid clinic context.');
   }
 
   const profile = await profileFor(medplum);

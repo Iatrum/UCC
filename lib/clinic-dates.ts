@@ -72,8 +72,9 @@ export function addClinicDays(isoDate: string, days: number): string | null {
 /** Last day of an MC that starts on `startDate` and runs `numDays` days (inclusive). */
 export function mcEndDate(startDate: string | null | undefined, numDays: number): string {
   const start = toClinicDate(startDate);
-  if (!start || !(numDays > 0)) return "";
-  const end = addClinicDays(start, Math.floor(numDays) - 1);
+  if (!start || !Number.isFinite(numDays) || !(numDays > 0)) return "";
+  // A partial day (0 < n < 1) is a same-day MC; the end date is never before the start.
+  const end = addClinicDays(start, Math.max(1, Math.floor(numDays)) - 1);
   return end ? formatClinicDate(end) : "";
 }
 

@@ -1,5 +1,6 @@
 import { hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import { NextRequest, NextResponse } from "next/server";
+import { isSafeFhirId } from "@/lib/server/clinic-id";
 import {
   completeCheckoutInvoice,
   generateInvoiceNumber,
@@ -180,6 +181,13 @@ export async function GET(req: NextRequest) {
     const patientId = searchParams.get("patientId");
     const consultationId = searchParams.get("consultationId");
 
+    // Task 645: ids reach FHIR search strings (`,` = OR, `|` = system split); a malformed id cannot exist -> 404.
+    for (const value of [invoiceId, patientId, consultationId]) {
+      if (value && !isSafeFhirId(value)) {
+        return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+      }
+    }
+
     if (invoiceId) {
       const invoice = await getInvoice(medplum, invoiceId, clinicId);
       if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
@@ -191,6 +199,8 @@ export async function GET(req: NextRequest) {
       if (!invoice && searchParams.get("previewNumber") === "true") {
         return NextResponse.json({ success: true, invoice: null, invoiceNumber: await generateInvoiceNumber(medplum) });
       }
+      // Task 659: `optional=true` = "no bill yet" is a normal answer (200, invoice null), so checkout does not produce a console 404.
+      if (!invoice && searchParams.get("optional") === "true") return NextResponse.json({ success: true, invoice: null, invoiceNumber: null });
       if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
       return NextResponse.json({ success: true, invoice, invoiceNumber: getInvoiceNumber(invoice) });
     }

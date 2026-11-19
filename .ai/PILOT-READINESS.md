@@ -30,7 +30,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
-| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | CODE | Low priority, not user-visible; PILOT-CHECK #8 |
+| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | DONE (Task 659, PR #326) | 503: client stops re-POSTing after the first 503 (manual Refresh re-checks); billing lookup uses `optional=true` (200, no bill yet); documents fetch aborted on unmount and silent. Residual: the browser itself logs the single first 503 network line (server contract kept, e2e relies on it). Notes `.ai/research/task-659.md` |
 | A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | DONE (dev) | Task 661: `.ai/research/task-661.md`. Fake staff with clinic `access[]` in the non-superAdmin project ran register → consult → sign → Lab tab → checkout → dispense (13/13 steps), and the same token was denied reading/writing a second clinic's patient (404/403, 0 search hits). Production still needs the manual Task 5 migration (B-section items) |
 
 ## B. Security and secrets
@@ -63,7 +63,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | D1 | Staging compose, env template, scripts (385a); preflight + seed (385b); gate adapter (385c) | DONE | `infra/staging/`, `scripts/staging/`, `tests/unit/staging-*.test.ts` |
 | D2 | Allowlist proxy rehearsed on loopback (`PROBE OK`, Traefik 3.5.0, Medplum 5.2.15) | DONE | Task 578, `.ai/reviews/task-579.md` |
 | D3 | Staging gate exception list (fails on any unlisted skip) | DONE | Task 607, `e2e/staging-exceptions.json` |
-| D4 | Rehearse a **successful** user invite through the allowlisted proxy (only the 401 route check so far) | CODE | Loopback rehearsal, fake user; plan 385d "Not rehearsed" |
+| D4 | Successful user invite through the allowlisted proxy | DONE (dev, loopback) | Task 663: `bun run staging:invite-rehearsal` = `INVITE REHEARSAL OK` (invite 200, invited user logs in, other admin routes 404, duplicate 409). `.ai/research/task-663.md`. Still repeat once on real staging (D5) |
 | D5 | Bring staging up once on the VPS, seed, run `check-staging.sh`, record sign-off in STATE.md | OWNER | Touches the shared VPS; follow `.ai/PLAN-staging-promotion-checklist.md`. Never run end to end yet |
 | D6 | Confirm Hostinger console + snapshot restore exist (owner Q6 unknown) | OWNER | Required before any firewall change |
 | D7 | Host inventory + audit kit run on the VPS and from outside; fix what it flags | OWNER | Plan 1.3; `bun run staging:audit` (`scripts/staging/audit-exposure.ts`), never run on the real host |

@@ -25,6 +25,9 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
   let socket: WebSocket | undefined;
   let token: string | undefined;
   let connecting = false;
+  // Task 659: 503 = subscription backend not configured. Stop re-trying every poll; the tab keeps polling results.
+  // A manual refresh() clears it so staff can re-check.
+  let liveUnavailable = false;
   let loading = false;
   let queued = false;
   let renewal: ReturnType<typeof setTimeout> | undefined;
@@ -100,14 +103,19 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
   };
 
   const connect = async () => {
-    if (!allowed || connecting || socket || abort.signal.aborted) return;
+    if (!allowed || liveUnavailable || connecting || socket || abort.signal.aborted) return;
     connecting = true;
     try {
       const response = await fetch('/api/labs/subscription', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patientId, encounterId }), signal: abort.signal, cache: 'no-store',
       });
-      if (!response.ok) { setLive(false); if (response.status === 403) await load(); return; }
+      if (!response.ok) {
+        setLive(false);
+        if (response.status === 503) liveUnavailable = true;
+        if (response.status === 403) await load();
+        return;
+      }
       const binding = await response.json();
       if (abort.signal.aborted || !allowed) return;
       if (typeof binding.token !== 'string' || typeof binding.subscriptionId !== 'string' ||
@@ -142,6 +150,6 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
   return {
     stop: () => { abort.abort(); stopPoll(); disconnect(); },
     // Manual Retry/Refresh. Also restarts polling after a 401/403 or a kill-switch pause.
-    refresh: () => { void load().then(afterLoad); },
+    refresh: () => { liveUnavailable = false; void load().then(afterLoad); },
   };
 }

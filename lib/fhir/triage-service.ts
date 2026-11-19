@@ -5,6 +5,7 @@ import type { Observation } from '@medplum/fhirtypes';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
+import { NotFoundError } from '@/lib/server/route-helpers';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
@@ -28,7 +29,7 @@ function clinicEncounterScope(tenant: ClinicTenant | null): Record<string, any> 
 function assertEncounterBelongsToClinic(encounter: any, tenant: ClinicTenant | null): void {
   if (!tenant) return; // no scope -> no assertion (admin callers only)
   if (!resourceMatchesClinicTenant(encounter, tenant.clinicId)) {
-    throw new Error(`Access denied: encounter does not belong to clinic '${tenant.clinicId}'`);
+    throw new NotFoundError('Encounter not found.');
   }
 }
 

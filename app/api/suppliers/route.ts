@@ -1,7 +1,9 @@
+import { assertSafeFhirId } from '@/lib/server/clinic-id';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Organization } from '@medplum/fhirtypes';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { searchAllPages } from '@/lib/server/search-all';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import {
   INVENTORY_PURCHASING_DISABLED_ERROR,
@@ -64,11 +66,13 @@ export async function GET(req: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(req);
     const medplum = await getAdminMedplum();
-    const orgs = await medplum.searchResources('Organization', {
-      identifier: `${SUPPLIER_SYSTEM}|${SUPPLIER_CODE}`,
-      _count: '200',
-    });
-    const suppliers = (orgs ?? [])
+    // Repeated identifier param = AND: supplier type AND this clinic (clinic scope is in the search itself).
+    const query = new URLSearchParams();
+    query.append('identifier', `${SUPPLIER_SYSTEM}|${SUPPLIER_CODE}`);
+    query.append('identifier', `${CLINIC_SYSTEM}|${clinicId}`);
+    query.set('_sort', '_lastUpdated');
+    const orgs = await searchAllPages(medplum, 'Organization', query);
+    const suppliers = orgs
       .filter(org => belongsToClinic(org, clinicId))
       .map(fromOrg);
     return NextResponse.json({ success: true, suppliers });
@@ -108,6 +112,7 @@ export async function PATCH(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
+    assertSafeFhirId(id);
     const existing = await medplum.readResource('Organization', id) as Organization;
     if (!belongsToClinic(existing, clinicId)) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
@@ -133,6 +138,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     }
+    assertSafeFhirId(id);
     const existing = await medplum.readResource('Organization', id) as Organization;
     if (!belongsToClinic(existing, clinicId)) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Condition, Encounter, Invoice, Patient } from "@medplum/fhirtypes";
 import { getInvoice, getPatientInvoices, voidInvoice } from "../../lib/fhir/billing-service";
+import { NotFoundError } from "../../lib/server/route-helpers";
 import { getConsultationsWithDetails } from "../../lib/models";
 import { CLINIC_IDENTIFIER_SYSTEM, resourceMatchesClinicTenant } from "../../lib/fhir/clinic-tenancy";
 
@@ -159,7 +160,7 @@ describe("billing-service clinic isolation", () => {
     ]);
 
     await expect(getInvoice(medplum, "invoice-b", "clinic-a")).resolves.toBeNull();
-    await expect(voidInvoice(medplum, "invoice-b", "clinic-a")).rejects.toThrow("Access denied");
+    await expect(voidInvoice(medplum, "invoice-b", "clinic-a")).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("filters patient invoice lists to the authenticated clinic", async () => {

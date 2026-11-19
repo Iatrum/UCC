@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
+import { isAbortError } from "@/lib/is-abort-error";
 import { FileText, Loader2, Trash2, Upload } from "lucide-react";
 
 type PatientDocument = {
@@ -48,12 +49,17 @@ export default function PatientDocuments({ patientId }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const fetchDocs = useCallback(async () => {
     if (!patientId) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/documents?patientId=${encodeURIComponent(patientId)}`);
+      const res = await fetch(`/api/documents?patientId=${encodeURIComponent(patientId)}`, { signal: controller.signal });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error || "Failed to load documents");
@@ -71,11 +77,13 @@ export default function PatientDocuments({ patientId }: Props) {
       }));
       setDocs(items);
     } catch (err: any) {
+      // Unmount/navigation/superseded request: expected, not an error. Real failures still log.
+      if (isAbortError(err) || controller.signal.aborted) return;
       console.error(err);
       setLoadError(err?.message || "Please try again");
       toast({ title: "Unable to load documents", description: err?.message || "Please try again", variant: "destructive" });
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [patientId, toast]);
 
@@ -83,6 +91,7 @@ export default function PatientDocuments({ patientId }: Props) {
     queueMicrotask(() => {
       void fetchDocs();
     });
+    return () => abortRef.current?.abort();
   }, [fetchDocs]);
 
   const onSelectFiles: React.ChangeEventHandler<HTMLInputElement> = async (e) => {

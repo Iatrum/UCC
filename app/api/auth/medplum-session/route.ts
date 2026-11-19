@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, CLINIC_COOKIE, REFRESH_COOKIE } from "@/lib/server/cookie-constants";
 import { getHostFromNextRequest } from "@/lib/server/subdomain-host";
+import { isValidClinicId } from "@/lib/server/clinic-id";
 
 const MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
 const isProd = process.env.NODE_ENV === "production";
@@ -35,6 +36,11 @@ export async function POST(req: NextRequest) {
         { error: "Missing access token or clinicId" },
         { status: 400 }
       );
+    }
+
+    // Never persist a clinic id that could not be used safely in a Medplum search (Task 645).
+    if (typeof clinicId === "string" && clinicId.trim().length > 0 && !isValidClinicId(clinicId)) {
+      return NextResponse.json({ error: "Invalid clinicId" }, { status: 400 });
     }
 
     const cookieStore = await cookies();

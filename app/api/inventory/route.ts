@@ -9,6 +9,7 @@ import {
 } from '@/lib/fhir/inventory-service';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { listDispensesForConsultation } from '@/lib/fhir/dispense-service';
+import { isSafeFhirId } from '@/lib/server/clinic-id';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import { InventoryValidationError, parseInventoryInput } from '@/lib/fhir/inventory-validation';
@@ -27,6 +28,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const dispensesFor = searchParams.get('dispensesFor');
+
+    if ((dispensesFor && !isSafeFhirId(dispensesFor)) || (id && !isSafeFhirId(id))) {
+      // Task 645: ids reach FHIR search strings; a malformed id cannot exist.
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    }
 
     if (dispensesFor) {
       // Audit rows are clinical records: read them as the signed-in staff member (clinic-scoped policy).

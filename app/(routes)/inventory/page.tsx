@@ -25,10 +25,11 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
+import { describeFetchError, resolveLoadView } from "@/lib/load-state";
 import {
   createMedication,
   deleteMedication,
-  getMedications,
+  fetchMedicationsStrict,
   type Medication,
   updateMedication,
 } from "@/lib/inventory";
@@ -45,13 +46,14 @@ export default function InventoryPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   async function loadInventoryWorkspace() {
+    setLoading(true);
     try {
-      const medicationData = await getMedications();
+      const medicationData = await fetchMedicationsStrict();
       setMedications(medicationData);
       setError(null);
     } catch (err) {
       console.error(err);
-      setError("Failed to load inventory workspace");
+      setError(describeFetchError(err, "Failed to load inventory workspace"));
     } finally {
       setLoading(false);
     }
@@ -64,7 +66,17 @@ export default function InventoryPage() {
   }, []);
 
   async function reloadMedications() {
-    setMedications(await getMedications());
+    // Strict: a failed refresh after a save must not blank the list (the save itself succeeded).
+    try {
+      setMedications(await fetchMedicationsStrict());
+    } catch (err) {
+      console.error("Failed to refresh inventory:", err);
+      toast({
+        title: "Saved, but the list could not refresh",
+        description: describeFetchError(err, "Reload the page to see the latest stock."),
+        variant: "destructive",
+      });
+    }
   }
 
   const stockSummary = summarizeLowStock(medications);
@@ -134,7 +146,9 @@ export default function InventoryPage() {
     }
   }
 
-  if (loading) {
+  const view = resolveLoadView({ loading, error, hasData: medications.length > 0 });
+
+  if (view === "loading") {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
@@ -142,12 +156,17 @@ export default function InventoryPage() {
     );
   }
 
-  if (error) {
+  if (view === "error") {
     return (
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>Error</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
+        <AlertDescription className="flex flex-col items-start gap-3">
+          <span>{error}</span>
+          <Button variant="outline" size="sm" onClick={() => void loadInventoryWorkspace()}>
+            Retry
+          </Button>
+        </AlertDescription>
       </Alert>
     );
   }
@@ -199,7 +218,7 @@ export default function InventoryPage() {
           <div className="grid gap-6 xl:grid-cols-[1.55fr_0.75fr]">
             <Card className="border-slate-200/80 shadow-sm">
               <CardContent className="space-y-5 p-5">
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid grid-cols-3 gap-2 md:gap-3">
                   <MetricCard
                     icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
                     label="In stock"
@@ -273,9 +292,9 @@ export default function InventoryPage() {
                             <Badge
                               variant="secondary"
                               className={
-                                item.stock === 0
+                                isOutOfStock(item)
                                   ? "bg-rose-100 text-rose-700"
-                                  : item.stock <= item.minimumStock
+                                  : isOrderSoon(item)
                                     ? "bg-amber-100 text-amber-700"
                                     : "bg-emerald-100 text-emerald-700"
                               }
@@ -412,13 +431,13 @@ function MetricCard({
   hint: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center gap-2 text-sm text-slate-600">
+    <div className="rounded-2xl border border-slate-200 bg-white p-2.5 sm:p-4">
+      <div className="flex items-center gap-1.5 text-xs sm:gap-2 sm:text-sm text-slate-600 [&>svg]:shrink-0">
         {icon}
         <span>{label}</span>
       </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+      <p className="mt-2 text-xl sm:mt-3 sm:text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 hidden text-xs sm:block text-slate-500">{hint}</p>
     </div>
   );
 }
