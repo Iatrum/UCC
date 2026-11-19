@@ -21,7 +21,6 @@ const practitionerRef = `Practitioner/${practitionerId}`;
 const clinicRef = `Organization/${organizationId}`;
 const accountRef = `HealthcareService/${accountId}`;
 const policyId = "fake-invite-staff-policy";
-const staffToken = "fake-task708-staff-session";
 const adminToken = "fake-task708-platform-admin-session";
 const invitation = {
   firstName: " Fake ",
@@ -173,19 +172,27 @@ const userPath = "/api/admin/users/fake-staff";
 const invitePath = "/api/admin/users/invite";
 
 describe("admin user route role checks", () => {
-  test.each([
-    ["list", () => users.GET(request("GET", "/api/admin/users", staffToken))],
-    ["read", () => user.GET(request("GET", userPath, staffToken), params)],
-    ["update", () => user.PATCH(request("PATCH", userPath, staffToken, { firstName: "Fake", lastName: "Staff" }), params)],
-    ["delete", () => user.DELETE(request("DELETE", userPath, staffToken), params)],
-    ["invite", () => invite.POST(request("POST", invitePath, staffToken, invitation))],
-  ] as const)("denies non-admin staff access to %s", async (_action, handler) => {
-    const response = await handler();
+  const staffRequests = {
+    list: (token: string) => users.GET(request("GET", "/api/admin/users", token)),
+    read: (token: string) => user.GET(request("GET", userPath, token), params),
+    update: (token: string) => user.PATCH(request("PATCH", userPath, token, { firstName: "Fake", lastName: "Staff" }), params),
+    delete: (token: string) => user.DELETE(request("DELETE", userPath, token), params),
+    invite: (token: string) => invite.POST(request("POST", invitePath, token, invitation)),
+  };
+
+  test.each(Object.entries(staffRequests))("denies non-admin staff access to %s", async (action, handler) => {
+    const token = `fake-task708-staff-${action}`;
+    const response = await handler(token);
 
     expect(response.status).toBe(403);
     expect(adminClientSpy).not.toHaveBeenCalled();
-    // The real guard can use its memoized /auth/me result across these calls.
-    expect(calls.every(({ path, method }) => path === "/auth/me" && method === "GET")).toBe(true);
+    expect(calls).toEqual([{
+      path: "/auth/me",
+      method: "GET",
+      authorization: `Bearer ${token}`,
+      query: new URLSearchParams(),
+      body: undefined,
+    }]);
   });
 
   test("requires authentication before inviting a user", async () => {
@@ -227,7 +234,9 @@ describe("POST /api/admin/users/invite", () => {
     }]);
     expect(calls.filter(({ path, method }) => path === "/fhir/R4/PractitionerRole" && method === "POST")
       .map(({ body }) => body)).toEqual([role]);
-    expect(calls.find(({ method }) => method === "PUT")?.body).toMatchObject({
+    const membershipPath = `/fhir/R4/ProjectMembership/${membershipId}`;
+    expect(calls.filter(({ path, method }) => path === membershipPath && method === "PUT")
+      .map(({ body }) => body)).toEqual([{
       ...membership,
       access: [{
         policy: { reference: `AccessPolicy/${policyId}` },
@@ -237,7 +246,7 @@ describe("POST /api/admin/users/invite", () => {
           { name: "clinicWriteAccounts", valueString: `^(${accountRef})$` },
         ],
       }],
-    });
+    }]);
     expect(calls.find(({ path }) => path.endsWith("/$set-accounts"))?.body).toEqual({
       resourceType: "Parameters",
       parameter: [
