@@ -3,6 +3,7 @@ import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } fro
 import { ForbiddenError } from '@/lib/server/route-helpers';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
+import { orderProcedureStatus } from '@/lib/fhir/order-procedure-status';
 import { isSignedDocumentNote, signedDocumentMutationError } from '@/lib/clinical-documents';
 import { auditSignedDocument } from './signed-document-audit';
 import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
@@ -449,7 +450,7 @@ export async function saveConsultationToMedplum(
       const createdProc = await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
-        status: 'completed',
+        status: orderProcedureStatus(proc),
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
         code: codeable,
@@ -1075,7 +1076,7 @@ export async function updateConsultationInMedplum(
       const createdProc = await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
-        status: 'completed',
+        status: orderProcedureStatus(proc),
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
         code: codeable,
