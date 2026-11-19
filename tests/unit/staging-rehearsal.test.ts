@@ -42,3 +42,14 @@ test('probe refuses non-staging bases and covers admin mount forms', () => {
     expect(probe).toContain(p);
   }
 });
+
+test('invite rehearsal is loopback-only, never prints secrets, always tears the proxy down', () => {
+  const script = readFileSync('scripts/staging/invite-rehearsal.ts', 'utf8');
+  const sh = readFileSync('scripts/staging/rehearse-invite-dev.sh', 'utf8');
+  expect(script).toContain('refusing non-loopback base');
+  expect(script).toContain('sendEmail: false');
+  expect(script).not.toMatch(/console\.log\([^)]*(token|password)/i);
+  expect(sh).toContain("trap 'docker rm -f");
+  expect(sh).toContain('127.0.0.1:8180:8000');
+  expect(nonComment(sh)).not.toMatch(/docker\.sock|root-traefik|\/opt\/medplum/);
+});
