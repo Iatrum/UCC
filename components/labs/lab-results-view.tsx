@@ -19,6 +19,11 @@ interface LabResultsViewProps {
 }
 
 export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) {
+  // Remount on patient/encounter change so all local state starts fresh (no synchronous resets inside the effect).
+  return <LabResultsViewInner key={`${patientId}:${encounterId ?? ''}`} patientId={patientId} encounterId={encounterId} />;
+}
+
+function LabResultsViewInner({ patientId, encounterId }: LabResultsViewProps) {
   const [reports, setReports] = useState<LabReportSummary[]>([]);
   const [pending, setPending] = useState<PendingPoctOrder[]>([]);
   const [xrayPending, setXrayPending] = useState<PendingXrayOrder[]>([]);
@@ -30,14 +35,6 @@ export function LabResultsView({ patientId, encounterId }: LabResultsViewProps) 
   const updates = useRef<LabResultUpdates | null>(null);
 
   useEffect(() => {
-    setReports([]);
-    setPending([]);
-    setXrayPending([]);
-    setIsLoading(true);
-    setLoadError(null);
-    setFetchedAt(null);
-    setIsRefreshing(false);
-    setLiveOff(false);
     const handle = startLabResultUpdates({
       patientId, encounterId,
       onResults: (data, at) => {
