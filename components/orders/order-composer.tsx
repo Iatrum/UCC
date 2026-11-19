@@ -64,6 +64,7 @@ interface OrderComposerProps {
   packages?: CatalogItem[];
   documents?: CatalogItem[];
   loadingCatalog?: boolean;
+  onLoadCatalogs?: () => void;
   onUnsavedChange?: (unsaved: boolean) => void;
   onPlanChange?: (entries: TreatmentPlanEntry[], summary: TreatmentPlanSummary) => void;
   submitLabel?: string;
@@ -176,6 +177,7 @@ export function OrderComposer({
   packages = [],
   documents = [],
   loadingCatalog = false,
+  onLoadCatalogs,
   onPlanChange,
   onUnsavedChange,
   submitLabel = "Sign Order",
@@ -185,6 +187,18 @@ export function OrderComposer({
   pacsEnabled = false,
 }: OrderComposerProps) {
   const { toast } = useToast();
+  React.useEffect(() => {
+    if (!onLoadCatalogs) return;
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(onLoadCatalogs, { timeout: 150 });
+      return () => window.cancelIdleCallback(idle);
+    }
+
+    const timer = window.setTimeout(onLoadCatalogs, 0);
+    return () => window.clearTimeout(timer);
+  }, [onLoadCatalogs]);
+
   const [searchQuery, setSearchQuery] = React.useState("");
   const [entries, setEntries] = React.useState<TreatmentPlanEntry[]>([]);
   const entriesRef = React.useRef<TreatmentPlanEntry[]>([]);

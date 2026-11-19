@@ -20,7 +20,7 @@ test('dashboard Billing tab: loading, error, Retry, list', async ({ page }) => {
   await expect(page.getByText('Loading billable consultations...')).toBeVisible();
   await expect(empty).toHaveCount(0);
   release();
-  await expect(page.getByText('Failed to load billable consultations.')).toBeVisible();
+  await expect(page.getByText('Failed to fetch consultations')).toBeVisible();
   await expect(empty).toHaveCount(0);
   await page.screenshot({ path: process.env.UCC_SHOT_DIR ? `${process.env.UCC_SHOT_DIR}/billing-error.png` : undefined });
   await page.getByRole('button', { name: 'Retry' }).click();
@@ -38,7 +38,7 @@ test('dashboard Appointments tab: error then Retry', async ({ page }) => {
   });
   await page.goto('/dashboard');
   await page.getByRole('tab', { name: 'Appointments' }).click();
-  await expect(page.getByText('Failed to load appointments.')).toBeVisible();
+  await expect(page.getByText('Failed to fetch appointments')).toBeVisible();
   await expect(page.getByText(/No upcoming appointments yet/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry' }).click();
   await expect(page.getByText('Fake Appt Patient')).toBeVisible();
@@ -58,6 +58,7 @@ test('dashboard queue keeps previous list while refetching', async ({ page }) =>
     return route.fulfill(fakeQueue('Fake Queue Patient'));
   });
   await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Refresh queue' }).click();
   await expect(page.getByText('Fake Queue Patient')).toBeVisible();
   await page.getByRole('button', { name: 'Refresh queue' }).click();
   await expect.poll(() => calls).toBeGreaterThan(1);
@@ -74,6 +75,7 @@ test('dashboard queue keeps list and shows banner when a refetch fails', async (
     return calls === 1 ? route.fulfill(fakeQueue('Fake Queue Patient')) : route.fulfill(json({ error: 'boom' }, 500));
   });
   await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Refresh queue' }).click();
   await expect(page.getByText('Fake Queue Patient')).toBeVisible();
   await page.getByRole('button', { name: 'Refresh queue' }).click();
   await expect(page.getByText('Queue could not be refreshed')).toBeVisible();
@@ -89,6 +91,10 @@ test('navigating away mid-fetch does not surface an error', async ({ page }) => 
   const navigated = new Promise<void>((r) => { release = r; });
   await page.route('**/api/queue', async (route) => { await navigated; await route.abort('failed').catch(() => {}); });
   await page.goto('/dashboard');
+  await Promise.all([
+    page.waitForRequest('**/api/queue'),
+    page.getByRole('button', { name: 'Refresh queue' }).click(),
+  ]);
   await page.getByRole('link', { name: /inventory/i }).first().click(); // client-side navigation away (the sidebar has no 'Patients' link on this page)
   await page.waitForURL(/\/inventory/, { timeout: 60_000 });
   release();

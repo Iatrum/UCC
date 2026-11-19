@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
-      const appointments = await getPatientAppointmentsFromMedplum(medplum, patientId);
+      const appointments = await getPatientAppointmentsFromMedplum(medplum, patientId, clinicId);
       return NextResponse.json({ success: true, count: appointments.length, appointments });
     }
 

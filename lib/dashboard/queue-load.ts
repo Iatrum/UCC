@@ -2,8 +2,13 @@ import type { Patient } from '@/lib/models';
 
 export const QUEUE_TIMEOUT_MS = 10000;
 
+export type QueuePatient = Pick<
+  Patient,
+  'id' | 'fullName' | 'nric' | 'visitIntent' | 'payerType' | 'assignedClinician' | 'queueAddedAt' | 'queueStatus'
+> & { triage?: Pick<NonNullable<Patient['triage']>, 'chiefComplaint' | 'isTriaged'> };
+
 export type QueueLoadResult =
-  | { ok: true; patients: Patient[] }
+  | { ok: true; patients: QueuePatient[] }
   | { ok: false; kind: 'timeout' | 'unauthorized' | 'http' | 'network'; message: string }
   | { ok: false; kind: 'aborted'; message: '' };
 

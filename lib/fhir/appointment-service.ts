@@ -140,14 +140,19 @@ export async function getAppointmentFromMedplum(medplum: MedplumClient, appointm
 /**
  * Get patient appointments from Medplum
  */
-export async function getPatientAppointmentsFromMedplum(medplum: MedplumClient, patientId: string): Promise<SavedAppointment[]> {
+export async function getPatientAppointmentsFromMedplum(
+  medplum: MedplumClient,
+  patientId: string,
+  clinicId: string,
+): Promise<SavedAppointment[]> {
   try {
     const appointments = await medplum.searchResources('Appointment', {
       actor: `Patient/${patientId}`,
+      identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
       _sort: '-date',
     });
 
-    return appointments.map((fhirAppt) => {
+    return appointments.filter((appointment) => resourceMatchesClinicTenant(appointment, clinicId)).map((fhirAppt) => {
       const patientParticipant = fhirAppt.participant?.find((p) => isPatientParticipantReference(p.actor?.reference));
       const clinicianParticipant = fhirAppt.participant?.find((p) => !isPatientParticipantReference(p.actor?.reference));
       const ext = fhirAppt.extension ?? [];

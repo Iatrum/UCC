@@ -10,6 +10,7 @@ import { getPatientConsultationsFromMedplum } from "@/lib/fhir/consultation-serv
 import { getPatientAppointmentsFromMedplum } from "@/lib/fhir/appointment-service";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
+import { isValidClinicId } from "@/lib/server/clinic-id";
 import { formatDisplayDate, calculateAge, safeToISOString } from "@/lib/utils";
 import type { SerializedPatient } from "@/components/patients/patient-card";
 import { notFound, redirect } from 'next/navigation';
@@ -27,21 +28,19 @@ interface PatientProfilePageProps {
 }
 
 export default async function PatientProfilePage({ params }: PatientProfilePageProps) {
-  const { id } = await params;
-  let medplum;
-  try {
-    medplum = await getMedplumForRequest();
-  } catch {
-    redirect('/login');
-  }
-  const clinicId = await resolveClinicIdFromServerScope();
+  const [{ id }, medplum, clinicId] = await Promise.all([
+    params,
+    getMedplumForRequest().catch(() => redirect('/login')),
+    resolveClinicIdFromServerScope(),
+  ]);
+  if (!clinicId || !isValidClinicId(clinicId)) redirect('/login');
   // Fetch data in parallel from Medplum FHIR (source of truth)
   // One Organization lookup for all module flags (was 3 identical searches).
   const [patientData, consultationsData, triageData, appointmentsData, enabledModuleIds] = await Promise.all([
     getPatientFromMedplum(id, clinicId, medplum),
     getPatientConsultationsFromMedplum(id, clinicId, medplum),
     getTriageForPatient(id, medplum, clinicId),
-    getPatientAppointmentsFromMedplum(medplum, id),
+    getPatientAppointmentsFromMedplum(medplum, id, clinicId),
     getEnabledModuleIdsForClinic(clinicId),
   ]);
   const poctEnabled = enabledModuleIds.includes("poct");
