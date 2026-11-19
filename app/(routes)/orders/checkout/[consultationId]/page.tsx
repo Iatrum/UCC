@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+import { checkoutPreloadScript } from "@/lib/billing/checkout-preload";
 import CheckoutClient from "./checkout-client";
 
 type Props = {
@@ -17,5 +19,14 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
       ? resolvedSearchParams.patientId
       : "";
 
-  return <CheckoutClient consultationId={consultationId} patientId={patientId} />;
+  // Task 684: start the critical reads at HTML-parse time instead of after hydration (same routes, same auth).
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+  const preload = checkoutPreloadScript(consultationId, patientId);
+
+  return (
+    <>
+      {preload ? <script nonce={nonce} dangerouslySetInnerHTML={{ __html: preload }} /> : null}
+      <CheckoutClient consultationId={consultationId} patientId={patientId} />
+    </>
+  );
 }
