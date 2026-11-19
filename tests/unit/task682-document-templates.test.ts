@@ -147,7 +147,7 @@ describe('Task 682: DocumentReference service clinic scoping', () => {
   });
   test('createPatientDocument without clinic context fails closed before any write', async () => {
     const c: any = { createResource: mock(async () => ({ id: 'x' })), readResource: mock(async () => ({})) };
-    await expect(createPatientDocument(c, { patientId: 'p1', title: 't', url: 'u', contentType: 'application/pdf' })).rejects.toBeDefined();
+    await expect(createPatientDocument(c, { patientId: 'p1', title: 't', url: 'u', contentType: 'application/pdf' })).rejects.toThrow('Forbidden');
     expect(c.createResource).not.toHaveBeenCalled();
   });
   test('listPatientDocuments maps fields, extracts storage path, drops url-less entries', async () => {

@@ -132,6 +132,12 @@ describe('Task 682: signedDocumentMutationError (locking) edge cases', () => {
     expect(signedDocumentMutationError([{ notes: voided }], [])).toBe(lockErr);
   });
 
+  test('an already-voided document with no void markers cannot be "voided" again to stamp it', () => {
+    const bare = JSON.stringify({ kind: 'mc', status: 'voided' });
+    const stamped = JSON.stringify({ kind: 'mc', status: 'voided', voidedAt: '2026-05-23T01:00:00Z', voidReason: 'r' });
+    expect(signedDocumentMutationError([{ notes: bare }], [{ notes: stamped }])).toBe(lockErr);
+  });
+
   test('voiding plus reissuing a new document in one replacement is allowed', () => {
     const old = chit();
     const voided = chit({ status: 'voided', voidedAt: '2026-05-23T02:00:00Z' });

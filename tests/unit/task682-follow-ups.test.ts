@@ -38,8 +38,8 @@ describe('Task 682: follow-up clinic scoping (service layer)', () => {
     const client: any = { readResource: async () => comm('f1', 'clinic-a'), updateResource: mock(async (r: any) => r) };
     const done = await updateFollowUpStatus(client, 'f1', 'completed', 'clinic-a');
     expect(done).toMatchObject({ status: 'completed', deliveryStatus: 'completed', clinicId: 'clinic-a' });
-    expect(done.sentConfirmedAt).toBeTruthy();
-    expect(client.updateResource.mock.calls[0][0].sent).toBeTruthy();
+    expect(done.sentConfirmedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(client.updateResource.mock.calls[0][0].sent).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     const stopped = await updateFollowUpStatus(client, 'f1', 'stopped', 'clinic-a');
     expect(stopped.deliveryStatus).toBe('failed');
     const prep = await updateFollowUpStatus(client, 'f1', 'in-progress', 'clinic-a');
@@ -47,7 +47,7 @@ describe('Task 682: follow-up clinic scoping (service layer)', () => {
     expect(client.updateResource.mock.calls[2][0].sent).toBeUndefined();
     const opened = await markFollowUpOpened(client, 'f1', 'clinic-a');
     expect(opened.deliveryStatus).toBe('opened');
-    expect(opened.openedAt).toBeTruthy();
+    expect(opened.openedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     const urls = client.updateResource.mock.calls[0][0].extension.map((e: any) => e.url);
     expect(new Set(urls).size).toBe(urls.length);
     expect(getFollowUpClinicId(client.updateResource.mock.calls[0][0])).toBe('clinic-a');
@@ -97,7 +97,8 @@ describe('Task 682: follow-up clinic scoping (service layer)', () => {
 
   test('createFollowUp with a patient from another clinic is refused before any search or write', async () => {
     const client: any = { searchResources: mock(async () => []), createResource: mock(async () => ({})), readResource: mock(async () => { throw new Error('boom'); }) };
-    await expect(createFollowUp(client, { patientName: 'P', patientId: 'bad id!', clinicId: 'c', type: 'review-request', message: 'm' })).rejects.toBeDefined();
+    await expect(createFollowUp(client, { patientName: 'P', patientId: 'bad id!', clinicId: 'c', type: 'review-request', message: 'm' })).rejects.toThrow('Forbidden');
+    expect(client.searchResources).not.toHaveBeenCalled();
     expect(client.createResource).not.toHaveBeenCalled();
   });
 });
@@ -127,7 +128,7 @@ describe('Task 682: follow-up message helpers', () => {
     expect(noUrl).toContain('there');
     expect(noUrl).not.toContain('{{');
     expect(noUrl).not.toContain('  ');
-    expect(buildReviewRequestMessage('A', '', 'Hello {{patientName}} {{reviewUrl}}')).not.toBe('Hello A');
+    expect(buildReviewRequestMessage('A', '', 'Hello {{patientName}} {{reviewUrl}}')).toBe('Hi A, thank you for visiting us today. We would really appreciate it if you could leave us a Google review.');
     expect(buildReviewRequestMessage('A', '', 'Hello {{patientName}}')).toBe('Hello A');
     expect(buildReviewRequestMessage('A', 'u', 'Hello {{patientName}} {{ reviewUrl }}')).toBe('Hello A u');
   });

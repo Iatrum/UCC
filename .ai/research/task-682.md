@@ -30,3 +30,8 @@ No real bug found that needs a fix. Observations:
 4. Baseline has 2 pre-existing unit failures unrelated to this task (`clinic scoping on checkout and invoice reads … void/delete of another clinic's invoice`, `generateSlotsForSchedule … another clinic`). Same 2 fail on the base commit before my files were added.
 
 Avoided: `app/api/follow-up/twilio/status` (Task 680) and anything under Tasks 674/676/678.
+
+## Task 683 review (independent)
+- Tests import the real modules; only the Medplum client is stubbed. 70 tests, 3x fixed order + 3x `--randomize`: stable.
+- Mutations (one guard per area, each reverted): void `voidedAt` check, signed-note skip, doc update/delete clinic assert, follow-up dedupe clinic filter, follow-up update/open assert, `getAllFollowUps` filter, Time Chit 403, template org search. All caught. One survivor (already-voided guard in `isVoidTransition`) -> added a test; now caught.
+- Tightened: `rejects.toBeDefined()` -> `toThrow('Forbidden')` (+ search not called), `.not.toBe` -> exact fallback message, `toBeTruthy` timestamps -> ISO regex.
