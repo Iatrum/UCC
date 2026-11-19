@@ -60,10 +60,25 @@ describe("mcEndDate (inclusive)", () => {
   test("crosses a leap day", () => {
     expect(mcEndDate("2028-02-28", 3)).toBe("01 Mar 2028");
   });
-  // TODO(633, suspected bug): 0 < n < 1 passes `numDays > 0` but floor(n)-1 = -1, so the end date
-  // is the day BEFORE the start (e.g. 17 Nov for a 18 Nov start). Expected "". UI sends integers => low risk.
-  test.skip("fractional 0<n<1 should not produce an end date before the start", () => {
-    expect(mcEndDate("2026-11-18", 0.5)).toBe("");
+  // Task 637: partial day (0<n<1) = same-day MC; end date is never before the start.
+  test("fractional 0<n<1 is a same-day MC (end never before start)", () => {
+    expect(mcEndDate("2026-11-18", 0.5)).toBe("18 Nov 2026");
+    expect(mcEndDate("2026-11-18", 0.01)).toBe("18 Nov 2026");
+    expect(mcEndDate("2026-11-18", 0.99)).toBe("18 Nov 2026");
+    expect(mcEndDate("2026-11-18", 1.5)).toBe("18 Nov 2026");
+  });
+  test("non-finite and invalid start -> empty", () => {
+    expect(mcEndDate("2026-11-18", Infinity)).toBe("");
+    expect(mcEndDate("2026-11-18", -Infinity)).toBe("");
+    expect(mcEndDate("2026-02-30", 2)).toBe("");
+  });
+  test("end date is never before start for any positive n", () => {
+    for (const n of [0.001, 0.5, 1, 1.9, 2, 7, 30]) {
+      const end = mcEndDate("2026-12-31", n);
+      expect(end).not.toBe("");
+      expect(end).not.toBe("30 Dec 2026");
+    }
+    expect(mcEndDate("2026-12-31", 2)).toBe("01 Jan 2027");
   });
 });
 
