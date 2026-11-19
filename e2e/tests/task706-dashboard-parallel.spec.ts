@@ -17,6 +17,12 @@ test('dashboard loads appointments and billing while browser auth is pending', a
     ]);
     expect(appointments.ok()).toBe(true);
     expect(billable.ok()).toBe(true);
+    const [appointmentPayload, billablePayload] = await Promise.all([
+      appointments.json(),
+      billable.json(),
+    ]);
+    expect(Array.isArray(appointmentPayload.appointments)).toBe(true);
+    expect(Array.isArray(billablePayload.consultations)).toBe(true);
   } finally {
     releaseAuth();
     await page.unrouteAll({ behavior: 'wait' });

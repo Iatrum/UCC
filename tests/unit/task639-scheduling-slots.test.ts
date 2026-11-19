@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import {
   bookSlotToAppointment, ensureClinicianSchedule, findSlots, generateSlotsForSchedule, manualBookAppointmentWithSlot,
 } from '../../lib/fhir/scheduling-service';
+import { ForbiddenError } from '../../lib/server/route-helpers';
 import { CLINIC_A, CLINIC_B, createMockMedplum, tenantResources } from './helpers/mock-medplum';
 
 const own = [{ system: 'clinic', value: CLINIC_A }];
@@ -87,7 +88,7 @@ describe('generateSlotsForSchedule', () => {
       resourceType: 'Schedule', id: 's-foreign',
       identifier: [{ system: SCHED_SYS, value: `${CLINIC_B}:dr1` }],
     }]);
-    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow('does not belong');
+    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow(ForbiddenError);
     expect(m.writes).toHaveLength(0);
   });
 
