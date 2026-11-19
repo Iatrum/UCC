@@ -1,3 +1,4 @@
+import { assertSafeFhirId } from "@/lib/server/clinic-id";
 import { NextRequest, NextResponse } from "next/server";
 import { getBillingTaskClinicId, updateBillingExceptionTaskStatus } from "@/lib/fhir/billing-task-service";
 import { isModuleEnabledForClinic } from "@/lib/module-registry";
@@ -25,6 +26,8 @@ export async function PATCH(
     if (!["requested", "in-progress", "completed", "cancelled"].includes(status)) {
       return NextResponse.json({ success: false, error: "Invalid status" }, { status: 400 });
     }
+
+    assertSafeFhirId(id);
 
     const existing = await medplum.readResource("Task", id);
     if (getBillingTaskClinicId(existing) !== clinicId) {

@@ -5,7 +5,7 @@ import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
 import { isSignedDocumentNote, signedDocumentMutationError } from '@/lib/clinical-documents';
 import { auditSignedDocument } from './signed-document-audit';
-import { ConflictError } from '@/lib/server/route-helpers';
+import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
 import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
@@ -142,7 +142,7 @@ function assertMatchesClinic(
   resourceLabel = 'resource'
 ): void {
   if (!matchesClinic(resource, clinicId)) {
-    throw new Error(`Access denied: ${resourceLabel} does not belong to clinic '${clinicId}'`);
+    throw new NotFoundError(`${resourceLabel} not found.`);
   }
 }
 
@@ -919,7 +919,7 @@ export async function updateConsultationInMedplum(
   try {
     encounter = await client.readResource('Encounter', encounterId);
   } catch {
-    throw new Error('Consultation not found');
+    throw new NotFoundError('Consultation not found');
   }
   if (clinicId) {
     assertMatchesClinic(encounter as any, clinicId, `Encounter/${encounterId}`);

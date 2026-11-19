@@ -1,5 +1,6 @@
 import type { MedplumClient } from '@medplum/core';
 import type { ChargeItemDefinition, Money } from '@medplum/fhirtypes';
+import { NotFoundError } from '@/lib/server/route-helpers';
 
 export interface ProcedureItem {
   id: string;
@@ -188,13 +189,13 @@ export async function updateProcedureInMedplum(
 ): Promise<void> {
   const existing = await getDefinitionById(medplum, id);
   if (!existing) {
-    throw new Error('Procedure not found');
+    throw new NotFoundError('Procedure not found');
   }
   if (isServiceCatalogDefinition(existing)) {
-    throw new Error('Procedure not found');
+    throw new NotFoundError('Procedure not found');
   }
   if (!isProcedureForClinic(existing, clinicId)) {
-    throw new Error('Procedure not found');
+    throw new NotFoundError('Procedure not found');
   }
 
   const nextName = updates.name?.trim() || existing.title || existing.code?.text || 'Procedure';
@@ -236,7 +237,7 @@ export async function deleteProcedureInMedplum(
 ): Promise<void> {
   const existing = await getDefinitionById(medplum, id);
   if (!existing || isServiceCatalogDefinition(existing) || (clinicId && !isProcedureForClinic(existing, clinicId))) {
-    throw new Error('Procedure not found');
+    throw new NotFoundError('Procedure not found');
   }
   await medplum.deleteResource('ChargeItemDefinition', id);
 }

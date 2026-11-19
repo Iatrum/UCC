@@ -1,6 +1,7 @@
 import { OperationOutcomeError, forbidden, type MedplumClient } from "@medplum/core";
 import { assertPatientInClinic } from "@/lib/fhir/write-containment";
 import type { Appointment, Patient, Practitioner, Schedule, Slot } from "@medplum/fhirtypes";
+import { ForbiddenError } from "@/lib/server/route-helpers";
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
@@ -186,7 +187,8 @@ export async function generateSlotsForSchedule(
   const schedule = await medplum.readResource("Schedule", input.scheduleId);
   const { clinicId: scheduleClinicId } = parseScheduleIdentifier(schedule);
   if (scheduleClinicId !== clinicId) {
-    throw new Error("Schedule does not belong to this clinic");
+    // Caller-supplied reference in a payload: 403 (Task 422 rule 2).
+    throw new ForbiddenError("Schedule unavailable in current clinic");
   }
 
   const windowStart = new Date(input.start);

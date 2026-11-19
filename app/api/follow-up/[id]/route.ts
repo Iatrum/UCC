@@ -1,3 +1,4 @@
+import { assertSafeFhirId } from "@/lib/server/clinic-id";
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
@@ -35,6 +36,8 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: "Invalid status" }, { status: 400 });
     }
 
+    assertSafeFhirId(id);
+
     const comm = await medplum.readResource("Communication", id);
     if (getFollowUpClinicId(comm) !== clinicId) {
       throw new NotFoundError("Follow up not found.");
@@ -64,6 +67,8 @@ export async function DELETE(
     if (!id) {
       return NextResponse.json({ success: false, error: "ID required" }, { status: 400 });
     }
+
+    assertSafeFhirId(id);
 
     const comm = await medplum.readResource("Communication", id);
     if (getFollowUpClinicId(comm) !== clinicId) {
