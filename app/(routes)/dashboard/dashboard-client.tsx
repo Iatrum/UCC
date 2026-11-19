@@ -44,6 +44,7 @@ export default function DashboardClient({ initialQueue }: { initialQueue: QueueP
   const [consultations, setConsultations] = useState<BillableConsultation[]>([]);
   const { loading: authLoading } = useMedplumAuth();
   const authReady = !authLoading;
+  const canLoadTabs = initialQueue !== null || authReady;
   const [loading, setLoading] = useState(initialQueue === null);
   const [apptLoading, setApptLoading] = useState(true);
   const [apptError, setApptError] = useState<string | null>(null);
@@ -137,23 +138,33 @@ export default function DashboardClient({ initialQueue }: { initialQueue: QueueP
     };
   }, []);
 
-  // The server provides the first queue when available. Client requests still
-  // wait for session readiness, including the fallback when that read fails.
+  // The queue's client fallback still waits for session readiness.
   useEffect(() => {
     if (!authReady) return;
     let disposed = false;
     queueMicrotask(() => {
       if (disposed) return;
       if (needsInitialQueue.current) void loadQueue();
-      void loadAppointments();
-      void loadConsultations();
     });
     const interval = setInterval(loadQueue, 30000);
     return () => {
       disposed = true;
       clearInterval(interval);
     };
-  }, [authReady, loadAppointments, loadConsultations, loadQueue]);
+  }, [authReady, loadQueue]);
+
+  // A server-provided queue has already passed clinic authentication. Both
+  // tab APIs validate the session cookie and can start before browser auth finishes.
+  useEffect(() => {
+    if (!canLoadTabs) return;
+    let disposed = false;
+    queueMicrotask(() => {
+      if (disposed) return;
+      void loadAppointments();
+      void loadConsultations();
+    });
+    return () => { disposed = true; };
+  }, [canLoadTabs, loadAppointments, loadConsultations]);
 
   const upcomingAppointments = useMemo(() => {
     const now = new Date();
