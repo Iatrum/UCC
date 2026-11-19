@@ -30,7 +30,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
-| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | CODE | Low priority, not user-visible; PILOT-CHECK #8 |
+| A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | DONE (Task 659, PR pending) | 503: client stops re-POSTing after the first 503 (manual Refresh re-checks); billing lookup uses `optional=true` (200, no bill yet); documents fetch aborted on unmount and silent. Residual: the browser itself logs the single first 503 network line (server contract kept, e2e relies on it). Notes `.ai/research/task-659.md` |
 | A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | CODE | Dev only; after the dev topology is in place (`.ai/progress-task5.md`) |
 
 ## B. Security and secrets

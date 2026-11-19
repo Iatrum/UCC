@@ -1,5 +1,6 @@
 "use client";
 
+import { readExistingInvoiceNumber } from "@/lib/billing/invoice-lookup";
 import { checkoutSubtotal, displayInvoiceNumber, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import {
   buildStockNotice,
@@ -442,7 +443,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         const resolvedPatientId = String(payload.consultation.patientId || payload.patient.id || patientId);
         const [invoiceResponse, draftResponse] = await Promise.all([
           fetchWithTimeout(
-            `/api/billing?consultationId=${encodeURIComponent(consultationId)}`,
+            `/api/billing?consultationId=${encodeURIComponent(consultationId)}&optional=true`,
             { cache: "no-store" }
           ),
           fetchWithTimeout(
@@ -450,7 +451,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
             { cache: "no-store" }
           ),
         ]);
-        const invoicePayload = await invoiceResponse.json().catch(() => ({}));
+        const existingInvoiceNumber = await readExistingInvoiceNumber(invoiceResponse);
         const draftPayload = await draftResponse.json().catch(() => ({}));
 
         if (active) {
@@ -462,9 +463,7 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
               ? draftPayload.plan?.entries || []
               : [],
           });
-          if (invoiceResponse.ok && invoicePayload?.invoiceNumber) {
-            setInvoiceNumber(String(invoicePayload.invoiceNumber));
-          }
+          if (existingInvoiceNumber) setInvoiceNumber(existingInvoiceNumber);
         }
       } catch (err) {
         if (active) {
