@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-19 — Task 672: dashboard title paints with the loading shell
+The dashboard title and description now show immediately while the queue loads, so the page looks ready sooner. No behaviour change.
+
 ## 2026-11-19 — Task 665: faster dashboard queue and patient workspace
 The dashboard loads the clinic queue on the server. Staff still see loading and retry states, and the queue refreshes on demand and every 30 seconds. The patient profile loads the notes editor when Consult opens. Treatment search accepts typing while the catalogs load after the composer mounts. Benchmark results are in `.ai/research/task-665.md`.
 ## 2026-11-19 — Task 659: less console noise on pilot screens (A11)
