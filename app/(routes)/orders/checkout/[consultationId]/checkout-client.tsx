@@ -427,11 +427,26 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
       try {
         // The patient comes from the consultation (clinic-scoped on the server),
         // so the link works without ?patientId=.
-        const orderResponse = await fetchWithTimeout(
+        const planUrl = (forPatientId: string) =>
+          `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${forPatientId}-${consultationId}`)}&patientId=${encodeURIComponent(forPatientId)}&consultationId=${encodeURIComponent(consultationId)}`;
+        const fetchPlan = (forPatientId: string) => fetchWithTimeout(planUrl(forPatientId), { cache: "no-store" });
+        const orderRequest = fetchWithTimeout(
           `/api/orders?consultationId=${encodeURIComponent(consultationId)}${
             patientId ? `&patientId=${encodeURIComponent(patientId)}` : ""
           }`
         );
+        // The invoice lookup only needs the consultation id, and the draft plan only needs the patient id, which
+        // the link already carries: start both with the order request instead of after it (Task 678). If the
+        // order response resolves a different patient, the speculative plan read is discarded and redone.
+        const invoiceRequest = fetchWithTimeout(
+          `/api/billing?consultationId=${encodeURIComponent(consultationId)}&optional=true`,
+          { cache: "no-store" }
+        );
+        const speculativePlan = patientId ? fetchPlan(patientId) : null;
+        // Avoid unhandled rejections if an earlier await throws first; the awaits below still surface errors.
+        invoiceRequest.catch(() => undefined);
+        speculativePlan?.catch(() => undefined);
+        const orderResponse = await orderRequest;
         const payload = await orderResponse.json().catch(() => ({}));
         if (!orderResponse.ok || !payload.patient || !payload.consultation) {
           throw new Error(
@@ -442,14 +457,8 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         }
         const resolvedPatientId = String(payload.consultation.patientId || payload.patient.id || patientId);
         const [invoiceResponse, draftResponse] = await Promise.all([
-          fetchWithTimeout(
-            `/api/billing?consultationId=${encodeURIComponent(consultationId)}&optional=true`,
-            { cache: "no-store" }
-          ),
-          fetchWithTimeout(
-            `/api/consultations/plan?draftId=${encodeURIComponent(`profile-treatment-${resolvedPatientId}-${consultationId}`)}&patientId=${encodeURIComponent(resolvedPatientId)}&consultationId=${encodeURIComponent(consultationId)}`,
-            { cache: "no-store" }
-          ),
+          invoiceRequest,
+          speculativePlan && resolvedPatientId === patientId ? speculativePlan : fetchPlan(resolvedPatientId),
         ]);
         const existingInvoiceNumber = await readExistingInvoiceNumber(invoiceResponse);
         const draftPayload = await draftResponse.json().catch(() => ({}));
