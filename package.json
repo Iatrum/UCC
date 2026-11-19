@@ -28,6 +28,7 @@
     "staging:down": "bash infra/staging/up.sh down",
     "staging:guard": "bash infra/staging/up.sh guard",
     "staging:probe": "bash scripts/staging/probe.sh",
+    "staging:invite-rehearsal": "bash scripts/staging/rehearse-invite-dev.sh",
     "staging:audit": "bun run scripts/staging/audit-exposure.ts"
   },
   "dependencies": {

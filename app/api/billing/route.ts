@@ -199,6 +199,8 @@ export async function GET(req: NextRequest) {
       if (!invoice && searchParams.get("previewNumber") === "true") {
         return NextResponse.json({ success: true, invoice: null, invoiceNumber: await generateInvoiceNumber(medplum) });
       }
+      // Task 659: `optional=true` = "no bill yet" is a normal answer (200, invoice null), so checkout does not produce a console 404.
+      if (!invoice && searchParams.get("optional") === "true") return NextResponse.json({ success: true, invoice: null, invoiceNumber: null });
       if (!invoice) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
       return NextResponse.json({ success: true, invoice, invoiceNumber: getInvoiceNumber(invoice) });
     }
