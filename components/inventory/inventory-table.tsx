@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { isLowStock } from "@/lib/inventory/stock-summary";
 import { Input } from "@/components/ui/input";
 import { Search, Trash2, Pencil } from "lucide-react";
 import { Medication } from "@/lib/inventory";
@@ -97,7 +98,7 @@ export function InventoryTable({
                   </Badge>
                 </TableCell>
                 <TableCell
-                  className={medication.stock <= medication.minimumStock ? "font-medium text-rose-600" : ""}
+                  className={medication.stock <= 0 || isLowStock(medication) ? "font-medium text-rose-600" : ""}
                   data-testid={`stock-cell-${medication.id}`}
                 >
                   {medication.stock} {medication.unit}
@@ -109,7 +110,7 @@ export function InventoryTable({
                     <Badge variant="destructive" className="ml-2" data-testid="stock-flag-out">
                       Out of stock
                     </Badge>
-                  ) : medication.stock <= medication.minimumStock ? (
+                  ) : isLowStock(medication) ? (
                     <Badge variant="outline" className="ml-2 border-amber-300 text-amber-700" data-testid="stock-flag-low">
                       Low stock
                     </Badge>

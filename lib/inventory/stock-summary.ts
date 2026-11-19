@@ -7,8 +7,11 @@ export interface StockLevel {
 export const BANNER_NAME_LIMIT = 5;
 
 export const isOutOfStock = (m: StockLevel) => m.stock <= 0;
-/** "Order soon" = at or below threshold but not yet empty (out-of-stock has its own tile). */
-export const isOrderSoon = (m: StockLevel) => m.stock > 0 && m.stock <= m.minimumStock;
+/** A threshold counts as set only when minimumStock is a positive number (0/blank = none). */
+export const hasThreshold = (m: Pick<StockLevel, "minimumStock">) => Number.isFinite(m.minimumStock) && m.minimumStock > 0;
+/** "Order soon"/"Low stock" = threshold set, at or below it, but not yet empty (out-of-stock has its own flag). Single source of truth. */
+export const isOrderSoon = (m: StockLevel) => hasThreshold(m) && m.stock > 0 && m.stock <= m.minimumStock;
+export const isLowStock = isOrderSoon;
 
 export function formatItemCount(n: number): string {
   return `${n} ${n === 1 ? "item" : "items"}`;

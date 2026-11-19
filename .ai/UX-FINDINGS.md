@@ -186,3 +186,17 @@ Verified on current code (merged with origin/dev; no dev server needed, no app c
 - **#7 history table clipped: NOT still real.** `patient-profile-workspace.tsx`: below `md` a card list is shown; from `md` up the table sits in `hidden overflow-x-auto md:block` with `min-w-[860px]`, so it scrolls horizontally inside its container instead of being clipped. The "still present" note on `66f596b` overlooked Task 446.
 - **#8 "Total visits / Last completed visit" before checkout: NOT still real.** The patient header (`patients/[id]/page.tsx`) now reads "Last consult" / "Total consults" (consult-based, `consultSummary`); no "completed visit" wording remains in `app/`, `components/`, `lib/`.
 - No fix made; composer, sidebar and nav untouched.
+
+---
+
+# Task 641: Low leftovers re-verified on `origin/dev` @ `805106a` (2026-11-18)
+
+Method: code read against current dev; no dev server started. Several earlier verdicts (Task 623) lived on an unmerged PR branch, so each was re-checked on dev itself.
+
+- **Part 2 Low 21 (user-edit lists every branch):** VERIFIED FIXED on dev: `app/(admin)/admin/users/[id]/user-edit-form.tsx:284` ("N of M selected"), `:291` (`max-h-64 overflow-y-auto`).
+- **Part 2 Low 20 (templates raw HTML):** warning VERIFIED FIXED: `components/settings/document-template-editor.tsx:91`. "Preview with a real patient" is a new feature, left open.
+- **Part 3 #23 (billing table on phones):** VERIFIED FIXED: `components/billing/billing-table.tsx:87-88,106,111-112` (date/status columns hidden below `sm`, shown under the name).
+- **Part 3 #25 (inventory tiles stack on phones):** **FIXED here.** `app/(routes)/inventory/page.tsx` overview tiles are a 3-column grid at every width, with smaller padding/text and the hint line hidden below `sm`. Desktop (`sm`+) look unchanged apart from the grid being fixed at 3 columns from `md`, as before.
+- **Part 1 #12, #13, #14, #15, #18 and Part 2 #17, #18, #19:** previously closed; spot-checked on dev (`poct-section.tsx:64-65`, `poct/page.tsx:62`, `lab-results-view.tsx:67`). No change.
+- **Part 2 Low 16 (dead purchasing panels):** STILL OPEN, intentionally: `purchase-orders-panel.tsx` / `suppliers-panel.tsx` are unimported but removal belongs to the purchasing decision (`lib/purchasing.ts` `INVENTORY_PURCHASING_ENABLED=false`).
+- **Part 1 #19 sidebar polish, Part 3 #24 sidebar width:** STILL OPEN, intentionally (sidebar/nav out of scope).
