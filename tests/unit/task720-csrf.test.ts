@@ -45,4 +45,14 @@ describe("checkCsrf", () => {
     expect(call("POST", "/api/labs/receiver-x", { ...host, origin: "https://evil.test" })).toBe("cross_origin");
     expect(call("POST", "/api/labs/order", { ...host, origin: "https://evil.test" })).toBe("cross_origin");
   });
+  it("cannot be dodged with duplicate slashes (Task 721)", () => {
+    expect(call("POST", "//api/patients", { ...host, origin: "https://evil.test" })).toBe("cross_origin");
+    expect(call("POST", "/api//patients", { ...host, origin: "https://evil.test" })).toBe("cross_origin");
+    expect(call("POST", "//api//labs//receive", { ...host, origin: "https://evil.test" })).toBeNull();
+  });
+  it("treats a Vercel preview host as same-origin, case-insensitively (Task 721)", () => {
+    const h = { host: "ucc-git-x-team.vercel.app", "x-forwarded-host": "ucc-git-x-team.vercel.app", origin: "https://UCC-git-x-team.vercel.app" };
+    expect(call("POST", "/api/patients", h)).toBeNull();
+    expect(call("POST", "/api/patients", { ...h, origin: "https://ucc.vercel.app" })).toBe("cross_origin");
+  });
 });

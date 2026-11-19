@@ -58,7 +58,9 @@ function parseOrigins(list: string | null | undefined): Set<string> {
 export function checkCsrf(input: CsrfInput): string | null {
   const method = input.method.toUpperCase();
   if (SAFE_METHODS.has(method)) return null;
-  if (!input.pathname.startsWith("/api/") || isCsrfExemptPath(input.pathname)) return null;
+  // Collapse repeated slashes so `//api/x` cannot dodge the prefix test while still routing to /api/x.
+  const pathname = input.pathname.replace(/\/{2,}/g, "/");
+  if (!(pathname === "/api" || pathname.startsWith("/api/")) || isCsrfExemptPath(pathname)) return null;
 
   const origin = input.headers.get("origin");
   if (origin) {
