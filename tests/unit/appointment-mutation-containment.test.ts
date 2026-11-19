@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { OperationOutcomeError, gone, notFound, forbidden, type MedplumClient } from '@medplum/core';
 import type { Appointment } from '@medplum/fhirtypes';
-import { deleteAppointment, rescheduleAppointment, updateAppointmentStatus } from '../../lib/fhir/appointment-service';
+import { deleteAppointment, getPatientAppointmentsFromMedplum, rescheduleAppointment, updateAppointmentStatus } from '../../lib/fhir/appointment-service';
 import { ForbiddenError, NotFoundError, handleRouteError } from '../../lib/server/route-helpers';
 
 const clinicId = 'fake-clinic-a';
@@ -15,6 +15,23 @@ const initial: Appointment = {
   start: '2030-01-01T10:00:00.000Z', end: '2030-01-01T10:45:00.000Z', minutesDuration: 45,
   comment: 'Fake note', extension: [{ url: 'urn:fake:preserved', valueString: 'Fake extension' }],
 };
+
+it('searches patient appointments within the clinic and discards foreign results', async () => {
+  const searches: unknown[] = [];
+  const client = {
+    searchResources: async (type: string, params: unknown) => {
+      searches.push({ type, params });
+      return [initial, { ...initial, id: 'foreign', identifier: [foreignIdentifier] }];
+    },
+  } as unknown as MedplumClient;
+
+  const appointments = await getPatientAppointmentsFromMedplum(client, 'fake-patient', clinicId);
+  expect(searches).toEqual([{
+    type: 'Appointment',
+    params: { actor: 'Patient/fake-patient', identifier: `clinic|${clinicId}`, _sort: '-date' },
+  }]);
+  expect(appointments.map((appointment) => appointment.id)).toEqual([initial.id]);
+});
 
 // Fake server with an unrestricted client: no AccessPolicy can mask a missing service guard.
 // It hides extended accounts unless explicitly requested, like Medplum.

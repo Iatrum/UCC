@@ -13,6 +13,7 @@ async function setup(page: Page) {
     return route.fulfill(json({ success: true }));
   });
   await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Refresh queue' }).click();
   await expect(page.getByText('Fake Queue Patient')).toBeVisible();
   return writes;
 }

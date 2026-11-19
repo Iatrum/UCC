@@ -777,9 +777,6 @@ export async function getTriageQueueForToday(
     console.warn('[getTriageQueueForToday] called without clinicId — returning empty to prevent cross-clinic leak');
     return [];
   }
-  const clinicTenant = await resolveClinicTenant(client, clinicId);
-  if (!clinicTenant) return [];
-
   // Page through ALL of today's clinic encounters (not just the first page). Finished
   // encounters must stay in the query because "meds_and_bills" visits are stored as
   // status=finished but still belong in the queue; completed ones are dropped below.
@@ -792,8 +789,16 @@ export async function getTriageQueueForToday(
     `&identifier=${encodeURIComponent(`${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`)}` +
     `&_include=Encounter:subject`;
 
+  // The first search already carries the clinic identifier. Resolve account ownership alongside it
+  // and enforce it before walking the result or reading any referenced patients.
+  const [clinicTenant, firstBundle] = await Promise.all([
+    resolveClinicTenant(client, clinicId),
+    client.search('Encounter', query),
+  ]);
+  if (!clinicTenant) return [];
+
   const bundleResources: any[] = [];
-  let bundle = (await client.search('Encounter', query)) as any;
+  let bundle = firstBundle as any;
   let pages = 1;
   for (;;) {
     for (const entry of bundle.entry ?? []) if (entry.resource) bundleResources.push(entry.resource);

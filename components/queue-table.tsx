@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Patient } from "@/lib/models";
+import { useState, useSyncExternalStore } from "react";
+import type { QueuePatient } from "@/lib/dashboard/queue-load";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,7 +30,7 @@ import { QueueStatus } from "@/lib/types";
 import { useRouter } from 'next/navigation';
 
 interface QueueTableProps {
-  patients: Patient[];
+  patients: QueuePatient[];
   onQueueUpdate?: () => Promise<void>;
 }
 
@@ -65,13 +65,17 @@ function formatLabel(value: string) {
     .join(" ");
 }
 
+const subscribeToTimeZone = () => () => {};
+
 export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps) {
   const router = useRouter();
+  // The Added At column uses the browser's timezone, including for server-rendered rows.
+  const canFormatAddedAt = useSyncExternalStore(subscribeToTimeZone, () => true, () => false);
   const [loadingSet, setLoadingSet] = useState<Set<string>>(new Set());
-  const [pendingRemovePatient, setPendingRemovePatient] = useState<Patient | null>(null);
-  const [pendingCompletePatient, setPendingCompletePatient] = useState<Patient | null>(null);
+  const [pendingRemovePatient, setPendingRemovePatient] = useState<QueuePatient | null>(null);
+  const [pendingCompletePatient, setPendingCompletePatient] = useState<QueuePatient | null>(null);
 
-  const handleAddToQueue = async (patient: Patient) => {
+  const handleAddToQueue = async (patient: QueuePatient) => {
     if (loadingSet.has(patient.id)) return;
     setLoadingSet(prev => new Set(prev).add(patient.id));
     try {
@@ -103,7 +107,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
     }
   };
 
-  const handleStartConsultation = async (patient: Patient) => {
+  const handleStartConsultation = async (patient: QueuePatient) => {
     if (loadingSet.has(patient.id)) return;
     setLoadingSet(prev => new Set(prev).add(patient.id));
     try {
@@ -138,7 +142,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
     }
   };
 
-  const handleCompleteConsultation = async (patient: Patient) => {
+  const handleCompleteConsultation = async (patient: QueuePatient) => {
     if (loadingSet.has(patient.id)) return;
     setLoadingSet(prev => new Set(prev).add(patient.id));
     try {
@@ -170,7 +174,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
     }
   };
 
-  const handleRemoveFromQueue = async (patient: Patient) => {
+  const handleRemoveFromQueue = async (patient: QueuePatient) => {
     if (loadingSet.has(patient.id)) return;
     setLoadingSet(prev => new Set(prev).add(patient.id));
     try {
@@ -348,7 +352,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
                 </div>
               </TableCell>
               <TableCell>
-                {formatAddedAt(patient.queueAddedAt)}
+                {(canFormatAddedAt || !patient.queueAddedAt) && formatAddedAt(patient.queueAddedAt)}
               </TableCell>
               <TableCell>
                 {getStatusBadge(patient.queueStatus)}

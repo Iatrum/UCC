@@ -65,10 +65,10 @@ describe('Review 481 follow-ups', () => {
     expect(src).toContain("fetchWithTimeout('/api/auth/me'");
   });
   test('dashboard session-ready gate: queue fetch waits for auth and spinner covers it', () => {
-    const src = readFileSync(join(__dirname, '../../app/(routes)/dashboard/page.tsx'), 'utf8');
+    const src = readFileSync(join(__dirname, '../../app/(routes)/dashboard/dashboard-client.tsx'), 'utf8');
     expect(src).toContain('const authReady = !authLoading;');
     expect(src).toMatch(/if \(!authReady\) return;[\s\S]{0,200}void loadQueue\(\)/);
-    expect(src).toContain('}, [authReady]);');
+    expect(src).toContain('}, [authReady,');
     expect(src).toContain('loading={loading || !authReady}');
   });
 });

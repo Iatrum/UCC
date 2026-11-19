@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-19 — Task 665: faster dashboard queue and patient workspace
+The dashboard loads the clinic queue on the server. Staff still see loading and retry states, and the queue refreshes on demand and every 30 seconds. The patient profile loads the notes editor when Consult opens. Treatment search accepts typing while the catalogs load after the composer mounts. Benchmark results are in `.ai/research/task-665.md`.
+
 ## 2026-11-18 — Task 647: pilot pages hold up on slow internet
 Inventory used to show an empty stock list when its request failed or hung; it now shows an error with Retry, and a failed refresh after saving keeps the existing list. Checkout and the dashboard Appointments/Billing tabs time out after 15 s instead of spinning forever, and checkout has a Retry button. Billing and appointments tables keep the last list on screen while refreshing (with a small Retry banner on failure). Check-in and appointment check-in can no longer be sent twice by a fast double-tap. Composer, sidebar and PR #317 files untouched. Notes: `.ai/research/task-647.md`.
 
