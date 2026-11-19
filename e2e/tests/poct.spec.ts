@@ -4,6 +4,7 @@ import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
 import { newDeviceKey, bearer } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
+import { settleModuleMemo } from '../lib/module-toggle';
 
 // Analyser requests contain a runtime secret; exclude them from trace artifacts.
 test.use({ trace: 'off' });
@@ -32,6 +33,7 @@ async function setClinicModuleEnabled(m: MedplumClient, clinicId: string, enable
     ...org,
     extension: [...otherExtensions, { url: moduleExtensionUrl, valueString: JSON.stringify(nextIds) }],
   });
+  await settleModuleMemo();
 
   return async () => {
     const latest = await m.readResource('Organization', org.id!);
@@ -42,6 +44,7 @@ async function setClinicModuleEnabled(m: MedplumClient, clinicId: string, enable
         ...(existingExtension ? [existingExtension] : []),
       ],
     });
+    await settleModuleMemo();
   };
 }
 
@@ -539,8 +542,9 @@ test('Per-device keys: no/unknown/revoked/inactive/wrong-type key fail closed; a
     // 2. A clinic-A key cannot write into a clinic-B ServiceRequest (either route, any header style).
     const crossMessage = await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(foreignPoct.id!) });
     expect(crossMessage.status()).toBe(403);
+    // Task 572: the JSON receive route answers foreign/unknown orders 404 (indistinguishable, zero writes); the HL7 message route stays 403.
     const crossJson = await request.post('/api/labs/receive', { headers: { 'X-Device-Key': f.deviceKey }, data: { serviceRequestId: foreignPlain.id, results } });
-    expect(crossJson.status()).toBe(403);
+    expect(crossJson.status()).toBe(404);
     for (const sr of [foreignPoct, foreignPlain]) {
       expect(await reportsFor(sr.id!)).toHaveLength(0);
       expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('active');

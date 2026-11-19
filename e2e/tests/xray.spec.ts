@@ -4,6 +4,7 @@ import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
 import { newDeviceKey, bearer } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
+import { settleModuleMemo } from '../lib/module-toggle';
 
 // Device requests contain a runtime secret; exclude them from trace artifacts.
 test.use({ trace: 'off' });
@@ -40,6 +41,7 @@ async function setPacsModuleEnabled(m: MedplumClient, clinicId: string, enabled:
     ...org,
     extension: [...otherExtensions, { url: moduleExtensionUrl, valueString: JSON.stringify(nextIds) }],
   });
+  await settleModuleMemo();
 
   return async () => {
     const latest = await m.readResource('Organization', org.id!);
@@ -50,6 +52,7 @@ async function setPacsModuleEnabled(m: MedplumClient, clinicId: string, enabled:
         ...(existingExtension ? [existingExtension] : []),
       ],
     });
+    await settleModuleMemo();
   };
 }
 
@@ -274,7 +277,8 @@ test('X-ray module disabled after an order exists blocks PATCH/DELETE of that or
     expect(xrayOrder.ok()).toBeTruthy();
     const { serviceRequestId: xrayServiceRequestId } = await xrayOrder.json();
 
-    const genericOrder = await request.post('/api/imaging/order', { data: { patientId: f.patientId,
+    // Tasks 517/518: with X-ray on, an order needs an encounter (accession guard); a consultation-linked non-X-ray order is still generic.
+    const genericOrder = await request.post('/api/imaging/order', { data: { patientId: f.patientId, encounterId: f.consultationId,
       procedures: [{ code: '24638-9', display: 'Pelvis Ultrasound', modality: 'US' }], clinicalIndication: 'Fake test' } });
     expect(genericOrder.ok()).toBeTruthy();
     const { serviceRequestId: genericServiceRequestId } = await genericOrder.json();
@@ -337,8 +341,8 @@ test('Per-device keys: X-ray ingress fails closed without a valid key; a clinic-
 
     // A clinic-A key cannot write into a clinic-B order on either route.
     expect((await request.post('/api/imaging/receive/message', { headers: bearer(f.deviceKey), data: { serviceRequestId: foreignXray.id, study: study() } })).status()).toBe(403);
-    expect((await request.post('/api/imaging/receive', { headers: { 'X-Device-Key': f.deviceKey }, data: { serviceRequestId: foreignPlain.id, study: study() } })).status()).toBe(403);
-    expect((await request.post('/api/imaging/receive', { headers: bearer(f.deviceKey), data: { serviceRequestId: foreignXray.id, study: study() } })).status()).toBe(403);
+    expect((await request.post('/api/imaging/receive', { headers: { 'X-Device-Key': f.deviceKey }, data: { serviceRequestId: foreignPlain.id, study: study() } })).status()).toBe(404);
+    expect((await request.post('/api/imaging/receive', { headers: bearer(f.deviceKey), data: { serviceRequestId: foreignXray.id, study: study() } })).status()).toBe(404);
     for (const sr of [foreignXray, foreignPlain]) {
       expect(await studiesFor(sr.id!)).toHaveLength(0);
       expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('active');
