@@ -31,7 +31,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
 | A11 | Console noise (`503 /api/labs/subscription`, expected 404 on billing lookup, documents abort) | CODE | Low priority, not user-visible; PILOT-CHECK #8 |
-| A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | CODE | Dev only; after the dev topology is in place (`.ai/progress-task5.md`) |
+| A12 | Walk repeated with a user that **has** an AccessPolicy (proves enforcement, not only the flow) | DONE (dev) | Task 661: `.ai/research/task-661.md`. Fake staff with clinic `access[]` in the non-superAdmin project ran register → consult → sign → Lab tab → checkout → dispense (13/13 steps), and the same token was denied reading/writing a second clinic's patient (404/403, 0 search hits). Production still needs the manual Task 5 migration (B-section items) |
 
 ## B. Security and secrets
 
