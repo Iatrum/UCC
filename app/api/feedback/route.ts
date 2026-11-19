@@ -21,6 +21,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Too many submissions. Try again in a minute.' }, { status: 429 });
     }
 
+    // Whole-request cap (1 MB screenshot as base64 + text) before the body is buffered.
+    if (Number(request.headers.get('content-length')) > 1_600_000) {
+      return NextResponse.json({ error: 'Request too large.' }, { status: 413 });
+    }
     const raw = (await request.json().catch(() => null)) as Record<string, any> | null;
     if (!raw || (raw.kind !== 'bug' && raw.kind !== 'feature')) {
       return NextResponse.json({ error: 'kind must be "bug" or "feature"' }, { status: 400 });

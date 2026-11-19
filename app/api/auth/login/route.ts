@@ -406,9 +406,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const message = error instanceof Error ? error.message : 'Login failed';
+    // Unexpected failures (e.g. upstream fetch errors) can name internal hosts/ports: log, don't echo.
+    console.error('[auth/login] Unexpected error:', error instanceof Error ? error.message : 'unknown');
     return NextResponse.json(
-      { code: 'AUTH_UNKNOWN', error: message },
+      { code: 'AUTH_UNKNOWN', error: 'Login failed' },
       { status: 500 }
     );
   }

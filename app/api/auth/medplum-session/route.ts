@@ -4,6 +4,7 @@ import { SESSION_COOKIE, CLINIC_COOKIE, REFRESH_COOKIE } from "@/lib/server/cook
 import { getHostFromNextRequest } from "@/lib/server/subdomain-host";
 import { isValidClinicId } from "@/lib/server/clinic-id";
 
+const MAX_TOKEN_CHARS = 8192;
 const MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
 const isProd = process.env.NODE_ENV === "production";
 // Set cookie domain to share session across all subdomains (e.g. .iatrum.com)
@@ -29,7 +30,15 @@ function cookieDomainForRequest(req: NextRequest): string | undefined {
  */
 export async function POST(req: NextRequest) {
   try {
-    const { accessToken, clinicId } = await req.json();
+    const parsed = await req.json().catch(() => null);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    }
+    const { accessToken, clinicId } = parsed as { accessToken?: unknown; clinicId?: unknown };
+    // A cookie value over ~4 KB is dropped by browsers anyway; refuse oversized/non-string tokens early.
+    if (accessToken !== undefined && (typeof accessToken !== "string" || accessToken.length > MAX_TOKEN_CHARS)) {
+      return NextResponse.json({ error: "Invalid access token" }, { status: 400 });
+    }
 
     if (!accessToken && clinicId === undefined) {
       return NextResponse.json(
