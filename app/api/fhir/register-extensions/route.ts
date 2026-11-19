@@ -6,8 +6,8 @@
  * Registers custom extensions (storage-path, triage) in Medplum using the service account.
  * Safe to call multiple times - checks if already registered.
  *
- * Task 645: platform-admin only (was unauthenticated and echoed error details). GET stays as an
- * alias for easy testing but goes through the same check.
+ * Task 645: platform-admin only (was unauthenticated and echoed error details). Task 720: GET no longer
+ * runs the registration (a GET with side effects is CSRF-able via top-level navigation under SameSite=Lax).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -30,6 +30,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
-  return POST(request);
+export async function GET() {
+  return NextResponse.json({ error: 'Use POST' }, { status: 405, headers: { Allow: 'POST' } });
 }
