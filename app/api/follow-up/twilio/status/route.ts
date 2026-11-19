@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateTwilioDeliveryStatus } from "@/lib/fhir/communication-service";
+import { buildTwilioStatusCallbackUrl, updateTwilioDeliveryStatus } from "@/lib/fhir/communication-service";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { handleRouteError } from "@/lib/server/route-helpers";
 import { isValidTwilioSignature } from "@/lib/server/twilio-signature";
@@ -18,10 +18,14 @@ export async function POST(req: NextRequest) {
       if (typeof value === "string") params[key] = value;
     }
 
+    // Task 680: the sending clinic travels inside the signed StatusCallback URL. No clinic => 403.
+    const clinicId = req.nextUrl.searchParams.get("clinic") || "";
+    const signedUrl = buildTwilioStatusCallbackUrl(process.env.TWILIO_STATUS_CALLBACK_URL, clinicId);
+
     // Authenticate BEFORE any Medplum access. Unset token/URL or a bad signature => 403.
     const valid = isValidTwilioSignature({
       authToken: process.env.TWILIO_AUTH_TOKEN,
-      url: process.env.TWILIO_STATUS_CALLBACK_URL,
+      url: signedUrl,
       signature: req.headers.get("x-twilio-signature"),
       params,
     });
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     const medplum = await getAdminMedplum();
-    const followUp = await updateTwilioDeliveryStatus(medplum, messageSid, status, error);
+    const followUp = await updateTwilioDeliveryStatus(medplum, messageSid, status, error, clinicId);
     return NextResponse.json({ success: true, found: Boolean(followUp) });
   } catch (error) {
     return handleRouteError(error, "POST /api/follow-up/twilio/status");
