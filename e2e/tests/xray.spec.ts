@@ -5,6 +5,7 @@ import { fhir, byPatient } from '../lib/fhir';
 import { newDeviceKey, bearer } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
 import { settleModuleMemo } from '../lib/module-toggle';
+import { deviceMeta } from '../lib/device-meta';
 
 // Device requests contain a runtime secret; exclude them from trace artifacts.
 test.use({ trace: 'off' });
@@ -72,7 +73,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   const { key: deviceKey, identifier: keyHash } = newDeviceKey();
   const device = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
     identifier: [{ system: 'clinic', value: clinicId }, keyHash],
-    meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
+    ...deviceMeta(tagSystem),
     deviceName: [{ name: `Fake X-ray ${suffix}`, type: 'user-friendly-name' }],
     type: { coding: [{ system: typeSystem, code: 'xray' }] },
     property: [{ type: { coding: [{ system: propertySystem, code: 'last-heartbeat' }] },
@@ -87,7 +88,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
 
 test('X-ray offline device cannot be added; auth, clinic and server guard fail closed', async ({ request, page, playwright, baseURL }) => {
   const f = await fixture(request, page, false);
-  const foreign = await f.m.createResource<Device>({ ...f.device, id: undefined, meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
+  const foreign = await f.m.createResource<Device>({ ...f.device, id: undefined, ...deviceMeta(tagSystem),
     identifier: [{ system: 'clinic', value: f.clinicId === 'demo' ? 'clinicb' : 'demo' }] });
   try {
     const anon = await playwright.request.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
@@ -351,7 +352,7 @@ test('Per-device keys: X-ray ingress fails closed without a valid key; a clinic-
     // A POCT analyser key is the wrong device type for imaging ingress.
     const analyser = newDeviceKey();
     await make<Device>({ resourceType: 'Device', status: 'active', identifier: [{ system: 'clinic', value: f.clinicId }, analyser.identifier],
-      meta: { tag: [{ system: 'https://ucc.emr/poct', code: 'simulated' }] }, type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
+      ...deviceMeta('https://ucc.emr/poct'), type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
     expect((await request.post('/api/imaging/receive/message', { headers: bearer(analyser.key), data: { serviceRequestId: own.id, study: study() } })).status()).toBe(401);
 
     // Inactive / revoked devices are refused.
@@ -404,7 +405,7 @@ test('Radiology report ingress (/api/imaging/report) is device-key authenticated
     // 401: POCT analyser key is the wrong device type; inactive and revoked devices are refused.
     const analyser = newDeviceKey();
     await make<Device>({ resourceType: 'Device', status: 'active', identifier: [{ system: 'clinic', value: f.clinicId }, analyser.identifier],
-      meta: { tag: [{ system: 'https://ucc.emr/poct', code: 'simulated' }] }, type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
+      ...deviceMeta('https://ucc.emr/poct'), type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
     expect((await request.post('/api/imaging/report', { headers: bearer(analyser.key), data: report(own.id!) })).status()).toBe(401);
     await f.m.updateResource({ ...f.device, status: 'inactive' as const });
     expect((await request.post('/api/imaging/report', { headers: bearer(f.deviceKey), data: report(own.id!) })).status()).toBe(401);

@@ -40,18 +40,24 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
     return saved;
   };
   const cli = async (args: string[], expected = 0) => {
-    await pause();
-    let code = 0, output = '';
-    try {
-      const result = await run(process.execPath, [script, ...args], {
-        env: { ...process.env, MEDPLUM_BASE_URL: MEDPLUM, MEDPLUM_ADMIN_EMAIL: MEDPLUM_ADMIN.email, MEDPLUM_ADMIN_PASSWORD: MEDPLUM_ADMIN.password },
-        timeout: 60_000,
-      });
-      output = result.stdout + result.stderr;
-    } catch (error: any) { code = Number(error.code) || 1; output = error.stdout + error.stderr; }
-    // Never attach process arguments/env, resource bodies, or full errors to reports.
-    expect(code, 'migration CLI exit status').toBe(expected);
-    return output;
+    // Medplum rate-limits auth (~5/min/IP) and the CLI logs in on every call, so a 429 from the CLI's own admin login
+    // is an environment limit, not an assertion result: wait out the window and retry (bounded) before judging the exit status.
+    for (let attempt = 0; ; attempt++) {
+      await pause();
+      let code = 0, output = '';
+      try {
+        const result = await run(process.execPath, [script, ...args], {
+          env: { ...process.env, MEDPLUM_BASE_URL: MEDPLUM, MEDPLUM_ADMIN_EMAIL: MEDPLUM_ADMIN.email, MEDPLUM_ADMIN_PASSWORD: MEDPLUM_ADMIN.password },
+          timeout: 60_000,
+        });
+        output = result.stdout + result.stderr;
+      } catch (error: any) { code = Number(error.code) || 1; output = error.stdout + error.stderr; }
+      if (code !== 0 && /Admin login failed \(429\)/.test(output) && attempt < 3) { await new Promise(resolve => setTimeout(resolve, 65_000)); continue; }
+      // Never attach process arguments/env, resource bodies, or full errors to reports.
+      // First output line only (CLI messages carry no secrets) so an unexpected exit is diagnosable from the report.
+      expect(code, `migration CLI exit status (${String(output).split('\n').find(Boolean)?.slice(0, 200) ?? 'no output'})`).toBe(expected);
+      return output;
+    }
   };
   const login = async (email: string, password: string) => {
     await pause();
