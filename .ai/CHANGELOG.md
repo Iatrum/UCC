@@ -5,6 +5,8 @@ Checked the Settings/Admin/Appointments/Analytics/Inventory phone fixes. On a la
 
 ## 2026-11-20 — Task 746: Settings, Admin, Appointments, Analytics and Inventory fit a phone
 On a phone, the admin pages (Organisations, Branches, Users, Settings) no longer push buttons and names off the right edge, the Appointments calendar toggle (Month/Week/Day) is fully visible, the Analytics tabs and date ranges show every option without sideways scrolling, and the Inventory stock tiles are readable. Small buttons on these pages are taller on a phone so they are easier to tap. Desktop looks the same. No menu, feature or POCT/X-ray change. Notes and before/after screenshots: `.ai/research/task-746.md`.
+## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
+A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 
 ## 2026-11-19 — Task 718: staff pages fit on a phone
 The patient profile, Patients list header, POCT header and tabs, and the dashboard queue card now fit a phone screen: buttons no longer run off the edge, the patient details no longer overlap, and the tabs can be scrolled sideways. On a laptop screen the patient's consultation history now shows its View/Edit buttons without sideways scrolling. Layout only; nothing in the consultation composer, results or POCT behaviour changed.
