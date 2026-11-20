@@ -294,14 +294,14 @@ export default function AppointmentsCalendarView({ appointments, viewMode, onVie
     <div className="space-y-4">
 
       {/* ── Header ── */}
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={handlePrev} aria-label={prevAriaLabel}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" className="min-h-10 sm:min-h-0" onClick={handlePrev} aria-label={prevAriaLabel}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="sm" onClick={handleToday}>
+        <Button variant="outline" size="sm" className="min-h-10 sm:min-h-0" onClick={handleToday}>
           Today
         </Button>
-        <Button variant="outline" size="sm" onClick={handleNext} aria-label={nextAriaLabel}>
+        <Button variant="outline" size="sm" className="min-h-10 sm:min-h-0" onClick={handleNext} aria-label={nextAriaLabel}>
           <ChevronRight className="h-4 w-4" />
         </Button>
         <h2 className="ml-1 text-lg font-semibold">{headerLabel}</h2>

@@ -218,7 +218,7 @@ export default function InventoryPage() {
           <div className="grid gap-6 xl:grid-cols-[1.55fr_0.75fr]">
             <Card className="border-slate-200/80 shadow-sm">
               <CardContent className="space-y-5 p-5">
-                <div className="grid grid-cols-3 gap-2 md:gap-3">
+                <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-3 md:gap-3">
                   <MetricCard
                     icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
                     label="In stock"
@@ -246,7 +246,7 @@ export default function InventoryPage() {
                       type="button"
                       onClick={() => setOverviewFilter(label)}
                       className={[
-                        "rounded-full px-3 py-1 transition",
+                        "min-h-10 rounded-full px-3 py-1 transition sm:min-h-0",
                         overviewFilter === label
                           ? "bg-slate-900 text-white hover:bg-slate-800"
                           : "text-slate-600 hover:bg-slate-100",
@@ -261,7 +261,7 @@ export default function InventoryPage() {
                       type="button"
                       onClick={() => setOverviewFilter(category)}
                       className={[
-                        "rounded-full px-3 py-1 transition",
+                        "min-h-10 rounded-full px-3 py-1 transition sm:min-h-0",
                         overviewFilter === category
                           ? "bg-slate-900 text-white hover:bg-slate-800"
                           : "text-slate-600 hover:bg-slate-100",

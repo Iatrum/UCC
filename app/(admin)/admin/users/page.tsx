@@ -68,7 +68,7 @@ export default async function UsersPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Users</h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -91,7 +91,7 @@ export default async function UsersPage({ searchParams }: Props) {
           defaultValue={q}
           placeholder="Search name, email or clinic"
           aria-label="Search users"
-          className="max-w-sm"
+          className="min-w-0 max-w-sm"
         />
         <Button type="submit" size="sm" variant="outline">Search</Button>
         {q && (
@@ -101,7 +101,7 @@ export default async function UsersPage({ searchParams }: Props) {
         )}
       </form>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {STATUS_FILTERS.map((filter) => (
           <Button
             key={filter.value}
@@ -160,9 +160,9 @@ export default async function UsersPage({ searchParams }: Props) {
                     {p.name.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{p.name}</p>
+                    <p className="font-medium text-sm break-words sm:truncate">{p.name}</p>
                     {p.email && (
-                      <p className="text-xs text-muted-foreground truncate">
+                      <p className="text-xs text-muted-foreground break-all sm:truncate">
                         {p.email}
                       </p>
                     )}

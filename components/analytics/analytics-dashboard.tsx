@@ -56,18 +56,18 @@ export default function AnalyticsDashboard({ initial }: { initial: Promise<Initi
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div role="tablist" aria-label="Bahagian analitik" className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:inline-flex">
+        <div role="tablist" aria-label="Bahagian analitik" className="grid max-w-full grid-cols-3 gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:inline-flex">
           {TABS.map((t) => (
             <button key={t.key} role="tab" type="button" aria-selected={tab === t.key} onClick={() => select(t.key, range)}
-              className={cn("shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap", tab === t.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
+              className={cn("min-h-10 shrink-0 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors whitespace-nowrap sm:min-h-0 sm:px-3", tab === t.key ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
               {t.label}
             </button>
           ))}
         </div>
-        <div role="group" aria-label="Tempoh" className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:inline-flex">
+        <div role="group" aria-label="Tempoh" className="grid max-w-full grid-cols-4 gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:inline-flex">
           {RANGE_KEYS.map((k) => (
             <button key={k} type="button" aria-pressed={range === k} onClick={() => select(tab, k)}
-              className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap sm:px-3 sm:text-sm", range === k ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
+              className={cn("min-h-10 shrink-0 rounded-lg px-1.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap sm:min-h-0 sm:px-3 sm:text-sm", range === k ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950")}>
               {RANGE_LABELS[k]}
             </button>
           ))}

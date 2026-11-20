@@ -36,7 +36,7 @@ export default async function BranchesPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Branches</h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -109,12 +109,12 @@ export default async function BranchesPage({ searchParams }: Props) {
           No branches match &ldquo;{q}&rdquo;.
         </p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {clinics.map((clinic) => (
-            <Card key={clinic.id} className="flex flex-col">
+            <Card key={clinic.id} className="flex min-w-0 flex-col">
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-start justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
                     {clinic.logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -127,8 +127,8 @@ export default async function BranchesPage({ searchParams }: Props) {
                         <Building2 className="h-5 w-5 text-primary" />
                       </div>
                     )}
-                    <div>
-                      <CardTitle className="text-base">{clinic.name}</CardTitle>
+                    <div className="min-w-0">
+                      <CardTitle className="text-base [overflow-wrap:anywhere]">{clinic.name}</CardTitle>
                       <Badge variant="outline" className="text-xs mt-0.5">
                         {clinic.subdomain}
                       </Badge>
