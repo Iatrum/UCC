@@ -188,7 +188,7 @@ function LoginForm() {
         </CardHeader>
         <CardContent>
           {isClinicForbidden && (
-            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               Your account is not assigned to this clinic. Sign in with an account that has access to this clinic.
             </div>
           )}
