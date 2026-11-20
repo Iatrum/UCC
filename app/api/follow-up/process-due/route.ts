@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
     const now = Date.now();
     const dueTwilio = followUps.filter((followUp) => {
       if (followUp.deliveryMode !== "twilio") return false;
-      if (followUp.status === "completed") return false;
+      if (followUp.status === "completed" || followUp.status === "stopped") return false;
+      if (followUp.deliveryStatus !== "pending") return false;
       if (!followUp.patientPhone) return false;
       if (!followUp.dueDate) return true;
       const due = new Date(followUp.dueDate).getTime();

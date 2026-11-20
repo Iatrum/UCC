@@ -52,7 +52,15 @@ test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter 
   let practitionerId: string | undefined;
   let staff: MedplumClient | undefined;
   try {
-    expect((await api.post('/api/auth/login', { data: MEDPLUM_ADMIN })).status()).toBe(200);
+    let loginResponse = await api.post('/api/auth/login', { data: MEDPLUM_ADMIN });
+    if (loginResponse.status() === 429) {
+      const retryAfter = Number(loginResponse.headers()['retry-after']);
+      const seconds = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(600, Math.ceil(retryAfter) + 1) : 65;
+      await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+      loginResponse = await api.post('/api/auth/login', { data: MEDPLUM_ADMIN });
+    }
+    expect(loginResponse.status()).toBe(200);
     const clinics = [];
     for (let i = 0; i < 4; i++) {
       const slug = `isolation-${suffix}-${i}`;

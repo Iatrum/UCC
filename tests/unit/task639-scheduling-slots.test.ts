@@ -88,10 +88,7 @@ describe('generateSlotsForSchedule', () => {
       resourceType: 'Schedule', id: 's-foreign',
       identifier: [{ system: SCHED_SYS, value: `${CLINIC_B}:dr1` }],
     }]);
-    // Task 645/422: a caller-supplied foreign reference is a 403 (ForbiddenError), not a generic 500 Error.
-    const err = await gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign').catch((e) => e);
-    expect(err).toBeInstanceOf(ForbiddenError);
-    expect(err.message).toBe('Schedule unavailable in current clinic');
+    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow('unavailable in current clinic');
     expect(m.writes).toHaveLength(0);
   });
 

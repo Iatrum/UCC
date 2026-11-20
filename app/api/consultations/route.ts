@@ -11,6 +11,7 @@ import {
   getRecentConsultationsFromMedplum,
   updateConsultationInMedplum,
   deleteConsultationFromMedplum,
+  SIGN_KEY_PATTERN,
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getTriageForPatient, updateQueueStatusForPatient } from '@/lib/fhir/triage-service';
@@ -25,7 +26,12 @@ export async function POST(request: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(request);
     const body = await request.json();
-    const { patientId, chiefComplaint, diagnosis, procedures, notes, progressNote, prescriptions } = body;
+    const { patientId, chiefComplaint, diagnosis, procedures, notes, progressNote, prescriptions, idempotencyKey } = body;
+
+    // Task 712: optional per-attempt key so a retry/double submit reuses the Encounter instead of creating another.
+    if (idempotencyKey !== undefined && !(typeof idempotencyKey === 'string' && SIGN_KEY_PATTERN.test(idempotencyKey))) {
+      return NextResponse.json({ error: 'Invalid idempotencyKey' }, { status: 400 });
+    }
 
     // Validate required fields
     if (!patientId || !chiefComplaint || !diagnosis) {
@@ -51,6 +57,7 @@ export async function POST(request: NextRequest) {
         notes,
         progressNote,
         prescriptions,
+        idempotencyKey,
         date: new Date(),
       },
       {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, FormEvent, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { clearSignAttemptKey, signAttemptKey } from "@/lib/sign-attempt-key";
 import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 import { useRouter } from "next/navigation";
@@ -195,6 +196,8 @@ export default function PatientProfileWorkspace({
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedConsultation, setSelectedConsultation] = useState<ProfileConsultation | null>(null);
   const consultDraft = useConsultationDraft(patientId);
+  const consultSubmitRef = useRef(false);
+  const treatmentSubmitRef = useRef(false);
   const { clinicalNotes, diagnosis } = consultDraft;
   const [treatmentUnsaved, setTreatmentUnsaved] = useState(false);
   useUnsavedWork(consultDraft.unsaved || treatmentUnsaved);
@@ -396,7 +399,8 @@ export default function PatientProfileWorkspace({
 
   async function handleConsultSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (consultSubmitting) return;
+    // Task 712: a ref flips synchronously, so a double click cannot start a second request before React re-renders.
+    if (consultSubmitting || consultSubmitRef.current) return;
 
     if (!stripHtml(clinicalNotes) || !diagnosis.trim()) {
       toast({
@@ -410,6 +414,7 @@ export default function PatientProfileWorkspace({
     const signedChiefComplaint = clinicalNotes;
     const signedDiagnosis = diagnosis.trim();
 
+    consultSubmitRef.current = true;
     try {
       consultDraft.setSigning(true);
       setConsultSubmitting(true);
@@ -422,6 +427,7 @@ export default function PatientProfileWorkspace({
           patientId,
           chiefComplaint: signedChiefComplaint,
           diagnosis: signedDiagnosis,
+          idempotencyKey: signAttemptKey(patientId, signedChiefComplaint, signedDiagnosis),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -433,6 +439,7 @@ export default function PatientProfileWorkspace({
       if (!signedConsultationId) {
         throw new Error("Consultation was saved but no consultation ID was returned.");
       }
+      clearSignAttemptKey(patientId);
       setSignedConsultationForTreatment({
         id: signedConsultationId,
         patientId,
@@ -468,6 +475,7 @@ export default function PatientProfileWorkspace({
         variant: "destructive",
       });
     } finally {
+      consultSubmitRef.current = false;
       consultDraft.setSigning(false);
       setConsultSubmitting(false);
     }
@@ -475,7 +483,7 @@ export default function PatientProfileWorkspace({
 
   async function handleTreatmentSign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (treatmentSubmitting) return;
+    if (treatmentSubmitting || treatmentSubmitRef.current) return;
 
     if (!treatmentConsultation) {
       toast({
@@ -555,6 +563,7 @@ export default function PatientProfileWorkspace({
       return;
     }
 
+    treatmentSubmitRef.current = true;
     try {
       setTreatmentSubmitting(true);
       // Place POCT/X-ray first: failed/offline orders leave the composer intact for retry.
@@ -682,6 +691,7 @@ export default function PatientProfileWorkspace({
         variant: "destructive",
       });
     } finally {
+      treatmentSubmitRef.current = false;
       setTreatmentSubmitting(false);
     }
   }
@@ -689,7 +699,7 @@ export default function PatientProfileWorkspace({
   return (
     <>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-3">
-        <TabsList className="w-auto">
+        <TabsList className="w-auto max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="history" className="px-3 text-xs">Consultation History</TabsTrigger>
           <TabsTrigger value="labs-imaging" className="px-3 text-xs">Labs & Imaging</TabsTrigger>
           <TabsTrigger value="documents" className="px-3 text-xs">Documents</TabsTrigger>
@@ -819,7 +829,7 @@ export default function PatientProfileWorkspace({
                             {selectedConsultation.id && (
                               <div className="flex flex-wrap gap-2 border-t pt-3">
                                 <Button variant="outline" size="sm" asChild>
-                                  <Link href={`/consultations/${selectedConsultation.id}`}>Open full</Link>
+                                  <Link href={`/consultations/${selectedConsultation.id}`} prefetch={false}>Open full</Link>
                                 </Button>
                               </div>
                             )}
@@ -827,13 +837,13 @@ export default function PatientProfileWorkspace({
                         )}
                       </div>
                       <div className="hidden overflow-x-auto md:block">
-                        <Table className="min-w-[860px]">
+                        <Table className="min-w-[760px]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
-                            <TableHead className="min-w-[200px]">Complaint</TableHead>
-                            <TableHead className="min-w-[200px]">Diagnosis</TableHead>
+                            <TableHead className="min-w-[160px]">Complaint</TableHead>
+                            <TableHead className="min-w-[160px]">Diagnosis</TableHead>
                             <TableHead>Prescriptions</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
@@ -856,16 +866,16 @@ export default function PatientProfileWorkspace({
                               >
                                 <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
                                 <TableCell>Consultation</TableCell>
-                                <TableCell className="min-w-[200px] max-w-[260px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
-                                <TableCell className="min-w-[200px] max-w-[260px] truncate">{consultation.diagnosis}</TableCell>
+                                <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
+                                <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
                                 <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                                     <Button variant="outline" size="sm" asChild>
-                                      <Link href={`/consultations/${consultation.id}`}>View</Link>
+                                      <Link href={`/consultations/${consultation.id}`} prefetch={false}>View</Link>
                                     </Button>
                                     <Button size="sm" asChild>
-                                      <Link href={`/consultations/${consultation.id}/edit`}>Edit</Link>
+                                      <Link href={`/consultations/${consultation.id}/edit`} prefetch={false}>Edit</Link>
                                     </Button>
                                   </div>
                                 </TableCell>
@@ -933,7 +943,7 @@ export default function PatientProfileWorkspace({
                                       {consultation.id && (
                                         <div className="flex flex-wrap gap-2 border-t pt-3">
                                           <Button variant="outline" size="sm" asChild>
-                                            <Link href={`/consultations/${consultation.id}`}>Open full</Link>
+                                            <Link href={`/consultations/${consultation.id}`} prefetch={false}>Open full</Link>
                                           </Button>
                                         </div>
                                       )}

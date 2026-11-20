@@ -3,6 +3,9 @@
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 
+## 2026-11-19 — Task 718: staff pages fit on a phone
+The patient profile, Patients list header, POCT header and tabs, and the dashboard queue card now fit a phone screen: buttons no longer run off the edge, the patient details no longer overlap, and the tabs can be scrolled sideways. On a laptop screen the patient's consultation history now shows its View/Edit buttons without sideways scrolling. Layout only; nothing in the consultation composer, results or POCT behaviour changed.
+
 ## 2026-11-19 — Task 673: independent re-run of the Task 672 benchmark
 A fresh re-run confirms a modest dashboard speed-up and no slowdown for billing, checkout, inventory or analytics. The earlier large gains on those pages were noise and are corrected in the PR. No code change.
 
@@ -228,3 +231,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - 2026-11-18 Task 607 (item 3, Pilot checklist 597): 385c approved-exception list. `compare.mjs` on strict targets fails any non-passed test not exactly listed in `e2e/staging-exceptions.json`; unit tests added. Task 597 checklist found on the remote branch after a fetch of that branch.
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
+
+- Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.

@@ -26,13 +26,26 @@ export function createMockMedplum(initial: Res[] = [], opts: { versioning?: bool
   const db = new Map<string, Res>(initial.map((r) => [`${r.resourceType}/${r.id}`, r]));
   const writes: { op: 'create' | 'update' | 'post' | 'delete'; resource?: Res; path?: string; body?: any }[] = [];
   let seq = 0;
+  const searches: { type: string; params: [string, string][] }[] = [];
 
-  const matches = (r: Res, params: Record<string, string>) => {
-    for (const [key, value] of Object.entries(params)) {
+  // Task 702: a string query may repeat a param (identifier=a&identifier=b is AND). Object params stay single-valued.
+  const parseQuery = (q: string | Record<string, string>): [string, string][] =>
+    typeof q === 'string' ? [...new URLSearchParams(q).entries()] : Object.entries(q);
+  const refIds = (r: Res) =>
+    [r.managingOrganization?.reference, ...(r.meta?.compartment ?? []).map((c: any) => c.reference), ...[r.meta?.account].flat().map((a: any) => a?.reference)].filter(Boolean);
+
+  const matches = (r: Res, params: [string, string][]) => {
+    for (const [key, value] of params) {
+      if (key === '_compartment') {
+        if (!value.split(',').some((v) => refIds(r).includes(v))) return false;
+        continue;
+      }
       if (key.startsWith('_')) continue;
       if (key === 'identifier') {
         const [system, val] = value.split('|');
         if (!r.identifier?.some((i: any) => i.system === system && (!val || i.value === val))) return false;
+      } else if (key === 'organization') {
+        if (!value.split(',').includes(r.managingOrganization?.reference)) return false;
       } else if (key === 'subject') {
         if (r.subject?.reference !== value) return false;
       } else if (key === 'schedule') {
@@ -57,10 +70,13 @@ export function createMockMedplum(initial: Res[] = [], opts: { versioning?: bool
       if (!r) throw new OperationOutcomeError(notFound);
       return structuredClone(r);
     },
-    async searchResources(type: string, params: Record<string, string> = {}) {
+    async searchResources(type: string, query: string | Record<string, string> = {}) {
+      const params = parseQuery(query);
+      const get = (k: string) => params.find(([key]) => key === k)?.[1];
+      searches.push({ type, params });
       const all = [...db.values()].filter((r) => r.resourceType === type && matches(r, params));
-      const offset = Number(params._offset ?? 0);
-      return structuredClone(all.slice(offset, offset + Number(params._count ?? 20)));
+      const offset = Number(get('_offset') ?? 0);
+      return structuredClone(all.slice(offset, offset + Number(get('_count') ?? 20)));
     },
     async searchOne(type: string, params: Record<string, string> = {}) {
       return (await client.searchResources(type, { ...params, _count: '1' }))[0];
@@ -109,6 +125,7 @@ export function createMockMedplum(initial: Res[] = [], opts: { versioning?: bool
     client: client as unknown as MedplumClient,
     db,
     writes,
+    searches,
     creates: (type?: string) => writes.filter((w) => w.op === 'create' && (!type || w.resource!.resourceType === type)).map((w) => w.resource!),
     updates: (type?: string) => writes.filter((w) => w.op === 'update' && (!type || w.resource!.resourceType === type)).map((w) => w.resource!),
     stored: (type: string, id: string) => db.get(`${type}/${id}`),

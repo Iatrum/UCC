@@ -67,7 +67,7 @@ test('Time Chit is core (no module toggle): composer, checkout, historical print
       }
     }
     await search(page, 'time chit');
-    await page.getByRole('button', { name: /TIME CHIT.*RM/i }).click();
+    await page.getByRole('button', { name: /TIME CHIT.*RM/i }).first().click();
     await page.getByText('TIME CHIT', { exact: true }).last().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Attendance date').fill(details.tcDate);

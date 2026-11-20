@@ -3,7 +3,7 @@ import type { Appointment, Communication, Extension, Organization, Patient } fro
 import { env } from "@/lib/env";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { CLINIC_IDENTIFIER_SYSTEM, withClinicIdentifier } from "@/lib/fhir/clinic-tenancy";
-import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
+import { assertPatientInClinic, assertResourceInClinic, hasOnlyClinicIdentifiers } from './write-containment';
 
 const FOLLOW_UP_CATEGORY_SYSTEM = "https://ucc.emr/communication-category";
 const FOLLOW_UP_SOURCE_IDENTIFIER_SYSTEM = "https://ucc.emr/follow-up/source";
@@ -279,7 +279,9 @@ export async function getFollowUpSettings(
   }
   const deliveryMode = getOrgExtensionString(org, WHATSAPP_DELIVERY_MODE_EXTENSION_URL);
   return {
-    deliveryMode: deliveryMode === "twilio" ? "twilio" : env.FOLLOW_UP_DELIVERY_MODE === "twilio" ? "twilio" : "manual",
+    deliveryMode: deliveryMode === "manual" || deliveryMode === "twilio"
+      ? deliveryMode
+      : env.FOLLOW_UP_DELIVERY_MODE ?? "manual",
     googleReviewUrl: getOrgExtensionString(org, FOLLOW_UP_REVIEW_URL_EXTENSION_URL) || env.GOOGLE_REVIEW_URL || "",
     reviewTemplate: getOrgExtensionString(org, FOLLOW_UP_REVIEW_TEMPLATE_EXTENSION_URL) || DEFAULT_REVIEW_TEMPLATE,
     appointmentTemplate: getOrgExtensionString(org, FOLLOW_UP_APPOINTMENT_TEMPLATE_EXTENSION_URL) || DEFAULT_APPOINTMENT_TEMPLATE,
@@ -317,23 +319,19 @@ export async function updateFollowUpSettings(
     ...stringExt(FOLLOW_UP_TWILIO_REVIEW_CONTENT_SID_EXTENSION_URL, input.twilioReviewContentSid),
     ...stringExt(FOLLOW_UP_TWILIO_APPOINTMENT_CONTENT_SID_EXTENSION_URL, input.twilioAppointmentContentSid),
   ];
-  const updated = await medplum.updateResource({
+  await medplum.updateResource({
     ...org,
     extension: replaceExtensionsRemoving(org.extension, removeUrls, updates),
   });
-  return getFollowUpSettings(medplum, updated.id);
+  return getFollowUpSettings(medplum, clinicId);
 }
 
 async function readClinicOrganization(medplum: MedplumClient, clinicId: string): Promise<Organization | null> {
-  try {
-    return await medplum.readResource("Organization", clinicId) as Organization;
-  } catch {
-    const organizations = await medplum.searchResources("Organization", {
-      identifier: `clinic|${clinicId}`,
-      _count: "1",
-    });
-    return (organizations?.[0] as Organization | undefined) ?? null;
-  }
+  const organizations = await medplum.searchResources("Organization", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+    _count: "1",
+  }, { cache: "no-cache" });
+  return organizations?.find((org) => hasOnlyClinicIdentifiers(org, clinicId)) ?? null;
 }
 
 export async function createFollowUp(
@@ -419,12 +417,11 @@ export async function getAllFollowUps(
     ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
     _sort: "-_lastUpdated",
     _count: "200",
-  });
-  const followUps = (results as Communication[])
+  }, { cache: "no-cache" });
+  return (results as Communication[])
     .filter((c) => c.category?.[0]?.coding?.[0]?.system === FOLLOW_UP_CATEGORY_SYSTEM)
+    .filter((c) => !clinicId || (hasOnlyClinicIdentifiers(c, clinicId) && getFollowUpClinicId(c) === clinicId))
     .map(mapCommunicationToFollowUp);
-  if (!clinicId) return followUps;
-  return followUps.filter((f) => f.clinicId === clinicId);
 }
 
 export async function getAllFollowUpsWithOperationalClient(clinicId?: string): Promise<FollowUp[]> {

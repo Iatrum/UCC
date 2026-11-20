@@ -3,6 +3,7 @@ import { assertPatientInClinic, assertEncounterInClinic, makeClinicStamper } fro
 import { ForbiddenError } from '@/lib/server/route-helpers';
 import { assertTimeChitMutationAllowed } from './time-chit-guard';
 import { isTimeChitProcedure } from '@/lib/time-chit';
+import { orderProcedureStatus } from '@/lib/fhir/order-procedure-status';
 import { isSignedDocumentNote, signedDocumentMutationError } from '@/lib/clinical-documents';
 import { auditSignedDocument } from './signed-document-audit';
 import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
@@ -62,6 +63,22 @@ export interface ConsultationData {
   date?: Date;
   practitionerId?: string; // FHIR Practitioner ID
   organizationId?: string; // FHIR Organization ID
+  /** Task 712: client-generated key for one Sign attempt; a retry/double submit with the same key reuses the Encounter. */
+  idempotencyKey?: string;
+}
+
+/** Task 712: Encounter identifier system holding `<clinicId>:<idempotencyKey>` (no `|`: it is the FHIR token separator). */
+export const SIGN_KEY_SYSTEM = 'https://ucc.emr/consultation-sign-key';
+export const SIGN_KEY_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+
+// Serialises same-key saves inside this server process so a double click cannot interleave child creation.
+const signLocks = new Map<string, Promise<unknown>>();
+export async function withSignLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = signLocks.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(fn);
+  const tail = run.catch(() => undefined);
+  signLocks.set(key, tail);
+  try { return await run; } finally { if (signLocks.get(key) === tail) signLocks.delete(key); }
 }
 
 export interface SavedConsultation extends ConsultationData {
@@ -298,17 +315,31 @@ async function getOrCreatePatient(
  * Save a consultation directly to Medplum (source of truth)
  * Returns the Encounter ID which acts as the consultation ID
  */
+type SavePatientData = {
+  id: string;
+  name: string;
+  ic?: string;
+  dob?: Date;
+  gender?: string;
+  phone?: string;
+  address?: string;
+};
+
 export async function saveConsultationToMedplum(
   consultation: ConsultationData,
-  patientData: {
-    id: string;
-    name: string;
-    ic?: string;
-    dob?: Date;
-    gender?: string;
-    phone?: string;
-    address?: string;
-  },
+  patientData: SavePatientData,
+  clinicId: string | undefined,
+  medplum: MedplumClient
+): Promise<string> {
+  const key = consultation.idempotencyKey;
+  if (!key) return saveConsultationOnce(consultation, patientData, clinicId, medplum);
+  if (!SIGN_KEY_PATTERN.test(key)) throw new Error('Invalid idempotencyKey');
+  return withSignLock(`${clinicId}|${key}`, () => saveConsultationOnce(consultation, patientData, clinicId, medplum));
+}
+
+async function saveConsultationOnce(
+  consultation: ConsultationData,
+  patientData: SavePatientData,
   clinicId: string | undefined,
   medplum: MedplumClient
 ): Promise<string> {
@@ -328,7 +359,17 @@ export async function saveConsultationToMedplum(
 
   // 2. Create Encounter (this is the consultation)
   const encounterDate = consultation.date?.toISOString() || new Date().toISOString();
-  const encounter = await validateAndCreate(client, withServiceProvider(withClinicIdentifiers({
+  // Task 712: with an idempotency key, a retry/double submit finds the Encounter the first attempt created
+  // (conditional create makes that atomic) and only fills in children that are still missing.
+  const signKey = consultation.idempotencyKey ? `${clinicId}:${consultation.idempotencyKey}` : undefined;
+  const signKeyQuery = signKey ? `identifier=${SIGN_KEY_SYSTEM}|${signKey}` : undefined;
+  const prior = signKey
+    ? await client.searchOne('Encounter', { identifier: `${SIGN_KEY_SYSTEM}|${signKey}` }, { cache: 'no-cache' })
+    : undefined;
+  if (prior && prior.subject?.reference !== patientReference) {
+    throw new ConflictError('This sign request key was already used for a different patient.');
+  }
+  const encounterResource = withServiceProvider(withClinicIdentifiers({
       resourceType: 'Encounter',
       status: 'finished',
       class: {
@@ -349,12 +390,37 @@ export async function saveConsultationToMedplum(
           system: 'firebase-patient',
           value: consultation.patientId,
         },
+        ...(signKey ? [{ system: SIGN_KEY_SYSTEM, value: signKey }] : []),
       ],
-    }, clinicId), clinicTenant?.organizationReference));
-  console.log(`✅ Created Encounter (Consultation): ${encounter.id}`);
+    }, clinicId), clinicTenant?.organizationReference);
+  let encounter: Encounter;
+  if (prior) {
+    encounter = prior;
+  } else if (signKeyQuery) {
+    const validation = validateFhirResource(encounterResource);
+    logValidation('Encounter', validation);
+    if (!validation.valid) throw new Error(`Invalid Encounter: ${validation.errors.join(', ')}`);
+    encounter = await client.createResourceIfNoneExist(encounterResource as Encounter, signKeyQuery);
+  } else {
+    encounter = await validateAndCreate(client, encounterResource);
+  }
+  console.log(`✅ ${prior ? 'Reusing' : 'Created'} Encounter (Consultation): ${encounter.id}`);
+
+  // Children already written by an earlier attempt (resume only): skip them, create the rest.
+  const encounterRef = `Encounter/${encounter.id}`;
+  const resumeKnown = Boolean(prior);
+  const [priorObs, priorConditions, priorProcedures, priorRx] = resumeKnown
+    ? await Promise.all([
+        client.searchResources('Observation', { encounter: encounterRef, _count: '1000' }, { cache: 'no-cache' }),
+        client.searchResources('Condition', { encounter: encounterRef, _count: '1000' }, { cache: 'no-cache' }),
+        client.searchResources('Procedure', { encounter: encounterRef, _count: '1000' }, { cache: 'no-cache' }),
+        client.searchResources('MedicationRequest', { encounter: encounterRef, _count: '1000' }, { cache: 'no-cache' }),
+      ])
+    : [[], [], [], []];
+  const hasObs = (text: string) => priorObs.some((o) => (o as any).code?.text === text);
 
   // 3. Create Chief Complaint (Observation)
-  if (consultation.chiefComplaint) {
+  if (consultation.chiefComplaint && !hasObs('Chief Complaint')) {
     await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Observation',
       status: 'final',
@@ -370,7 +436,7 @@ export async function saveConsultationToMedplum(
   }
 
   // 4. Create Diagnosis (Condition) with ICD-10/SNOMED if available
-  if (consultation.diagnosis) {
+  if (consultation.diagnosis && priorConditions.length === 0) {
     const diagnosisCatalogItem = await findDiagnosisCatalogItem(client, clinicId, consultation.diagnosis);
     const code = diagnosisCodeableConcept(consultation.diagnosis, diagnosisCatalogItem);
 
@@ -403,7 +469,7 @@ export async function saveConsultationToMedplum(
   }
 
   // 5. Create Clinical Notes (Observation)
-  if (consultation.notes) {
+  if (consultation.notes && !hasObs('Clinical Notes')) {
     await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Observation',
       status: 'final',
@@ -416,7 +482,7 @@ export async function saveConsultationToMedplum(
   }
 
   // 5b. Progress Note
-  if (consultation.progressNote) {
+  if (consultation.progressNote && !hasObs('Progress Note')) {
     await validateAndCreate(client, withClinicIdentifiers({
       resourceType: 'Observation',
       status: 'final',
@@ -430,7 +496,8 @@ export async function saveConsultationToMedplum(
 
   // 6. Create Procedures
   if (consultation.procedures) {
-    for (const proc of consultation.procedures as any[]) {
+    // Created in order, so an earlier attempt that wrote N of them leaves exactly the first N.
+    for (const proc of (consultation.procedures as any[]).slice(priorProcedures.length)) {
       const codeable = proc.codingCode || proc.codingDisplay || proc.codingSystem
         ? {
             coding: proc.codingCode
@@ -449,7 +516,7 @@ export async function saveConsultationToMedplum(
       const createdProc = await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
-        status: 'completed',
+        status: orderProcedureStatus(proc),
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
         code: codeable,
@@ -463,7 +530,7 @@ export async function saveConsultationToMedplum(
 
   // 7. Create Prescriptions (MedicationRequests)
   if (consultation.prescriptions) {
-    for (const rx of consultation.prescriptions as any[]) {
+    for (const rx of (consultation.prescriptions as any[]).slice(priorRx.length)) {
       const medicationCode = findMedicationByName(rx.medication.name);
       const medicationCodeableConcept: any = {
         text: formatMedicationNameWithStrength(rx.medication.name, rx.medication.strength),
@@ -499,9 +566,11 @@ export async function saveConsultationToMedplum(
     }
   }
 
-  // Create Provenance for audit trail
+  // Create Provenance for audit trail (skipped when an earlier attempt already wrote it)
   try {
-    await createProvenanceForResource(
+    const hasProvenance = resumeKnown &&
+      (await client.searchResources('Provenance', { target: encounterRef, _count: '1' }, { cache: 'no-cache' })).length > 0;
+    if (!hasProvenance) await createProvenanceForResource(
       client,
       'Encounter',
       encounter.id!,
@@ -1075,7 +1144,7 @@ export async function updateConsultationInMedplum(
       const createdProc = await validateAndCreate(client, withClinicIdentifiers({
         resourceType: 'Procedure',
         meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
-        status: 'completed',
+        status: orderProcedureStatus(proc),
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
         code: codeable,

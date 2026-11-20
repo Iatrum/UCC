@@ -1,0 +1,5 @@
+{"name":"patients list","medianMs":593,"runs":[520,544,583,593,688,1158]}
+{"name":"analytics","medianMs":442,"runs":[328,412,437,442,502,558]}
+{"name":"settings/documents","medianMs":466,"runs":[329,421,465,466,468,469]}
+{"name":"patient documents tab","medianMs":968,"runs":[688,771,898,968,1086,1241]}
+{"name":"appointments","medianMs":454,"runs":[389,390,401,454,527,597]}

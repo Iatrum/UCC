@@ -1,7 +1,7 @@
 import { assertTimeChitMutationAllowed } from '@/lib/fhir/time-chit-guard';
 import { investigationBillItems, investigationBillingExtensions, INVESTIGATION_BILLING_URL } from '@/lib/fhir/investigation-billing';
 import { NextRequest, NextResponse } from 'next/server';
-import { getConsultationFromMedplum, updateConsultationInMedplum } from '@/lib/fhir/consultation-service';
+import { getConsultationFromMedplum, updateConsultationInMedplum, withSignLock } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { resolveCheckoutPatientId } from '@/lib/billing/checkout-guards';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
@@ -74,52 +74,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'consultationId is required' }, { status: 400 });
     }
 
-    const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
-    if (!consultation) {
-      return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
-    }
-
-    if (procedures !== undefined) {
-      await assertTimeChitMutationAllowed(procedures, consultation.procedures || [], clinicId);
-    }
-    if (billingItems !== undefined) {
-      if (!Array.isArray(billingItems) || billingItems.some((item: any) =>
-        typeof item.id !== 'string' || typeof item.name !== 'string' || !Number.isFinite(item.price) || item.price < 0 ||
-        !Number.isFinite(item.quantity) || item.quantity <= 0)) {
-        return NextResponse.json({ error: 'Invalid investigation bill lines' }, { status: 400 });
+    // Task 712: read-merge-write is serialised per consultation, so a double submit cannot both pass the
+    // duplicate check and then both rewrite Procedures/MedicationRequests.
+    return await withSignLock(`orders|${clinicId}|${consultationId}`, async () => {
+      const consultation = await getConsultationFromMedplum(consultationId, clinicId, medplum);
+      if (!consultation) {
+        return NextResponse.json({ success: false, error: 'Consultation not found' }, { status: 404 });
       }
-      const encounter = await medplum.searchOne('Encounter', { _id: consultationId, identifier: `clinic|${clinicId}` }, { cache: 'no-cache' });
-      if (!encounter) return NextResponse.json({ error: 'Consultation not found' }, { status: 404 });
-      const merged = new Map(investigationBillItems(encounter).map((item) => [item.id, item]));
-      for (const item of billingItems) merged.set(item.id, { id: item.id, name: item.name, price: item.price,
-        quantity: item.quantity, orderIndex: item.orderIndex, category: 'services' });
-      await medplum.updateResource({ ...encounter, extension: [
-        ...(encounter.extension || []).filter((e) => e.url !== INVESTIGATION_BILLING_URL),
-        ...investigationBillingExtensions([...merged.values()]),
-      ] });
-    }
 
-    const existingProcKeys = new Set((consultation.procedures || []).map(procedureKey));
-    const updatedProcedures = procedures !== undefined
-      ? [...(consultation.procedures || []), ...(procedures as any[]).filter(p => !existingProcKeys.has(procedureKey(p)))]
-      : undefined;
+      if (procedures !== undefined) {
+        await assertTimeChitMutationAllowed(procedures, consultation.procedures || [], clinicId);
+      }
+      if (billingItems !== undefined) {
+        if (!Array.isArray(billingItems) || billingItems.some((item: any) =>
+          typeof item.id !== 'string' || typeof item.name !== 'string' || !Number.isFinite(item.price) || item.price < 0 ||
+          !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+          return NextResponse.json({ error: 'Invalid investigation bill lines' }, { status: 400 });
+        }
+        const encounter = await medplum.searchOne('Encounter', { _id: consultationId, identifier: `clinic|${clinicId}` }, { cache: 'no-cache' });
+        if (!encounter) return NextResponse.json({ error: 'Consultation not found' }, { status: 404 });
+        const merged = new Map(investigationBillItems(encounter).map((item) => [item.id, item]));
+        for (const item of billingItems) merged.set(item.id, { id: item.id, name: item.name, price: item.price,
+          quantity: item.quantity, orderIndex: item.orderIndex, category: 'services' });
+        await medplum.updateResource({ ...encounter, extension: [
+          ...(encounter.extension || []).filter((e) => e.url !== INVESTIGATION_BILLING_URL),
+          ...investigationBillingExtensions([...merged.values()]),
+        ] });
+      }
 
-    const existingRxKeys = new Set((consultation.prescriptions || []).map(prescriptionKey));
-    const updatedPrescriptions = prescriptions !== undefined
-      ? [...(consultation.prescriptions || []), ...(prescriptions as any[]).filter(rx => !existingRxKeys.has(prescriptionKey(rx)))]
-      : undefined;
+      const existingProcKeys = new Set((consultation.procedures || []).map(procedureKey));
+      const updatedProcedures = procedures !== undefined
+        ? [...(consultation.procedures || []), ...(procedures as any[]).filter(p => !existingProcKeys.has(procedureKey(p)))]
+        : undefined;
 
-    await updateConsultationInMedplum(
-      consultationId,
-      {
-        ...(updatedProcedures !== undefined ? { procedures: updatedProcedures } : {}),
-        ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}),
-      },
-      clinicId,
-      medplum
-    );
+      const existingRxKeys = new Set((consultation.prescriptions || []).map(prescriptionKey));
+      const updatedPrescriptions = prescriptions !== undefined
+        ? [...(consultation.prescriptions || []), ...(prescriptions as any[]).filter(rx => !existingRxKeys.has(prescriptionKey(rx)))]
+        : undefined;
 
-    return NextResponse.json({ success: true });
+      await updateConsultationInMedplum(
+        consultationId,
+        {
+          ...(updatedProcedures !== undefined ? { procedures: updatedProcedures } : {}),
+          ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}),
+        },
+        clinicId,
+        medplum
+      );
+
+      return NextResponse.json({ success: true });
+    });
   } catch (error) {
     return handleRouteError(error, 'POST /api/orders');
   }

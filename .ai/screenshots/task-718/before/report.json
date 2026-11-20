@@ -1,0 +1,239 @@
+[
+ {
+  "name": "dashboard",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "patients",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "patient-profile",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [
+   "TH:Actions r=1373",
+   "TD:View\nEdit r=1373"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=912 cw=848"
+  ]
+ },
+ {
+  "name": "patient-tab-consultation",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [
+   "TH:Actions r=1373",
+   "TD:View\nEdit r=1373"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=912 cw=848"
+  ]
+ },
+ {
+  "name": "patient-tab-lab",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [
+   "TH:Actions r=1373",
+   "TD:View\nEdit r=1373"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=912 cw=848"
+  ]
+ },
+ {
+  "name": "patient-tab-documents",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [
+   "TH:Actions r=1373",
+   "TD:View\nEdit r=1373"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=912 cw=848"
+  ]
+ },
+ {
+  "name": "consultation",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "appointments",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "poct",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "analytics",
+  "w": 1366,
+  "docScroll": 1366,
+  "vw": 1366,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "dashboard",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "TH:Patient Name r=403",
+   "TH:NRIC r=453",
+   "TH:Chief Complaint r=581",
+   "TH:Visit Context r=687",
+   "TH:Added At r=766",
+   "TH:Status r=827",
+   "TH:Actions r=894",
+   "TD:No patients in queue r=894"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=691 cw=144"
+  ]
+ },
+ {
+  "name": "patients",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "A:New Patient r=466",
+   "TH:Name r=458",
+   "TH:NRIC r=670",
+   "TH:Gender r=738",
+   "TH:Phone r=843",
+   "TH:Last Visit r=922",
+   "TH:Status r=983",
+   "TH:Actions r=1094"
+  ],
+  "scrollers": [
+   "MAIN.min-w-0 flex-1 overflow-y-auto sw=306 cw=230",
+   "DIV.relative w-full overflow-x-auto sw=892 cw=146"
+  ]
+ },
+ {
+  "name": "patient-profile",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "A:Edit patient r=393",
+   "BUTTON:Labs & Imaging r=436",
+   "BUTTON:Documents r=530"
+  ],
+  "scrollers": [
+   "MAIN.min-w-0 flex-1 overflow-y-auto sw=466 cw=326"
+  ]
+ },
+ {
+  "name": "patient-tab-consultation",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "BUTTON:Documents r=426"
+  ],
+  "scrollers": [
+   "MAIN.min-w-0 flex-1 overflow-y-auto sw=466 cw=326"
+  ]
+ },
+ {
+  "name": "patient-tab-lab",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "BUTTON:Documents r=426"
+  ],
+  "scrollers": [
+   "MAIN.min-w-0 flex-1 overflow-y-auto sw=541 cw=326"
+  ]
+ },
+ {
+  "name": "patient-tab-documents",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [],
+  "scrollers": [
+   "MAIN.min-w-0 flex-1 overflow-y-auto sw=527 cw=326"
+  ]
+ },
+ {
+  "name": "consultation",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "appointments",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "poct",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "A:New Test Order r=514",
+   "BUTTON:Completed r=403",
+   "BUTTON:All Tests r=485"
+  ],
+  "scrollers": [
+   "MAIN.min-w-0 flex-1 overflow-y-auto sw=354 cw=230"
+  ]
+ },
+ {
+  "name": "analytics",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "TH:12 r=395",
+   "TH: r=415",
+   "TH:14 r=435",
+   "TH: r=455",
+   "TH:16 r=474",
+   "TH: r=494",
+   "TH:18 r=514",
+   "TH: r=534"
+  ],
+  "scrollers": [
+   "DIV.flex max-w-full gap-1 overflow-x-auto rounded-xl b sw=314 cw=294",
+   "DIV.overflow-x-auto pb-1 sw=520 cw=260"
+  ]
+ }
+]

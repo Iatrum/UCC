@@ -4,6 +4,8 @@ import type { MedplumClient } from '@medplum/core';
 import { fhir, byPatient } from '../lib/fhir';
 import { newDeviceKey, bearer } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
+import { settleModuleMemo } from '../lib/module-toggle';
+import { deviceMeta } from '../lib/device-meta';
 
 // Analyser requests contain a runtime secret; exclude them from trace artifacts.
 test.use({ trace: 'off' });
@@ -32,6 +34,7 @@ async function setClinicModuleEnabled(m: MedplumClient, clinicId: string, enable
     ...org,
     extension: [...otherExtensions, { url: moduleExtensionUrl, valueString: JSON.stringify(nextIds) }],
   });
+  await settleModuleMemo();
 
   return async () => {
     const latest = await m.readResource('Organization', org.id!);
@@ -42,6 +45,7 @@ async function setClinicModuleEnabled(m: MedplumClient, clinicId: string, enable
         ...(existingExtension ? [existingExtension] : []),
       ],
     });
+    await settleModuleMemo();
   };
 }
 
@@ -61,7 +65,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
   const { key: deviceKey, identifier: keyHash } = newDeviceKey();
   const device = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
     identifier: [{ system: 'clinic', value: clinicId }, keyHash],
-    meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
+    ...deviceMeta(tagSystem),
     deviceName: [{ name: `Fake POCT ${suffix}`, type: 'user-friendly-name' }],
     type: { coding: [{ system: typeSystem, code: 'glucose' }] },
     property: [{ type: { coding: [{ system: propertySystem, code: 'last-heartbeat' }] },
@@ -76,7 +80,7 @@ async function fixture(request: APIRequestContext, page: Page, online: boolean) 
 
 test('POCT offline analyser cannot be added; auth, clinic and server guard fail closed', async ({ request, page, playwright, baseURL }) => {
   const f = await fixture(request, page, false);
-  const foreign = await f.m.createResource<Device>({ ...f.device, id: undefined, meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
+  const foreign = await f.m.createResource<Device>({ ...f.device, id: undefined, ...deviceMeta(tagSystem),
     identifier: [{ system: 'clinic', value: f.clinicId === 'demo' ? 'clinicb' : 'demo' }] });
   try {
     const anon = await playwright.request.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
@@ -141,7 +145,10 @@ test('POCT online + Sign creates active Device ServiceRequest, preserves bill an
     await expect(page.getByText('Glucose (capillary)', { exact: true }).first()).toBeVisible();
     // Signed order must surface on the /poct worklist, not just the checkout screen.
     await page.goto('/poct');
-    await expect(page.getByText(f.patientName, { exact: true })).toBeVisible();
+    const patientLink = page.getByRole('tabpanel', { name: 'Pending Tests' })
+      .getByRole('link', { name: f.patientName, exact: true });
+    await expect(patientLink).toBeVisible();
+    await expect(patientLink).toHaveAttribute('href', `/patients/${f.patientId}`);
     const pendingStat = page.getByText('Pending', { exact: true }).locator('xpath=ancestor::*[@data-slot="card"]');
     const pendingCount = await pendingStat.getByText(/^\d+$/).innerText();
     expect(Number(pendingCount)).toBeGreaterThan(0);
@@ -539,8 +546,9 @@ test('Per-device keys: no/unknown/revoked/inactive/wrong-type key fail closed; a
     // 2. A clinic-A key cannot write into a clinic-B ServiceRequest (either route, any header style).
     const crossMessage = await request.post('/api/labs/receive/message', { headers: bearer(f.deviceKey), data: oru(foreignPoct.id!) });
     expect(crossMessage.status()).toBe(403);
+    // Task 572: the JSON receive route answers foreign/unknown orders 404 (indistinguishable, zero writes); the HL7 message route stays 403.
     const crossJson = await request.post('/api/labs/receive', { headers: { 'X-Device-Key': f.deviceKey }, data: { serviceRequestId: foreignPlain.id, results } });
-    expect(crossJson.status()).toBe(403);
+    expect(crossJson.status()).toBe(404);
     for (const sr of [foreignPoct, foreignPlain]) {
       expect(await reportsFor(sr.id!)).toHaveLength(0);
       expect((await f.m.readResource('ServiceRequest', sr.id!)).status).toBe('active');
@@ -549,7 +557,7 @@ test('Per-device keys: no/unknown/revoked/inactive/wrong-type key fail closed; a
     // 3. An X-ray device key is the wrong device type for lab ingress.
     const xray = newDeviceKey();
     await make<Device>({ resourceType: 'Device', status: 'active', identifier: [{ system: 'clinic', value: f.clinicId }, xray.identifier],
-      meta: { tag: [{ system: 'https://ucc.emr/xray', code: 'simulated' }] }, type: { coding: [{ system: 'https://ucc.emr/xray/device-type', code: 'xray' }] } });
+      ...deviceMeta('https://ucc.emr/xray'), type: { coding: [{ system: 'https://ucc.emr/xray/device-type', code: 'xray' }] } });
     expect((await request.post('/api/labs/receive/message', { headers: bearer(xray.key), data: oru(ownPoct.id!) })).status()).toBe(401);
 
     // 4. Inactive and revoked devices are refused.
