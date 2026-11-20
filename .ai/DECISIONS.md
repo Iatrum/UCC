@@ -133,3 +133,6 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## Task 767: table scroll hint in the shared Table
+Decision: add the hint once in `components/ui/table.tsx` (wrapper + `md:hidden` gradient overlay, state from scroll/ResizeObserver) so all tables get it. Why: smallest safe change, no per-page edits, nothing in the composer or nav touched. Rejected: sticky name column (can cover content on narrow screens, per-table work) and card layout below `sm` (needs a design decision, see #23/#33). The existing `data-slot=table-container` stays on the scrolling element; PR #354 does not touch this file.

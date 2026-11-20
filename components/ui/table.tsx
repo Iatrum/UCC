@@ -5,15 +5,48 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
+  const scrollRef = React.useRef<HTMLDivElement>(null)
+  const [moreRight, setMoreRight] = React.useState(false)
+
+  React.useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const update = () =>
+      setMoreRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 4)
+    update()
+    el.addEventListener("scroll", update, { passive: true })
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null
+    ro?.observe(el)
+    const tableEl = el.firstElementChild
+    if (tableEl) ro?.observe(tableEl)
+    return () => {
+      el.removeEventListener("scroll", update)
+      ro?.disconnect()
+    }
+  }, [])
+
   return (
-    <div
-      data-slot="table-container"
-      className="relative w-full overflow-x-auto"
-    >
-      <table
-        data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
+    <div className="relative w-full">
+      <div
+        ref={scrollRef}
+        data-slot="table-container"
+        className="relative w-full overflow-x-auto"
+      >
+        <table
+          data-slot="table"
+          className={cn("w-full caption-bottom text-sm", className)}
+          {...props}
+        />
+      </div>
+      {/* Phone-only hint: fade on the right edge while more columns are off-screen. */}
+      <div
+        aria-hidden="true"
+        data-slot="table-scroll-hint"
+        data-visible={moreRight ? "true" : "false"}
+        className={cn(
+          "pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-black/15 to-transparent transition-opacity duration-150 md:hidden",
+          moreRight ? "opacity-100" : "opacity-0"
+        )}
       />
     </div>
   )

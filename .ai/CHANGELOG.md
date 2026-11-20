@@ -233,3 +233,6 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+
+## Task 767: scroll hint on tables (phone)
+On a phone, long tables (Queue, Patients, Appointments and every other table) now show a soft shadow on the right edge when there are more columns to swipe to. The shadow goes away once you reach the end. On tablets and desktop nothing changes. Names stay readable in the first column.

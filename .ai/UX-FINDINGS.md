@@ -218,7 +218,7 @@ Method: branch `ai/task-718-ux-phone` on `origin/dev` @ `b22d32e`; one `next dev
 
 ## Low (not changed)
 32. **The expanded sidebar takes 160px of 390px** on first load (`components/sidebar.tsx:103`, `w-40`; collapse state is not remembered), leaving ~230px for content. Nav, out of scope (extends #24).
-33. **Queue, Patients and Appointments tables scroll sideways on a phone** (`components/queue-table.tsx:307`, `ui/table.tsx`), with no scroll hint; the first column (name) is readable and actions are reachable by scrolling. Same pattern as #23: card layout below `sm` needs a design decision.
+33. **Queue, Patients and Appointments tables scroll sideways on a phone** (`components/queue-table.tsx:307`, `ui/table.tsx`), with no scroll hint; the first column (name) is readable and actions are reachable by scrolling. Same pattern as #23: card layout below `sm` needs a design decision. **PARTLY FIXED in Task 767:** the shared `Table` (`components/ui/table.tsx`) now shows a phone-only (below `md`) right-edge fade while more columns are off-screen; it vanishes at the end of the scroll. Tables still scroll sideways; card layout is still a design decision.
 34. **Analytics** hour-grid and range pickers scroll inside their own box on a phone (intended `overflow-x-auto`); readable. Appointments and the consultation page (outside the composer) had no overflow at 390px or 1366px.
 35. Consultation page, Lab tab and Documents tab: no overflow or clipped controls at 1366px or 390px once #26-#28 were applied. Lab/POCT results still appear only in the Lab tab.
 
