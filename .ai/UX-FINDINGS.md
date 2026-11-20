@@ -114,6 +114,7 @@ Severity as in Part 1: **High** = can mislead staff on money, stock or clinical 
     **FIXED (Task 446, verified in Task 508):** header says "Last consult" / "Total consults" from one list.
 20. **Document Templates is raw HTML/CSS** for MC and referral (`15-settings-document-templates.png`). It has a live preview labelled "fictional sample data", a collapsed "Available placeholders" list, and confirms for Save/Reset, which is good; but a clinic user editing a legal document in HTML can easily break printing. Fix (optional): "Preview with a real patient" and a one-line warning to keep placeholders intact.
 21. **Admin invite and user-edit clinic lists** use `Name (slug)` which is good, but the user-edit page lists every branch as a checkbox, 13 here (`36-admin-user-edit.png`). Same scaling point as #14.
+    **FIXED (Task 724):** The user-edit clinic picker searches by name or subdomain, shows selected clinics first, and displays the total selected even while filtering.
 
 ## Working well
 - **Stock auto-deduct is correct and clean:** one `MedicationDispense`, `stockBefore 497 → stockAfter 496`, shown in Inventory afterwards; checkout needs full payment (button disabled with "Collect the full total to enable completion"), partial payment correctly keeps it disabled and updates Balance, and the confirm dialog exists.

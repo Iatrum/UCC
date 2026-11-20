@@ -33,6 +33,7 @@ import type {
   PractitionerDetail,
 } from "@/lib/fhir/admin-service";
 import { useAdminPath } from "@/hooks/use-admin-path";
+import { userEditPayload, visibleClinicAssignments } from "@/lib/admin-ui";
 
 interface Props {
   user: PractitionerDetail;
@@ -55,6 +56,9 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
   const [selectedOrgIds, setSelectedOrgIds] = useState<Set<string>>(
     new Set(user.organizationIds)
   );
+  const [clinicSearch, setClinicSearch] = useState("");
+  // Order by saved assignments so toggling a checkbox keeps its place in the tab sequence.
+  const visibleClinics = visibleClinicAssignments(clinics, new Set(user.organizationIds), clinicSearch);
 
   const handleChange =
     (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,11 +88,7 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
       const res = await fetch(`/api/admin/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          organizationIds: Array.from(selectedOrgIds),
-        }),
+        body: JSON.stringify(userEditPayload(form, selectedOrgIds)),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -279,17 +279,33 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>
-                Clinic Assignments ({selectedOrgIds.size} of {clinics.length} selected)
-              </Label>
-              {clinics.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No clinics available.
-                </p>
-              ) : (
+            <fieldset className="min-w-0 space-y-2">
+              <legend className="mb-2 text-sm font-medium">Clinic Assignments</legend>
+              {clinics.length > 0 && (
+                <Input
+                  type="search"
+                  aria-label="Search clinics"
+                  placeholder="Search by clinic name or subdomain"
+                  value={clinicSearch}
+                  onChange={(event) => setClinicSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                    }
+                  }}
+                />
+              )}
+              <p role="status" className="text-sm text-muted-foreground">
+                {selectedOrgIds.size} selected
+                {clinics.length === 0
+                  ? " · No clinics available."
+                  : visibleClinics.length === 0
+                    ? " · No clinics match your search."
+                    : clinicSearch.trim() && ` · ${visibleClinics.length} matching ${visibleClinics.length === 1 ? "clinic" : "clinics"}`}
+              </p>
+              {visibleClinics.length > 0 && (
                 <div className="max-h-64 space-y-2 overflow-y-auto border rounded-md p-3">
-                  {clinics.map((clinic) => {
+                  {visibleClinics.map((clinic) => {
                     const checked = selectedOrgIds.has(clinic.id);
                     return (
                       <label
@@ -302,7 +318,7 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
                             toggleOrg(clinic.id, v === true)
                           }
                         />
-                        <span className="flex-1 text-sm">
+                        <span className="min-w-0 flex-1 wrap-anywhere text-sm">
                           {clinic.name}{" "}
                           <span className="text-muted-foreground text-xs">
                             ({clinic.subdomain})
@@ -317,7 +333,7 @@ export default function UserEditForm({ user, clinics, isSelf }: Props) {
                 Users must have at least one clinic assignment to sign in to a
                 clinic subdomain.
               </p>
-            </div>
+            </fieldset>
 
             <div className="pt-2 flex gap-3">
               <Button type="submit" disabled={saving}>
