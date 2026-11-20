@@ -130,3 +130,7 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## D-738 — Close the imaging billing defect within C4 (2026-11-20)
+
+Task 704’s merged fix resolves the premature completion recorded by the Task 722 browser probe. The signed generic imaging charge uses a `preparation` billing Procedure and remains available at checkout. The dev clinic data audit passed on this run. Keep C4 on release hold pending a clean current-head browser gate and an exact-production-version rehearsal. [Task 738 verification](research/task-738.md) · [Merged PR #342](https://github.com/Iatrum/UCC/pull/342)
