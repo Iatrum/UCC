@@ -12,8 +12,13 @@ export async function setClinicModule(m: MedplumClient, clinicId: string, module
   if (ids.includes(moduleId) === enabled) return async () => {};
   const next = enabled ? [...ids, moduleId] : ids.filter((id) => id !== moduleId);
   await m.updateResource<Organization>({ ...org, extension: [...(org.extension?.filter((e) => e.url !== moduleExtensionUrl) ?? []), { url: moduleExtensionUrl, valueString: JSON.stringify(next) }] });
+  await settleModuleMemo();
   return async () => {
     const latest = await m.readResource('Organization', org.id!);
     await m.updateResource<Organization>({ ...latest, extension: [...(latest.extension?.filter((e) => e.url !== moduleExtensionUrl) ?? []), ...(existing ? [existing] : [])] });
+    await settleModuleMemo();
   };
 }
+
+/** The app memoises per-clinic module ids for 5 s (lib/server/module-ids-memo.ts, Task 547). Direct Medplum writes bypass its invalidation, so wait it out before the UI/API is expected to see the change. */
+export const settleModuleMemo = () => new Promise<void>((resolve) => setTimeout(resolve, 5_500));

@@ -3,6 +3,7 @@ import type { Organization } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir } from '../lib/fhir';
 import { randomUUID } from 'node:crypto';
+import { settleModuleMemo } from '../lib/module-toggle';
 
 // Mirrors lib/module-settings.ts: same toggle mechanism an admin flips in /admin/clinics,
 // reused here for "pacs" (X-ray/imaging module route) the same way e2e/tests/poct.spec.ts
@@ -35,6 +36,7 @@ async function setModuleEnabled(m: MedplumClient, clinicId: string, moduleId: st
     ...org,
     extension: [...otherExtensions, { url: moduleExtensionUrl, valueString: JSON.stringify(nextIds) }],
   });
+  await settleModuleMemo();
 
   return async () => {
     const latest = await m.readResource('Organization', org.id!);
@@ -45,6 +47,7 @@ async function setModuleEnabled(m: MedplumClient, clinicId: string, moduleId: st
         ...(existingExtension ? [existingExtension] : []),
       ],
     });
+    await settleModuleMemo();
   };
 }
 

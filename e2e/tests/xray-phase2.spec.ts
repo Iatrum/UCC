@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fhir } from '../lib/fhir';
 import { newDeviceKey } from '../lib/device-key';
 import { randomUUID } from 'node:crypto';
+import { deviceMeta } from '../lib/device-meta';
 
 // Phase 2: per-clinic PACS viewer host allowlist (default deny) gating the Lab-tab viewer link.
 test.use({ trace: 'off' });
@@ -53,7 +54,7 @@ test('X-ray viewer link: default deny, shown only for allowlisted https host and
   const restoreOrg = await setOrgExtensions(m, clinicId, withPacsOn);
   const { key, identifier } = newDeviceKey();
   const device = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
-    identifier: [{ system: 'clinic', value: clinicId }, identifier], meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
+    identifier: [{ system: 'clinic', value: clinicId }, identifier], ...deviceMeta(tagSystem),
     deviceName: [{ name: `Fake X-ray ${suffix}`, type: 'user-friendly-name' }], type: { coding: [{ system: typeSystem, code: 'xray' }] },
     property: [{ type: { coding: [{ system: propertySystem, code: 'last-heartbeat' }] }, valueCode: [{ text: new Date().toISOString() }] }] });
   const mkSr = (code: string) => m.createResource<ServiceRequest>({ resourceType: 'ServiceRequest', status: 'active', intent: 'order',

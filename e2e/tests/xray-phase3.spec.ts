@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fhir } from '../lib/fhir';
 import { EVIDENCE } from '../lib/env';
 import { newDeviceKey } from '../lib/device-key';
+import { deviceMeta } from '../lib/device-meta';
 
 // X-ray phase 3 (Task 357): real DICOM storage + viewer, against the DEV PACS only (compose project
 // ucc-pacs-dev: Orthanc + OHIF, see infra/pacs-dev). SYNTHETIC DICOM only (pydicom test pattern,
@@ -104,7 +105,7 @@ test('stored DICOM appears as a study matched by accession; viewer link is clini
   // The dev Orthanc authenticates to UCC as this (fake, per-run) X-ray Device of the test clinic.
   const { key, identifier } = newDeviceKey();
   const device = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
-    identifier: [{ system: 'clinic', value: clinicId }, identifier], meta: { tag: [{ system: tagSystem, code: 'simulated' }] },
+    identifier: [{ system: 'clinic', value: clinicId }, identifier], ...deviceMeta(tagSystem),
     deviceName: [{ name: `Fake PACS ${suffix}`, type: 'user-friendly-name' }], type: { coding: [{ system: typeSystem, code: 'xray' }] } });
   cleanup.push(() => m.deleteResource('Device', device.id!));
   const originalKey = fs.readFileSync(KEY_FILE);

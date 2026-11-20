@@ -5,6 +5,7 @@ import { byPatient, fhir } from '../lib/fhir';
 import { RUN } from '../lib/env';
 import { newDeviceKey, bearer } from '../lib/device-key';
 import { setClinicModule } from '../lib/module-toggle';
+import { deviceMeta } from '../lib/device-meta';
 
 // Full patient journey "in and out", one shared browser page, serial.
 // Core-flow asserts are hard; known-bug probes are collected and asserted together in the final test.
@@ -171,7 +172,7 @@ test('07 lab result ingest -> Labs & Imaging tab', async ({ request }) => {
   const restorePoct = await setClinicModule(m, clinicId, 'poct', true);
   const { key: deviceKey, identifier: keyHash } = newDeviceKey();
   const analyser = await m.createResource<Device>({ resourceType: 'Device', status: 'active',
-    identifier: [{ system: 'clinic', value: clinicId }, keyHash], meta: { tag: [{ system: 'https://ucc.emr/poct', code: 'simulated' }] },
+    identifier: [{ system: 'clinic', value: clinicId }, keyHash], ...deviceMeta('https://ucc.emr/poct'),
     deviceName: [{ name: `Workflow Fake analyser ${RUN}`, type: 'user-friendly-name' }],
     type: { coding: [{ system: 'https://ucc.emr/poct/analyser-type', code: 'glucose' }] } });
   try {
@@ -179,7 +180,9 @@ test('07 lab result ingest -> Labs & Imaging tab', async ({ request }) => {
     results: [{ testCode: '718-7', testName: 'Haemoglobin', value: 13.9, unit: 'g/dL', referenceRange: '13-17' },
               { testCode: '6690-2', testName: 'White cell count', value: 12.4, unit: '10*9/L', referenceRange: '4-11', interpretation: 'high' }] } });
   facts.labReceiveNoStatus = `${r.status()} ${(await r.text()).slice(0, 200)}`;
-  bug(r.ok(), '/api/labs/receive returns 500 when result.status is omitted (route validation does not require/default it)');
+  // Contract (now explicit): an omitted result.status is a 400 validation error, never a 500 and never a silent default.
+  expect(r.status(), 'omitted result.status is refused with a 400 validation error').toBe(400);
+  expect(facts.labReceiveNoStatus).toContain('results[0].status is required');
   const r2 = await request.post('/api/labs/receive', { headers: bearer(deviceKey), data: { serviceRequestId: facts.labSR, conclusion: 'Mild leukocytosis (FAKE)',
     results: [{ testCode: '718-7', testName: 'Haemoglobin', value: 13.9, unit: 'g/dL', referenceRange: '13-17', status: 'final', interpretation: 'normal' },
               { testCode: '6690-2', testName: 'White cell count', value: 12.4, unit: '10*9/L', referenceRange: '4-11', status: 'final', interpretation: 'high' }] } });
