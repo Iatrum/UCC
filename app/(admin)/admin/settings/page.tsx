@@ -100,7 +100,7 @@ export default async function AdminSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="outline" size="sm" className="h-auto min-h-9 whitespace-normal text-left" asChild>
+          <Button variant="outline" size="sm" className="h-auto min-h-11 whitespace-normal text-left md:min-h-0" asChild>
             <Link href={adminPath("/create-medplum-client")}>
               Create Medplum client credentials
             </Link>
