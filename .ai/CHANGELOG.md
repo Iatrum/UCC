@@ -233,3 +233,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+
+- 2026-11-20 Task 760 (UX): Re-checked the open UX findings against today's app: nothing Medium/High is still open. Fixed three small things staff could misread: the patient page no longer shows a green "None" when allergies were never asked (it says "Allergies not recorded"); the check-in page no longer shows a red allergy alert for "No known drug allergies"; the empty Appointments list now explains that past bookings are counted in the tiles but not listed. Notes: .ai/research/task-760.md
