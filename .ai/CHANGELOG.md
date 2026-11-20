@@ -1,5 +1,13 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 741 — Pilot checklist evidence reviewed
+
+A second check of the pilot checklist confirmed its evidence and removed one wording that no record supported. The checklist now says which tests ran on dev, which changes have merged, and which pilot checks are still open. The launch criteria include preparing the pilot clinic and checking any changes required by the clinic's decisions.
+
+## 2026-11-20 — Task 740 — Pilot checklist refreshed
+
+The checklist records the Time Chit staff walk, merged security changes, and successful loopback invite. It also records the imaging billing and dev clinic audit passes. The live session-revocation rehearsal and the remaining release checks are still open.
+
 ## 2026-11-20 — Task 738 — Imaging billing fix confirmed
 
 The pilot checklist now records that signing an imaging order keeps the charge available at checkout and records the procedure as still pending. The latest dev clinic data audit passed. The browser gate and production version check still need to pass before release.
