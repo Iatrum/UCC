@@ -133,3 +133,6 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 
 ## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
 Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
