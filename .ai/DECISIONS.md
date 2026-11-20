@@ -130,3 +130,7 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
+
+On untouched origin/dev both reported specs (and the whole file) pass cold and warm; the app shows the expected error text + Retry. The reporting branch (Task 727/728) lacked Task 675's tab-panel-scoped assertions. Decision: change neither app nor test; affected branches should merge origin/dev. Details in `.ai/research/task-734.md`.

@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
+The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
+
 ## 2026-11-19 — Task 718: staff pages fit on a phone
 The patient profile, Patients list header, POCT header and tabs, and the dashboard queue card now fit a phone screen: buttons no longer run off the edge, the patient details no longer overlap, and the tabs can be scrolled sideways. On a laptop screen the patient's consultation history now shows its View/Edit buttons without sideways scrolling. Layout only; nothing in the consultation composer, results or POCT behaviour changed.
 
