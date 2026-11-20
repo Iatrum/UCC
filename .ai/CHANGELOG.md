@@ -1,5 +1,10 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 749 review of Task 748
+The patient document viewer announces preview preparation, marks the preview area busy, and ignores responses from previews that staff have already closed. This covers signed MCs, Time Chits and Referral Letters, plus legacy referrals.
+
+## 2026-11-20 — Task 748: document viewer loading message (already fixed)
+Checked the MC, Time Chit and Referral viewers: each already shows "Preparing preview..." while the PDF loads (added in Task 506). The UX note was marked verified fixed. Docs only, no app change.
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 
