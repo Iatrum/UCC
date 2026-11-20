@@ -5,6 +5,7 @@ import {
   getHostFromNextRequest,
 } from "@/lib/server/subdomain-host";
 import { buildCsp, generateNonce } from "@/lib/security/csp";
+import { checkCsrf } from "@/lib/security/csrf";
 
 export function proxy(req: NextRequest) {
   const host = getHostFromNextRequest(req);
@@ -22,6 +23,17 @@ export function proxy(req: NextRequest) {
       redirectUrl.pathname = adminPortalPath(pathname);
       return NextResponse.redirect(redirectUrl, 308);
     }
+  }
+
+  // CSRF (Task 720): same-origin / allow-listed Origin only for mutating /api calls (device + webhook routes exempt).
+  const csrf = checkCsrf({
+    method: req.method,
+    pathname,
+    headers: req.headers,
+    extraAllowedOrigins: process.env.CSRF_ALLOWED_ORIGINS,
+  });
+  if (csrf) {
+    return NextResponse.json({ error: "Cross-site request blocked" }, { status: 403 });
   }
 
   // Per-request nonce CSP: Next.js reads the nonce from the request CSP header and stamps its scripts.

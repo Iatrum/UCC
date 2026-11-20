@@ -228,3 +228,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - 2026-11-18 Task 607 (item 3, Pilot checklist 597): 385c approved-exception list. `compare.mjs` on strict targets fails any non-passed test not exactly listed in `e2e/staging-exceptions.json`; unit tests added. Task 597 checklist found on the remote branch after a fetch of that branch.
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
+
+- Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
