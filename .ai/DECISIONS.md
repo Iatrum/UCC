@@ -130,3 +130,6 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## D-732 — CSRF origins: request Host + known suffixes (2026-11-20, Task 732)
+Allowed Origin = request Host, or https/no-port hostname on a dot boundary under drhidayat.com / iatrum.com, or this team's Vercel hosts (`ucc*-hidayat0507s-projects.vercel.app`), plus optional CSRF_ALLOWED_ORIGINS. Bare `*.vercel.app` rejected (anyone can register one). Accepts that clinic subdomains trust each other for CSRF purposes. See `.ai/research/task-732.md`.

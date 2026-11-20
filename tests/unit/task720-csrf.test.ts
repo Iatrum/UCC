@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { checkCsrf } from "../../lib/security/csrf";
+import { checkCsrf, isKnownOrigin } from "../../lib/security/csrf";
 
 const call = (method: string, pathname: string, h: Record<string, string>, extra?: string) =>
   checkCsrf({ method, pathname, headers: new Headers(h), extraAllowedOrigins: extra });

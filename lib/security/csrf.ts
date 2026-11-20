@@ -23,6 +23,26 @@ const EXEMPT_PREFIXES = [
   "/api/export-to-medplum",
 ];
 
+/**
+ * Known domain suffixes (Task 732). An Origin is accepted when its hostname equals a suffix or ends with
+ * "." + suffix (dot boundary, so `evil-drhidayat.com` and `drhidayat.com.evil.test` are rejected), it is
+ * https, and it carries no explicit port.
+ */
+export const ALLOWED_ORIGIN_SUFFIXES = ["drhidayat.com", "iatrum.com"];
+
+/**
+ * Vercel preview/production hosts for THIS project only. A bare `*.vercel.app` would let any attacker's
+ * Vercel project pass the check, so hosts must be `ucc[-...]-hidayat0507s-projects.vercel.app` (team scope).
+ */
+const VERCEL_PROJECT_HOST = /^ucc(-[a-z0-9]+)*-hidayat0507s-projects\.vercel\.app$/;
+
+export function isKnownOrigin(parsed: URL): boolean {
+  if (parsed.protocol !== "https:" || parsed.port !== "") return false;
+  const h = parsed.hostname.toLowerCase();
+  if (ALLOWED_ORIGIN_SUFFIXES.some((s) => h === s || h.endsWith(`.${s}`))) return true;
+  return VERCEL_PROJECT_HOST.test(h);
+}
+
 export type CsrfInput = {
   method: string;
   pathname: string;
@@ -72,6 +92,7 @@ export function checkCsrf(input: CsrfInput): string | null {
       return "invalid_origin";
     }
     if (parsed.host.toLowerCase() === requestHost(input.headers)) return null;
+    if (isKnownOrigin(parsed)) return null;
     if (parseOrigins(input.extraAllowedOrigins).has(parsed.origin.toLowerCase())) return null;
     return "cross_origin";
   }
