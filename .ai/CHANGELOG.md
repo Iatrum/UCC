@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 736 — Dev clinic data audit passes
+A leftover fake patient had no clinic identifier and pointed to a clinic account that no longer resolved. The fake record was soft-deleted on dev, and the same audit passed. The fixture instructions now cover how to clean up temporary test records.
+
 ## 2026-11-19 — Task 718: staff pages fit on a phone
 The patient profile, Patients list header, POCT header and tabs, and the dashboard queue card now fit a phone screen: buttons no longer run off the edge, the patient details no longer overlap, and the tabs can be scrolled sideways. On a laptop screen the patient's consultation history now shows its View/Edit buttons without sideways scrolling. Layout only; nothing in the consultation composer, results or POCT behaviour changed.
 

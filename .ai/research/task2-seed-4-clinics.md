@@ -19,3 +19,9 @@
 ## Pitfalls
 - Medplum auth rate limit (~5/min/IP): log in once (admin) and reuse the client.
 - Keep the existing `demo` clinic and its data; new clinics are additive. All names are fake; NRIC-like ids use an obviously fake pattern; tag every seeded resource `http://iatrum.com/seed|ucc-dummy-v1` so it can be found/removed.
+
+## Temporary clinic probe cleanup
+
+On fake-data dev Medplum at `http://127.0.0.1:8113`, use a unique synthetic marker for each probe and keep the IDs of resources it creates for cleanup in a `finally` block. A valid fake Patient needs one `clinic` identifier and the matching `HealthcareService` account. If a negative test deliberately omits or mismatches those fields, keep it disposable and finish the cleanup before running the shared audit.
+
+Soft-delete probe-owned clinical dependents and Patients before deleting the temporary clinic account. If a run is interrupted, confirm the individual record's fixture marker, creator, history and Patient compartment before cleanup. Use a version-conditional delete on the verified fake record and rerun `e2e/scripts/clinic-check.ts` against dev. Leave records with uncertain ownership for investigation. [Task 736 example](task-736.md) · [Medplum resource history](https://www.medplum.com/docs/fhir-datastore/resource-history)

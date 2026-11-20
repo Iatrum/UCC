@@ -130,3 +130,7 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## 2026-11-20 — Task 736 — Remove orphaned synthetic probes from dev
+
+The C4 audit correctly rejected a synthetic Patient with no recorded clinic and an unresolved clinic account. Soft-delete confirmed disposable fixtures after checking their history and dependents. Assigning a clinic without an ownership record would invent ownership. Keep the audit checks intact and clean up probes before removing their temporary clinic accounts. [Evidence](research/task-736.md)
