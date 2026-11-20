@@ -34,6 +34,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "durationMinutes must be a positive number" }, { status: 400 });
     }
 
+    const durationMs = slotDurationMinutes * 60_000;
+    const firstSlotEnd = new Date(startTime + durationMs).getTime();
+    if (durationMs < 1 || !Number.isFinite(firstSlotEnd)) {
+      return NextResponse.json({ error: "durationMinutes is out of range" }, { status: 400 });
+    }
+
     let resolvedScheduleId = scheduleId as string | undefined;
     if (!resolvedScheduleId) {
       if (!practitionerId) {

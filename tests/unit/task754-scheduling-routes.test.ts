@@ -179,6 +179,7 @@ describe('scheduling schedule and slot routes', () => {
     }));
 
     expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'You do not have permission to perform this action.' });
     expect(medplum.writes).toEqual([]);
   });
 
@@ -224,6 +225,7 @@ describe('scheduling schedule and slot routes', () => {
     ['an invalid date', { start: 'not-a-date' }, 'Invalid slot generation window'],
     ['a reversed time range', { start: end, end: start }, 'Invalid slot generation window'],
     ['a zero duration', { durationMinutes: 0 }, 'durationMinutes must be a positive number'],
+    ['a duration outside the Date range', { durationMinutes: Number.MAX_VALUE }, 'durationMinutes is out of range'],
   ] as const)('rejects %s before creating a schedule or slots', async (_label, invalid, message) => {
     const response = await generateSlots(post('slots/generate', {
       practitionerId: 'fake-new-practitioner', start, end, ...invalid,
@@ -254,6 +256,7 @@ describe('scheduling booking routes', () => {
     const response = await book(post('book', { ...booking, slotId: foreignSlotId }));
 
     expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'You do not have permission to perform this action.' });
     expect(medplum.writes).toEqual([]);
   });
 
@@ -281,6 +284,25 @@ describe('scheduling booking routes', () => {
         subject: expect.objectContaining({ reference: `Patient/${patientId}` }),
       }),
     ]);
+  });
+
+  it('creates its own slot for manual booking when only another clinic has a slot at that time', async () => {
+    medplum.db.delete(`Slot/${slotId}`);
+    const foreignSlot = medplum.stored('Slot', foreignSlotId);
+
+    const response = await manualBook(post('manual-book', manual));
+
+    expect(response.status).toBe(200);
+    expect(medplum.creates('Slot')).toEqual([
+      expect.objectContaining({
+        identifier: [ownIdentifier], status: 'busy', start, end,
+        schedule: { reference: `Schedule/${scheduleId}` },
+      }),
+    ]);
+    const [created] = medplum.creates('Slot');
+    const [appointment] = medplum.creates('Appointment');
+    expect(await response.json()).toEqual({ success: true, appointmentId: appointment.id, slotId: created.id });
+    expect(medplum.stored('Slot', foreignSlotId)).toEqual(foreignSlot);
   });
 
   it('returns 409 when a manual booking overlaps a busy slot', async () => {

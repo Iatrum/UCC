@@ -1,0 +1,7 @@
+# Task 755 research
+
+- Next.js 16 route handlers use Web Request/Response APIs with `NextRequest` and `NextResponse` extensions. Direct handler calls can exercise parsing, status and JSON with real request objects. [Next.js route handler reference](https://nextjs.org/docs/app/api-reference/file-conventions/route)
+- Medplum access policies restrict resources per membership and can apply search criteria. The test adapter holds two clinic datasets and exercises UCC's application-level guards independently of deployed policy. [Medplum 5.2.8 release](https://github.com/medplum/medplum/releases/tag/v5.2.8) · [Medplum access policies](https://www.medplum.com/docs/access/access-policies)
+- Clinic `identifier` queries use FHIR R4 token `system|value` matching. Schedule and Slot are distinct FHIR resources with the Slot referencing its Schedule. [FHIR R4 search](https://hl7.org/fhir/R4/search.html#token) · [FHIR R4 Slot](https://hl7.org/fhir/R4/slot.html)
+- React 19 and DICOMweb are outside these server-only scheduling changes. [React 19 release](https://react.dev/blog/2024/12/05/react-19) · [DICOM PS3.18 Studies Service](https://dicom.nema.org/medical/dicom/current/output/pdf/part18.pdf)
+- The scheduling client sends string timestamps and optional minute durations. The service advances a JavaScript `Date` cursor in milliseconds. Route validation should reject durations that cannot produce a valid, later slot end before the practitioner path can write a schedule. [ECMAScript TimeClip](https://tc39.es/ecma262/#sec-timeclip)

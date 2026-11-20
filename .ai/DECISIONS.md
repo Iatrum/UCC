@@ -136,3 +136,7 @@ Lowest-coverage lib files such as `logging.ts`, `admin-routes.ts` and `structure
 
 ## D-745 — Approve Task 744 tests after hardening (2026-11-20, Task 745)
 Accepted as-is apart from replacing `rejects.toBeDefined()` with a forbidden-error assertion. Kept the `next/headers` module mock because it is the only way to unit-test server clinic resolution; risk recorded in .ai/REVIEW-task744.md.
+
+## D-755 — Accept Task 754 scheduling route coverage after review (2026-11-20, Task 755)
+
+Keep the real Next.js handlers and scheduling services under test with a two-clinic in-memory Medplum adapter. Assert the public denial responses, zero writes for foreign records, and clinic-tagged writes on success. Validate the slot window and first slot end before the route can create a schedule. See [.ai/REVIEW-task754.md](REVIEW-task754.md) for verification results.
