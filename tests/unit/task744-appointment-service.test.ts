@@ -84,7 +84,13 @@ describe('saveAppointmentToMedplum', () => {
     const { client, created } = fake();
     (client as any).readResource = async (type: string, id: string) =>
       type === 'Patient' ? { resourceType: type, id, identifier: [foreign] } : { resourceType: type, id };
-    await expect(saveAppointmentToMedplum(client, { ...base, scheduledAt: '2030-03-01T09:00:00.000Z' }, clinic)).rejects.toBeDefined();
+    await expect(saveAppointmentToMedplum(client, { ...base, scheduledAt: '2030-03-01T09:00:00.000Z' }, clinic)).rejects.toMatchObject({ outcome: { issue: [{ code: 'forbidden' }] } });
+    expect(created).toHaveLength(0);
+  });
+
+  it('fails closed with no clinic id (zero writes)', async () => {
+    const { client, created } = fake();
+    await expect(saveAppointmentToMedplum(client, { ...base, scheduledAt: '2030-03-01T09:00:00.000Z' }, '')).rejects.toMatchObject({ outcome: { issue: [{ code: 'forbidden' }] } });
     expect(created).toHaveLength(0);
   });
 });

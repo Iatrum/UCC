@@ -233,3 +233,4 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+- 2026-11-20 Task 745: Reviewed the Task 744 test PR. The tests check real behaviour (broke the clinic filters on purpose and tests failed). Tightened one weak check so it needs a real 'forbidden' error, and added a no-clinic case. Coverage numbers confirmed. Notes: .ai/REVIEW-task744.md

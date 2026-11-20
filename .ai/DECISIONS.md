@@ -133,3 +133,6 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 
 ## D-744 — Coverage tests target business logic, not the lowest raw number (2026-11-20, Task 744)
 Lowest-coverage lib files such as `logging.ts`, `admin-routes.ts` and `structure-definitions.ts` are plumbing/config, so they were skipped. Chosen: `lib/fhir/catalog-service.ts` (billing catalog prices, clinic isolation), `lib/fhir/appointment-service.ts` (scheduling) and `lib/server/clinic.ts` (clinic scoping). Tests use fake Medplum clients and assert zero writes for foreign-clinic input. Composer and X-ray UI were excluded. No production code changed.
+
+## D-745 — Approve Task 744 tests after hardening (2026-11-20, Task 745)
+Accepted as-is apart from replacing `rejects.toBeDefined()` with a forbidden-error assertion. Kept the `next/headers` module mock because it is the only way to unit-test server clinic resolution; risk recorded in .ai/REVIEW-task744.md.
