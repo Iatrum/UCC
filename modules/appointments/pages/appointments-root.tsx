@@ -182,13 +182,13 @@ export default function AppointmentsRootPage() {
       </section>
 
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setView("list")}
               className={[
-                "flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                "flex min-h-10 items-center gap-1.5 rounded-full px-4 py-2 text-sm sm:min-h-0 font-medium transition-colors",
                 view === "list"
                   ? "bg-primary text-primary-foreground"
                   : "text-foreground hover:bg-muted",
@@ -201,7 +201,7 @@ export default function AppointmentsRootPage() {
               type="button"
               onClick={() => setView("calendar")}
               className={[
-                "flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                "flex min-h-10 items-center gap-1.5 rounded-full px-4 py-2 text-sm sm:min-h-0 font-medium transition-colors",
                 view === "calendar"
                   ? "bg-primary text-primary-foreground"
                   : "text-foreground hover:bg-muted",
@@ -219,7 +219,7 @@ export default function AppointmentsRootPage() {
                   type="button"
                   onClick={() => setCalendarViewMode(mode)}
                   className={[
-                    "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                    "min-h-10 rounded-full px-4 py-2 text-sm font-medium transition-colors sm:min-h-0",
                     calendarViewMode === mode
                       ? "bg-primary text-primary-foreground"
                       : "text-foreground hover:bg-muted",

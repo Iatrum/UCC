@@ -125,7 +125,7 @@ export default function SettingsPage() {
         <div className="text-sm text-muted-foreground">Signed in as: {profileEmail}</div>
       </div>
 
-      <div className="grid grid-flow-dense gap-3 min-[900px]:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-flow-dense grid-cols-1 gap-3 min-[900px]:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-start gap-3 space-y-0 p-4">
             <WorkflowIcon><IdCard className="h-4 w-4" /></WorkflowIcon>

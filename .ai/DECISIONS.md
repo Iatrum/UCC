@@ -130,3 +130,7 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## D-746 — Phone layout fixes use min-w-0 / grid-cols-1 and phone-only tap size (2026-11-20, Task 746)
+
+Grid and flex children default to `min-width:auto`, so one long unbroken name (a subdomain, an organisation name) widened the whole admin card past the screen. We add `grid-cols-1` (which is `minmax(0,1fr)`) and `min-w-0` instead of hiding overflow, and let headers `flex-wrap`. Small controls get `min-h-10 sm:min-h-0` so only phones change (the 40px target); desktop sizing is untouched. Not changed on purpose: the sidebar/admin rail (out of scope), tables that scroll sideways inside their own box, and `truncate`d text that already has a title. Details: `.ai/research/task-746.md`.
