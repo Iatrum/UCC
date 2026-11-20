@@ -233,3 +233,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+
+- Task 771: accessibility pass on login, queue, patients, appointments. Screen readers now hear a name for the patients search box, the queue row menu button and the appointment status dropdown. Error text on the patients list is darker for readability, and two messages are announced automatically. No layout or behaviour change. Findings: `.ai/A11Y-FINDINGS.md`.

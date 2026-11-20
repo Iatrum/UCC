@@ -360,10 +360,10 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0" disabled={loadingSet.has(patient.id)}>
+                    <Button variant="ghost" className="h-8 w-8 p-0" disabled={loadingSet.has(patient.id)} aria-label={`Actions for ${patient.fullName}`}>
                       {loadingSet.has(patient.id)
-                        ? <Loader2 className="h-4 w-4 animate-spin" />
-                        : <MoreHorizontal className="h-4 w-4" />}
+                        ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                        : <MoreHorizontal aria-hidden="true" className="h-4 w-4" />}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
