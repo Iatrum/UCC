@@ -334,10 +334,8 @@ export async function POST(req: NextRequest) {
           403
         );
       }
-      redirectUrl = adminPathForHost(
-        typeof next === 'string' ? next : '/',
-        host
-      );
+      redirectUrl =
+        safeNext(adminPathForHost(typeof next === 'string' ? next : '/', host)) ?? '/';
     } else if (hostContext.type === 'clinic') {
       const matchedClinic = assignedClinics.find(
         (clinic) =>

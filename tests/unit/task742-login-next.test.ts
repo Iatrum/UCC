@@ -15,3 +15,17 @@ describe("Task 742: login `next` is same-origin only", () => {
     expect(readFileSync("lib/auth-medplum.tsx", "utf8")).toMatch(/safeNext\(payload\.redirectUrl\)/);
   });
 });
+
+describe("Task 743: admin-host redirect cannot become protocol-relative", () => {
+  const { adminPathForHost } = require("@/lib/admin-routes");
+  test.each(["/admin//evil.example", "/admin///evil.example"])("%j stays a same-origin path on the admin host", (value) => {
+    const out = adminPathForHost(safeNext(value)!, "admin.example.com");
+    expect(out.startsWith("//")).toBe(false);
+    expect(safeNext(out)).toBe(out);
+  });
+  test("own-clinic admin paths are unchanged", () => {
+    expect(adminPathForHost("/admin/users?x=1", "admin.example.com")).toBe("/users?x=1");
+    expect(adminPathForHost("/", "admin.example.com")).toBe("/");
+    expect(adminPathForHost("/users", "clinic.example.com")).toBe("/admin/users");
+  });
+});

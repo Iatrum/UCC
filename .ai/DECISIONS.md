@@ -135,3 +135,8 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 Server routes must not trust client-side sanitising: `/api/auth/login` runs `safeNext` on `next` itself, and routes return a fixed
 message for unexpected errors (known 4xx outcomes with fixed text may still be echoed). Left as is, with reasons in
 `.ai/research/task-742.md`: `export-to-medplum` error echo (bearer-secret only), requests with no Origin and no Fetch-Metadata pass the CSRF guard (non-browser), 10 s auth memo grace.
+
+## D-743 — Sanitise the final redirect, not only the input (2026-11-20, Task 743)
+Path rewriting helpers (`normalizeAdminPath`) can create a new `//host` from a safe-looking input, so the login route checks the
+result with `safeNext` as well as the input. Invite 409 echo kept: the text is fixed in `admin-service.ts` (upstream text matching
+exist/duplicate/email is already replaced by a fixed sentence there).

@@ -233,3 +233,4 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+- Task 743 (review of 742): found the login redirect fix was incomplete. On the admin host a link like `/admin//evil.example` still turned into `//evil.example` after the `/admin` prefix was stripped. Fixed in `lib/admin-routes.ts` and guarded again in the login route. Normal admin and clinic redirects are unchanged. Tests added.
