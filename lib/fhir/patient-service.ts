@@ -125,18 +125,33 @@ async function findPatientByNric(
 ): Promise<DuplicatePatientMatch | null> {
   if (!nric) return null;
 
-  const [nricMatches, icMatches] = await Promise.all([
-    client.searchResources('Patient', {
-      identifier: `nric|${nric}`,
-      _count: '20',
-    }),
-    client.searchResources('Patient', {
-      identifier: `ic|${nric}`,
-      _count: '20',
-    }),
-  ]);
-
-  const matches = [...nricMatches, ...icMatches];
+  // Clinic-scoped at the source (Task 702): the caller may hold a privileged/admin client, so foreign-clinic
+  // patients must never be returned by the search at all. Ownership is the same as matchesClinic:
+  // clinic identifier tag, or a managingOrganization / account / compartment reference (legacy patients
+  // without the tag). The matchesClinic filter below stays as defence in depth.
+  const scopes: string[][] = [[]];
+  if (clinicScopeId) {
+    const tenant = await resolveClinicTenantMemo(client, clinicScopeId);
+    const orgRefs = Array.from(new Set([tenant?.organizationReference, `Organization/${clinicScopeId}`].filter(Boolean))) as string[];
+    const compartmentRefs = Array.from(
+      new Set([...orgRefs, tenant?.accountReference, `HealthcareService/${clinicScopeId}`].filter(Boolean))
+    ) as string[];
+    scopes.length = 0;
+    scopes.push(
+      [`identifier=${encodeURIComponent(`${CLINIC_IDENTIFIER_SYSTEM}|${clinicScopeId}`)}`],
+      [`organization=${orgRefs.map(encodeURIComponent).join(',')}`],
+      [`_compartment=${compartmentRefs.map(encodeURIComponent).join(',')}`]
+    );
+  }
+  const searches = ['nric', 'ic'].flatMap((system) =>
+    scopes.map((scope) =>
+      client.searchResources(
+        'Patient',
+        [`identifier=${encodeURIComponent(`${system}|${nric}`)}`, ...scope, '_count=20'].join('&')
+      )
+    )
+  );
+  const matches = (await Promise.all(searches)).flat();
 
   const match = matches.find((patient) => {
     if (!matchesClinic(patient, clinicScopeId)) {
