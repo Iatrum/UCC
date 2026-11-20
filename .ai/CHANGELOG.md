@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 749 review of Task 748
+The patient document viewer announces preview preparation, marks the preview area busy, and ignores responses from previews that staff have already closed. This covers signed MCs, Time Chits and Referral Letters, plus legacy referrals.
+
 ## 2026-11-20 — Task 748: document viewer loading message (already fixed)
 Checked the MC, Time Chit and Referral viewers: each already shows "Preparing preview..." while the PDF loads (added in Task 506). The UX note was marked verified fixed. Docs only, no app change.
 
