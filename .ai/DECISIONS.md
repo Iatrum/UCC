@@ -133,3 +133,7 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-752 — Track unsaved consultation edits in React state
+
+Store the rendered note and its edit flag together so the leave warning uses the same render snapshot. Keep the synchronous edit flag for the draft fetch to check before applying its response. This protects edits made while the saved draft is loading.

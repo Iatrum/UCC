@@ -1,5 +1,9 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 752 keeps unsaved consultation edits visible to the leave warning
+
+If staff edit a consultation while its saved draft is still loading, the leave warning now uses the same React state as the draft shown on screen.
+
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 

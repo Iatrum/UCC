@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 type Note = { clinicalNotes: string; diagnosis: string };
 const empty = { clinicalNotes: '', diagnosis: '' };
 export function useConsultationDraft(patientId: string) {
-  const [note, setNote] = useState<Note>(empty);
+  const [{ note, touched }, setDraft] = useState({ note: empty, touched: false });
   const [status, setStatus] = useState<'checking' | 'saved' | 'pending' | 'saving' | 'failed' | 'cleanup-failed'>('checking');
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState('');
@@ -25,7 +25,10 @@ export function useConsultationDraft(patientId: string) {
         state.current.version = data.version;
         state.current.saved = JSON.stringify(data.draft);
         state.current.hydrated = true;
-        if (!state.current.touched) { state.current.note = data.draft; setNote(data.draft); }
+        if (!state.current.touched) {
+          state.current.note = data.draft;
+          setDraft({ note: data.draft, touched: false });
+        }
         setError('');
         setStatus(JSON.stringify(state.current.note) === state.current.saved ? 'saved' : 'pending');
       } catch (error) {
@@ -41,7 +44,7 @@ export function useConsultationDraft(patientId: string) {
     if (field === 'clinicalNotes' && !value.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()) value = '';
     state.current.touched = true;
     state.current.note = { ...state.current.note, [field]: value };
-    setNote(state.current.note);
+    setDraft({ note: state.current.note, touched: true });
     setStatus(!state.current.hydrated ? 'checking' :
       JSON.stringify(state.current.note) === state.current.saved ? 'saved' : 'pending');
   }, [status]);
@@ -94,11 +97,11 @@ export function useConsultationDraft(patientId: string) {
       setStatus('cleanup-failed'); setError((error as Error).message); throw error;
     }
     state.current.note = empty; state.current.saved = JSON.stringify(empty); state.current.touched = false;
-    setNote(empty); setStatus('saved');
+    setDraft({ note: empty, touched: false }); setStatus('saved');
   }, [patientId]);
   return { ...note, status, error, change, save, clear,
     setSigning: (signing: boolean) => { state.current.signing = signing; },
     retry: () => { if (state.current.hydrated) void save().catch(() => {}); else setAttempt(a => a + 1); },
-    unsaved: status === 'cleanup-failed' || status === 'pending' || status === 'saving' || status === 'failed' || (status === 'checking' && state.current.touched),
+    unsaved: status === 'cleanup-failed' || status === 'pending' || status === 'saving' || status === 'failed' || (status === 'checking' && touched),
   };
 }
