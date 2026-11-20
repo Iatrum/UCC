@@ -132,3 +132,6 @@ Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModul
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 - 2026-11-20 D-748: UX item 18 (bare spinner in MC viewer) was already fixed in Task 506; `role="status"` on the message is the accessible busy signal, so no `aria-busy` or new test added. Docs-only PR, no code change.
 - 2026-11-20 D-749: The Task 506 text resolves the original bare spinner finding. The patient viewer now includes loading in the initial dialog description, keeps a polite status mounted for retry, and marks the preview region busy. The latest request owns preview state, so closing and reopening a dialog cannot display an older document. Scope is the patient Documents tab.
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
