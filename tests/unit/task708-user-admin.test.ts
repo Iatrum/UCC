@@ -87,12 +87,14 @@ type UpstreamCall = {
 let calls: UpstreamCall[];
 let roleSaved: boolean;
 let hasDuplicate: boolean;
+let inviteFailure = false;
 let adminClientSpy: ReturnType<typeof spyOn<typeof admin, "getAdminMedplum">>;
 
 beforeEach(() => {
   calls = [];
   roleSaved = false;
   hasDuplicate = false;
+  inviteFailure = false;
   const originalBase = env.MEDPLUM_BASE_URL;
   env.MEDPLUM_BASE_URL = proxyOrigin;
   restorers.push(() => { env.MEDPLUM_BASE_URL = originalBase; });
@@ -119,6 +121,9 @@ beforeEach(() => {
       });
     }
     if (path.startsWith("/admin/")) {
+      if (inviteFailure) {
+        return Response.json({ resourceType: "OperationOutcome", issue: [{ diagnostics: "connect ECONNREFUSED 10.0.0.5:5432 internal-db" }] }, { status: 500 });
+      }
       if (inviteRule && method === inviteRule[1] && new RegExp(inviteRule[2]).test(path)) {
         return Response.json(membership);
       }
@@ -264,5 +269,19 @@ describe("POST /api/admin/users/invite", () => {
     expect(calls.find(({ path }) => path === "/fhir/R4/Practitioner")?.query.get("telecom"))
       .toBe("test-invitee@example.invalid");
     expect(calls.every(({ method }) => method === "GET")).toBe(true);
+  });
+
+  test("Task 742: an unexpected invite failure returns a generic 500 without upstream text", async () => {
+    inviteFailure = true;
+    const errorSpy = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await invite.POST(request("POST", invitePath, adminToken, invitation));
+      expect(response.status).toBe(500);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({ error: "Failed to invite practitioner" });
+      expect(text).not.toContain("10.0.0.5");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

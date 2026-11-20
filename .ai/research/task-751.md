@@ -1,0 +1,10 @@
+# Task 751 — Task 750 feedback review
+
+PR #353 contains Task 750 at `d2fbb26d698a`. Review the feedback route, the fixed-window limiter, the browser payload, and the GitHub issue boundary.
+
+- [Next.js 16 route handlers](https://nextjs.org/docs/app/api-reference/file-conventions/route) use the Web Request API. Apply a byte cap as the request body is read. The repository already has a streaming JSON reader in `lib/server/device-ingress-http.ts`.
+- [Vercel request headers](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for) documents its platform-owned client-IP header. [Traefik entry points](https://doc.traefik.io/traefik/routing/entrypoints/#forwarded-headers) documents when forwarded data is trusted. Self-hosted IP throttling depends on a trusted ingress proxy and a private origin. The limiter is per process and uses fixed windows.
+- [GitHub mentions](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#mentioning-people-and-teams) and [GitHub Flavored Markdown fences](https://github.github.com/gfm/#fenced-code-blocks) describe the notification syntax and literal rendering of fenced text. Fences protect rendering. An automated reader still has to treat the contents as untrusted.
+- [GitHub issue creation](https://docs.github.com/en/rest/issues/issues#create-an-issue) takes a title and Markdown body. The route sends the credential in the server-side Authorization header. Unit tests can check the outbound request without creating an issue.
+- [React 19](https://react.dev/blog/2024/12/05/react-19) and the feedback component define the existing form boundary. Normal feedback includes plain text, browser metadata and an optional PNG or JPEG under 1 MB.
+- [Medplum 5.2.8](https://github.com/medplum/medplum/releases/tag/v5.2.8), [FHIR R4 Basic](https://hl7.org/fhir/R4/basic.html) and [DICOM PS3.1](https://dicom.nema.org/medical/dicom/current/output/html/part01.html) were checked for scope. Feedback uses clinic-scoped Basic records.

@@ -131,5 +131,24 @@ composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic sc
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 
+## D-742 — Server-side sanitising of redirect targets and 500 messages (2026-11-20, Task 742)
+Server routes must not trust client-side sanitising: `/api/auth/login` runs `safeNext` on `next` itself, and routes return a fixed
+message for unexpected errors (known 4xx outcomes with fixed text may still be echoed). Left as is, with reasons in
+`.ai/research/task-742.md`: `export-to-medplum` error echo (bearer-secret only), requests with no Origin and no Fetch-Metadata pass the CSRF guard (non-browser), 10 s auth memo grace.
+
+## D-743 — Sanitise the final redirect, not only the input (2026-11-20, Task 743)
+Path rewriting helpers (`normalizeAdminPath`) can create a new `//host` from a safe-looking input, so the login route checks the
+result with `safeNext` as well as the input. Invite 409 echo kept: the text is fixed in `admin-service.ts` (upstream text matching
+exist/duplicate/email is already replaced by a fixed sentence there).
+
+## D-750 — Feedback text is untrusted markdown (2026-11-20, Task 750)
+Free text from the feedback form is scrubbed for patient data, then made safe for GitHub (mentions defused, `<` and control/bidi characters removed) and
+placed inside a code fence in the issue body, because an AI triager may read the issue. The route gives a fixed message for unexpected 500s instead of
+`handleRouteError`'s `error.message` echo (the shared helper is unchanged; see PR body for the open question). Per-IP limit is 30/min (clinics share NAT), per-user 5/min.
+
+## D-751 — Enforce the feedback body cap while reading it (2026-11-20)
+
+Reuse the bounded JSON reader for the 1,600,000-byte cap. Key the 30-request window by the Vercel client address or the address appended by the trusted self-hosted ingress. The five-request window is keyed by authenticated clinic and profile. Both windows are process-local. GitHub renders report text in literal code blocks. Automated triage must treat it as untrusted input.
+
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
