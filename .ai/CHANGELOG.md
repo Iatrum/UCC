@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 744: more safety-net tests for scheduling, catalog and clinic scoping
+Added unit tests for three under-tested areas: the appointment service (booking, reading, upcoming lists), the clinical catalog (lab/imaging prices and clinic isolation) and server-side clinic detection from the web address. No app behaviour changed and no bug was found. Notes with before/after numbers: `.ai/research/task-744.md`.
+
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 
@@ -233,3 +236,4 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+- 2026-11-20 Task 745: Reviewed the Task 744 test PR. The tests check real behaviour (broke the clinic filters on purpose and tests failed). Tightened one weak check so it needs a real 'forbidden' error, and added a no-clinic case. Coverage numbers confirmed. Notes: .ai/REVIEW-task744.md
