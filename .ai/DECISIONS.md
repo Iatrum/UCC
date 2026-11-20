@@ -130,3 +130,4 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+- 2026-11-20 D-748: UX item 18 (bare spinner in MC viewer) was already fixed in Task 506; `role="status"` on the message is the accessible busy signal, so no `aria-busy` or new test added. Docs-only PR, no code change.
