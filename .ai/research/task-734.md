@@ -33,3 +33,6 @@ Reported by the Task 727/728 author (`ai/task-727-slots-clinic`): the two specs 
   dependent), so it is a probable explanation, not a proven one.
 - Task 727/728 changed only `lib/fhir/scheduling-service.ts` and a unit test; nothing in dashboard/billing code.
 - Resolution: nothing to fix. Rebase/merge `origin/dev` into 727/728 to pick up Task 675's scoped assertions.
+
+Task 735 found a separate Billing failure that the mocked HTTP responses bypassed. See
+[the review](../REVIEW-task734.md) for the fix and verification.
