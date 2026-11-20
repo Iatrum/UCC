@@ -134,3 +134,6 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 ## D-738 — Close the imaging billing defect within C4 (2026-11-20)
 
 Task 704’s merged fix resolves the premature completion recorded by the Task 722 browser probe. The signed generic imaging charge uses a `preparation` billing Procedure and remains available at checkout. The dev clinic data audit passed on this run. Keep C4 on release hold pending a clean current-head browser gate and an exact-production-version rehearsal. [Task 738 verification](research/task-738.md) · [Merged PR #342](https://github.com/Iatrum/UCC/pull/342)
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
