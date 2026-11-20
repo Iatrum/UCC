@@ -6,12 +6,30 @@ import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { resolveCheckoutPatientId } from '@/lib/billing/checkout-guards';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { isSignedDocumentNote } from '@/lib/clinical-documents';
+import type { ProcedureRecord } from '@/lib/models';
 import { handleRouteError } from '@/lib/server/route-helpers';
 
-function procedureKey(p: { procedureId?: string; name: string; price?: number; category?: string; notes?: string }): string {
+const isImagingProcedure = (procedure: ProcedureRecord) => /^\s*Imaging:/i.test(procedure.name);
+
+function procedureKey(p: ProcedureRecord): string {
   // A reissued MC/Time Chit/referral shares catalogue id + price with the voided one; key it by content.
   if (isSignedDocumentNote(p.notes)) return `signed-document|${p.notes}`;
+  if (isImagingProcedure(p)) {
+    if (p.signEntryId) return `sign-entry|${p.signEntryId}`;
+    // Older clients can only replay against the fields saved on the Procedure.
+    return `imaging|${JSON.stringify([p.name, p.price ?? 0, p.category, p.quantity ?? 1, p.orderIndex])}`;
+  }
   return `${p.procedureId ?? p.name}|${p.price ?? ''}|${p.category ?? ''}`;
+}
+
+function newProcedures(existing: ProcedureRecord[], incoming: ProcedureRecord[]): ProcedureRecord[] {
+  const existingKeys = new Set(existing.map(procedureKey));
+  return incoming.filter((procedure) => {
+    const key = procedureKey(procedure);
+    if (existingKeys.has(key)) return false;
+    if (isImagingProcedure(procedure)) existingKeys.add(key);
+    return true;
+  });
 }
 
 function prescriptionKey(rx: { medication?: { id?: string; name?: string }; frequency?: string; duration?: string }): string {
@@ -102,25 +120,23 @@ export async function POST(req: NextRequest) {
         ] });
       }
 
-      const existingProcKeys = new Set((consultation.procedures || []).map(procedureKey));
-      const updatedProcedures = procedures !== undefined
-        ? [...(consultation.procedures || []), ...(procedures as any[]).filter(p => !existingProcKeys.has(procedureKey(p)))]
-        : undefined;
+      const existingProcedures = consultation.procedures || [];
+      const addedProcedures = newProcedures(existingProcedures, procedures ?? []);
+      const existingPrescriptions = consultation.prescriptions || [];
+      const existingRxKeys = new Set(existingPrescriptions.map(prescriptionKey));
+      const addedPrescriptions = (prescriptions ?? []).filter((rx: any) => !existingRxKeys.has(prescriptionKey(rx)));
 
-      const existingRxKeys = new Set((consultation.prescriptions || []).map(prescriptionKey));
-      const updatedPrescriptions = prescriptions !== undefined
-        ? [...(consultation.prescriptions || []), ...(prescriptions as any[]).filter(rx => !existingRxKeys.has(prescriptionKey(rx)))]
-        : undefined;
-
-      await updateConsultationInMedplum(
-        consultationId,
-        {
-          ...(updatedProcedures !== undefined ? { procedures: updatedProcedures } : {}),
-          ...(updatedPrescriptions !== undefined ? { prescriptions: updatedPrescriptions } : {}),
-        },
-        clinicId,
-        medplum
-      );
+      if (addedProcedures.length || addedPrescriptions.length) {
+        await updateConsultationInMedplum(
+          consultationId,
+          {
+            ...(addedProcedures.length ? { procedures: [...existingProcedures, ...addedProcedures] } : {}),
+            ...(addedPrescriptions.length ? { prescriptions: [...existingPrescriptions, ...addedPrescriptions] } : {}),
+          },
+          clinicId,
+          medplum
+        );
+      }
 
       return NextResponse.json({ success: true });
     });

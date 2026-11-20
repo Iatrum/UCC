@@ -132,7 +132,8 @@ test('X-ray online + Sign creates active Device ServiceRequest, preserves bill a
     await page.getByRole('button', { name: 'Sign', exact: true }).click();
     const response = await ordered;
     expect(response.ok()).toBeTruthy();
-    expect((await billed).ok()).toBeTruthy();
+    const billingResponse = await billed;
+    expect(billingResponse.ok()).toBeTruthy();
     const sr = (await byPatient('ServiceRequest', f.patientId)).filter((r) => r.code?.coding?.some((c: any) => c.code === STUDY.code));
     expect(sr).toHaveLength(1);
     expect(sr[0].status).toBe('active');
@@ -147,8 +148,10 @@ test('X-ray online + Sign creates active Device ServiceRequest, preserves bill a
     const retry = await request.post('/api/imaging/order', { data: response.request().postDataJSON() });
     expect(retry.ok()).toBeTruthy();
     expect((await retry.json()).serviceRequestId).toBe(sr[0].id);
+    const billingRetry = await request.post('/api/orders', { data: billingResponse.request().postDataJSON() });
+    expect(billingRetry.ok()).toBeTruthy();
     const consultation = await (await request.get(`/api/consultations?id=${f.consultationId}`)).json();
-    expect(consultation.consultation.billingItems).toContainEqual(expect.objectContaining({ name: STUDY.name, price: STUDY.unitPrice, quantity: 1 }));
+    expect(consultation.consultation.billingItems).toEqual([expect.objectContaining({ name: STUDY.name, price: STUDY.unitPrice, quantity: 1 })]);
     await page.goto(`/orders/checkout/${f.consultationId}?patientId=${f.patientId}`);
     await expect(page.getByText(STUDY.name, { exact: true }).first()).toBeVisible();
   } finally { await f.m.deleteResource('Device', f.device.id!); await f.restorePacsModule(); }
