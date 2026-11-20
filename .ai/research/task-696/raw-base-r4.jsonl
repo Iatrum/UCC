@@ -1,0 +1,5 @@
+{"name":"patient profile (from queue)","usableMedianMs":388,"lcpMedianMs":null,"requestsMedian":22,"transferKbMedian":42,"usableRuns":[376,378,383,384,388,410,419,430]}
+{"name":"patient profile (hard load)","usableMedianMs":347,"lcpMedianMs":348,"requestsMedian":67,"transferKbMedian":30,"usableRuns":[266,314,328,333,347,379,388,454]}
+{"name":"patient documents tab","usableMedianMs":1216,"lcpMedianMs":508,"requestsMedian":62,"transferKbMedian":22,"usableRuns":[585,690,763,1090,1216,1374,1564,1598]}
+{"name":"inventory list","usableMedianMs":451,"lcpMedianMs":400,"requestsMedian":49,"transferKbMedian":23,"usableRuns":[305,306,316,366,451,452,536,571]}
+{"name":"appointments","usableMedianMs":423,"lcpMedianMs":68,"requestsMedian":60,"transferKbMedian":27,"usableRuns":[364,382,405,419,423,462,476,490]}
