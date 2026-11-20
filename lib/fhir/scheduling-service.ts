@@ -186,7 +186,7 @@ export async function generateSlotsForSchedule(
   }
   const schedule = await medplum.readResource("Schedule", input.scheduleId);
   const { clinicId: scheduleClinicId } = parseScheduleIdentifier(schedule);
-  if (scheduleClinicId !== clinicId) {
+  if (scheduleClinicId !== clinicId || !resourceMatchesClinicTenant(schedule as any, clinicId)) {
     // Caller-supplied reference in a payload: 403 (Task 422 rule 2).
     throw new ForbiddenError("Schedule unavailable in current clinic");
   }

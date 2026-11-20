@@ -149,3 +149,6 @@ placed inside a code fence in the issue body, because an AI triager may read the
 ## D-751 — Enforce the feedback body cap while reading it (2026-11-20)
 
 Reuse the bounded JSON reader for the 1,600,000-byte cap. Key the 30-request window by the Vercel client address or the address appended by the trusted self-hosted ingress. The five-request window is keyed by authenticated clinic and profile. Both windows are process-local. GitHub renders report text in literal code blocks. Automated triage must treat it as untrusted input.
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
