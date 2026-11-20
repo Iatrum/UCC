@@ -200,3 +200,29 @@ Method: code read against current dev; no dev server started. Several earlier ve
 - **Part 1 #12, #13, #14, #15, #18 and Part 2 #17, #18, #19:** previously closed; spot-checked on dev (`poct-section.tsx:64-65`, `poct/page.tsx:62`, `lab-results-view.tsx:67`). No change.
 - **Part 2 Low 16 (dead purchasing panels):** STILL OPEN, intentionally: `purchase-orders-panel.tsx` / `suppliers-panel.tsx` are unimported but removal belongs to the purchasing decision (`lib/purchasing.ts` `INVENTORY_PURCHASING_ENABLED=false`).
 - **Part 1 #19 sidebar polish, Part 3 #24 sidebar width:** STILL OPEN, intentionally (sidebar/nav out of scope).
+
+---
+
+# Part 4 (Task 718): phone-width pass over dashboard queue, patient profile tabs, appointments, POCT, analytics, consultation page (2026-11-19)
+
+Method: branch `ai/task-718-ux-phone` on `origin/dev` @ `b22d32e`; one `next dev --webpack` on :3718 (killed afterwards, whole process group), dev Medplum `:8113`, fake patients only, Playwright (in `timeout`) at 1366px and 390px, `doctor@ucc.local`. At 390px I walked each page with the sidebar expanded (the default after load) and collapsed (what a phone user would do). An automated check listed elements whose right edge is beyond the viewport and scroll containers whose content is wider than the box. Screenshots: `.ai/screenshots/task-718/{before,after}/`. Composer internals were not touched. X-ray untouched. No sidebar/nav change.
+
+## Medium (fixed)
+26. **Patient profile header was broken on a phone.** `Check-in` / `Edit patient` were `shrink-0` beside the name block and ran off the right edge, and the IC/Phone/Age/Email/Gender/DOB grid used `grid-cols-2`, so labels overlapped values (`app/(routes)/patients/[id]/page.tsx:134,147,167`). **FIXED:** header stacks below `sm` (`flex-col sm:flex-row`), buttons wrap, detail grid is `auto / minmax(0,1fr)` below `sm`, long email uses `break-all` and the name `overflow-wrap:anywhere`. `sm:` and up unchanged.
+27. **Patient profile: 220px vitals/emergency column stayed side by side with the tabs on a phone**, pushing the tab workspace off screen (`page.tsx:223-225`, fixed `w-[220px] shrink-0 sticky`). **FIXED:** column stacks above the tabs below `lg` and is full width; `lg:` keeps the old side-by-side, sticky layout.
+28. **Patient profile tab bar (Consultation History / Labs & Imaging / Documents) clipped** the last tabs with no way to reach them (`patient-profile-workspace.tsx:692`). **FIXED:** `max-w-full justify-start overflow-x-auto`, so it scrolls sideways on a phone.
+29. **Consultation history table hid its Actions column (View/Edit) at 1366px**: table needed about 930px but the area beside the 220px column is about 848px (`patient-profile-workspace.tsx:830-860`). **FIXED:** table `min-w` 860 → 760, complaint/diagnosis columns `min-w` 200 → 160 and `max-w` 260 → 200 (still truncated with ellipsis). Verified no horizontal scroll at 1366px. Below `md` the page already used cards, unchanged.
+30. **`New Patient` (Patients) and `New Test Order` (POCT) buttons were clipped** by a non-wrapping `flex justify-between` header (`patients/page.tsx:130`, `poct/page.tsx:67`). **FIXED:** `flex-wrap gap-4`. POCT status tabs (`poct/page.tsx:133`) got `overflow-x-auto` so "Completed / All Tests" stay reachable. No POCT feature change.
+31. **Dashboard queue card wasted width** (CardContent 24px padding each side) leaving ~144px for the queue table at 390px (`dashboard-client.tsx:211`). **PARTLY FIXED:** padding `px-3 sm:px-6` on that card; the table still scrolls sideways (see #33).
+
+## Low (not changed)
+32. **The expanded sidebar takes 160px of 390px** on first load (`components/sidebar.tsx:103`, `w-40`; collapse state is not remembered), leaving ~230px for content. Nav, out of scope (extends #24).
+33. **Queue, Patients and Appointments tables scroll sideways on a phone** (`components/queue-table.tsx:307`, `ui/table.tsx`), with no scroll hint; the first column (name) is readable and actions are reachable by scrolling. Same pattern as #23: card layout below `sm` needs a design decision.
+34. **Analytics** hour-grid and range pickers scroll inside their own box on a phone (intended `overflow-x-auto`); readable. Appointments and the consultation page (outside the composer) had no overflow at 390px or 1366px.
+35. Consultation page, Lab tab and Documents tab: no overflow or clipped controls at 1366px or 390px once #26-#28 were applied. Lab/POCT results still appear only in the Lab tab.
+
+## Verification
+- Page-level horizontal overflow: 0 on every walked page at both widths, before and after. Clipped elements at 1366px: patient profile (Actions column) before, none after.
+- `tsc --noEmit` clean; eslint clean on the 5 changed files.
+- `composer-plan.spec.ts` against this build: 5/5 passed.
+- `bun test tests/unit`: 1226 pass, 1 fail (`task639-scheduling-slots.test.ts` "refuses a schedule that belongs to another clinic", unrelated: files untouched by this task; message mismatch in scheduling code).

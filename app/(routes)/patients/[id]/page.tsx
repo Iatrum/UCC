@@ -131,7 +131,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
       {/* Banner card */}
       <Card className="bg-muted/30 border rounded-xl">
         <CardContent className="p-5">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
             {/* Left: avatar + name + info row */}
             <div className="flex items-start gap-4 min-w-0">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-xl font-semibold">
@@ -139,21 +139,21 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-semibold text-foreground leading-tight">{patient.fullName}</h1>
+                  <h1 className="[overflow-wrap:anywhere] text-xl font-semibold text-foreground leading-tight">{patient.fullName}</h1>
                   {!patient.lastVisit && (
                     <Badge variant="secondary" className="text-[11px]">New patient</Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-[auto_auto_auto_auto] gap-x-6 gap-y-1 text-sm mt-2">
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_auto_auto_auto] gap-x-6 gap-y-1 text-sm mt-2">
                   <span className="text-muted-foreground">IC number</span>
-                  <span className="font-medium">{patient.nric || "—"}</span>
+                  <span className="break-words font-medium">{patient.nric || "—"}</span>
                   <span className="text-muted-foreground">Phone</span>
-                  <span className="font-medium">{patient.phone || "—"}</span>
+                  <span className="break-words font-medium">{patient.phone || "—"}</span>
 
                   <span className="text-muted-foreground">Age</span>
                   <span className="font-medium">{patientAge !== null ? `${patientAge} years` : "—"}</span>
                   <span className="text-muted-foreground">Email</span>
-                  <span className="font-medium">{patient.email || "N/A"}</span>
+                  <span className="break-all font-medium">{patient.email || "N/A"}</span>
 
                   <span className="text-muted-foreground">Gender</span>
                   <span className="font-medium capitalize">{patient.gender || "—"}</span>
@@ -164,7 +164,7 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
             </div>
 
             {/* Right: action buttons */}
-            <div className="flex gap-2 flex-wrap justify-end shrink-0">
+            <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
               <Button asChild size="sm" variant="outline">
                 <Link href={`/patients/${id}/check-in`}>
                   <ClipboardList className="mr-2 h-4 w-4" />
@@ -220,9 +220,9 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
       </Card>
 
       {/* Main content */}
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col items-stretch gap-6 lg:flex-row lg:items-start">
         {/* Left sidebar */}
-        <aside className="w-[220px] shrink-0 sticky top-6 space-y-4">
+        <aside className="w-full space-y-4 lg:sticky lg:top-6 lg:w-[220px] lg:shrink-0">
           {/* Latest vitals */}
           <Card>
             <CardHeader className="px-4 pt-4 pb-2">

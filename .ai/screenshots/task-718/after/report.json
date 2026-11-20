@@ -1,0 +1,143 @@
+[
+ {
+  "name": "dashboard",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "TH:Chief Complaint r=473",
+   "TH:Visit Context r=579",
+   "TH:Added At r=658",
+   "TH:Status r=719",
+   "TH:Actions r=786",
+   "TD:No patients in queue r=786"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=691 cw=264"
+  ]
+ },
+ {
+  "name": "patients",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "TH:NRIC r=574",
+   "TH:Gender r=642",
+   "TH:Phone r=747",
+   "TH:Last Visit r=826",
+   "TH:Status r=887",
+   "TH:Actions r=998",
+   "TD:FAKE-POCT-a23cb939 r=574",
+   "TD:female r=642"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=892 cw=242"
+  ]
+ },
+ {
+  "name": "patient-profile",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "BUTTON:Documents r=445"
+  ],
+  "scrollers": [
+   "DIV.bg-muted text-muted-foreground inline-flex min-h-1 sw=368 cw=294"
+  ]
+ },
+ {
+  "name": "patient-tab-consultation",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "BUTTON:Documents r=445"
+  ],
+  "scrollers": [
+   "DIV.bg-muted text-muted-foreground inline-flex min-h-1 sw=368 cw=294"
+  ]
+ },
+ {
+  "name": "patient-tab-lab",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "BUTTON:Documents r=445"
+  ],
+  "scrollers": [
+   "DIV.bg-muted text-muted-foreground inline-flex min-h-1 sw=368 cw=294"
+  ]
+ },
+ {
+  "name": "patient-tab-documents",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [],
+  "scrollers": [
+   "DIV.bg-muted text-muted-foreground inline-flex min-h-1 sw=368 cw=294"
+  ]
+ },
+ {
+  "name": "consultation",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [],
+  "scrollers": []
+ },
+ {
+  "name": "appointments",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "TH:Time r=404",
+   "TH:Clinician r=479",
+   "TH:Reason r=596",
+   "TH:Status r=692",
+   "TH:Actions r=876",
+   "TD:09:47 AM r=404",
+   "TD:Dr Fake r=479",
+   "TD:Fake follow-up r=596"
+  ],
+  "scrollers": [
+   "DIV.relative w-full overflow-x-auto sw=795 cw=292"
+  ]
+ },
+ {
+  "name": "poct",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "BUTTON:All Tests r=405"
+  ],
+  "scrollers": [
+   "DIV.bg-muted text-muted-foreground inline-flex min-h-1 sw=312 cw=278"
+  ]
+ },
+ {
+  "name": "analytics",
+  "w": 390,
+  "docScroll": 390,
+  "vw": 390,
+  "clipped": [
+   "TH:12 r=395",
+   "TH: r=415",
+   "TH:14 r=435",
+   "TH: r=455",
+   "TH:16 r=474",
+   "TH: r=494",
+   "TH:18 r=514",
+   "TH: r=534"
+  ],
+  "scrollers": [
+   "DIV.flex max-w-full gap-1 overflow-x-auto rounded-xl b sw=314 cw=294",
+   "DIV.overflow-x-auto pb-1 sw=520 cw=260"
+  ]
+ }
+]

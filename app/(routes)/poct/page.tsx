@@ -64,7 +64,7 @@ export default async function POCTPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <TestTube className="h-8 w-8" />
@@ -130,7 +130,7 @@ export default async function POCTPage() {
 
       {/* Main Content */}
       <Tabs defaultValue="pending" className="space-y-4">
-        <TabsList>
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="pending">Pending Tests</TabsTrigger>
           <TabsTrigger value="completed">Completed</TabsTrigger>
           <TabsTrigger value="all">All Tests</TabsTrigger>
