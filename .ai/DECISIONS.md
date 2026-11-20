@@ -130,3 +130,7 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## D-752 — Track unsaved consultation edits in React state
+
+Store the rendered note and its edit flag together so the leave warning uses the same render snapshot. Keep the synchronous edit flag for the draft fetch to check before applying its response. This protects edits made while the saved draft is loading.
