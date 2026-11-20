@@ -15,6 +15,7 @@ Reviewed `d2fbb26d698a` on [PR #353](https://github.com/Iatrum/UCC/pull/353). Th
 - All 26 feedback unit tests passed across `feedback.test.ts`, `task750-feedback-security.test.ts` and `task751-feedback-route.test.ts`.
 - All eight tests for the shared device-ingress hardening passed.
 - All three feedback Playwright tests passed against loopback dev Medplum. They cover the disabled module, normal feature submission and dedupe, and the queued bug with screenshot confirmation.
-- `e2e/scripts/check-all.sh task-751` passed lint, build and the four-clinic check. The browser suite passed 93 of 98 cases, with three failures and two skips. The Task 749 baseline flags the registration test as new. Its 45-second timeout waiting for the login email field reproduced both in isolation on the reviewed code and on the unmodified Task 750 head. The other four results match the baseline.
+- The initial full gate passed lint, build and the four-clinic check. The browser suite passed 93 of 98 cases. The 45-second registration timeout waiting for the login email field reproduced both in isolation on the reviewed code and on the unmodified Task 750 head.
+- After merging `origin/dev`, `e2e/scripts/check-all.sh task-751-merged` passed on `5abae1a`. The browser suite passed 95 of 99 cases, including registration and all feedback cases. The two failures and two skips match both local baselines.
 
-The review found no remaining feedback blockers after the follow-up. The full gate remains red on the pre-existing registration timeout.
+The review found no remaining feedback blockers after the follow-up.
