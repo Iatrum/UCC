@@ -86,6 +86,17 @@ export function scrubError(input: unknown): string {
 
 const clip = (s: unknown, n: number) => (typeof s === "string" ? s.slice(0, n) : "");
 
+/**
+ * Make free text safe to embed in GitHub markdown: drop control/bidi/zero-width characters and
+ * defuse @mentions (a pinged user/team) and "<" (raw HTML). Applied after PDPA scrubbing.
+ */
+export function neutraliseMarkdown(input: string): string {
+  return input
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g, "")
+    .replace(/@(?=[A-Za-z0-9_-])/g, "@\u200B")
+    .replace(/</g, "\u2039");
+}
+
 export type FeedbackKind = "bug" | "feature";
 
 export type FeedbackInput = {
@@ -122,15 +133,15 @@ export function summariseBrowser(ua: unknown): string {
 export function sanitizeFeedback(input: FeedbackInput): SanitizedFeedback {
   return {
     kind: input.kind === "feature" ? "feature" : "bug",
-    title: scrubText(clip(input.title, 120)).replace(/\s+/g, " ").trim(),
-    description: scrubText(clip(input.description, 2000)).trim(),
+    title: neutraliseMarkdown(scrubText(clip(input.title, 120))).replace(/\s+/g, " ").trim(),
+    description: neutraliseMarkdown(scrubText(clip(input.description, 2000))).trim(),
     page: scrubUrl(input.page ?? "/"),
     browser: {
       name: summariseBrowser(input.browser?.userAgent),
       viewport: /^\d{2,5}x\d{2,5}$/.test(input.browser?.viewport ?? "") ? input.browser!.viewport! : "unknown",
       language: /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(input.browser?.language ?? "") ? input.browser!.language! : "unknown",
     },
-    lastError: scrubError(clip(input.lastError, 1500)),
+    lastError: neutraliseMarkdown(scrubError(clip(input.lastError, 1500))),
   };
 }
 

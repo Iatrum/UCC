@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 750: security review of the feedback form
+Checked the whole path: form, `/api/feedback`, GitHub issue creation and the saved-record fallback. Already fine: sign-in required, the clinic must have the feature on, the cross-site check in `proxy.ts` covers it, the GitHub token is only used on the server and never logged, and patient identifiers are scrubbed. Fixed: (1) the size limit could be skipped by sending no length header, so the real body size is now checked; (2) added a per-IP limit on top of the per-user limit; (3) `@name` mentions could ping people on GitHub, so they are defused, and HTML/hidden control characters are removed; (4) the description and last error are placed in a code block in the issue so they cannot add headings, links or fake triage instructions; (5) GitHub calls time out after 8 s; (6) unexpected errors from this route now return a fixed message. Tests: `tests/unit/task750-feedback-security.test.ts`. Notes: `.ai/research/task-750.md`.
+
 ## 2026-11-20 — Task 742: security review of the last 3 days
 Reviewed every API route and server library changed in the last 3 days (sign-in, clinic separation, cross-site request protection, input checks, error messages, secrets). Two small hardening fixes: the sign-in API now refuses a "go to after login" address that points to another website, and the invite-user API no longer shows internal error text to the caller. Nothing else needed changing; no effect on the consultation composer, Lab or POCT. Notes: `.ai/research/task-742.md`.
 

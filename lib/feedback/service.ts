@@ -93,12 +93,21 @@ function versionHeaders(record: Basic) {
 
 export type GithubConfig = { token?: string; repo?: string; fetchImpl?: typeof fetch };
 
+/** Wrap untrusted text in a code fence longer than any backtick run inside it. */
+function fence(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((r) => r.length));
+  const ticks = "`".repeat(Math.max(3, longest + 1));
+  return `${ticks}text\n${text}\n${ticks}`;
+}
+
 export function buildIssue(clinicId: string, f: SanitizedFeedback, hasScreenshot: boolean) {
   const body = [
     "_Submitted via in-app Feedback. All patient identifiers were scrubbed (PDPA) before sending._",
     "",
     "## What happened",
-    f.description || "_(no description)_",
+    // Fenced so reporter text cannot render headings, links, images or mentions, nor impersonate the
+    // triage instructions below (the issue may be read by an AI triager).
+    f.description ? fence(f.description) : "_(no description)_",
     "",
     "## Auto-captured context",
     `- **Page:** \`${f.page}\``,
@@ -107,7 +116,7 @@ export function buildIssue(clinicId: string, f: SanitizedFeedback, hasScreenshot
     `- **Screenshot:** ${hasScreenshot ? "attached by reporter (kept in the clinic record, NOT uploaded to GitHub)" : "none"}`,
     "",
     "## Last client error",
-    f.lastError ? "```\n" + f.lastError.replace(/```/g, "'''") + "\n```" : "_none captured_",
+    f.lastError ? fence(f.lastError) : "_none captured_",
     "",
     "## Triage instructions (AI/human)",
     "1. Reproduce using **fake data only** — never real patient data.",
@@ -139,6 +148,7 @@ export async function submitBug(
           "User-Agent": "ucc-feedback",
         },
         body: JSON.stringify(buildIssue(clinicId, f, hasScreenshot)),
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         const data = (await res.json()) as { html_url?: string };

@@ -140,3 +140,8 @@ message for unexpected errors (known 4xx outcomes with fixed text may still be e
 Path rewriting helpers (`normalizeAdminPath`) can create a new `//host` from a safe-looking input, so the login route checks the
 result with `safeNext` as well as the input. Invite 409 echo kept: the text is fixed in `admin-service.ts` (upstream text matching
 exist/duplicate/email is already replaced by a fixed sentence there).
+
+## D-750 — Feedback text is untrusted markdown (2026-11-20, Task 750)
+Free text from the feedback form is scrubbed for patient data, then made safe for GitHub (mentions defused, `<` and control/bidi characters removed) and
+placed inside a code fence in the issue body, because an AI triager may read the issue. The route gives a fixed message for unexpected 500s instead of
+`handleRouteError`'s `error.message` echo (the shared helper is unchanged; see PR body for the open question). Per-IP limit is 30/min (clinics share NAT), per-user 5/min.

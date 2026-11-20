@@ -9,8 +9,18 @@ import { getFeedbackMedplum, attachScreenshot, parseScreenshot, saveBugRecord, s
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MAX_BODY_CHARS = 1_600_000;
+
+function clientIp(request: NextRequest): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'unknown';
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // Coarse per-IP cap before any auth/Medplum work (generous: clinics share one NAT address).
+    if (isRateLimited(`feedback-ip:${clientIp(request)}`, 30, 60_000)) {
+      return NextResponse.json({ error: 'Too many submissions. Try again in a minute.' }, { status: 429 });
+    }
     const profile = await getCurrentProfile(request);
     const { clinicId } = await requireClinicAuth(request);
     // Feature is opt-in per clinic: behave as if the route does not exist when the toggle is off.
@@ -21,11 +31,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Too many submissions. Try again in a minute.' }, { status: 429 });
     }
 
-    // Whole-request cap (1 MB screenshot as base64 + text) before the body is buffered.
-    if (Number(request.headers.get('content-length')) > 1_600_000) {
+    // Whole-request cap (1 MB screenshot as base64 + text). Content-Length is only a fast path; it is
+    // absent on chunked bodies, so the real length is checked on the text as well.
+    if (Number(request.headers.get('content-length')) > MAX_BODY_CHARS) {
       return NextResponse.json({ error: 'Request too large.' }, { status: 413 });
     }
-    const raw = (await request.json().catch(() => null)) as Record<string, any> | null;
+    const text = await request.text().catch(() => '');
+    if (text.length > MAX_BODY_CHARS) {
+      return NextResponse.json({ error: 'Request too large.' }, { status: 413 });
+    }
+    let raw: Record<string, any> | null = null;
+    try {
+      const parsed = JSON.parse(text);
+      raw = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      raw = null;
+    }
     if (!raw || (raw.kind !== 'bug' && raw.kind !== 'feature')) {
       return NextResponse.json({ error: 'kind must be "bug" or "feature"' }, { status: 400 });
     }
@@ -69,6 +90,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, result }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    return handleRouteError(error, 'Feedback');
+    const res = handleRouteError(error, 'Feedback');
+    // handleRouteError echoes error.message on unhandled 500s; never expose internals from this route.
+    if (res.status === 500) return NextResponse.json({ error: 'Could not send feedback. Please try again.' }, { status: 500 });
+    return res;
   }
 }
