@@ -1,5 +1,7 @@
 # Task 732 — CSRF allowed origins: host + known suffixes
 
+Task 733 supersedes the origin policy described below. See [the review](../REVIEW-task732.md).
+
 Follow-up to Task 720/721 (PR #347, merged). Replaces the per-deploy need to set CSRF_ALLOWED_ORIGINS.
 
 Sources: OWASP CSRF Cheat Sheet ("Verifying origin with standard headers"); WHATWG URL spec (`URL.hostname` lowercases, default port is normalised to ""); MDN Origin / Sec-Fetch-Site.

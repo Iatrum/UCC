@@ -1,7 +1,7 @@
 # CHANGELOG (plain language)
 
-## 2026-11-20 — Task 732: CSRF check knows our own domains
-Saving data from any drhidayat.com or iatrum.com page (and this project's Vercel preview links) is no longer blocked by the cross-site protection, without needing a per-server setting. Lookalike domains such as evil-drhidayat.com, other ports and other people's vercel.app sites are still rejected. No change to the consultation composer, Lab/POCT.
+## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
+Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 
 ## 2026-11-19 — Task 718: staff pages fit on a phone
 The patient profile, Patients list header, POCT header and tabs, and the dashboard queue card now fit a phone screen: buttons no longer run off the edge, the patient details no longer overlap, and the tabs can be scrolled sideways. On a laptop screen the patient's consultation history now shows its View/Edit buttons without sideways scrolling. Layout only; nothing in the consultation composer, results or POCT behaviour changed.

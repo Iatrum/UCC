@@ -1,16 +1,4 @@
-/**
- * CSRF defence for cookie-authenticated, state-changing API routes (Task 720).
- *
- * Browsers always attach `Origin` to cross-origin POST/PUT/PATCH/DELETE (OWASP CSRF cheat sheet:
- * "Verifying origin with standard headers"). SameSite=Lax alone is not enough here: clinics live on
- * sibling subdomains (and COOKIE_DOMAIN may be shared), which are same-SITE, so Lax cookies are still
- * sent from one clinic's page to another's API. This check rejects any mutating /api request whose
- * Origin (or, if absent, Sec-Fetch-Site) says it was not initiated by our own origin.
- *
- * Non-browser callers send neither header and are let through: they cannot ride a victim's cookies.
- * Pure + dependency-free so it can run in proxy.ts (edge-safe) and be unit tested.
- */
-
+/** CSRF defence for state-changing App Router API requests. */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Own non-cookie auth (device key, Twilio signature, bulk-export bearer secret): not CSRF-able, must not be broken. */
@@ -23,30 +11,11 @@ const EXEMPT_PREFIXES = [
   "/api/export-to-medplum",
 ];
 
-/**
- * Known domain suffixes (Task 732). An Origin is accepted when its hostname equals a suffix or ends with
- * "." + suffix (dot boundary, so `evil-drhidayat.com` and `drhidayat.com.evil.test` are rejected), it is
- * https, and it carries no explicit port.
- */
-export const ALLOWED_ORIGIN_SUFFIXES = ["drhidayat.com", "iatrum.com"];
-
-/**
- * Vercel preview/production hosts for THIS project only. A bare `*.vercel.app` would let any attacker's
- * Vercel project pass the check, so hosts must be `ucc[-...]-hidayat0507s-projects.vercel.app` (team scope).
- */
-const VERCEL_PROJECT_HOST = /^ucc(-[a-z0-9]+)*-hidayat0507s-projects\.vercel\.app$/;
-
-export function isKnownOrigin(parsed: URL): boolean {
-  if (parsed.protocol !== "https:" || parsed.port !== "") return false;
-  const h = parsed.hostname.toLowerCase();
-  if (ALLOWED_ORIGIN_SUFFIXES.some((s) => h === s || h.endsWith(`.${s}`))) return true;
-  return VERCEL_PROJECT_HOST.test(h);
-}
-
 export type CsrfInput = {
   method: string;
   pathname: string;
   headers: Headers;
+  protocol: string;
   /** Extra allowed origins, comma separated (scheme://host[:port]); from CSRF_ALLOWED_ORIGINS. */
   extraAllowedOrigins?: string | null;
 };
@@ -55,23 +24,32 @@ export function isCsrfExemptPath(pathname: string): boolean {
   return EXEMPT_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-function requestHost(h: Headers): string | null {
-  const xf = h.get("x-forwarded-host")?.split(",")[0]?.trim();
-  return (xf || h.get("host"))?.toLowerCase() || null;
+function defaultPort(protocol: string): string {
+  return protocol === "https:" ? "443" : "80";
 }
 
-function parseOrigins(list: string | null | undefined): Set<string> {
-  const out = new Set<string>();
-  for (const raw of (list ?? "").split(",")) {
-    const v = raw.trim();
-    if (!v) continue;
-    try {
-      out.add(new URL(v).origin.toLowerCase());
-    } catch {
-      /* ignore malformed entry */
-    }
+function parseHttpOrigin(value: string, allowDefaultPort = false): URL | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    const normalized = value.toLowerCase();
+    if (parsed.origin === normalized) return parsed;
+    if (allowDefaultPort && !parsed.port && normalized === `${parsed.origin}:${defaultPort(parsed.protocol)}`) return parsed;
+    return null;
+  } catch {
+    return null;
   }
-  return out;
+}
+
+function matchesRequestOrigin(source: URL, input: CsrfInput): boolean {
+  const host = input.headers.get("host")?.toLowerCase();
+  if (source.protocol !== input.protocol) return false;
+  if (source.host === host) return true;
+  return !source.port && host === `${source.hostname}:${defaultPort(source.protocol)}`;
+}
+
+function isExplicitlyAllowed(source: URL, list?: string | null): boolean {
+  return (list ?? "").split(",").some((entry) => parseHttpOrigin(entry.trim(), true)?.origin === source.origin);
 }
 
 /** Returns null when allowed, otherwise a short reason (never echo header values back). */
@@ -83,22 +61,21 @@ export function checkCsrf(input: CsrfInput): string | null {
   if (!(pathname === "/api" || pathname.startsWith("/api/")) || isCsrfExemptPath(pathname)) return null;
 
   const origin = input.headers.get("origin");
-  if (origin) {
-    // "null" (sandboxed iframe, redirects, file://) is never one of ours.
-    let parsed: URL;
-    try {
-      parsed = new URL(origin);
-    } catch {
-      return "invalid_origin";
-    }
-    if (parsed.host.toLowerCase() === requestHost(input.headers)) return null;
-    if (isKnownOrigin(parsed)) return null;
-    if (parseOrigins(input.extraAllowedOrigins).has(parsed.origin.toLowerCase())) return null;
-    return "cross_origin";
+  const site = input.headers.get("sec-fetch-site");
+  if (origin !== null) {
+    const source = parseHttpOrigin(origin);
+    if (!source) return "invalid_origin";
+    if (isExplicitlyAllowed(source, input.extraAllowedOrigins)) return null;
+    if (site !== null && site !== "same-origin") return "cross_site_fetch";
+    return matchesRequestOrigin(source, input) ? null : "cross_origin";
   }
 
-  // No Origin (some same-origin browser requests, or non-browser clients): use Fetch Metadata if present.
-  const site = input.headers.get("sec-fetch-site");
-  if (site && site !== "same-origin" && site !== "none") return "cross_site_fetch";
-  return null;
+  if (site === "same-origin") return null;
+  if (site !== null) return "cross_site_fetch";
+
+  // Headerless API clients can send requests that require a browser CORS preflight
+  // across origins. Protected API routes do not allow cross-origin preflights.
+  if (method === "PUT" || method === "PATCH" || method === "DELETE") return null;
+  if (method === "POST" && input.headers.get("content-type")?.toLowerCase() === "application/json") return null;
+  return "missing_origin";
 }

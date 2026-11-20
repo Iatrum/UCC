@@ -131,5 +131,5 @@ composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic sc
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 
-## D-732 — CSRF origins: request Host + known suffixes (2026-11-20, Task 732)
-Allowed Origin = request Host, or https/no-port hostname on a dot boundary under drhidayat.com / iatrum.com, or this team's Vercel hosts (`ucc*-hidayat0507s-projects.vercel.app`), plus optional CSRF_ALLOWED_ORIGINS. Bare `*.vercel.app` rejected (anyone can register one). Accepts that clinic subdomains trust each other for CSRF purposes. See `.ai/research/task-732.md`.
+## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
+Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
