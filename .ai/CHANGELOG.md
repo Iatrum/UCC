@@ -1,5 +1,9 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 741 — Pilot checklist evidence reviewed
+
+The checklist now says which tests ran on dev, which changes have merged, and which pilot checks are still open. The launch criteria include preparing the pilot clinic and checking any changes required by the clinic's decisions.
+
 ## 2026-11-20 — Task 740 — Pilot checklist refreshed
 
 The checklist records the Time Chit staff walk, merged security changes, and successful loopback invite. It also records the imaging billing and dev clinic audit passes. The live session-revocation rehearsal and the remaining release checks are still open.
