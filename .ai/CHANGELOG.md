@@ -1,5 +1,9 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 751 reviews feedback security
+
+Feedback now enforces the request size in bytes as it reads the body. The shared-IP limit uses the ingress proxy's client address. GitHub mention markers are neutralised while ordinary text and emoji joiners are preserved. Route tests cover both rate limits, oversized bodies and successful clinic-scoped submissions. See [the review](REVIEW-task750.md).
+
 ## 2026-11-20 — Task 750: security review of the feedback form
 Checked the whole path: form, `/api/feedback`, GitHub issue creation and the saved-record fallback. Already fine: sign-in required, the clinic must have the feature on, the cross-site check in `proxy.ts` covers it, the GitHub token is only used on the server and never logged, and patient identifiers are scrubbed. Fixed: (1) the size limit could be skipped by sending no length header, so the real body size is now checked; (2) added a per-IP limit on top of the per-user limit; (3) `@name` mentions could ping people on GitHub, so they are defused, and HTML/hidden control characters are removed; (4) the description and last error are placed in a code block in the issue so they cannot add headings, links or fake triage instructions; (5) GitHub calls time out after 8 s; (6) unexpected errors from this route now return a fixed message. Tests: `tests/unit/task750-feedback-security.test.ts`. Notes: `.ai/research/task-750.md`.
 

@@ -145,3 +145,7 @@ exist/duplicate/email is already replaced by a fixed sentence there).
 Free text from the feedback form is scrubbed for patient data, then made safe for GitHub (mentions defused, `<` and control/bidi characters removed) and
 placed inside a code fence in the issue body, because an AI triager may read the issue. The route gives a fixed message for unexpected 500s instead of
 `handleRouteError`'s `error.message` echo (the shared helper is unchanged; see PR body for the open question). Per-IP limit is 30/min (clinics share NAT), per-user 5/min.
+
+## D-751 — Enforce the feedback body cap while reading it (2026-11-20)
+
+Reuse the bounded JSON reader for the 1,600,000-byte cap. Key the 30-request window by the Vercel client address or the address appended by the trusted self-hosted ingress. The five-request window is keyed by authenticated clinic and profile. Both windows are process-local. GitHub renders report text in literal code blocks. Automated triage must treat it as untrusted input.
