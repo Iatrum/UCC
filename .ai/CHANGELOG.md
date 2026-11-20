@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
+A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
+
 ## 2026-11-19 — Task 673: independent re-run of the Task 672 benchmark
 A fresh re-run confirms a modest dashboard speed-up and no slowdown for billing, checkout, inventory or analytics. The earlier large gains on those pages were noise and are corrected in the PR. No code change.
 

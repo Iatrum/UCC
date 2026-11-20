@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import {
   bookSlotToAppointment, ensureClinicianSchedule, findSlots, generateSlotsForSchedule, manualBookAppointmentWithSlot,
 } from '../../lib/fhir/scheduling-service';
+import { ForbiddenError } from '../../lib/server/route-helpers';
 import { CLINIC_A, CLINIC_B, createMockMedplum, tenantResources } from './helpers/mock-medplum';
 
 const own = [{ system: 'clinic', value: CLINIC_A }];
@@ -87,7 +88,16 @@ describe('generateSlotsForSchedule', () => {
       resourceType: 'Schedule', id: 's-foreign',
       identifier: [{ system: SCHED_SYS, value: `${CLINIC_B}:dr1` }],
     }]);
-    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow('does not belong');
+    // Task 645/422: a caller-supplied foreign reference is a 403 (ForbiddenError), not a generic 500 Error.
+    const err = await gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign').catch((e) => e);
+    expect(err).toBeInstanceOf(ForbiddenError);
+    expect(err.message).toBe('Schedule unavailable in current clinic');
+    expect(m.writes).toHaveLength(0);
+  });
+
+  it('refuses a schedule with no clinic identifier at all', async () => {
+    const m = setup([{ resourceType: 'Schedule', id: 's-bare', actor: [{ reference: 'Practitioner/dr1' }] }]);
+    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-bare')).rejects.toBeInstanceOf(ForbiddenError);
     expect(m.writes).toHaveLength(0);
   });
 
