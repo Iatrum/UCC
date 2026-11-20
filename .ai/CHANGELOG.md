@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 747: review of the phone layout pass (Task 746)
+Checked the Settings/Admin/Appointments/Analytics/Inventory phone fixes. On a laptop these pages look the same as before, and no menu or sidebar was touched. One small slip was fixed: the "Create Medplum client credentials" button on the admin Settings page would have become slightly taller on a laptop; it is back to its normal size. Report: `.ai/REVIEW-task746.md`.
+
 ## 2026-11-20 — Task 746: Settings, Admin, Appointments, Analytics and Inventory fit a phone
 On a phone, the admin pages (Organisations, Branches, Users, Settings) no longer push buttons and names off the right edge, the Appointments calendar toggle (Month/Week/Day) is fully visible, the Analytics tabs and date ranges show every option without sideways scrolling, and the Inventory stock tiles are readable. Small buttons on these pages are taller on a phone so they are easier to tap. Desktop looks the same. No menu, feature or POCT/X-ray change. Notes and before/after screenshots: `.ai/research/task-746.md`.
 

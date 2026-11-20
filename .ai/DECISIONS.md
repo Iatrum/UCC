@@ -134,3 +134,7 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 ## D-746 — Phone layout fixes use min-w-0 / grid-cols-1 and phone-only tap size (2026-11-20, Task 746)
 
 Grid and flex children default to `min-width:auto`, so one long unbroken name (a subdomain, an organisation name) widened the whole admin card past the screen. We add `grid-cols-1` (which is `minmax(0,1fr)`) and `min-w-0` instead of hiding overflow, and let headers `flex-wrap`. Small controls get `min-h-10 sm:min-h-0` so only phones change (the 40px target); desktop sizing is untouched. Not changed on purpose: the sidebar/admin rail (out of scope), tables that scroll sideways inside their own box, and `truncate`d text that already has a title. Details: `.ai/research/task-746.md`.
+
+## D-747 — Phone-only sizing must reset at the breakpoint where the base component changes (2026-11-20, Task 747)
+
+Review of D-746: the shared `Button` has `h-11 md:h-8` (sm). An unconditional `min-h-9` on a button changes desktop (32px -> 36px). Rule: a phone min-height on a `Button` is `min-h-11 md:min-h-0` (not `sm:`, since the component switches at `md`); on raw `<button>`s `min-h-10 sm:min-h-0` is fine. Admin pages need an admin session for pixel comparison; until then review them by class. Pre-existing: `admin.spec.ts` create-form rows fail identically on `origin/dev` in this dev environment (not caused by Task 746).
