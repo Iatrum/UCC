@@ -1,0 +1,8 @@
+# Task 715 research
+
+Reviewed Task 714 at `52d6664` against local `origin/dev` at `b22d32e`. The Task 714 worktree and main checkout are outside the review workspace.
+
+- App Router handlers accept Web Request and Response types. Dynamic route context supplies promise-based parameters. The Bun tests invoke handlers directly. [Next.js 16 Route Handlers](https://nextjs.org/docs/app/api-reference/file-conventions/route)
+- The Medplum 5.2.8 client supports search options including cache modes. The repository lockfile pins the application SDK separately at 5.1.13. Search criteria and the app's own scope checks both matter when handlers use an operational client. [Medplum 5.2.8 client source](https://github.com/medplum/medplum/blob/v5.2.8/packages/core/src/client.ts) · [Medplum Access Policies](https://www.medplum.com/docs/access/access-policies)
+- FHIR R4 token syntax matches a system and value on an identifier. A resource with multiple identifiers can match a token while still carrying a conflicting clinic tag. Follow-up date extensions accept FHIR dateTime, including date-only values. [FHIR R4 search](https://hl7.org/fhir/R4/search.html#token) · [FHIR R4 dateTime](https://hl7.org/fhir/R4/datatypes.html#dateTime)
+- Reviewed the React 19 settings and composer callers for compatibility. Direct handler tests need no React rendering. The PACS test exercises a device list behind the clinic module toggle. DICOMweb transport is outside these changes. [React 19](https://react.dev/blog/2024/12/05/react-19) · [DICOM PS3.18](https://dicom.nema.org/medical/dicom/current/output/html/part18.html)

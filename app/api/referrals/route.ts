@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       if (!referral) {
         return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
       }
-      const patient = await getPatientFromMedplum(referral.patientId, clinicId, medplum);
+      const patient = await getPatientFromMedplum(referral.patientId, clinicId, medplum, { includeMedicalHistory: false });
       if (!patient) {
         return NextResponse.json({ error: 'Referral not found' }, { status: 404 });
       }
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (patientId) {
-      const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
+      const patient = await getPatientFromMedplum(patientId, clinicId, medplum, { includeMedicalHistory: false });
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }

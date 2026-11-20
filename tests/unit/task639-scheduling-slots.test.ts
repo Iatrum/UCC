@@ -88,7 +88,7 @@ describe('generateSlotsForSchedule', () => {
       resourceType: 'Schedule', id: 's-foreign',
       identifier: [{ system: SCHED_SYS, value: `${CLINIC_B}:dr1` }],
     }]);
-    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow(ForbiddenError);
+    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow('unavailable in current clinic');
     expect(m.writes).toHaveLength(0);
   });
 

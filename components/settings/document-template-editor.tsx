@@ -23,6 +23,8 @@ import {
   fillPreviewData,
 } from "@/lib/document-templates";
 import { withPrintCss } from "@/lib/document-render";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { describeFetchError } from "@/lib/load-state";
 
 const MC_VARS = [
   "{{clinicLogo}}", "{{clinicName}}", "{{clinicAddress}}", "{{clinicPhone}}",
@@ -140,15 +142,19 @@ export function DocumentTemplateEditor() {
   const [referralHtml, setReferralHtml] = React.useState(DEFAULT_REFERRAL_TEMPLATE);
   const [saveTarget, setSaveTarget] = React.useState<"mc" | "referral" | "time-chit" | null>(null);
   const [resetTarget, setResetTarget] = React.useState<"mc" | "referral" | "time-chit" | null>(null);
+  // Task 686: if the saved templates cannot be loaded the editor must NOT fall back to the defaults, because a Save
+  // would then overwrite the clinic's custom template. Show an error + Retry instead.
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
+    let active = true;
     (async () => {
       try {
-        const [mcRes, refRes, tcRes] = await Promise.all([
-          fetch("/api/document-templates?type=mc"),
-          fetch("/api/document-templates?type=referral"),
-          fetch("/api/document-templates?type=time-chit"),
-        ]);
+        const get = (type: string) => fetchWithTimeout(`/api/document-templates?type=${type}`, {}, 15_000);
+        const [mcRes, refRes, tcRes] = await Promise.all([get("mc"), get("referral"), get("time-chit")]);
+        if (!active) return;
+        if (!mcRes.ok || !refRes.ok || !tcRes.ok) throw new Error("Could not load the saved templates.");
         if (tcRes.ok) { const data = await tcRes.json(); if (data.html) setTcHtml(data.html); }
         if (mcRes.ok) {
           const data = await mcRes.json();
@@ -158,13 +164,16 @@ export function DocumentTemplateEditor() {
           const data = await refRes.json();
           if (data.html) setReferralHtml(data.html);
         }
-      } catch {
-        // Fallback to defaults — already set as initial state.
+      } catch (err) {
+        if (active) setLoadError(describeFetchError(err, "Could not load the saved templates."));
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     })();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
 
   const handleSave = async (type: "mc" | "referral" | "time-chit") => {
     setIsSaving(true);
@@ -195,6 +204,15 @@ export function DocumentTemplateEditor() {
     setResetTarget(null);
     toast({ title: "Template reset", description: "Default template restored. Save to persist." });
   };
+
+  if (loadError) {
+    return (
+      <div className="flex items-center gap-3" role="alert">
+        <p className="text-sm text-destructive">{loadError}</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => { setLoadError(null); setIsLoading(true); setReloadKey((k) => k + 1); }}>Retry</Button>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading templates…</p>;

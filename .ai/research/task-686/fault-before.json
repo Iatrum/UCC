@@ -1,0 +1,44 @@
+[
+  {
+    "case": "patients: stalled search",
+    "errorShownMs": null,
+    "retryButton": false,
+    "rowsStillVisible": false,
+    "tail": "h Follow-ups 0 This week In Queue 0 Waiting for consultation Patient List View and manage all patient records Loading..."
+  },
+  {
+    "case": "patients: offline blip during search",
+    "typedKept": true,
+    "rowsVisibleOffline": false,
+    "retryButton": false,
+    "recoveredAfterOnlineMs": null,
+    "offlineTail": "This week In Queue 0 Waiting for consultation Patient List View and manage all patient records Failed to fetch"
+  },
+  {
+    "case": "analytics: stalled tab request",
+    "tabs": 3,
+    "tabName": "Klinikal",
+    "errorShownMs": null,
+    "tail": "restasi klinik, corak klinikal, hasil dan operasi. Ringkasan Klinikal Duit & Operasi Hari ini 7 hari 30 hari Bulan ini 5"
+  },
+  {
+    "case": "analytics: offline blip on tab",
+    "errorShownMs": 2,
+    "retryVisible": true,
+    "message": "asan Klinikal Duit & Operasi Hari ini 7 hari 30 hari Bulan ini Failed to fetch Cuba lagi 5",
+    "recoveredAfterRetryMs": 3
+  },
+  {
+    "case": "mc viewer: stalled template fetch",
+    "errorOrRetryShownMs": null,
+    "stillPreparing": true,
+    "retryButton": false,
+    "tail": "eports, scans, or clinic records. Medical Certificate (MC) 19 Nov 2026 Preparing preview... Close Print / Save PDF Close"
+  },
+  {
+    "case": "settings documents: template load fails",
+    "editorShownWithDefaults": false,
+    "retryButton": false,
+    "tail": "ings Login Settings Document Templates Customise the HTML layout for Medical Certificates and Referral Letters. Templates Loading templates…"
+  }
+]

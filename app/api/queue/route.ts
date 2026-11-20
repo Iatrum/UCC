@@ -6,6 +6,11 @@ import {
 } from '@/lib/fhir/triage-service';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
+import type { QueueStatus } from '@/lib/types';
+
+const QUEUE_STATUSES: ReadonlySet<unknown> = new Set<QueueStatus>([
+  'arrived', 'waiting', 'in_consultation', 'meds_and_bills', 'completed', null,
+]);
 
 export async function GET(req: NextRequest) {
   try {
@@ -51,6 +56,9 @@ export async function PATCH(req: NextRequest) {
     const { patientId, status } = await req.json();
     if (!patientId || typeof status === 'undefined') {
       return NextResponse.json({ success: false, error: 'patientId and status are required' }, { status: 400 });
+    }
+    if (!QUEUE_STATUSES.has(status)) {
+      return NextResponse.json({ success: false, error: 'Invalid queue status' }, { status: 400 });
     }
     await updateQueueStatusForPatient(patientId, status, medplum, clinicId);
     return NextResponse.json({ success: true, patientId, finalQueueStatus: status });

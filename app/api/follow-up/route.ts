@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import { requireClinicAuth } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
@@ -10,6 +11,8 @@ import {
   type FollowUpTemplateKey,
   type FollowUpType,
 } from "@/lib/fhir/communication-service";
+
+const dueDateSchema = z.union([z.iso.date(), z.iso.datetime({ offset: true })]).optional();
 
 export async function GET(req: NextRequest) {
   try {
@@ -37,6 +40,10 @@ export async function POST(req: NextRequest) {
     if (!["review-request", "appointment-reminder"].includes(body.type)) {
       return NextResponse.json({ success: false, error: "Invalid type" }, { status: 400 });
     }
+    const dueDate = dueDateSchema.safeParse(body.dueDate === "" ? undefined : body.dueDate ?? undefined);
+    if (!dueDate.success) {
+      return NextResponse.json({ success: false, error: "Invalid due date" }, { status: 400 });
+    }
 
     const followUp = await createFollowUp(medplum, {
       patientName: String(body.patientName),
@@ -45,7 +52,7 @@ export async function POST(req: NextRequest) {
       clinicId,
       type: body.type as FollowUpType,
       message: String(body.message),
-      dueDate: body.dueDate ? String(body.dueDate) : undefined,
+      dueDate: dueDate.data,
       deliveryMode: body.deliveryMode as FollowUpDeliveryMode | undefined,
       templateKey: body.templateKey as FollowUpTemplateKey | undefined,
       sourceType: body.sourceType as FollowUpSourceType | undefined,

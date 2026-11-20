@@ -76,11 +76,15 @@ describe("requireClinicAuth fails closed on a forged clinic cookie", () => {
 describe("POST|GET /api/fhir/register-extensions", () => {
   it("is no longer anonymous: 401 without a session, nothing is called", async () => {
     const spy = noNetwork();
-    for (const handler of [registerExtensions.POST, registerExtensions.GET]) {
-      const res = await handler(req("http://localhost:3210/api/fhir/register-extensions", { method: "POST" }));
-      expect(res.status).toBe(401);
-      expect(JSON.stringify(await res.json())).not.toContain("details");
-    }
+    const res = await registerExtensions.POST(req("http://localhost:3210/api/fhir/register-extensions", { method: "POST" }));
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toContain("details");
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("GET has no side effects (Task 720): 405, nothing called", async () => {
+    const spy = noNetwork();
+    expect((await registerExtensions.GET()).status).toBe(405);
     expect(spy).not.toHaveBeenCalled();
   });
 });

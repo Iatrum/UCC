@@ -220,7 +220,7 @@ export default function DashboardClient({ initialQueue }: { initialQueue: QueueP
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 sm:px-6">
               <QueueState loading={loading || !authReady} loaded={queueLoaded} error={error} onRetry={loadQueue}>
                 <div className="overflow-hidden rounded-2xl border border-slate-200/80">
                   <QueueTable patients={queue} onQueueUpdate={loadQueue} />

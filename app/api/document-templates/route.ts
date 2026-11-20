@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
-import { requireClinicAuth } from '@/lib/server/medplum-auth';
+import { requireClinicAuth, requirePlatformAdmin } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
 import { getTemplate, saveTemplate } from '@/lib/fhir/document-template-service';
 
@@ -28,12 +28,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(req);
-    const medplum = await getAdminMedplum();
+    await requirePlatformAdmin(req);
     const body = await req.json().catch(() => null);
     if (!body || !isValidType(body.type) || typeof body.html !== 'string' || !body.html.trim()) {
       return NextResponse.json({ error: 'type (mc|referral|time-chit) and html are required' }, { status: 400 });
     }
-    await saveTemplate(body.type, body.html, clinicId, medplum);
+    await saveTemplate(body.type, body.html, clinicId, await getAdminMedplum());
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleRouteError(error, 'POST /api/document-templates');

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { invitePractitionerToMedplum } from "@/lib/fhir/admin-service";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { requirePlatformAdmin } from "@/lib/server/medplum-auth";
+import { AuthError, handleRouteError } from "@/lib/server/route-helpers";
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return handleRouteError(error, "POST /api/admin/users/invite");
+    }
     console.error("Failed to invite practitioner:", error);
     return NextResponse.json(
       { error: error.message || "Failed to invite practitioner" },

@@ -3,6 +3,7 @@ import type { Basic, Organization } from '@medplum/fhirtypes';
 import type { MedplumClient } from '@medplum/core';
 import { fhir } from '../lib/fhir';
 import { randomUUID } from 'node:crypto';
+import { settleModuleMemo } from '../lib/module-toggle';
 
 // Task 210: in-app Feedback. Fake data only. Records are created by the app via the server directory
 // client and read back here with the local super-admin client.
@@ -17,12 +18,14 @@ async function setFeedbackEnabled(m: MedplumClient, clinicId: string, enabled: b
   const next = enabled ? Array.from(new Set([...ids, 'feedback'])) : ids.filter((i) => i !== 'feedback');
   const others = org.extension?.filter((e) => e.url !== moduleExtensionUrl) ?? [];
   await m.updateResource<Organization>({ ...org, extension: [...others, { url: moduleExtensionUrl, valueString: JSON.stringify(next) }] });
+  await settleModuleMemo();
   return async () => {
     const latest = await m.readResource('Organization', org.id!, { cache: 'no-cache' });
     await m.updateResource<Organization>({
       ...latest,
       extension: [...(latest.extension?.filter((e) => e.url !== moduleExtensionUrl) ?? []), ...(original ? [original] : [])],
     });
+    await settleModuleMemo();
   };
 }
 

@@ -1,6 +1,7 @@
 import type { MedplumClient } from '@medplum/core';
 import type { Organization } from '@medplum/fhirtypes';
 import { DEFAULT_MC_TEMPLATE, DEFAULT_REFERRAL_TEMPLATE, DEFAULT_TIME_CHIT_TEMPLATE } from '@/lib/document-templates';
+import { hasOnlyClinicIdentifiers } from '@/lib/fhir/write-containment';
 
 const TEMPLATE_EXTENSION_BASE_URL = 'https://ucc.emr/document-template';
 
@@ -13,7 +14,7 @@ async function findClinicOrganization(clinicId: string, medplum: MedplumClient):
     identifier: `clinic|${clinicId}`,
     _count: '1',
   });
-  return results[0] ?? null;
+  return results.find((org) => hasOnlyClinicIdentifiers(org, clinicId)) ?? null;
 }
 
 export async function getTemplate(type: 'mc' | 'referral' | 'time-chit', clinicId: string, medplum: MedplumClient): Promise<string> {
