@@ -131,6 +131,9 @@ composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic sc
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
 ## D-744 — Coverage tests target business logic, not the lowest raw number (2026-11-20, Task 744)
 Lowest-coverage lib files such as `logging.ts`, `admin-routes.ts` and `structure-definitions.ts` are plumbing/config, so they were skipped. Chosen: `lib/fhir/catalog-service.ts` (billing catalog prices, clinic isolation), `lib/fhir/appointment-service.ts` (scheduling) and `lib/server/clinic.ts` (clinic scoping). Tests use fake Medplum clients and assert zero writes for foreign-clinic input. Composer and X-ray UI were excluded. No production code changed.
 
