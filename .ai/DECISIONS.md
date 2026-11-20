@@ -134,3 +134,7 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 ## D-738 — Close the imaging billing defect within C4 (2026-11-20)
 
 Task 704’s merged fix resolves the premature completion recorded by the Task 722 browser probe. The signed generic imaging charge uses a `preparation` billing Procedure and remains available at checkout. The dev clinic data audit passed on this run. Keep C4 on release hold pending a clean current-head browser gate and an exact-production-version rehearsal. [Task 738 verification](research/task-738.md) · [Merged PR #342](https://github.com/Iatrum/UCC/pull/342)
+
+## D-740 — Record dev passes and keep the pilot release hold (2026-11-20)
+
+Count the completed Time Chit staff walk as dev evidence. Task 739’s browser gate and clinic audit pass update D-738. Keep C4 open for production Medplum version parity and the two skipped browser scenarios. C3 still needs a live fake-session rehearsal. [Verification](research/task-740.md)

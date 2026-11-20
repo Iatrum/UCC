@@ -26,7 +26,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A4 | `/api/labs/receive`: 400 on missing status, 404 on unknown/foreign order, no writes | DONE | Tasks 566/572; PILOT-CHECK #6 |
 | A5 | Admin/login redirect loop, rate-limit message, stock 500 | DONE | Task 412; PILOT-CHECK #9 |
 | A6 | Time Chit core, shares template with MC | DONE | D-527, Task 549 / #307 |
-| A7 | Time Chit walked once as a staff user (only unit/e2e specs so far) | CODE | Add it to a Playwright staff walk on dev (fake data); `tests/unit/time-chit.test.ts` exists |
+| A7 | Time Chit walked once as a staff user | DONE (dev) | Task 657 passed creation, signing, print and signed-document locking as fake non-admin staff. `e2e/tests/time-chit-staff.spec.ts` passed in local commit `d9d4958`. This branch has `e2e/tests/time-chit.spec.ts` and `tests/unit/time-chit.test.ts`; the dedicated walk has no merged PR. |
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |
@@ -40,8 +40,8 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | B1 | Write/update-by-id clinic containment | DONE | Tasks 396, 400, 482 |
 | B2 | Per-device keys for POCT/imaging ingress | DONE | D45 (Task 180), Task 355 |
 | B3 | Twilio status callback signature check | DONE | Task 541 |
-| B4 | HTTP security headers, dependency audit | CODE (in review) | Task 599, PR #318 still open; merge is Hidayat's call |
-| B5 | **Rotate the old password still in git history** (removed from scripts in #318; history keeps it) | OWNER | #318 review (`.ai/reviews/task-600.md`, on the #318 branch only until it merges). Rotate where it was used, then decide whether to rewrite history (never by an agent) |
+| B4 | HTTP security headers, dependency audit | DONE | Task 599, [merged PR #318](https://github.com/Iatrum/UCC/pull/318), [audit notes](research/task-599.md), `tests/unit/security-headers.test.ts`. |
+| B5 | **Rotate the old password still in git history** (removed from scripts in #318; history keeps it) | OWNER | [#318 review](reviews/task-600.md). Rotate where it was used, then decide whether to rewrite history (never by an agent) |
 | B6 | Production env/Vercel settings for the pilot clinic (Firebase project, OAuth client, device keys, `TWILIO_AUTH_TOKEN`, `TWILIO_STATUS_CALLBACK_URL`) | OWNER | Agents do not touch these |
 
 ## C. Isolation: production Task 5 migration
@@ -50,8 +50,8 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 |---|---|---|---|
 | C1 | Clinic AccessPolicy topology (non-superAdmin clinic project) on **dev** | DONE | `.ai/REVIEW-task5.md`, D47, `.ai/progress-task5.md` |
 | C2 | Verify read-only whether the production clinic project is superAdmin (owner Q4 unknown) | OWNER | Plan Part 1/open question 4; a superAdmin project bypasses the policy |
-| C3 | Live disposable fake-session revocation rehearsal (>100 Logins, 2 pages) | CODE | Needs a newly supplied dev super-admin login from Hidayat first; runbook "OUTSTANDING live" |
-| C4 | Exact-production-version rehearsal and current-head full browser gate | CODE (release hold) | Task 738 verified that Task 704 fixed the imaging billing defect on `dev`. Signing records the pending imaging procedure as `preparation` and keeps the charge available at checkout. The dev clinic data audit passed on this run. A clean current-head browser gate and production Medplum version parity remain open. [Task 738 evidence](research/task-738.md) · [Merged PR #342](https://github.com/Iatrum/UCC/pull/342) · [Task 722 rehearsal](research/task-722.md) |
+| C3 | Live disposable fake-session revocation rehearsal (>100 Logins, 2 pages) | CODE (blocked) | [Merged PR #251](https://github.com/Iatrum/UCC/pull/251) supplies `revoke-staff-sessions.mjs`. The [live rehearsal](RUNBOOK-task5-production-migration.md#fake-session-proof-required-before-release--outstanding-live) still needs a newly supplied dev super-admin login from Hidayat. |
+| C4 | Exact-production-version rehearsal and full browser coverage | CODE (release hold) | [Merged #342](https://github.com/Iatrum/UCC/pull/342) fixed premature imaging completion. Tasks 738/739 verified checkout and fixed Sign retries in [open #352](https://github.com/Iatrum/UCC/pull/352). Tests: `task704-order-procedure-status.test.ts`, `workflow.spec.ts` (06 and 09), `xray.spec.ts`. Tasks 736/737 resolved the fake fixture failure. The [Task 739 gate](REVIEW-task738.md) passed `clinic-check.ts` and 97 browser tests. Production Medplum version parity and two baseline skips (zero-value checkout and stored-DICOM viewer) remain open. |
 | C5 | Deployment recovery card (previous artifact, restorer, tested DB restore, writer stop/reopen) | OWNER | Runbook release hold; cannot be invented by an agent |
 | C6 | Production cutover: operator project, `superAdmin=false`, policies, session revocation | OWNER | `.ai/RUNBOOK-task5-production-migration.md`; maintenance window, backups, checksum |
 | C7 | Firestore draft migration, if still pending | OWNER | `.ai/RUNBOOK-firestore-draft-migration.md` |
@@ -63,7 +63,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | D1 | Staging compose, env template, scripts (385a); preflight + seed (385b); gate adapter (385c) | DONE | `infra/staging/`, `scripts/staging/`, `tests/unit/staging-*.test.ts` |
 | D2 | Allowlist proxy rehearsed on loopback (`PROBE OK`, Traefik 3.5.0, Medplum 5.2.15) | DONE | Task 578, `.ai/reviews/task-579.md` |
 | D3 | Staging gate exception list (fails on any unlisted skip) | DONE | Task 607, `e2e/staging-exceptions.json` |
-| D4 | Successful user invite through the allowlisted proxy | DONE (dev, loopback) | Task 663: `bun run staging:invite-rehearsal` = `INVITE REHEARSAL OK` (invite 200, invited user logs in, other admin routes 404, duplicate 409). `.ai/research/task-663.md`. Still repeat once on real staging (D5) |
+| D4 | Successful user invite through the allowlisted proxy | DONE (dev, loopback) | Task 663, [merged PR #328](https://github.com/Iatrum/UCC/pull/328). `staging:invite-rehearsal` passed and `staging-rehearsal.test.ts` covers the proxy rules. Repeat on real staging (D5). |
 | D5 | Bring staging up once on the VPS, seed, run `check-staging.sh`, record sign-off in STATE.md | OWNER | Touches the shared VPS; follow `.ai/PLAN-staging-promotion-checklist.md`. Never run end to end yet |
 | D6 | Confirm Hostinger console + snapshot restore exist (owner Q6 unknown) | OWNER | Required before any firewall change |
 | D7 | Host inventory + audit kit run on the VPS and from outside; fix what it flags | OWNER | Plan 1.3; `bun run staging:audit` (`scripts/staging/audit-exposure.ts`), never run on the real host |
@@ -89,4 +89,4 @@ Composer unchanged; Lab/POCT results only in the Lab tab with no critical-result
 
 ## Go / no-go
 
-Pilot can start when every **OWNER** line in B, C, D (except D14) is done or consciously waived by Hidayat, A8-A10 are decided, and the **CODE** lines A7, C3, C4, D4 have passed on dev. Everything marked DONE is already merged or in PR #309.
+Pilot can start when every **OWNER** line in B, C, D (except D14) is done or consciously waived by Hidayat, A8-A10 are decided, and the remaining release checks in C3 and C4 pass.
