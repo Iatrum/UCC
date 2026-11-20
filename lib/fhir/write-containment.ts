@@ -78,6 +78,14 @@ export async function makeClinicStamper(
   };
 }
 
+export function hasOnlyClinicIdentifiers(
+  resource: { identifier?: { system?: string; value?: string }[] },
+  clinicId: string,
+): boolean {
+  const clinics = resource.identifier?.filter(identifier => identifier.system === CLINIC_IDENTIFIER_SYSTEM) ?? [];
+  return clinics.length > 0 && clinics.every(identifier => identifier.value === clinicId);
+}
+
 /**
  * Authorize an update/delete-by-id against the STORED ownership, never the
  * proposed patch. Task 422 rule: a foreign, untagged or mixed-clinic id is
@@ -88,9 +96,8 @@ export function assertResourceInClinic(
   resource: { identifier?: { system?: string; value?: string }[] },
   clinicId?: string
 ): void {
-  const clinics = resource.identifier?.filter(identifier => identifier.system === 'clinic') ?? [];
   if (!clinicId) throw new ForbiddenError('Clinic context is required.');
-  if (clinics.length === 0 || clinics.some(identifier => identifier.value !== clinicId)) {
+  if (!hasOnlyClinicIdentifiers(resource, clinicId)) {
     throw new NotFoundError('Resource not found.');
   }
 }

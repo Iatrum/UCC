@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
-import { requireClinicAuth } from "@/lib/server/medplum-auth";
+import { requireClinicAuth, requirePlatformAdmin } from "@/lib/server/medplum-auth";
 import { handleRouteError } from "@/lib/server/route-helpers";
 import {
   DEFAULT_APPOINTMENT_TEMPLATE,
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const { clinicId } = await requireClinicAuth(req);
-    const medplum = await getAdminMedplum();
+    await requirePlatformAdmin(req);
     if (!clinicId) {
       return NextResponse.json({ success: false, error: "Clinic context is required" }, { status: 400 });
     }
@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: "deliveryMode must be manual or twilio" }, { status: 400 });
     }
 
-    const settings = await updateFollowUpSettings(medplum, clinicId, {
+    const settings = await updateFollowUpSettings(await getAdminMedplum(), clinicId, {
       deliveryMode: body.deliveryMode,
       googleReviewUrl: String(body.googleReviewUrl || "").trim(),
       reviewTemplate: String(body.reviewTemplate || DEFAULT_REVIEW_TEMPLATE).trim() || DEFAULT_REVIEW_TEMPLATE,

@@ -32,6 +32,9 @@ export async function PATCH(
     if (!status && !action) {
       return NextResponse.json({ success: false, error: "status or action required" }, { status: 400 });
     }
+    if (action !== undefined && action !== "open" && action !== "send-twilio") {
+      return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
+    }
     if (status && !VALID_STATUSES.includes(status)) {
       return NextResponse.json({ success: false, error: "Invalid status" }, { status: 400 });
     }
