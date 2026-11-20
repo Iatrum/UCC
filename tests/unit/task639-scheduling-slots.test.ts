@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import {
   bookSlotToAppointment, ensureClinicianSchedule, findSlots, generateSlotsForSchedule, manualBookAppointmentWithSlot,
 } from '../../lib/fhir/scheduling-service';
-import { ForbiddenError } from '../../lib/server/route-helpers';
 import { CLINIC_A, CLINIC_B, createMockMedplum, tenantResources } from './helpers/mock-medplum';
 
 const own = [{ system: 'clinic', value: CLINIC_A }];
