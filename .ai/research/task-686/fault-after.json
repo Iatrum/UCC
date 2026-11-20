@@ -1,0 +1,44 @@
+[
+  {
+    "case": "patients: stalled search",
+    "errorShownMs": 20323,
+    "retryButton": true,
+    "rowsStillVisible": true,
+    "tail": "62139201 FAKE-LABSTATE-1795062139201 female 0100000000 No visits New Check-in Page 1 of 89 · 2,217 matches Previous Next"
+  },
+  {
+    "case": "patients: offline blip during search",
+    "typedKept": true,
+    "rowsVisibleOffline": true,
+    "retryButton": true,
+    "recoveredAfterOnlineMs": 15,
+    "offlineTail": "AKE-LABSTATE-1795062139201 female 0100000000 No visits New Check-in Page 1 of 89 · 2,217 matches Previous Next"
+  },
+  {
+    "case": "analytics: stalled tab request",
+    "tabs": 3,
+    "tabName": "Klinikal",
+    "errorShownMs": 17526,
+    "tail": "ngkasan Klinikal Duit & Operasi Hari ini 7 hari 30 hari Bulan ini Sambungan perlahan: permintaan tamat masa. Cuba lagi 5"
+  },
+  {
+    "case": "analytics: offline blip on tab",
+    "errorShownMs": 2,
+    "retryVisible": true,
+    "message": "kal Duit & Operasi Hari ini 7 hari 30 hari Bulan ini Tiada sambungan internet. Cuba lagi 5",
+    "recoveredAfterRetryMs": 3
+  },
+  {
+    "case": "mc viewer: stalled template fetch",
+    "errorOrRetryShownMs": 14481,
+    "stillPreparing": false,
+    "retryButton": true,
+    "tail": " Certificate (MC) 19 Nov 2026 The request timed out. Check your connection and retry. Retry Close Print / Save PDF Close"
+  },
+  {
+    "case": "settings documents: template load fails",
+    "editorShownWithDefaults": false,
+    "retryButton": false,
+    "tail": "ings Login Settings Document Templates Customise the HTML layout for Medical Certificates and Referral Letters. Templates Loading templates…"
+  }
+]

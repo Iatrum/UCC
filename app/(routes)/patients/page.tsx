@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useMedplumAuth } from "@/lib/auth-medplum";
+import { describeFetchError, resolveLoadView, showStaleBanner } from "@/lib/load-state";
 
 const PAGE_SIZE = 25;
 
@@ -37,6 +38,7 @@ export default function PatientsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0); // Retry button re-runs the list load
   const { loading: authLoading } = useMedplumAuth();
 
   const [page, setPage] = useState(1);
@@ -101,8 +103,7 @@ export default function PatientsPage() {
       } catch (err) {
         if (cancelled) return;
         console.error('Error loading patients from Medplum:', err);
-        const message =
-          err instanceof Error ? err.message : 'Failed to load patient data from FHIR.';
+        const message = describeFetchError(err, 'Failed to load patient data from FHIR.');
         setError(
           message.includes('Authentication required')
             ? `${message} If you are signed in, try refreshing the page.`
@@ -117,10 +118,11 @@ export default function PatientsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, page, debouncedQuery]);
+  }, [authLoading, page, debouncedQuery, reloadKey]);
 
   // Search is server-side; the list is already filtered.
   const filteredPatients = patients;
+  const view = resolveLoadView({ loading, error, hasData: patients.length > 0 });
   const totalPages = total != null ? Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), Math.floor(10000 / PAGE_SIZE) + 1) /* Medplum _offset ceiling */ : null;
   const hasNext = totalPages != null ? page < totalPages : false;
   const fmt = (n: number) => (n < 0 ? "—" : n.toLocaleString());
@@ -203,9 +205,21 @@ export default function PatientsPage() {
             />
           </div>
           
-          {loading && <p>Loading...</p>}
-          {error && <p className="text-red-500">{error}</p>}
-          {!loading && !error && (
+          {/* Task 686: keep the previous rows while a search/page refetches or a refresh fails (spinner/error only when empty). */}
+          {view === "loading" && <p>Loading...</p>}
+          {view === "error" && (
+            <div className="flex items-center gap-3" role="alert">
+              <p className="text-red-500">{error}</p>
+              <Button type="button" size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
+            </div>
+          )}
+          {showStaleBanner({ error, hasData: patients.length > 0 }) && (
+            <div className="mb-2 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              <span>{error} Showing the last loaded list.</span>
+              <Button type="button" size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
+            </div>
+          )}
+          {view === "content" && (
             <div className="mt-6 relative border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
