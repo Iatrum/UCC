@@ -133,3 +133,6 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-769 — Foreign schedule slot generation checks the error type (2026-11-20)
+Keep the service's neutral error wording. The unit test now uses a schedule with both identifiers assigned to another clinic and checks for `ForbiddenError` (HTTP 403 at the route) and zero writes. The assertion tolerates wording changes. See `.ai/research/task-769.md`.
