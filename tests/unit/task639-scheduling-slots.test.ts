@@ -95,6 +95,15 @@ describe('generateSlotsForSchedule', () => {
     expect(m.writes).toHaveLength(0);
   });
 
+  it('refuses a schedule whose practitioner identifier is ours but carries no clinic tenant marker (Task 728)', async () => {
+    const m = setup([{
+      resourceType: 'Schedule', id: 's-untenanted',
+      identifier: [{ system: SCHED_SYS, value: `${CLINIC_A}:dr1` }],
+    }]);
+    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-untenanted')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(m.writes).toHaveLength(0);
+  });
+
   it('refuses a schedule with no clinic identifier at all', async () => {
     const m = setup([{ resourceType: 'Schedule', id: 's-bare', actor: [{ reference: 'Practitioner/dr1' }] }]);
     await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-bare')).rejects.toBeInstanceOf(ForbiddenError);
