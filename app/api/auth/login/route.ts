@@ -10,6 +10,7 @@ import {
   getHostFromHeaders,
 } from '@/lib/server/subdomain-host';
 import { env } from '@/lib/env';
+import { safeNext } from '@/lib/login-redirect';
 
 const MAX_AGE_SECONDS = Number(process.env.AUTH_SESSION_MAX_AGE_SECONDS || 60 * 60 * 24 * 30);
 const isProd = process.env.NODE_ENV === 'production';
@@ -283,7 +284,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { email: rawEmail, password, next } = await req.json();
+    const { email: rawEmail, password, next: rawNext } = await req.json();
+    // Task 742: only same-origin paths; `//host` or `/\host` would make the client navigate off-site.
+    const next = typeof rawNext === 'string' ? safeNext(rawNext) : undefined;
     const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : rawEmail;
     if (!email || !password) {
       return NextResponse.json(

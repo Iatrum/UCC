@@ -3,6 +3,7 @@
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { classifyAuthError } from '@/lib/auth-errors';
+import { safeNext } from '@/lib/login-redirect';
 import { MedplumClient, type IClientStorage } from '@medplum/core';
 import type { Resource } from '@medplum/fhirtypes';
 
@@ -217,8 +218,8 @@ export function MedplumAuthProvider({ children }: { children: React.ReactNode })
 
       const adminStatus = payload?.isAdmin === true || sessionState.isAdmin === true;
       const redirectUrl =
-        typeof payload?.redirectUrl === 'string' && payload.redirectUrl.startsWith('/')
-          ? payload.redirectUrl
+        typeof payload?.redirectUrl === 'string' && safeNext(payload.redirectUrl)
+          ? safeNext(payload.redirectUrl)!
           : adminStatus
             ? '/admin'
             : '/dashboard';

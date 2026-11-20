@@ -130,3 +130,8 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+
+## D-742 — Server-side sanitising of redirect targets and 500 messages (2026-11-20, Task 742)
+Server routes must not trust client-side sanitising: `/api/auth/login` runs `safeNext` on `next` itself, and routes return a fixed
+message for unexpected errors (known 4xx outcomes with fixed text may still be echoed). Left as is, with reasons in
+`.ai/research/task-742.md`: `export-to-medplum` error echo (bearer-secret only), requests with no Origin and no Fetch-Metadata pass the CSRF guard (non-browser), 10 s auth memo grace.

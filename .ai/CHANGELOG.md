@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Task 742: security review of the last 3 days
+Reviewed every API route and server library changed in the last 3 days (sign-in, clinic separation, cross-site request protection, input checks, error messages, secrets). Two small hardening fixes: the sign-in API now refuses a "go to after login" address that points to another website, and the invite-user API no longer shows internal error text to the caller. Nothing else needed changing; no effect on the consultation composer, Lab or POCT. Notes: `.ai/research/task-742.md`.
+
 ## 2026-11-19 — Task 718: staff pages fit on a phone
 The patient profile, Patients list header, POCT header and tabs, and the dashboard queue card now fit a phone screen: buttons no longer run off the edge, the patient details no longer overlap, and the tabs can be scrolled sideways. On a laptop screen the patient's consultation history now shows its View/Edit buttons without sideways scrolling. Layout only; nothing in the consultation composer, results or POCT behaviour changed.
 
