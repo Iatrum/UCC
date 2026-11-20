@@ -142,3 +142,5 @@ Count the completed Time Chit staff walk as dev evidence. Task 739’s browser g
 ## D-741 — Keep pilot sign-off tied to the release candidate (2026-11-20)
 
 Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
+
+Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).

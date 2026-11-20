@@ -2,7 +2,7 @@
 
 ## 2026-11-20 — Task 741 — Pilot checklist evidence reviewed
 
-The checklist now says which tests ran on dev, which changes have merged, and which pilot checks are still open. The launch criteria include preparing the pilot clinic and checking any changes required by the clinic's decisions.
+A second check of the pilot checklist confirmed its evidence and removed one wording that no record supported. The checklist now says which tests ran on dev, which changes have merged, and which pilot checks are still open. The launch criteria include preparing the pilot clinic and checking any changes required by the clinic's decisions.
 
 ## 2026-11-20 — Task 740 — Pilot checklist refreshed
 
