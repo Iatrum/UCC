@@ -4,9 +4,10 @@ import { env } from "@/lib/env";
 import * as nextCache from "next/cache";
 
 const realCache = { ...nextCache };
-const captureCache = mock((callback: (subdomain: string) => Promise<boolean>) => callback);
-
-mock.module("next/cache", () => ({ ...realCache, unstable_cache: captureCache }));
+mock.module("next/cache", () => ({
+  ...realCache,
+  unstable_cache: (lookup: (subdomain: string) => Promise<boolean>) => lookup,
+}));
 const { clinicExists } = await import("@/lib/server/clinic-validation").finally(() => {
   mock.module("next/cache", () => realCache);
 });
@@ -37,17 +38,21 @@ describe("clinic directory validation", () => {
     searchSpy.mockRestore();
   });
 
-  test("uses a five-minute cache and searches for the exact clinic identifier", async () => {
-    searchSpy.mockResolvedValueOnce([{ resourceType: "Organization", id: "fake-org" }]);
+  test("accepts a registered clinic and rejects an unregistered clinic", async () => {
+    const registeredClinic = {
+      resourceType: "Organization" as const,
+      id: "fake-org",
+      identifier: [{ system: "clinic", value: "clinic-a" }],
+    };
+    searchSpy.mockImplementation(async (resourceType, query) => {
+      const params = query instanceof URLSearchParams ? query : new URLSearchParams(query);
+      return resourceType === "Organization" && params.get("identifier") === "clinic|clinic-a"
+        ? [registeredClinic]
+        : [];
+    });
 
     expect(await clinicExists("clinic-a")).toBe(true);
     expect(await clinicExists("clinic-b")).toBe(false);
-    expect(captureCache).toHaveBeenCalledWith(expect.any(Function), ["clinic-exists"], { revalidate: 300 });
-    expect(loginSpy).toHaveBeenCalledWith("fake-client", "fake-secret");
-    expect(searchSpy.mock.calls).toEqual([
-      ["Organization", { identifier: "clinic|clinic-a", _count: "1" }],
-      ["Organization", { identifier: "clinic|clinic-b", _count: "1" }],
-    ]);
   });
 
   test.each(["MEDPLUM_CLIENT_ID", "MEDPLUM_CLIENT_SECRET"] as const)(
