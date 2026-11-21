@@ -139,3 +139,16 @@ The failing test expected the pre-Task-645 message `does not belong`. The code c
 
 ## D-775 — C4 leftovers are closed; no new app code (2026-11-21)
 Open PR #352 already carries the imaging fix (Task 704 status, Task 739 retry de-duplication by Sign entry id), so Task 775 continued on that branch instead of opening another. The audit failure was one stale fake dev record, now gone: not reproducible, so neither the audit script nor app code was changed. C4 stays on release hold only for a clean full gate and production version parity.
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-740 — Record dev passes and keep the pilot release hold (2026-11-20)
+
+Count the completed Time Chit staff walk as dev evidence. Task 739’s browser gate and clinic audit pass update D-738. Keep C4 open for production Medplum version parity and the two skipped browser scenarios. C3 still needs a live fake-session rehearsal. [Verification](research/task-740.md)
+
+## D-741 — Keep pilot sign-off tied to the release candidate (2026-11-20)
+
+Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
+
+Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
