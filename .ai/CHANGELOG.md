@@ -1,8 +1,13 @@
 # CHANGELOG (plain language)
 
+## 2026-11-21 — Task 775 — Two leftover pilot-checklist items re-checked
+
+Both remaining items under the pilot checklist's "C4" row are now closed on the test system. Signing an imaging order still creates exactly one pending charge, even if the sign request is sent twice. The test clinic's data check now finds no problems: the one bad fake record seen earlier no longer exists, so this was stale test data and nothing in the app needed changing. What remains open for C4 is a clean full browser run and confirming the production server version.
+
 ## 2026-11-20 — Task 738 — Imaging billing fix confirmed
 
 The pilot checklist now records that signing an imaging order keeps the charge available at checkout and records the procedure as still pending. The latest dev clinic data audit passed. The browser gate and production version check still need to pass before release.
+
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 
