@@ -536,6 +536,7 @@ export default function PatientProfileWorkspace({
       price: entry.unitPrice,
       notes: entry.tab === "documents" ? buildSignedDocumentNote(entry) : entry.instruction,
       procedureId: entry.catalogRef,
+      ...(entry.meta?.kind === "imaging" ? { signEntryId: entry.id } : {}),
     }));
     const clinicalServiceEntries = [...serviceEntries, ...documentEntries];
     const labSelections = clinicalServiceEntries
