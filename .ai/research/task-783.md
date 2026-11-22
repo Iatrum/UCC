@@ -11,9 +11,9 @@ No `/workspace/ai-logs/baseline/results.json` exists on this host, so `compare.m
 | Task 722 start (`aa19928`) | 94 | 2 | 2 | 98 |
 | Task 722 final | 95 | 1 | 2 | 98 |
 | **Task 783, `origin/dev` `239510c`, before fix** | **98** | **1** | **2** | **101** |
-| Task 783 after the one test fix (failing spec re-run on the same build, warm-cache scenario) | 3/3 in that run | 0 | – | – |
+| Task 783 after the fixture fix (same build, warm-cache scenario) | 2 X-ray tests + 1 cache warm-up helper | 0 | 0 | 3 |
 
-Lint step (`tsc --noEmit -p tsconfig.lint.json` + clinic-admin check) and the production build passed. `clinic-check.ts` exit 0, `problems: []`, accounts `invalid: 0` (851 legacy `missing` are inventory only in phase-1 mode). The invalid dev record from Task 722 is gone (Task 775 finding confirmed). Both Task 722 failures are gone: workflow 11 (generic imaging billing, fixed by PR #352 / Task 775) passes, and the clinic data audit is clean. Three more tests than in Task 722 (101 vs 98) all passed.
+Lint step (`tsc --noEmit -p tsconfig.lint.json` + clinic-admin check) and the production build passed. `clinic-check.ts` exit 0, `problems: []`, accounts `invalid: 0` (851 legacy `missing` are inventory only in phase-1 mode). The invalid dev record from Task 722 is gone (Task 775 finding confirmed). Both Task 722 failures are gone: workflow 11 (generic imaging billing, fixed by PR #352 / Task 775) passes, and the clinic data audit is clean. The full run had three more tests and three more passes than Task 722's final run.
 
 ## Remaining failure and skips
 
