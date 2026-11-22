@@ -131,6 +131,9 @@ composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic sc
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 
+## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
+
+On untouched origin/dev both reported specs (and the whole file) pass cold and warm; the app shows the expected error text + Retry. The reporting branch (Task 727/728) lacked Task 675's tab-panel-scoped assertions. Decision: change neither app nor test; affected branches should merge origin/dev. Details in `.ai/research/task-734.md`.
 ## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
 Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
 
