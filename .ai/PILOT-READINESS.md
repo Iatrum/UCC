@@ -82,6 +82,8 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | E1 | Yearly-only subscription terms for the pilot clinic | OWNER | Decision made; contract/pricing/invoicing is Hidayat's. No code task until a billing flow is requested |
 | E2 | Pilot clinic created with its `clinic` identifier, modules (POCT/PACS default off) and staff via invite | OWNER | Admin > Clinics; invite goes through the allowlisted route (D4, D10) |
 | E3 | Analyser/imaging devices registered with keys, only if the pilot uses them | OWNER | POCT orderable only when the analyser is online, no manual entry |
+| E4 | X-ray (PACS) phase 3 | DONE (dev) | Real DICOM -> Orthanc -> UCC -> OHIF, review list, scoped viewer; gate 67/68 (Task 341f), follow-ups #263/#273/#290. Nothing left to build (Task 781: `.ai/research/task-781.md`). Stays behind the default-off `pacs` toggle |
+| E5 | X-ray before a clinic uses it with real images: storage size/retention and where Orthanc runs, DICOM port on clinic LAN/VPN only, viewer on its own HTTPS host, regulatory position of the OHIF viewer | OWNER | `.ai/PLAN-xray-phase3.md` production notes 1-14. Optional small CODE tasks only if wanted: worklist (note 11), viewer-open audit (note 13). Not needed while `pacs` stays off |
 
 ## F. Rules that must stay true in the pilot
 
