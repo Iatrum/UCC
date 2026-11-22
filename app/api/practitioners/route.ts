@@ -7,7 +7,11 @@ export async function GET(request: NextRequest) {
   try {
     const { medplum } = await requireClinicAuth(request);
     const practitioners = await getPractitionersFromMedplum(medplum);
-    return NextResponse.json({ success: true, practitioners });
+    // Task 797: callers only need a picker (id + name); do not hand staff e-mails or other clinics' memberships to every clinic user.
+    return NextResponse.json({
+      success: true,
+      practitioners: practitioners.map(({ id, name }) => ({ id, name })),
+    });
   } catch (error) {
     return handleRouteError(error);
   }
