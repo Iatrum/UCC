@@ -5,6 +5,7 @@ Checked all 77 API routes (table in `.ai/research/task-797.md`). Fixed: a clinic
 
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
+
 ## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
 Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 
@@ -245,4 +246,4 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - 2026-11-20 Task 760 (UX): Re-checked the open UX findings against today's app: nothing Medium/High is still open. Fixed three small things staff could misread: the patient page no longer shows a green "None" when allergies were never asked (it says "Allergies not recorded"); the check-in page no longer shows a red allergy alert for "No known drug allergies"; the empty Appointments list now explains that past bookings are counted in the tiles but not listed. Notes: .ai/research/task-760.md
 
 ## Task 801 — cross-review of PR #366 (Task 797)
-- Reviewed storagePath confinement, practitioner minimisation, error-echo removal; no blocking issue. Merged origin/dev (changelog conflict resolved by keeping both sides).
+- Reviewed storagePath confinement, practitioner minimisation, error-echo removal; no blocking issue.
