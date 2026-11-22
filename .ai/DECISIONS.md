@@ -131,6 +131,9 @@ composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic sc
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 
+## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
+Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
+
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
 
@@ -143,3 +146,5 @@ Accepted as-is apart from replacing `rejects.toBeDefined()` with a forbidden-err
 ## D-755 — Accept Task 754 scheduling route coverage after review (2026-11-20, Task 755)
 
 Keep the real Next.js handlers and scheduling services under test with a two-clinic in-memory Medplum adapter. Assert the public denial responses, zero writes for foreign records, and clinic-tagged writes on success. Validate the slot window and first slot end before the route can create a schedule. See [.ai/REVIEW-task754.md](REVIEW-task754.md) for verification results.
+## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
+The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
