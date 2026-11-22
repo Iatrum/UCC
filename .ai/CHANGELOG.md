@@ -14,6 +14,10 @@ The checklist records the Time Chit staff walk, merged security changes, and suc
 ## 2026-11-20 — Task 738 — Imaging billing fix confirmed
 
 The pilot checklist now records that signing an imaging order keeps the charge available at checkout and records the procedure as still pending. The latest dev clinic data audit passed. The browser gate and production version check still need to pass before release.
+
+## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
+The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
+
 ## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
 Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 

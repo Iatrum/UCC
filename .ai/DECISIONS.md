@@ -152,6 +152,11 @@ Count the completed Time Chit staff walk as dev evidence. Task 739’s browser g
 Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
 
 Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
+
+## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
+
+On untouched origin/dev both reported specs (and the whole file) pass cold and warm; the app shows the expected error text + Retry. The reporting branch (Task 727/728) lacked Task 675's tab-panel-scoped assertions. Decision: change neither app nor test; affected branches should merge origin/dev. Details in `.ai/research/task-734.md`.
+
 ## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
 Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
 
