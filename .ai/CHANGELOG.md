@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-22 — Task 783: full browser gate re-run on current dev
+The full browser test suite (101 tests) ran against a production build and the fake-data dev server: 98 passed, 1 failed, 2 skipped. The two problems from Task 722 are gone. The one failure was a test timing problem, not an app bug: the test switched the X-ray module on and sent a study before the app's 5-second module cache caught up. The test now waits for that case only. No app behaviour changed. Details: `.ai/research/task-783.md`.
+
 ## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
 Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 
