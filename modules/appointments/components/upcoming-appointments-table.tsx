@@ -165,7 +165,7 @@ export default function UpcomingAppointmentsTable({ appointments, loading, error
     return (
       <Card>
         <CardContent className="py-12 text-center text-sm text-muted-foreground">
-          No upcoming appointments yet. Schedule one to see it listed here.
+          No upcoming appointments yet. Past, cancelled and completed bookings are not listed here (the Total count above includes them).
         </CardContent>
       </Card>
     );
