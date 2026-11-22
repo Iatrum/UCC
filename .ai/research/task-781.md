@@ -14,8 +14,7 @@ What the plan still lists are **production decisions**, not phase 3 steps (PLAN-
 2. Where Orthanc runs (own host; the shared VPS has 74 GB free and tight RAM).
 3. Network: DICOM port 4242 on clinic LAN/VPN only, register each modality AET.
 4. Viewer on its own HTTPS hostname, no access logs on `/launch`.
-5. Launch tokens are single-use per app process (matters only with more than one UCC instance).
-6. Optional code, only if the clinic wants it: modality worklist (MWL) so the accession is not typed by hand (note 11), and an AuditEvent for viewer opens (note 13). Both are small, separate tasks and neither is needed for a pilot that keeps the X-ray toggle off.
-7. Regulatory position of OHIF as a review viewer (note 14).
+5. Optional code, only if the clinic wants it: modality worklist (MWL) so the accession is not typed by hand (note 11), and an AuditEvent for viewer opens (note 13). Both are small, separate tasks and neither is needed for a pilot that keeps the X-ray toggle off.
+6. Regulatory position of OHIF as a review viewer (note 14).
 
 No code, test or config changed. No server started. Dev PACS not touched.
