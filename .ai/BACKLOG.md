@@ -2,7 +2,7 @@
 
 ## Open now
 
-- [ ] Rehearse live session revocation with more than 100 disposable fake logins once an authorized dev super-admin login is supplied ([pilot C3](PILOT-READINESS.md#c-isolation-production-task-5-migration)).
+- [ ] Rehearse live session revocation for one disposable fake staff account with more than 100 sessions once an authorized dev super-admin login is supplied ([pilot C3](PILOT-READINESS.md#c-isolation-production-task-5-migration)).
 - [ ] Run the full browser gate on current `dev` and rehearse against the exact production Medplum version once confirmed ([pilot C4](PILOT-READINESS.md#c-isolation-production-task-5-migration), [imaging billing replay follow-up #352](https://github.com/Iatrum/UCC/pull/352)).
 - [ ] Review the Billing queue fix so failed searches show an error and Retry ([#351](https://github.com/Iatrum/UCC/pull/351)).
 - [ ] Review the login redirect, invite error handling and feedback hardening ([#353](https://github.com/Iatrum/UCC/pull/353)).
