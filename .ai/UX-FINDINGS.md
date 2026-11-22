@@ -249,7 +249,7 @@ Live walk (dev server :3760, killed after) plus code check. Details: `.ai/resear
 **Walked end to end.** New fake patient + consult -> composer (two medicines with stock 0 and 3, MC, referral, Time Chit; observed only) -> Sign -> Documents tab (all three viewers) -> `/orders` -> checkout (phone + desktop, preview bill, pay, confirm, complete) -> post-checkout notice -> Inventory (negative stock flag) -> `/api/purchases` -> a second fake patient with a signed Full Blood Count order, then a fake result (incl. one *critical* value) pushed through `/api/labs/receive` with a throw-away fake analyser Device (deleted afterwards) -> Lab tab empty / result at both widths -> composer shows no result -> all `/admin` pages as admin.
 
 **Not covered (plainly):**
-- *Purchases screen:* it still does not exist (`GET /api/purchases` 200 `[]`, `POST` 403 "Inventory purchasing is temporarily disabled"). Nothing to walk.
+- *Purchases screen:* it still does not exist (`GET /api/purchases` 200 with an empty `purchaseOrders` list in the audit clinic, `POST` 403 "Inventory purchasing is temporarily disabled"). Nothing to walk.
 - Only two roles. Not walked: nurse / clinic staff, clinic admin (Time Chit staff has its own e2e `time-chit-staff.spec.ts`).
 - Not walked: *Void document* confirm, MC/referral *edit*, real PDF print/save, invoice *void*, the billing-exception Task path for an unmatched stock line, `/admin` branch edit + module toggles, user invite/edit submit (admin has its own e2e).
 - The lab result was injected by API with a fake analyser, not a real device; no live POCT ordering (POCT untouched).
@@ -267,7 +267,7 @@ None found. Stock, documents and checkout money lines all behaved correctly (sto
 
 ## Low
 6. **Lab report dates use the browser locale** ("Ordered: 11/23/2026"), while documents use `dd MMM yyyy` (`lib/clinic-dates.ts`). `components/labs/lab-results-view.tsx` (`new Date(...).toLocaleDateString()` in the report header). Suggest the shared clinic formatter. Not changed (kept this PR to layout/wording).
-7. **Hydration warning on the patient page in a Malaysian-time browser.** With the browser in Asia/Kuala_Lumpur at ~00:30 MYT (server UTC) Next logged "Hydration failed because the server rendered text didn't match the client" and showed the dev "1 Issue" badge. Likely a server/client date (UTC day vs MYT day) in the patient header or history; I did not find the exact element. Only affects 00:00-08:00 MYT.
+7. **Hydration warning observed on the patient page.** At ~00:30 MYT with the browser in Asia/Kuala_Lumpur and the server in UTC, Next logged "Hydration failed because the server rendered text didn't match the client" and showed the dev "1 Issue" badge. A server/client date mismatch is a hypothesis. The element, cause and affected time window are unconfirmed.
 8. **Completed visit's checkout page still shows the amber "stock -1 (below billed 1)" hint** (`checkout-client.tsx` `StockHint`). It compares current stock (already reduced by this very sale) with the billed quantity, so it reads like a new problem. Suggest hiding the hint once the invoice is saved.
 9. **Phone: the first patient tab ("Consultation History") is clipped** at the left of the tab strip when another tab is selected (`patient-profile-workspace.tsx`, open-PR file). The sidebar takes 64 px of 390 px on phones (nav, deliberately untouched).
 10. **MC viewer prints a dashed "Clinic Stamp" box.** Fine if that is where a stamp goes; if clinics do not stamp, it prints as an empty frame. Template option, not a bug.
