@@ -138,6 +138,11 @@ Grid and flex children default to `min-width:auto`, so one long unbroken name (a
 ## D-747 — Phone-only sizing must reset at the breakpoint where the base component changes (2026-11-20, Task 747)
 
 Review of D-746: the shared `Button` has `h-11 md:h-8` (sm). An unconditional `min-h-9` on a button changes desktop (32px -> 36px). Rule: a phone min-height on a `Button` is `min-h-11 md:min-h-0` (not `sm:`, since the component switches at `md`); on raw `<button>`s `min-h-10 sm:min-h-0` is fine. Admin pages need an admin session for pixel comparison; until then review them by class. Pre-existing: `admin.spec.ts` create-form rows fail identically on `origin/dev` in this dev environment (not caused by Task 746).
+
+## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
+
+On untouched origin/dev both reported specs (and the whole file) pass cold and warm; the app shows the expected error text + Retry. The reporting branch (Task 727/728) lacked Task 675's tab-panel-scoped assertions. Decision: change neither app nor test; affected branches should merge origin/dev. Details in `.ai/research/task-734.md`.
+
 ## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
 Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
 
