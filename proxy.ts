@@ -30,6 +30,7 @@ export function proxy(req: NextRequest) {
     method: req.method,
     pathname,
     headers: req.headers,
+    protocol: req.nextUrl.protocol,
     extraAllowedOrigins: process.env.CSRF_ALLOWED_ORIGINS,
   });
   if (csrf) {
