@@ -152,3 +152,11 @@ Count the completed Time Chit staff walk as dev evidence. Task 739’s browser g
 Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
 
 Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
+## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
+Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
+The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
