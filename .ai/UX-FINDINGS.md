@@ -227,3 +227,14 @@ Method: branch `ai/task-718-ux-phone` on `origin/dev` @ `b22d32e`; one `next dev
 - `tsc --noEmit` clean; eslint clean on the 5 changed files.
 - `composer-plan.spec.ts` against this build: 5/5 passed.
 - `bun test tests/unit`: 1226 pass, 1 fail (`task639-scheduling-slots.test.ts` "refuses a schedule that belongs to another clinic", unrelated: files untouched by this task; message mismatch in scheduling code).
+
+---
+
+# Task 760: re-verification on `origin/dev` @ `51805cf` (2026-11-20)
+
+Live walk (dev server :3760, killed after) plus code check. Details: `.ai/research/task-760.md`.
+
+- **No Medium/High item from Parts 1-4 is still open.** Re-checked live: billing list "Open checkout"/"Ready to bill", checkout invoice placeholder, stock line, disabled e-Invoice, inventory banner, history table, "Last consult" wording; no overflow at 1440 or 390. Analytics being in Malay is deliberate (Task 551).
+- **New 36. Patient profile "Medical alert: None" (green) when allergies were never recorded: FIXED (Task 760).** Now "Allergies not recorded" (grey); explicit NKDA shows "No known allergies".
+- **New 37. Check-in page red "Medical Alerts" banner for an NKDA entry: FIXED (Task 760).** Banner only for real allergies. Shared helper `lib/patients/allergy-status.ts`.
+- **New 38. Appointments tiles count past bookings while the list shows only upcoming: wording FIXED (Task 760)** in the list empty state. Tile logic (`appointments-root.tsx`) left alone because PR #354 edits that file; revisit after it merges.

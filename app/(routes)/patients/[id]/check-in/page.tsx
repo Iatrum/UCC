@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import { mergePatientWithTriageForCheckIn } from "@/lib/fhir/merge-check-in-patient";
+import { getAllergyStatus } from "@/lib/patients/allergy-status";
 import { getMedplumForRequest } from "@/lib/server/medplum-auth";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
 
@@ -46,6 +47,8 @@ export default async function CheckInPage({ params, searchParams }: CheckInPageP
   const inQueue = Boolean(patientWithTriage.queueStatus);
   const alreadyTriaged = inQueue || Boolean(patientWithTriage.triage?.isTriaged);
 
+  const allergyStatus = getAllergyStatus(patientWithTriage.medicalHistory?.allergies);
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <div>
@@ -74,14 +77,14 @@ export default async function CheckInPage({ params, searchParams }: CheckInPageP
         </Alert>
       )}
 
-      {patientWithTriage.medicalHistory?.allergies?.length > 0 && (
+      {allergyStatus.kind === "alert" && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="space-y-1">
             <div className="font-semibold">Medical Alerts:</div>
             <div>
               <span className="font-medium">Allergies:</span>{" "}
-              {patientWithTriage.medicalHistory.allergies.join(", ")}
+              {allergyStatus.allergies.join(", ")}
             </div>
           </AlertDescription>
         </Alert>
