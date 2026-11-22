@@ -3,6 +3,9 @@
 ## 2026-11-22 — Task 797: API security sweep
 Checked all 77 API routes (table in `.ai/research/task-797.md`). Fixed: a clinic user could make the app delete another patient's stored file via a crafted document record; AI routes no longer echo provider error text; a log line that printed a patient's consultation summary is gone; the practitioner list no longer returns e-mails or other clinics' memberships. Eight smaller gaps are written up with suggested fixes.
 
+## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
+The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
+
 ## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
 Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 

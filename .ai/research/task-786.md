@@ -1,0 +1,5 @@
+# Task 786 · Backlog spot-check
+
+- Pilot C3 requires more than 100 sessions for one disposable fake staff account, per the [pilot checklist](../PILOT-READINESS.md#c-isolation-production-task-5-migration) and [migration runbook](../RUNBOOK-task5-production-migration.md#fake-session-proof-required-before-release--outstanding-live). Updated the backlog wording.
+- [Billing #351](https://github.com/Iatrum/UCC/pull/351) propagates search errors to the Billing panel's existing Retry state. [Document previews #356](https://github.com/Iatrum/UCC/pull/356) guards preview state against stale requests when switching documents. Both backlog references match the diffs.
+- Platform references reviewed: [Medplum 5.2.8](https://github.com/medplum/medplum/releases/tag/v5.2.8), [Next.js 16](https://nextjs.org/blog/next-16), [React 19](https://react.dev/blog/2024/12/05/react-19), [FHIR R4](https://hl7.org/fhir/R4/), [DICOM PS3.18](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/PS3.18.html).
