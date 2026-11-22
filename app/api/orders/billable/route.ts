@@ -11,9 +11,13 @@ export async function GET(req: NextRequest) {
   try {
     const { medplum, clinicId } = await requireClinicAuth(req);
     const statuses: QueueStatus[] = ['meds_and_bills'];
-    const consultations = await getConsultationsWithDetails(statuses, medplum, clinicId);
+    const consultations = await getConsultationsWithDetails(statuses, medplum, clinicId, { throwOnError: true });
     return NextResponse.json({ consultations });
   } catch (error) {
-    return handleRouteError(error, 'GET /api/orders/billable');
+    const response = handleRouteError(error, 'GET /api/orders/billable');
+    if (response.status === 500) {
+      return NextResponse.json({ error: 'Failed to load billable consultations.' }, { status: 500 });
+    }
+    return response;
   }
 }

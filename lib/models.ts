@@ -251,7 +251,8 @@ export async function updateQueueStatus(patientId: string, status: QueueStatus):
 export async function getConsultationsWithDetails(
   statuses: QueueStatus[],
   medplum: MedplumClient,
-  clinicId?: string
+  clinicId?: string,
+  { throwOnError = false }: { throwOnError?: boolean } = {}
 ): Promise<BillableConsultation[]> {
   try {
     const validStatuses = statuses.filter((status): status is Exclude<QueueStatus, null> => Boolean(status));
@@ -372,6 +373,7 @@ export async function getConsultationsWithDetails(
       return dateB - dateA;
     });
   } catch (error) {
+    if (throwOnError) throw error;
     console.error("Error in getConsultationsWithDetails:", error);
     return [];
   }

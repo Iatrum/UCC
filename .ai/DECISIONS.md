@@ -133,6 +133,9 @@ Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off modul
 - 2026-11-20 D-748: UX item 18 (bare spinner in MC viewer) was already fixed in Task 506; `role="status"` on the message is the accessible busy signal, so no `aria-busy` or new test added. Docs-only PR, no code change.
 - 2026-11-20 D-749: The Task 506 text resolves the original bare spinner finding. The patient viewer now includes loading in the initial dialog description, keeps a polite status mounted for retry, and marks the preview region busy. The latest request owns preview state, so closing and reopening a dialog cannot display an older document. Scope is the patient Documents tab.
 
+## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
+
+On untouched origin/dev both reported specs (and the whole file) pass cold and warm; the app shows the expected error text + Retry. The reporting branch (Task 727/728) lacked Task 675's tab-panel-scoped assertions. Decision: change neither app nor test; affected branches should merge origin/dev. Details in `.ai/research/task-734.md`.
 ## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
 Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
 
