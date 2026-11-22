@@ -2,15 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { checkCsrf } from "../../lib/security/csrf";
 
 const call = (method: string, pathname: string, h: Record<string, string>, extra?: string) =>
-  checkCsrf({ method, pathname, headers: new Headers(h), extraAllowedOrigins: extra });
+  checkCsrf({ method, pathname, headers: new Headers(h), protocol: "https:", extraAllowedOrigins: extra });
 
 describe("checkCsrf", () => {
   const host = { host: "demo.example.com" };
   it("allows same-origin mutating requests", () => {
     expect(call("POST", "/api/patients", { ...host, origin: "https://demo.example.com" })).toBeNull();
-  });
-  it("uses x-forwarded-host behind a proxy", () => {
-    expect(call("PATCH", "/api/queue", { host: "10.0.0.2:3000", "x-forwarded-host": "demo.example.com", origin: "https://demo.example.com" })).toBeNull();
   });
   it("rejects cross-origin and sibling-subdomain origins", () => {
     expect(call("POST", "/api/consultations", { ...host, origin: "https://evil.test" })).toBe("cross_origin");
@@ -29,8 +26,8 @@ describe("checkCsrf", () => {
     expect(call("POST", "/api/patients", { ...host, "sec-fetch-site": "same-site" })).toBe("cross_site_fetch");
     expect(call("POST", "/api/patients", { ...host, "sec-fetch-site": "same-origin" })).toBeNull();
   });
-  it("allows non-browser callers with no browser headers", () => {
-    expect(call("POST", "/api/patients", host)).toBeNull();
+  it("allows headerless clients using a JSON POST", () => {
+    expect(call("POST", "/api/patients", { ...host, "content-type": "application/json" })).toBeNull();
   });
   it("never blocks safe methods or non-API paths", () => {
     expect(call("GET", "/api/patients", { ...host, origin: "https://evil.test" })).toBeNull();

@@ -3,6 +3,8 @@
 ## 2026-11-20 — Task 752 keeps unsaved consultation edits visible to the leave warning
 
 If staff edit a consultation while its saved draft is still loading, the leave warning now uses the same React state as the draft shown on screen.
+## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
+Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
@@ -237,3 +239,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 653: `fetchWithTimeout` now keeps the timer armed through the body for GET/HEAD (stalled `res.json()` rejects with AbortError); writes unchanged. Notes: .ai/research/task-653.md
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
+
+- 2026-11-20 Task 760 (UX): Re-checked the open UX findings against today's app: nothing Medium/High is still open. Fixed three small things staff could misread: the patient page no longer shows a green "None" when allergies were never asked (it says "Allergies not recorded"); the check-in page no longer shows a red allergy alert for "No known drug allergies"; the empty Appointments list now explains that past bookings are counted in the tiles but not listed. Notes: .ai/research/task-760.md

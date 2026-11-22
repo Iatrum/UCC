@@ -17,6 +17,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getTriageForPatient } from "@/lib/fhir/triage-service";
 import { getEnabledModuleIdsForClinic } from "@/lib/module-registry";
 import { consultSummary as summarizeConsults } from "@/lib/patients/profile-history";
+import { getAllergyStatus } from "@/lib/patients/allergy-status";
 import PatientProfileWorkspace from "./patient-profile-workspace";
 
 function getCurrentTimestamp(): number {
@@ -104,10 +105,9 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
 
   const consultSummary = summarizeConsults(consultations);
 
-  const realAllergies = (medicalHistory.allergies ?? []).filter(
-    (a) => !/^no known/i.test(a.trim())
-  );
-  const medicalAlert = realAllergies.length > 0;
+  const allergyStatus = getAllergyStatus(medicalHistory.allergies);
+  const realAllergies = allergyStatus.kind === "alert" ? allergyStatus.allergies : [];
+  const medicalAlert = allergyStatus.kind === "alert";
 
   const initials = patient.fullName
     .split(" ")
@@ -208,10 +208,15 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
                     {realAllergies.length > 2 ? ` +${realAllergies.length - 2} more` : ""}
                   </span>
                 </div>
-              ) : (
+              ) : allergyStatus.kind === "none-known" ? (
                 <div className="mt-0.5 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-500 inline-block shrink-0" />
-                  <span className="text-muted-foreground">None</span>
+                  <span className="text-muted-foreground">No known allergies</span>
+                </div>
+              ) : (
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-muted-foreground/40 inline-block shrink-0" />
+                  <span className="text-muted-foreground">Allergies not recorded</span>
                 </div>
               )}
             </div>
