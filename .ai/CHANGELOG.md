@@ -9,6 +9,8 @@ Checked the whole path: form, `/api/feedback`, GitHub issue creation and the sav
 
 ## 2026-11-20 — Task 742: security review of the last 3 days
 Reviewed every API route and server library changed in the last 3 days (sign-in, clinic separation, cross-site request protection, input checks, error messages, secrets). Two small hardening fixes: the sign-in API now refuses a "go to after login" address that points to another website, and the invite-user API no longer shows internal error text to the caller. Nothing else needed changing; no effect on the consultation composer, Lab or POCT. Notes: `.ai/research/task-742.md`.
+## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
+Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
 
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
@@ -244,3 +246,5 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
 - Task 743 (review of 742): found the login redirect fix was incomplete. On the admin host a link like `/admin//evil.example` still turned into `//evil.example` after the `/admin` prefix was stripped. Fixed in `lib/admin-routes.ts` and guarded again in the login route. Normal admin and clinic redirects are unchanged. Tests added.
+
+- 2026-11-20 Task 760 (UX): Re-checked the open UX findings against today's app: nothing Medium/High is still open. Fixed three small things staff could misread: the patient page no longer shows a green "None" when allergies were never asked (it says "Allergies not recorded"); the check-in page no longer shows a red allergy alert for "No known drug allergies"; the empty Appointments list now explains that past bookings are counted in the tiles but not listed. Notes: .ai/research/task-760.md
