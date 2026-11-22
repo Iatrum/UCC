@@ -138,6 +138,11 @@ Grid and flex children default to `min-width:auto`, so one long unbroken name (a
 ## D-747 — Phone-only sizing must reset at the breakpoint where the base component changes (2026-11-20, Task 747)
 
 Review of D-746: the shared `Button` has `h-11 md:h-8` (sm). An unconditional `min-h-9` on a button changes desktop (32px -> 36px). Rule: a phone min-height on a `Button` is `min-h-11 md:min-h-0` (not `sm:`, since the component switches at `md`); on raw `<button>`s `min-h-10 sm:min-h-0` is fine. Admin pages need an admin session for pixel comparison; until then review them by class. Pre-existing: `admin.spec.ts` create-form rows fail identically on `origin/dev` in this dev environment (not caused by Task 746).
+## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
+Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
 
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
+The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
