@@ -1,5 +1,18 @@
 # BACKLOG
 
+## Open now
+
+- [ ] Rehearse live session revocation with more than 100 disposable fake logins once an authorized dev super-admin login is supplied ([pilot C3](PILOT-READINESS.md#c-isolation-production-task-5-migration)).
+- [ ] Run the full browser gate on current `dev` and rehearse against the exact production Medplum version once confirmed ([pilot C4](PILOT-READINESS.md#c-isolation-production-task-5-migration), [imaging billing replay follow-up #352](https://github.com/Iatrum/UCC/pull/352)).
+- [ ] Review the Billing queue fix so failed searches show an error and Retry ([#351](https://github.com/Iatrum/UCC/pull/351)).
+- [ ] Review the login redirect, invite error handling and feedback hardening ([#353](https://github.com/Iatrum/UCC/pull/353)).
+- [ ] Review the phone and tablet layouts for Settings, Admin, Appointments, Analytics and Inventory ([#354](https://github.com/Iatrum/UCC/pull/354)).
+- [ ] Review slot-generation input validation and the catalog, appointment and clinic-scoping tests, including foreign-clinic schedule rejection ([#355](https://github.com/Iatrum/UCC/pull/355), [#360](https://github.com/Iatrum/UCC/pull/360)).
+- [ ] Review the document preview fix for stale responses when switching between MC, Time Chit and referral documents ([#356](https://github.com/Iatrum/UCC/pull/356)).
+- [ ] Review the consultation draft fix for the leave warning when staff edit while the draft loads ([#357](https://github.com/Iatrum/UCC/pull/357)).
+- [ ] Review the horizontal scroll hint on narrow tables ([#361](https://github.com/Iatrum/UCC/pull/361)).
+- [ ] Review form and button labels, status announcements and error contrast ([#362](https://github.com/Iatrum/UCC/pull/362)).
+
 ## Tonight (round 1), in order
 1. [x] AGENTS.md, CLAUDE.md, .ai/, e2e suite in repo (`e2e/`, no secrets)
 2. [x] Realistic dummy-data seed for 4 clinics (fake patients, encounters, orders, results)
