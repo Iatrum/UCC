@@ -81,4 +81,22 @@ describe("getConsultationsWithDetails batching (Task 547)", () => {
     expect(out.every((c) => c.patientFullName.startsWith("Own"))).toBe(true);
     expect(out.find((c) => c.id === "e-2")?.diagnosis).toBe("Dx 2");
   });
+
+  it("returns an empty list when the scoped billing search succeeds with no matches", async () => {
+    const { client } = fake(build(0));
+    const consultations = await getConsultationsWithDetails(["meds_and_bills"], client, "clinic-a", { throwOnError: true });
+    expect(consultations).toEqual([]);
+  });
+
+  it.each(["Encounter", "Patient"])("propagates a failed %s search to the billable API caller", async (resourceType) => {
+    const { client } = fake(build(1));
+    const searchResources = client.searchResources;
+    const failure = new Error("Medplum unavailable");
+    client.searchResources = async (type: string, params: Record<string, string>) => {
+      if (type === resourceType) throw failure;
+      return searchResources(type, params);
+    };
+
+    await expect(getConsultationsWithDetails(["meds_and_bills"], client, "clinic-a", { throwOnError: true })).rejects.toBe(failure);
+  });
 });

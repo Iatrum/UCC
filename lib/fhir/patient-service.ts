@@ -609,22 +609,18 @@ export async function getPatientsByIdsFromMedplum(
   const result = new Map<string, SavedPatient>();
   const ids = Array.from(new Set(patientIds.filter(Boolean)));
   if (ids.length === 0) return result;
-  try {
-    const client = medplum ?? (await getAdminMedplum());
-    const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
-    const pages = await Promise.all(
-      chunks.map((chunk) =>
-        client.searchResources('Patient', { _id: chunk.join(','), _count: String(chunk.length) })
-      )
-    );
-    for (const fhirPatient of pages.flat()) {
-      if (!fhirPatient.id || !ids.includes(fhirPatient.id)) continue;
-      if (!matchesClinic(fhirPatient, clinicId)) continue;
-      result.set(fhirPatient.id, fhirPatientToPatientData(fhirPatient));
-    }
-  } catch (error: any) {
-    console.error('Failed to get patients by id from Medplum:', error?.message ?? error);
+  const client = medplum ?? (await getAdminMedplum());
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+  const pages = await Promise.all(
+    chunks.map((chunk) =>
+      client.searchResources('Patient', { _id: chunk.join(','), _count: String(chunk.length) })
+    )
+  );
+  for (const fhirPatient of pages.flat()) {
+    if (!fhirPatient.id || !ids.includes(fhirPatient.id)) continue;
+    if (!matchesClinic(fhirPatient, clinicId)) continue;
+    result.set(fhirPatient.id, fhirPatientToPatientData(fhirPatient));
   }
   return result;
 }
