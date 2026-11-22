@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
+Saves from a clinic page or Vercel preview work at that page's own origin. Any integration that submits from another origin needs an exact CSRF_ALLOWED_ORIGINS entry. Browser-simple requests with missing origin information are blocked.
+
 ## 2026-11-20 — Task 727: slot-generation clinic test fixed (no isolation bug)
 A unit test failed on `dev` because it expected an old error message. Generating slots for another clinic's schedule is still refused, nothing is written, and the app answers 403. Only the test was out of date; it now checks the exact 403 error and also covers a schedule with no clinic. No app code changed. Notes: `.ai/research/task-727.md`.
 
