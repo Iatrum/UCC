@@ -142,3 +142,5 @@ The failing test expected the pre-Task-645 message `does not belong`. The code c
 
 ## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
 The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
+
+- Task 814: re-verified open UX-FINDINGS items on dev eba7551. Only sidebar, dead purchasing panels, table scroll hint (#361/#362) and appointments tiles (#354) remain; the last two are skipped because open PRs edit those files. Fixed two real POCT page issues (hardcoded "Abnormal 0" tile removed; stat tiles compact on phones). See `.ai/research/task-814.md`.

@@ -238,3 +238,12 @@ Live walk (dev server :3760, killed after) plus code check. Details: `.ai/resear
 - **New 36. Patient profile "Medical alert: None" (green) when allergies were never recorded: FIXED (Task 760).** Now "Allergies not recorded" (grey); explicit NKDA shows "No known allergies".
 - **New 37. Check-in page red "Medical Alerts" banner for an NKDA entry: FIXED (Task 760).** Banner only for real allergies. Shared helper `lib/patients/allergy-status.ts`.
 - **New 38. Appointments tiles count past bookings while the list shows only upcoming: wording FIXED (Task 760)** in the list empty state. Tile logic (`appointments-root.tsx`) left alone because PR #354 edits that file; revisit after it merges.
+
+---
+
+# Task 814: re-verification on `origin/dev` @ `eba7551` (2026-11-23)
+
+- Still open (intentional): sidebar items #19/#24/#32; dead purchasing panels (Part 2 Low 16); table scroll hint #33 (open PRs #361/#362 edit those files); appointments tiles #38 (open PR #354 edits `appointments-root.tsx`).
+- **New 39. POCT "Abnormal 0" tile was hardcoded: FIXED (Task 814)**, removed; results stay in the Lab tab.
+- **New 40. POCT stat tiles stacked one per row on a phone: FIXED (Task 814)**, 3 compact tiles. Patients page has the same stacking, not touched (open PRs #362/#370).
+- Details and evidence: `.ai/research/task-814.md`.
