@@ -162,7 +162,7 @@ function LabResultsViewInner({ patientId, encounterId }: LabResultsViewProps) {
         <CardContent className="space-y-4">
           {errorBanner}
           <p className="text-sm text-muted-foreground">
-            No laboratory tests have been ordered or completed for this {encounterId ? 'encounter' : 'patient'}.
+            No lab results have been received for this {encounterId ? 'encounter' : 'patient'} yet. Results appear here once they arrive.
           </p>
           {statusBar}
         </CardContent>
@@ -171,7 +171,9 @@ function LabResultsViewInner({ patientId, encounterId }: LabResultsViewProps) {
   }
 
   return (
-    <div className="space-y-6">
+    // min-w-0: this view is a grid item on the patient profile; without it the wide results table
+    // stretches the whole column past a phone screen instead of scrolling inside the table.
+    <div className="min-w-0 space-y-6">
       {statusBar}
       {errorBanner}
       {pending.length > 0 && (
