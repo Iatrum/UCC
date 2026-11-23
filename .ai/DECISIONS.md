@@ -190,5 +190,7 @@ Accepted as-is apart from replacing `rejects.toBeDefined()` with a forbidden-err
 ## D-755 — Accept Task 754 scheduling route coverage after review (2026-11-20, Task 755)
 
 Keep the real Next.js handlers and scheduling services under test with a two-clinic in-memory Medplum adapter. Assert the public denial responses, zero writes for foreign records, and clinic-tagged writes on success. Validate the slot window and first slot end before the route can create a schedule. See [.ai/REVIEW-task754.md](REVIEW-task754.md) for verification results.
+## D-769 — Foreign schedule slot generation checks the error type (2026-11-20)
+Keep the service's neutral error wording. The unit test now uses a schedule with both identifiers assigned to another clinic and checks for `ForbiddenError` (HTTP 403 at the route) and zero writes. The assertion tolerates wording changes. See `.ai/research/task-769.md`.
 ## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
 The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.

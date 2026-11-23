@@ -27,6 +27,8 @@ Reviewed every API route and server library changed in the last 3 days (sign-in,
 Checked all 77 API routes (table in `.ai/research/task-797.md`). Fixed: a clinic user could make the app delete another patient's stored file via a crafted document record; AI routes no longer echo provider error text; a log line that printed a patient's consultation summary is gone; the practitioner list no longer returns e-mails or other clinics' memberships. Eight smaller gaps are written up with suggested fixes.
 ## 2026-11-20 — Task 744: more safety-net tests for scheduling, catalog and clinic scoping
 Added unit tests for three under-tested areas: the appointment service (booking, reading, upcoming lists), the clinical catalog (lab/imaging prices and clinic isolation) and server-side clinic detection from the web address. No app behaviour changed and no bug was found. Notes with before/after numbers: `.ai/research/task-744.md`.
+## 2026-11-20 — Task 769 tests slot generation across clinics
+The scheduling test now verifies that an attempt to generate slots for a schedule explicitly assigned to another clinic is refused before any records are written.
 
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
