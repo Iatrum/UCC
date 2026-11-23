@@ -108,9 +108,6 @@ export async function POST(req: NextRequest) {
 
       const summary = buildFallbackSummary(patient, sorted);
 
-      console.log(`[smart-text summary] Fallback summary for patient ${patient.id}:`);
-      console.log(summary || "<empty>");
-
       return new Response(
         JSON.stringify({
           summary,

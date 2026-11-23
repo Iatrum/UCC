@@ -58,9 +58,8 @@ export async function POST(req: NextRequest) {
     );
   } catch (error: any) {
     console.error("[soap-rewrite] Unexpected error", error);
-    const message = error?.message || "Unexpected error";
-    const status = error?.code === "MISSING_API_KEY" ? 500 : 500;
-    return new Response(JSON.stringify({ error: message }), { status });
+    // Task 797: upstream/provider error text can carry URLs or key hints; log it, return a fixed message.
+    return new Response(JSON.stringify({ error: "Unexpected error" }), { status: 500 });
   }
 }
 
