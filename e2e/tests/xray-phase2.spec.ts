@@ -63,10 +63,15 @@ test('X-ray viewer link: default deny, shown only for allowlisted https host and
     identifier: [{ system: 'clinic', value: clinicId }], meta: { tag: [{ system: tagSystem, code: 'xray' }], account: patient.meta?.account, accounts: patient.meta?.accounts } });
   const ingest = async (srId: string, modality: string, pacsUrl: string, endpoint?: string) => {
     const uid = `1.2.3.${randomUUID()}`;
-    const r = await request.post('/api/imaging/receive/message', { headers: { Authorization: `Bearer ${key}` },
+    const post = () => request.post('/api/imaging/receive/message', { headers: { Authorization: `Bearer ${key}` },
       data: { serviceRequestId: srId, study: { studyUid: uid, modality, description: `Fake ${modality}`, numberOfSeries: 1, numberOfInstances: 1, pacsUrl,
         series: [{ uid: `${uid}.1`, number: 1, modality, numberOfInstances: 1, ...(endpoint ? { endpoint } : {}) }] } } });
-    expect(r.ok()).toBeTruthy();
+    // The fixture turns PACS on by writing the Organization directly, and the app memoises a clinic's enabled modules
+    // for 5 s (lib/server/module-ids-memo.ts), so a warm cache can answer 403 "PACS module is disabled" for a moment.
+    // Wait only for that exact propagation case; any other failure is reported immediately (Task 783).
+    let r = await post();
+    for (let i = 0; i < 12 && r.status() === 403 && (await r.text()).includes('PACS module is disabled'); i++) { await new Promise((res) => setTimeout(res, 1000)); r = await post(); }
+    expect(r.ok(), `ingest ${r.status()} ${await r.text()}`).toBeTruthy();
   };
   try {
     const good = await mkSr('36643-5');
