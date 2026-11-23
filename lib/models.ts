@@ -79,6 +79,7 @@ export interface ProcedureRecord {
   category?: "items" | "services" | "packages" | "documents";
   notes?: string;
   procedureId?: string;
+  signEntryId?: string;
   codingSystem?: string;
   codingCode?: string;
   codingDisplay?: string;

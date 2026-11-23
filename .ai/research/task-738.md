@@ -1,0 +1,22 @@
+# Task 738 — Verify the C4 imaging billing fix
+
+## References
+
+- Medplum documents `createResource` as a typed FHIR create operation. The requested release reference is 5.2.8. The local dev server reported `5.2.15-4d86215`. [Medplum SDK](https://www.medplum.com/docs/sdk/core.medplumclient.createresource) · [Medplum 5.2.8](https://github.com/medplum/medplum/releases/tag/v5.2.8)
+- Next.js 16 App Router Route Handlers receive the composer’s order requests. React 19 supports an event handler on form submission, as used by the composer. [Next.js 16](https://nextjs.org/docs/app/guides/upgrading/version-16) · [Route Handlers](https://nextjs.org/docs/app/api-reference/file-conventions/route) · [React form submission](https://react.dev/reference/react-dom/components/form#handling-form-submission-with-an-event-handler)
+- FHIR R4 `ServiceRequest` represents an order. The `Procedure` event status `preparation` indicates that the core event has yet to start. DICOM Modality Worklist communicates scheduled procedure steps to the modality. [FHIR R4 ServiceRequest](https://hl7.org/fhir/R4/servicerequest.html) · [FHIR R4 Procedure](https://hl7.org/fhir/R4/procedure.html) · [FHIR R4 EventStatus](https://hl7.org/fhir/R4/valueset-event-status.html) · [DICOM PS3.4 K.6](https://dicom.nema.org/medical/dicom/current/output/chtml/part04/sect_K.6.html)
+
+## Evidence on `origin/dev` at `737cbd8`
+
+- GitHub CLI reports Task 704’s PR as `MERGED` into `dev` on 2026-11-20. Git confirms its merge commit `629a717` is an ancestor of `737cbd8`. [PR #342](https://github.com/Iatrum/UCC/pull/342)
+- Task 722’s Workflow 11 probe reported that signing a generic imaging order immediately wrote a `completed` billing `Procedure`. Both the consultation create and replace-on-update paths now use `orderProcedureStatus`, which writes `preparation` for `Imaging:` and `Lab:` lines. The composer places the generic imaging `ServiceRequest` separately. [Task 722 findings](task-722.md) · [Status helper](../../lib/fhir/order-procedure-status.ts) · [Consultation writes](../../lib/fhir/consultation-service.ts)
+- Checkout takes the line name, price and quantity from the consultation. Its totals are independent of the `Procedure` status, so the pending imaging item stays billable. The device-backed X-ray path still checks the per-clinic PACS toggle and an online device and carries its charge through the encounter’s investigation billing items. [Checkout mapping](../../app/%28routes%29/orders/checkout/%5BconsultationId%5D/checkout-client.tsx) · [Imaging order service](../../lib/fhir/imaging-service.ts)
+- Task 704’s fake-data browser run recorded an imaging billing `Procedure` in `preparation` at Sign and passed checkout. The follow-up review recorded 11/11 workflow tests and 9/9 X-ray tests passing with PR #334’s test fixtures. The fix applies when orders are signed or replaced. Historical statuses were outside the change. [Task 704 evidence](task-704.md) · [Task 704 review](../REVIEW-task704.md)
+
+## Task 738 checks
+
+- `tsc --noEmit` and `bun run lint` passed. The focused unit run passed all 156 tests across 10 files, including all three Task 704 regression tests and the X-ray toggle, sign, checkout and clinic-scoping coverage.
+- The four changed files are Markdown. The repository’s ESLint configuration does not cover them. `git diff --check`, local link checks and validation of the C4 table row passed.
+- Browser verification uses a production build, one Playwright worker and fake data on dev Medplum. The first attempt used `127.0.0.1` for the app, where the Playwright API client withheld secure session cookies. The rerun uses `localhost:3738` for the app and `127.0.0.1:8113` for Medplum.
+- The current-head workflow passed 11/11 tests. After Sign it recorded exactly one generic imaging billing `Procedure` in `preparation` and zero imaging procedures in `completed`. Checkout displayed the imaging line and completed payment. The online device-backed X-ray and disabled-module browser tests passed.
+- `check-all.sh task-738` passed lint, build and the Phase 1 dev clinic data audit. The audit reported zero problems on this run. Playwright reported 95 passed, 2 failed and 2 skipped. Compared with Task 722, the imaging probe passed. The Feedback toggle-off test had a connection reset and passed when rerun on the same build. The Task 703 registration test added since that baseline timed out waiting for a login input after starting with authenticated storage. The overall gate remains open. Production Medplum version parity is still unverified.
