@@ -69,7 +69,7 @@ export default function AppointmentStatusForm({
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
       <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as AppointmentStatus)}>
-        <SelectTrigger className="w-full sm:w-48">
+        <SelectTrigger className="w-full sm:w-48" aria-label="Appointment status">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

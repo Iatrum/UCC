@@ -172,6 +172,8 @@ The failing test expected the pre-Task-645 message `does not belong`. The code c
 
 ## Task 767: table scroll hint in the shared Table
 Decision: add the hint once in `components/ui/table.tsx` (wrapper + `md:hidden` gradient overlay, state from scroll/ResizeObserver) so all tables get it. Why: smallest safe change, no per-page edits, nothing in the composer or nav touched. Rejected: sticky name column (can cover content on narrow screens, per-table work) and card layout below `sm` (needs a design decision, see #23/#33). The existing `data-slot=table-container` stays on the scrolling element; PR #354 does not touch this file.
+## D-771 — Manual a11y pass, small aria/contrast fixes only (2026-11-20, Task 771)
+axe-core is not a dependency, so no new package was added for one task; a manual checklist plus one Playwright DOM audit was used instead. Fixes are limited to aria labels, one colour class and two live-region roles. The sidebar collapse button, shared table, calendar and patient profile are deferred because they are out of scope or edited by open PRs (see `.ai/A11Y-FINDINGS.md`).
 ## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
 The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
 
