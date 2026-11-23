@@ -142,3 +142,6 @@ The failing test expected the pre-Task-645 message `does not belong`. The code c
 
 ## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
 The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
+
+## D-809 — Hydration perf: attack the shared baseline first, never the composer (2026-11-23, Task 809, plan only)
+Measured on origin/dev `eba7551` (production webpack build): ~320-340 KB gzip JS (29-32 files) loads on EVERY staff screen; route-specific code is only 1-40 KB, so no single page is heavy. About 78 KB of the baseline (zod+react-hook-form 35, `@medplum/core` 31, date-fns/cmdk/popover 12) is not executed on list/read screens. Decision: rank (1) stop those libs landing in the shared group, (2) drop the unused `MedplumClient` from the root provider, (3) server-render the patients list first page, before any per-page work. The tiptap/prosemirror stack (~250 KB gzip) is already dynamic on the profile and, with the sidebar/nav, is OUT OF SCOPE. No code changed. Plan: `.ai/plans/PLAN-task-809-hydration-perf.md`.
