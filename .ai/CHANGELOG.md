@@ -15,6 +15,10 @@ The checklist records the Time Chit staff walk, merged security changes, and suc
 
 The pilot checklist now records that signing an imaging order keeps the charge available at checkout and records the procedure as still pending. The latest dev clinic data audit passed. The browser gate and production version check still need to pass before release.
 
+## 2026-11-20 — Task 752 keeps unsaved consultation edits visible to the leave warning
+
+If staff edit a consultation while its saved draft is still loading, the leave warning now uses the same React state as the draft shown on screen.
+
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
 
