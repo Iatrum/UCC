@@ -59,6 +59,8 @@ test('full local admin audit (one login)', async ({ browser }) => {
     const main = page.getByRole('main');
     await expect(main).toBeVisible();
     await expect(main.getByRole('heading', { level: 1 }).or(main.getByText('Create Medplum ClientApplication', { exact: true }))).toBeVisible();
+    // Wait for React hydration: a click before it submits the <form> natively (GET ?) and no fetch fires.
+    await page.waitForFunction(() => { const f = document.querySelector('main form'); return !f || Object.keys(f).some(k => k.startsWith('__reactProps')); });
     const text = await page.locator('body').innerText();
     if (/Application error|Internal Server Error|Unable to load users|Runtime Error|This account is not a platform admin/i.test(text)) throw new Error('Page shows error state');
     if (await page.locator('nextjs-portal').evaluateAll(nodes => nodes.some(n => /Runtime Error|Build Error/.test(n.shadowRoot?.textContent || '')))) throw new Error('Next error overlay');

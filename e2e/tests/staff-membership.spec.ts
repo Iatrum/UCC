@@ -2,6 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import os from 'node:os';
 import { test, expect } from '@playwright/test';
 import { MedplumClient } from '@medplum/core';
 import { createRequire } from 'node:module';
@@ -24,6 +25,8 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
   expect(BASE).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9]\d{3,4}$/);
   expect(MEDPLUM.replace(/\/$/, '')).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   process.loadEnvFile(new URL('../../.env.local', import.meta.url));
+  // Standalone runs (outside check-all.sh) have no /workspace; give the CLI a private fake-data backup dir.
+  process.env.UCC_MEMBERSHIP_BACKUP_DIR ||= fs.mkdtempSync(`${os.tmpdir()}/ucc-membership-backup-`);
   expect(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL!).origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   // A prior spec can use the whole 5/min login budget.
   await new Promise(resolve => setTimeout(resolve, 65_000));
