@@ -24,6 +24,10 @@ The patient document viewer announces preview preparation, marks the preview are
 
 ## 2026-11-20 — Task 748: document viewer loading message (already fixed)
 Checked the MC, Time Chit and Referral viewers: each already shows "Preparing preview..." while the PDF loads (added in Task 506). The UX note was marked verified fixed. Docs only, no app change.
+## 2026-11-23 — Task 812: Time Chit checked end to end as a normal staff user
+A test now walks the Time Chit the way clinic staff do (not an admin, fake patient only): open the visit, issue the Time Chit, find it in the patient's documents, and check the preview and print view show the right patient, clinic name, doctor and time range. It also proves a user from another clinic cannot open it. Everything passed and no fault was found, so the app itself was not changed.
+## 2026-11-22 — Task 783: full browser gate re-run on current dev
+The full browser test suite (101 tests) ran against a production build and the fake-data dev server: 98 passed, 1 failed, 2 skipped. The two problems from Task 722 are gone. The one failure was a test timing problem, not an app bug: the test switched the X-ray module on and sent a study before the app's 5-second module cache caught up. The test now waits for that case only. No app behaviour changed. Details: `.ai/research/task-783.md`.
 
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
