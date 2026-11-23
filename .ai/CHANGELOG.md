@@ -19,6 +19,11 @@ Checked the Settings/Admin/Appointments/Analytics/Inventory phone fixes. On a la
 
 ## 2026-11-20 — Task 746: Settings, Admin, Appointments, Analytics and Inventory fit a phone
 On a phone, the admin pages (Organisations, Branches, Users, Settings) no longer push buttons and names off the right edge, the Appointments calendar toggle (Month/Week/Day) is fully visible, the Analytics tabs and date ranges show every option without sideways scrolling, and the Inventory stock tiles are readable. Small buttons on these pages are taller on a phone so they are easier to tap. Desktop looks the same. No menu, feature or POCT/X-ray change. Notes and before/after screenshots: `.ai/research/task-746.md`.
+## 2026-11-20 — Task 749 review of Task 748
+The patient document viewer announces preview preparation, marks the preview area busy, and ignores responses from previews that staff have already closed. This covers signed MCs, Time Chits and Referral Letters, plus legacy referrals.
+
+## 2026-11-20 — Task 748: document viewer loading message (already fixed)
+Checked the MC, Time Chit and Referral viewers: each already shows "Preparing preview..." while the PDF loads (added in Task 506). The UX note was marked verified fixed. Docs only, no app change.
 
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
