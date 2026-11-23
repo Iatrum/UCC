@@ -42,22 +42,20 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof AuthError) {
       return handleRouteError(error, "POST /api/admin/users/invite");
     }
-    console.error("Failed to invite practitioner:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to invite practitioner" },
-      {
-        status:
-          /Platform admin access required/i.test(error.message || "")
-            ? 403
-            :
-          /already exists|already registered|Reuse is blocked/i.test(error.message || "")
-            ? 409
-            : 500,
-      }
-    );
+    console.error("Failed to invite practitioner:", error instanceof Error ? error.message : "unknown");
+    const message = error instanceof Error ? error.message : "";
+    // Task 742: only the two known, fixed-text outcomes are echoed; anything else may carry Medplum
+    // URLs/ids/upstream text and is logged server-side only.
+    if (/Platform admin access required/i.test(message)) {
+      return NextResponse.json({ error: "Platform admin access required" }, { status: 403 });
+    }
+    if (/already exists|already registered|Reuse is blocked/i.test(message)) {
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Failed to invite practitioner" }, { status: 500 });
   }
 }

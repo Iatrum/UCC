@@ -1,6 +1,8 @@
+import { isIP } from 'node:net';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireClinicAuth, getCurrentProfile } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
+import { asObject, PayloadTooLargeError, readJsonBody } from '@/lib/server/device-ingress-http';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 import { isRateLimited } from '@/lib/rate-limit';
 import { sanitizeFeedback } from '@/lib/feedback/sanitize';
@@ -9,8 +11,23 @@ import { getFeedbackMedplum, attachScreenshot, parseScreenshot, saveBugRecord, s
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MAX_BODY_BYTES = 1_600_000;
+
+function clientIp(request: NextRequest): string {
+  // Vercel sets its own client-IP header. On self-hosted ingress, use the hop
+  // appended by the trusted proxy closest to the app.
+  const ip = (process.env.VERCEL === '1'
+    ? request.headers.get('x-vercel-forwarded-for')
+    : request.headers.get('x-forwarded-for')?.split(',').at(-1))?.trim();
+  return ip && isIP(ip) ? ip : 'unknown';
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // Coarse per-IP cap before any auth/Medplum work (generous: clinics share one NAT address).
+    if (isRateLimited(`feedback-ip:${clientIp(request)}`, 30, 60_000)) {
+      return NextResponse.json({ error: 'Too many submissions. Try again in a minute.' }, { status: 429 });
+    }
     const profile = await getCurrentProfile(request);
     const { clinicId } = await requireClinicAuth(request);
     // Feature is opt-in per clinic: behave as if the route does not exist when the toggle is off.
@@ -21,11 +38,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Too many submissions. Try again in a minute.' }, { status: 429 });
     }
 
-    // Whole-request cap (1 MB screenshot as base64 + text) before the body is buffered.
-    if (Number(request.headers.get('content-length')) > 1_600_000) {
-      return NextResponse.json({ error: 'Request too large.' }, { status: 413 });
+    // Allow a 1 MB screenshot encoded as base64 plus text. The reader enforces
+    // the byte limit independently of Content-Length.
+    if (Number(request.headers.get('content-length')) > MAX_BODY_BYTES) {
+      throw new PayloadTooLargeError();
     }
-    const raw = (await request.json().catch(() => null)) as Record<string, any> | null;
+    const raw = asObject(await readJsonBody(request, MAX_BODY_BYTES));
     if (!raw || (raw.kind !== 'bug' && raw.kind !== 'feature')) {
       return NextResponse.json({ error: 'kind must be "bug" or "feature"' }, { status: 400 });
     }
@@ -34,7 +52,7 @@ export async function POST(request: NextRequest) {
       title: raw.title,
       description: raw.description,
       page: raw.page,
-      browser: raw.browser,
+      browser: asObject(raw.browser),
       lastError: raw.lastError,
     });
     if (clean.title.length < 3) {
@@ -69,6 +87,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, result }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    return handleRouteError(error, 'Feedback');
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: 'Request too large.' }, { status: 413 });
+    }
+    const res = handleRouteError(error, 'Feedback');
+    // handleRouteError echoes error.message on unhandled 500s; never expose internals from this route.
+    if (res.status === 500) return NextResponse.json({ error: 'Could not send feedback. Please try again.' }, { status: 500 });
+    return res;
   }
 }

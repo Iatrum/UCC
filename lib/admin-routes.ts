@@ -9,7 +9,8 @@ function ensureLeadingSlash(path: string): string {
 
 export function normalizeAdminPath(path: string): string {
   const withSlash = ensureLeadingSlash(path);
-  const stripped = withSlash.replace(/^\/admin(?=\/|$)/, "");
+  // Task 743: stripping `/admin` from `/admin//host` would leave a protocol-relative `//host`; collapse it.
+  const stripped = withSlash.replace(/^\/admin(?=\/|$)/, "").replace(/^\/{2,}/, "/");
   return stripped || "/";
 }
 

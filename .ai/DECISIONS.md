@@ -152,6 +152,24 @@ Count the completed Time Chit staff walk as dev evidence. Task 739’s browser g
 Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
 
 Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
+## D-742 — Server-side sanitising of redirect targets and 500 messages (2026-11-20, Task 742)
+Server routes must not trust client-side sanitising: `/api/auth/login` runs `safeNext` on `next` itself, and routes return a fixed
+message for unexpected errors (known 4xx outcomes with fixed text may still be echoed). Left as is, with reasons in
+`.ai/research/task-742.md`: `export-to-medplum` error echo (bearer-secret only), requests with no Origin and no Fetch-Metadata pass the CSRF guard (non-browser), 10 s auth memo grace.
+
+## D-743 — Sanitise the final redirect, not only the input (2026-11-20, Task 743)
+Path rewriting helpers (`normalizeAdminPath`) can create a new `//host` from a safe-looking input, so the login route checks the
+result with `safeNext` as well as the input. Invite 409 echo kept: the text is fixed in `admin-service.ts` (upstream text matching
+exist/duplicate/email is already replaced by a fixed sentence there).
+
+## D-750 — Feedback text is untrusted markdown (2026-11-20, Task 750)
+Free text from the feedback form is scrubbed for patient data, then made safe for GitHub (mentions defused, `<` and control/bidi characters removed) and
+placed inside a code fence in the issue body, because an AI triager may read the issue. The route gives a fixed message for unexpected 500s instead of
+`handleRouteError`'s `error.message` echo (the shared helper is unchanged; see PR body for the open question). Per-IP limit is 30/min (clinics share NAT), per-user 5/min.
+
+## D-751 — Enforce the feedback body cap while reading it (2026-11-20)
+
+Reuse the bounded JSON reader for the 1,600,000-byte cap. Key the 30-request window by the Vercel client address or the address appended by the trusted self-hosted ingress. The five-request window is keyed by authenticated clinic and profile. Both windows are process-local. GitHub renders report text in literal code blocks. Automated triage must treat it as untrusted input.
 
 ## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
 
