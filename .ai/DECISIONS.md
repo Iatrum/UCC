@@ -194,3 +194,6 @@ Keep the real Next.js handlers and scheduling services under test with a two-cli
 Keep the service's neutral error wording. The unit test now uses a schedule with both identifiers assigned to another clinic and checks for `ForbiddenError` (HTTP 403 at the route) and zero writes. The assertion tolerates wording changes. See `.ai/research/task-769.md`.
 ## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
 The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
+
+## D-20261123 — No filler work; few themed PRs (2026-11-23, Hidayat)
+Too many small PRs caused constant merge conflicts and conflict-fix tasks. Decision: agents only do needed work (real bugs, security, pilot blockers, measured perf). Docs-only, measurement-only, coverage-only, re-audit and review-of-review tasks are not queued. Open work is kept in at most 3-4 themed PRs (security, app fixes/perf, tests); follow-up commits go onto the matching combined branch instead of opening new PRs. Idle agents and unused quota are acceptable.
