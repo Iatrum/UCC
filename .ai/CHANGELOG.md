@@ -1,4 +1,7 @@
 # CHANGELOG (plain language)
+## 2026-11-23 — Task 816 — Software libraries updated
+
+We updated the libraries the app is built on (Next.js, React, the Medplum client, Firebase, form and UI libraries, ESLint and the test tools) to their latest stable versions. Nothing looks or behaves differently: the unit tests, type check, build and the full browser test run all pass, and Dashboard and Patients load in the same time as before. One update, TypeScript 7, was left out because our code-checking tool does not work with it yet. The update is in a draft pull request for review.
 
 ## 2026-11-21 — Task 775 — Two leftover pilot-checklist items re-checked
 
