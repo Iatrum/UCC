@@ -152,6 +152,13 @@ Count the completed Time Chit staff walk as dev evidence. Task 739’s browser g
 Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
 
 Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
+## D-746 — Phone layout fixes use min-w-0 / grid-cols-1 and phone-only tap size (2026-11-20, Task 746)
+
+Grid and flex children default to `min-width:auto`, so one long unbroken name (a subdomain, an organisation name) widened the whole admin card past the screen. We add `grid-cols-1` (which is `minmax(0,1fr)`) and `min-w-0` instead of hiding overflow, and let headers `flex-wrap`. Small controls get `min-h-10 sm:min-h-0` so only phones change (the 40px target); desktop sizing is untouched. Not changed on purpose: the sidebar/admin rail (out of scope), tables that scroll sideways inside their own box, and `truncate`d text that already has a title. Details: `.ai/research/task-746.md`.
+
+## D-747 — Phone-only sizing must reset at the breakpoint where the base component changes (2026-11-20, Task 747)
+
+Review of D-746: the shared `Button` has `h-11 md:h-8` (sm). An unconditional `min-h-9` on a button changes desktop (32px -> 36px). Rule: a phone min-height on a `Button` is `min-h-11 md:min-h-0` (not `sm:`, since the component switches at `md`); on raw `<button>`s `min-h-10 sm:min-h-0` is fine. Admin pages need an admin session for pixel comparison; until then review them by class. Pre-existing: `admin.spec.ts` create-form rows fail identically on `origin/dev` in this dev environment (not caused by Task 746).
 
 ## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
 
