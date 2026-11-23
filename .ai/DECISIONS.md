@@ -131,9 +131,32 @@ composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic sc
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
 
+## D-738 — Close the imaging billing defect within C4 (2026-11-20)
+
+Task 704’s merged fix resolves the premature completion recorded by the Task 722 browser probe. The signed generic imaging charge uses a `preparation` billing Procedure and remains available at checkout. The dev clinic data audit passed on this run. Keep C4 on release hold pending a clean current-head browser gate and an exact-production-version rehearsal. [Task 738 verification](research/task-738.md) · [Merged PR #342](https://github.com/Iatrum/UCC/pull/342)
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-775 — C4 leftovers are closed; no new app code (2026-11-21)
+Open PR #352 already carries the imaging fix (Task 704 status, Task 739 retry de-duplication by Sign entry id), so Task 775 continued on that branch instead of opening another. The audit failure was one stale fake dev record, now gone: not reproducible, so neither the audit script nor app code was changed. C4 stays on release hold only for a clean full gate and production version parity.
+
+## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
+The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
+
+## D-740 — Record dev passes and keep the pilot release hold (2026-11-20)
+
+Count the completed Time Chit staff walk as dev evidence. Task 739’s browser gate and clinic audit pass update D-738. Keep C4 open for production Medplum version parity and the two skipped browser scenarios. C3 still needs a live fake-session rehearsal. [Verification](research/task-740.md)
+
+## D-741 — Keep pilot sign-off tied to the release candidate (2026-11-20)
+
+Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
+
+Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
+
 ## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
 
 On untouched origin/dev both reported specs (and the whole file) pass cold and warm; the app shows the expected error text + Retry. The reporting branch (Task 727/728) lacked Task 675's tab-panel-scoped assertions. Decision: change neither app nor test; affected branches should merge origin/dev. Details in `.ai/research/task-734.md`.
+
 ## D-732 — CSRF origins (2026-11-20, Tasks 732–733)
 Clinic domains and Vercel previews can save through their own origin. Cross-origin callers require an exact entry in CSRF_ALLOWED_ORIGINS. Browser-simple writes require a valid Origin or same-origin Fetch Metadata. See .ai/REVIEW-task732.md.
 
@@ -145,3 +168,6 @@ The failing test expected the pre-Task-645 message `does not belong`. The code c
 Store the rendered note and its edit flag together so the leave warning uses the same render snapshot. Keep the synchronous edit flag for the draft fetch to check before applying its response. This protects edits made while the saved draft is loading.
 ## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
 The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
+
+## D-809 — Hydration perf: attack the shared baseline first, never the composer (2026-11-23, Task 809, plan only)
+Measured on origin/dev `eba7551` (production webpack build): ~320-340 KB gzip JS (29-32 files) loads on EVERY staff screen; route-specific code is only 1-40 KB, so no single page is heavy. About 78 KB of the baseline (zod+react-hook-form 35, `@medplum/core` 31, date-fns/cmdk/popover 12) is not executed on list/read screens. Decision: rank (1) stop those libs landing in the shared group, (2) drop the unused `MedplumClient` from the root provider, (3) server-render the patients list first page, before any per-page work. The tiptap/prosemirror stack (~250 KB gzip) is already dynamic on the profile and, with the sidebar/nav, is OUT OF SCOPE. No code changed. Plan: `.ai/plans/PLAN-task-809-hydration-perf.md`.

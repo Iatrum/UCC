@@ -143,7 +143,13 @@ test('06 composer (plan API stubbed as persistence-unavailable): meds, services,
   await shot(page, '10-composer-filled');
   await expect(page.getByText('Paracetamol').last()).toBeVisible();
   facts.composerTotal = await page.getByText(/Current order total/).innerText().catch(() => '');
+  const treatmentSaved = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/orders' && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
+  const treatmentResponse = await treatmentSaved;
+  expect(treatmentResponse.ok()).toBeTruthy();
+  const treatment = treatmentResponse.request().postDataJSON();
+  const imagingLines = treatment.procedures.filter((p: { name: string }) => /^Imaging:/.test(p.name));
+  expect(imagingLines).toHaveLength(1);
   // Signing persists medication, lab and imaging orders through separate routes.
   // A cold dev compilation can exceed 15 seconds before those writes finish.
   await expect.poll(async () => {
@@ -158,6 +164,22 @@ test('06 composer (plan API stubbed as persistence-unavailable): meds, services,
   facts.afterTreatment = { MedicationRequest: mr.length, ServiceRequest: sr.map((s: any) => s.code?.text), Procedure: proc.map((p: any) => `${p.code?.text}:${p.status}`), DocumentReference: docs.length, Encounter: enc.map((e: any) => e.status) };
   facts.labSR = sr.find((s: any) => /blood/i.test(s.code?.text || ''))?.id;
   expect(mr.length).toBeGreaterThan(0); expect(sr.length).toBeGreaterThanOrEqual(2);
+  const imaging = imagingLines[0];
+  const savedImaging = proc.filter((p: any) => p.code?.text === imaging.name);
+  expect(savedImaging.map((p: any) => p.status)).toEqual(['preparation']);
+
+  // Replay the imaging part of Sign, as if the orders response had been lost.
+  const replay = () => page.request.post('/api/orders', { data: { consultationId: treatment.consultationId, procedures: imagingLines } });
+  const retries = await Promise.all([replay(), replay()]);
+  expect(retries.every((response) => response.ok())).toBeTruthy();
+  const result = await page.request.get(`/api/orders?consultationId=${treatment.consultationId}`);
+  expect(result.ok()).toBeTruthy();
+  const { consultation } = await result.json();
+  const checkoutImaging = consultation.procedures.filter((p: { name: string }) => p.name === imaging.name);
+  expect(checkoutImaging).toEqual([expect.objectContaining({ name: imaging.name, price: imaging.price, quantity: imaging.quantity })]);
+  const afterReplay = (await byPatient('Procedure', pid)).filter((p) => p.code?.text === imaging.name);
+  expect(afterReplay).toEqual([expect.objectContaining({ id: savedImaging[0].id, status: 'preparation' })]);
+  facts.imagingLine = imaging.name;
   bug(!proc.some((p: any) => /^(Lab|Imaging):/.test(p.code?.text || '') && p.status === 'completed'), 'Lab/imaging orders are also written as Procedure status=completed at Sign (before being performed)');
   bug(docs.length > 0, 'MC / referral signed in composer do not create a DocumentReference (only a Procedure line)');
   bug(!mr.some((m: any) => !m.dosageInstruction?.length), 'MedicationRequest saved without dosage/frequency when none entered (no validation)');
@@ -225,6 +247,7 @@ test('09 billing checkout -> payment -> complete visitation', async () => {
   await page.waitForURL(/orders\/checkout\//, { timeout: 120_000 });
   await expect(page.getByText('Loading checkout...', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Payments', { exact: true })).toBeVisible();
+  await expect(page.getByText(facts.imagingLine, { exact: true }).first()).toBeVisible();
   await shot(page, '15-checkout');
   const body = await page.locator('main').last().innerText(); facts.checkoutText = body.slice(0, 1500);
   const totalMatch = body.match(/Total[^\d]*RM\s*([\d.,]+)/i); facts.checkoutTotal = totalMatch?.[1];

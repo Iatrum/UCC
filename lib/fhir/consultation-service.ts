@@ -47,7 +47,7 @@ export interface ConsultationData {
   chiefComplaint: string;
   diagnosis: string;
   billingItems?: import("@/lib/models").ProcedureRecord[];
-  procedures?: Array<{ name: string; price?: number; quantity?: number; orderIndex?: number; category?: OrderCategory; notes?: string; procedureId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
+  procedures?: Array<{ name: string; price?: number; quantity?: number; orderIndex?: number; category?: OrderCategory; notes?: string; procedureId?: string; signEntryId?: string; codingSystem?: string; codingCode?: string; codingDisplay?: string }>;
   notes?: string;
   progressNote?: string;
   prescriptions?: Array<{
@@ -87,6 +87,7 @@ export interface SavedConsultation extends ConsultationData {
   createdAt: Date;
 }
 
+const SIGN_ENTRY_IDENTIFIER_SYSTEM = 'https://ucc.emr/order/sign-entry';
 const ORDER_PRICE_EXTENSION_URL = 'https://ucc.emr/order/unit-price';
 const ORDER_QUANTITY_EXTENSION_URL = 'https://ucc.emr/order/quantity';
 const ORDER_CATEGORY_EXTENSION_URL = 'https://ucc.emr/order/category';
@@ -517,6 +518,7 @@ async function saveConsultationOnce(
         resourceType: 'Procedure',
         meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
         status: orderProcedureStatus(proc),
+        identifier: proc.signEntryId ? [{ system: SIGN_ENTRY_IDENTIFIER_SYSTEM, value: proc.signEntryId }] : undefined,
         subject: { reference: patientReference },
         encounter: { reference: `Encounter/${encounter.id}` },
         code: codeable,
@@ -640,7 +642,8 @@ export async function getConsultationFromMedplum(
       progressNote: (progressNote as any)?.valueString,
       billingItems: investigationBillItems(encounter),
       procedures: procedures.map((proc: Procedure) => ({
-        name: (proc as any).code?.text || 'Procedure',
+        name: proc.code?.text || 'Procedure',
+        signEntryId: proc.identifier?.find((id) => id.system === SIGN_ENTRY_IDENTIFIER_SYSTEM)?.value,
         notes: proc.note?.[0]?.text,
         quantity: decimalExtensionValue(proc, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
         orderIndex: integerExtensionValue(proc, ORDER_INDEX_EXTENSION_URL),
@@ -711,7 +714,8 @@ export function buildSavedConsultation(
     progressNote: (progressNote as any)?.valueString,
     billingItems: investigationBillItems(encounter),
     procedures: procedures.map((proc: Procedure) => ({
-      name: (proc as any).code?.text || 'Procedure',
+      name: proc.code?.text || 'Procedure',
+      signEntryId: proc.identifier?.find((id) => id.system === SIGN_ENTRY_IDENTIFIER_SYSTEM)?.value,
       notes: proc.note?.[0]?.text,
       quantity: decimalExtensionValue(proc, ORDER_QUANTITY_EXTENSION_URL) ?? 1,
       orderIndex: integerExtensionValue(proc, ORDER_INDEX_EXTENSION_URL),
@@ -1145,6 +1149,7 @@ export async function updateConsultationInMedplum(
         resourceType: 'Procedure',
         meta: (isTimeChitProcedure(proc) || isSignedDocumentNote(proc.notes)) && clinicTenant ? { accounts: [{ reference: clinicTenant.accountReference }] } : undefined,
         status: orderProcedureStatus(proc),
+        identifier: proc.signEntryId ? [{ system: SIGN_ENTRY_IDENTIFIER_SYSTEM, value: proc.signEntryId }] : undefined,
         subject: { reference: patientReference },
         encounter: { reference: encounterRef },
         code: codeable,

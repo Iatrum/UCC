@@ -1,5 +1,20 @@
 # CHANGELOG (plain language)
 
+## 2026-11-21 — Task 775 — Two leftover pilot-checklist items re-checked
+
+Both remaining items under the pilot checklist's "C4" row are now closed on the test system. Signing an imaging order still creates exactly one pending charge, even if the sign request is sent twice. The test clinic's data check now finds no problems: the one bad fake record seen earlier no longer exists, so this was stale test data and nothing in the app needed changing. What remains open for C4 is a clean full browser run and confirming the production server version.
+## 2026-11-20 — Task 741 — Pilot checklist evidence reviewed
+
+A second check of the pilot checklist confirmed its evidence and removed one wording that no record supported. The checklist now says which tests ran on dev, which changes have merged, and which pilot checks are still open. The launch criteria include preparing the pilot clinic and checking any changes required by the clinic's decisions.
+
+## 2026-11-20 — Task 740 — Pilot checklist refreshed
+
+The checklist records the Time Chit staff walk, merged security changes, and successful loopback invite. It also records the imaging billing and dev clinic audit passes. The live session-revocation rehearsal and the remaining release checks are still open.
+
+## 2026-11-20 — Task 738 — Imaging billing fix confirmed
+
+The pilot checklist now records that signing an imaging order keeps the charge available at checkout and records the procedure as still pending. The latest dev clinic data audit passed. The browser gate and production version check still need to pass before release.
+
 ## 2026-11-20 — Task 752 keeps unsaved consultation edits visible to the leave warning
 
 If staff edit a consultation while its saved draft is still loading, the leave warning now uses the same React state as the draft shown on screen.
