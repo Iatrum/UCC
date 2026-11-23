@@ -1056,25 +1056,24 @@ function TreatmentRows({
   }
 
   const showPreviewColumn = Boolean(onPreviewDocument);
+  // Phone: narrow Qty/Amount columns so the item name keeps room (the Preview button drops
+  // under the name); from `sm` up it is the original four/three column layout.
+  const columns = showPreviewColumn
+    ? "grid-cols-[1fr_32px_76px] sm:grid-cols-[1fr_80px_120px_112px]"
+    : "grid-cols-[1fr_32px_76px] sm:grid-cols-[1fr_80px_120px]";
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <div
-        className={`grid ${
-          showPreviewColumn ? "grid-cols-[1fr_80px_120px_112px]" : "grid-cols-[1fr_80px_120px]"
-        } bg-muted/60 px-4 py-2 text-xs font-medium text-muted-foreground`}
-      >
+      <div className={`grid ${columns} gap-x-2 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground sm:gap-x-0 sm:px-4`}>
         <span>Item</span>
         <span className="text-right">Qty</span>
         <span className="text-right">Amount</span>
-        {showPreviewColumn ? <span className="text-right">Preview</span> : null}
+        {showPreviewColumn ? <span className="hidden text-right sm:block">Preview</span> : null}
       </div>
       {items.map((item) => (
         <div
           key={item.id}
-          className={`grid ${
-            showPreviewColumn ? "grid-cols-[1fr_80px_120px_112px]" : "grid-cols-[1fr_80px_120px]"
-          } items-center border-t px-4 py-3 text-sm`}
+          className={`grid ${columns} items-center gap-x-2 border-t px-3 py-3 text-sm sm:gap-x-0 sm:px-4`}
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1089,12 +1088,13 @@ function TreatmentRows({
           <span className="text-right">{item.quantity}</span>
           <span className="text-right font-medium">{currency(item.quantity * item.price)}</span>
           {showPreviewColumn ? (
-            <div className="text-right">
+            <div className="col-span-3 text-left sm:col-span-1 sm:text-right">
               {item.documentDetails ? (
                 <Button
                   variant="outline"
                   size="sm"
                   type="button"
+                  className="mt-2 sm:mt-0"
                   onClick={() => onPreviewDocument?.(item)}
                 >
                   <Eye className="mr-2 h-4 w-4" />

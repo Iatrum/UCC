@@ -70,7 +70,7 @@ Severity: **High** = can mislead staff on money or clinical flow; **Med** = conf
 **Not covered / limits (plainly):**
 - *Purchases:* there is no purchases screen to walk. Inventory purchasing is switched off (`lib/purchasing.ts:1` `INVENTORY_PURCHASING_ENABLED = false`, commit `7976b08`); the UI was removed and only the API remains. I checked the API only (`GET /api/purchases` → 200 `[]`). Part 1's "purchases list is empty" should read "purchases UI does not exist".
 - *Negative stock / unmatched stock line at checkout:* not walked in the browser (needs a stock-0 item on a prepared consult). Findings 1 and 2 are from reading `app/api/billing/route.ts` and `checkout-client.tsx`, plus the existing e2e `dispense-checkout.spec.ts` that proves the API returns `stockNegative`.
-- Referral row in Documents: clicking the signed *Referral Letter* row did not open a viewer within 9 s in two runs (the MC row did, after a spinner). I could not tell whether that is a real bug or automation timing under `next dev`; listed as Low, unconfirmed.
+- Referral row in Documents: clicking the signed *Referral Letter* row did not open a viewer within 9 s in two Task 496 runs (the MC row did, after a spinner). **Low · shared preview path verified; original browser delay unverified (Task 806).** Code review and a focused unit check verified the shared signed-document preview path for Referral Letter, MC, and Time Chit. The historical nine-second browser delay and its cause remain UNVERIFIED (not measured again, not shown to be non-reproducible). [Task 806 research](research/task-806.md)
 - Timings are `next dev` first-compile and overstate production slowness.
 - Part 1 items re-checked on `66f596b`: #4 (billing row not clickable) **fixed** (there is now an "Open checkout" button); #9 (inventory banner) **fixed** (5 names + "24 more", "items" wording); #3 (patient total) now shows 1,878, so the cap is gone; #6/#7/#8 **still present** (history table clipped on the right, "Total visits 1 / Last completed visit today" right after Sign, before checkout).
 
@@ -238,3 +238,44 @@ Live walk (dev server :3760, killed after) plus code check. Details: `.ai/resear
 - **New 36. Patient profile "Medical alert: None" (green) when allergies were never recorded: FIXED (Task 760).** Now "Allergies not recorded" (grey); explicit NKDA shows "No known allergies".
 - **New 37. Check-in page red "Medical Alerts" banner for an NKDA entry: FIXED (Task 760).** Banner only for real allergies. Shared helper `lib/patients/allergy-status.ts`.
 - **New 38. Appointments tiles count past bookings while the list shows only upcoming: wording FIXED (Task 760)** in the list empty state. Tile logic (`appointments-root.tsx`) left alone because PR #354 edits that file; revisit after it merges.
+
+
+---
+
+# Task 789: dispensing at checkout, MC / Time Chit / referral, Lab-tab result, `/admin`, phone width (2026-11-22)
+
+**How this was done.** `origin/dev` at `239510c`, one dev server (`next dev --webpack`, port 3789, killed afterwards), dev Medplum `127.0.0.1:8113`, fake data only. Roles used: `doctor@ucc.local` (clinic `demo`) and the local Medplum admin (`isAdmin:true`). Playwright at 1440x900 and 390x844 (browser timezone Asia/Kuala_Lumpur). Screenshots: `.ai/ux-shots/task789/` (fake names only). Notes: `.ai/research/task-789.md`.
+
+**Walked end to end.** New fake patient + consult -> composer (two medicines with stock 0 and 3, MC, referral, Time Chit; observed only) -> Sign -> Documents tab (all three viewers) -> `/orders` -> checkout (phone + desktop, preview bill, pay, confirm, complete) -> post-checkout notice -> Inventory (negative stock flag) -> `/api/purchases` -> a second fake patient with a signed Full Blood Count order, then a fake result (incl. one *critical* value) pushed through `/api/labs/receive` with a throw-away fake analyser Device (deleted afterwards) -> Lab tab empty / result at both widths -> composer shows no result -> all `/admin` pages as admin.
+
+**Not covered (plainly):**
+- *Purchases screen:* it still does not exist (`GET /api/purchases` 200 with an empty `purchaseOrders` list in the audit clinic, `POST` 403 "Inventory purchasing is temporarily disabled"). Nothing to walk.
+- Only two roles. Not walked: nurse / clinic staff, clinic admin (Time Chit staff has its own e2e `time-chit-staff.spec.ts`).
+- Not walked: *Void document* confirm, MC/referral *edit*, real PDF print/save, invoice *void*, the billing-exception Task path for an unmatched stock line, `/admin` branch edit + module toggles, user invite/edit submit (admin has its own e2e).
+- The lab result was injected by API with a fake analyser, not a real device; no live POCT ordering (POCT untouched).
+- `next dev` timings are cold compiles and say nothing about production.
+
+## High
+None found. Stock, documents and checkout money lines all behaved correctly (stock -1 flagged in Inventory and in the post-checkout banner).
+
+## Medium
+1. **FIXED (this task). Lab tab overflows a phone screen.** With a result present, the Laboratory Report card was ~650 px wide on a 390 px phone: the title, "Critical Results Detected" text and the Interpretation column were cut off and the "Last updated ... Refresh" line ran off the screen. Cause: the view is a grid item in a one-column grid (`patient-profile-workspace.tsx:977`) whose automatic minimum width follows the table. Fix: `min-w-0` on the view root so the table scrolls inside its card. `components/labs/lab-results-view.tsx` (root div). Before/after: `before-lab-table-m.png`, `after-lab-table-m.png`.
+2. **FIXED (this task). Checkout item rows are cramped on a phone.** Qty and Amount took 200 px of a ~250 px card, so the item name wrapped one word per line and the stock line ("1 tablet · stock 0 (below billed 1)") broke into single words; the Amount column ran against the edge. Fix: narrow Qty/Amount columns and smaller padding below `sm`; the Documents-tab Preview button drops under the name on phone. Desktop layout unchanged. `app/(routes)/orders/checkout/[consultationId]/checkout-client.tsx` (`TreatmentRows`). Before/after: `before-checkout-items-m.png`, `after-checkout-items-m.png`, `after-checkout-docs-m.png`.
+3. **WORDING FIXED (this task). Lab tab says "No laboratory tests have been ordered" right after a Full Blood Count was signed.** The Lab tab only lists pending *POCT* orders, so an ordinary lab order with no result yet looks like it was never ordered. New text: "No lab results have been received for this patient yet. Results appear here once they arrive." (`lab-results-view.tsx`, empty state). **Not done:** actually listing pending non-POCT lab orders is a feature/product decision.
+4. **Inventory "Add medication" button is clipped off the right edge on a phone** (`app/(routes)/inventory/page.tsx`, header action row next to "Import CSV"). Suggested fix: let the row wrap (`flex-wrap`) on small screens. *Not changed: that file is edited by an open PR.* `30-inventory-m.png`.
+5. **Admin pages overflow on a phone.** `/admin/clinics` (content to ~493 px), `/admin/organisation` (~526 px), `/admin/settings` (the "Create Medplum client credentials" button is cut off, ~408 px). Suggested fix: `min-w-0`/`flex-wrap`/`whitespace-normal` on the row/card actions. *Not changed: all three pages are edited by open PRs.* `50-admin_admin_*-m.png`. (Admin is a desktop tool, so rated Medium not High.)
+
+## Low
+6. **Lab report dates use the browser locale** ("Ordered: 11/23/2026"), while documents use `dd MMM yyyy` (`lib/clinic-dates.ts`). `components/labs/lab-results-view.tsx` (`new Date(...).toLocaleDateString()` in the report header). Suggest the shared clinic formatter. Not changed (kept this PR to layout/wording).
+7. **Hydration warning observed on the patient page.** At ~00:30 MYT with the browser in Asia/Kuala_Lumpur and the server in UTC, Next logged "Hydration failed because the server rendered text didn't match the client" and showed the dev "1 Issue" badge. A server/client date mismatch is a hypothesis. The element, cause and affected time window are unconfirmed.
+8. **Completed visit's checkout page still shows the amber "stock -1 (below billed 1)" hint** (`checkout-client.tsx` `StockHint`). It compares current stock (already reduced by this very sale) with the billed quantity, so it reads like a new problem. Suggest hiding the hint once the invoice is saved.
+9. **Phone: the first patient tab ("Consultation History") is clipped** at the left of the tab strip when another tab is selected (`patient-profile-workspace.tsx`, open-PR file). The sidebar takes 64 px of 390 px on phones (nav, deliberately untouched).
+10. **MC viewer prints a dashed "Clinic Stamp" box.** Fine if that is where a stamp goes; if clinics do not stamp, it prints as an empty frame. Template option, not a bug.
+11. Fake-data leftovers worth knowing when reading screenshots: the clinic name on documents is `e2e-...-organisation-edited` (an admin e2e run renamed the dev org) and the composer's POCT list shows a truncated fake analyser name. Not product issues.
+
+## Working well
+- Composer: MC, referral and Time Chit complete cleanly (doctor name/referral target required), nothing shows lab results or a critical warning there (e2e `lab results never render in the consultation composer` passes).
+- Documents tab: rows read "Issued 23 Nov 2026 · Signed", the action is "Void document" (not a one-click delete), all three viewers open with a preview and "Print / Save PDF"; Time Chit viewer fits a phone.
+- Checkout: "Assigned on completion" invoice number, per-line "tablet · stock N", amber warning for stock below quantity, e-Invoice disabled with reason, "Collect the full total to enable completion", confirm text "saves the invoice and deducts stock for 2 items". After completion `/orders` shows "Invoice saved, but check stock - Stock is now negative for: ...". Inventory shows "Negative stock".
+- Lab tab with a real result: table, status, interpretation, conclusion; the critical banner is only here, not in the composer.
+- `/admin` as admin: all seven pages load with no 4xx/5xx; Users shows "Assigned to a clinic: 12 of 19" and a search box; Settings shows "Medplum Console: Not configured" (no production link).
