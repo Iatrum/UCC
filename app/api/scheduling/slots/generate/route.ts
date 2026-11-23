@@ -23,6 +23,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing start/end fields" }, { status: 400 });
     }
 
+    const startTime = new Date(start).getTime();
+    const endTime = new Date(end).getTime();
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime) {
+      return NextResponse.json({ error: "Invalid slot generation window" }, { status: 400 });
+    }
+
+    const slotDurationMinutes = Number(durationMinutes);
+    if (!Number.isFinite(slotDurationMinutes) || slotDurationMinutes <= 0) {
+      return NextResponse.json({ error: "durationMinutes must be a positive number" }, { status: 400 });
+    }
+
+    const durationMs = slotDurationMinutes * 60_000;
+    const firstSlotEnd = new Date(startTime + durationMs).getTime();
+    if (durationMs < 1 || !Number.isFinite(firstSlotEnd)) {
+      return NextResponse.json({ error: "durationMinutes is out of range" }, { status: 400 });
+    }
+
     let resolvedScheduleId = scheduleId as string | undefined;
     if (!resolvedScheduleId) {
       if (!practitionerId) {
@@ -40,7 +57,7 @@ export async function POST(request: NextRequest) {
       scheduleId: resolvedScheduleId,
       start,
       end,
-      durationMinutes: Number(durationMinutes),
+      durationMinutes: slotDurationMinutes,
     });
 
     return NextResponse.json({

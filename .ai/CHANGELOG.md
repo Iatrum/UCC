@@ -25,6 +25,8 @@ Checked the whole path: form, `/api/feedback`, GitHub issue creation and the sav
 Reviewed every API route and server library changed in the last 3 days (sign-in, clinic separation, cross-site request protection, input checks, error messages, secrets). Two small hardening fixes: the sign-in API now refuses a "go to after login" address that points to another website, and the invite-user API no longer shows internal error text to the caller. Nothing else needed changing; no effect on the consultation composer, Lab or POCT. Notes: `.ai/research/task-742.md`.
 ## 2026-11-22 — Task 797: API security sweep
 Checked all 77 API routes (table in `.ai/research/task-797.md`). Fixed: a clinic user could make the app delete another patient's stored file via a crafted document record; AI routes no longer echo provider error text; a log line that printed a patient's consultation summary is gone; the practitioner list no longer returns e-mails or other clinics' memberships. Eight smaller gaps are written up with suggested fixes.
+## 2026-11-20 — Task 744: more safety-net tests for scheduling, catalog and clinic scoping
+Added unit tests for three under-tested areas: the appointment service (booking, reading, upcoming lists), the clinical catalog (lab/imaging prices and clinic isolation) and server-side clinic detection from the web address. No app behaviour changed and no bug was found. Notes with before/after numbers: `.ai/research/task-744.md`.
 
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
@@ -266,6 +268,7 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 
 - Task 720: CSRF Origin guard for mutating `/api/*` (proxy.ts + lib/security/csrf.ts, device/Twilio routes exempt); `GET /api/fhir/register-extensions` -> 405. See `.ai/research/task-720.md`.
 - Task 743 (review of 742): found the login redirect fix was incomplete. On the admin host a link like `/admin//evil.example` still turned into `//evil.example` after the `/admin` prefix was stripped. Fixed in `lib/admin-routes.ts` and guarded again in the login route. Normal admin and clinic redirects are unchanged. Tests added.
+- 2026-11-20 Task 745: Reviewed the Task 744 test PR. The tests check real behaviour (broke the clinic filters on purpose and tests failed). Tightened one weak check so it needs a real 'forbidden' error, and added a no-clinic case. Coverage numbers confirmed. Notes: .ai/REVIEW-task744.md
 
 - 2026-11-20 Task 760 (UX): Re-checked the open UX findings against today's app: nothing Medium/High is still open. Fixed three small things staff could misread: the patient page no longer shows a green "None" when allergies were never asked (it says "Allergies not recorded"); the check-in page no longer shows a red allergy alert for "No known drug allergies"; the empty Appointments list now explains that past bookings are counted in the tiles but not listed. Notes: .ai/research/task-760.md
 
