@@ -99,7 +99,6 @@ async function cmdHeartbeat(deviceId: string, flags: Record<string, string>) {
     throw new Error(`--interval must be a positive number under ${XRAY_HEARTBEAT_MAX_AGE}ms`);
   }
   console.log(`Device/${deviceId} heartbeat loop every ${intervalMs}ms (Ctrl-C to stop)`);
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     await beat(deviceId, true);
     console.log(`  beat ${new Date().toISOString()}`);
