@@ -154,6 +154,24 @@ Count the completed Time Chit staff walk as dev evidence. Task 739’s browser g
 Keep A7 and D4 as dev passes. Keep B5 with the owner and C3 blocked on an authorized dev operator login. C4 requires browser coverage on the release candidate and rehearsal on the exact production Medplum version. Launch also depends on the applicable onboarding items in section E and any work required by A8–A10. [Task 741 review](REVIEW-task740.md)
 
 Second Task 741 pass: no status changes. The only edit is wording ("phase-1" dropped because no record names it).
+## D-742 — Server-side sanitising of redirect targets and 500 messages (2026-11-20, Task 742)
+Server routes must not trust client-side sanitising: `/api/auth/login` runs `safeNext` on `next` itself, and routes return a fixed
+message for unexpected errors (known 4xx outcomes with fixed text may still be echoed). Left as is, with reasons in
+`.ai/research/task-742.md`: `export-to-medplum` error echo (bearer-secret only), requests with no Origin and no Fetch-Metadata pass the CSRF guard (non-browser), 10 s auth memo grace.
+
+## D-743 — Sanitise the final redirect, not only the input (2026-11-20, Task 743)
+Path rewriting helpers (`normalizeAdminPath`) can create a new `//host` from a safe-looking input, so the login route checks the
+result with `safeNext` as well as the input. Invite 409 echo kept: the text is fixed in `admin-service.ts` (upstream text matching
+exist/duplicate/email is already replaced by a fixed sentence there).
+
+## D-750 — Feedback text is untrusted markdown (2026-11-20, Task 750)
+Free text from the feedback form is scrubbed for patient data, then made safe for GitHub (mentions defused, `<` and control/bidi characters removed) and
+placed inside a code fence in the issue body, because an AI triager may read the issue. The route gives a fixed message for unexpected 500s instead of
+`handleRouteError`'s `error.message` echo (the shared helper is unchanged; see PR body for the open question). Per-IP limit is 30/min (clinics share NAT), per-user 5/min.
+
+## D-751 — Enforce the feedback body cap while reading it (2026-11-20)
+
+Reuse the bounded JSON reader for the 1,600,000-byte cap. Key the 30-request window by the Vercel client address or the address appended by the trusted self-hosted ingress. The five-request window is keyed by authenticated clinic and profile. Both windows are process-local. GitHub renders report text in literal code blocks. Automated triage must treat it as untrusted input.
 ## D-746 — Phone layout fixes use min-w-0 / grid-cols-1 and phone-only tap size (2026-11-20, Task 746)
 
 Grid and flex children default to `min-width:auto`, so one long unbroken name (a subdomain, an organisation name) widened the whole admin card past the screen. We add `grid-cols-1` (which is `minmax(0,1fr)`) and `min-w-0` instead of hiding overflow, and let headers `flex-wrap`. Small controls get `min-h-10 sm:min-h-0` so only phones change (the 40px target); desktop sizing is untouched. Not changed on purpose: the sidebar/admin rail (out of scope), tables that scroll sideways inside their own box, and `truncate`d text that already has a title. Details: `.ai/research/task-746.md`.
@@ -172,6 +190,22 @@ Clinic domains and Vercel previews can save through their own origin. Cross-orig
 ## D-727 — Slot-generation foreign-schedule test updated, not the code (2026-11-20, Task 727)
 The failing test expected the pre-Task-645 message `does not belong`. The code correctly throws `ForbiddenError('Schedule unavailable in current clinic')` (403, no write) and the wording is deliberate (Task 422: don't confirm foreign resources). Proved by running the test: it threw, only the substring differed. Test now asserts type, exact message and zero writes, plus a no-identifier case. Rejected: reverting the message (would reintroduce a 500 and leak existence). See `.ai/research/task-727.md`.
 
+## D-744 — Coverage tests target business logic, not the lowest raw number (2026-11-20, Task 744)
+Lowest-coverage lib files such as `logging.ts`, `admin-routes.ts` and `structure-definitions.ts` are plumbing/config, so they were skipped. Chosen: `lib/fhir/catalog-service.ts` (billing catalog prices, clinic isolation), `lib/fhir/appointment-service.ts` (scheduling) and `lib/server/clinic.ts` (clinic scoping). Tests use fake Medplum clients and assert zero writes for foreign-clinic input. Composer and X-ray UI were excluded. No production code changed.
+
+## D-745 — Approve Task 744 tests after hardening (2026-11-20, Task 745)
+Accepted as-is apart from replacing `rejects.toBeDefined()` with a forbidden-error assertion. Kept the `next/headers` module mock because it is the only way to unit-test server clinic resolution; risk recorded in .ai/REVIEW-task744.md.
+
+## D-755 — Accept Task 754 scheduling route coverage after review (2026-11-20, Task 755)
+
+Keep the real Next.js handlers and scheduling services under test with a two-clinic in-memory Medplum adapter. Assert the public denial responses, zero writes for foreign records, and clinic-tagged writes on success. Validate the slot window and first slot end before the route can create a schedule. See [.ai/REVIEW-task754.md](REVIEW-task754.md) for verification results.
+## D-769 — Foreign schedule slot generation checks the error type (2026-11-20)
+Keep the service's neutral error wording. The unit test now uses a schedule with both identifiers assigned to another clinic and checks for `ForbiddenError` (HTTP 403 at the route) and zero writes. The assertion tolerates wording changes. See `.ai/research/task-769.md`.
+## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
+The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
+
+## D-20261123 — No filler work; few themed PRs (2026-11-23, Hidayat)
+Too many small PRs caused constant merge conflicts and conflict-fix tasks. Decision: agents only do needed work (real bugs, security, pilot blockers, measured perf). Docs-only, measurement-only, coverage-only, re-audit and review-of-review tasks are not queued. Open work is kept in at most 3-4 themed PRs (security, app fixes/perf, tests); follow-up commits go onto the matching combined branch instead of opening new PRs. Idle agents and unused quota are acceptable.
 ## Task 767: table scroll hint in the shared Table
 Decision: add the hint once in `components/ui/table.tsx` (wrapper + `md:hidden` gradient overlay, state from scroll/ResizeObserver) so all tables get it. Why: smallest safe change, no per-page edits, nothing in the composer or nav touched. Rejected: sticky name column (can cover content on narrow screens, per-table work) and card layout below `sm` (needs a design decision, see #23/#33). The existing `data-slot=table-container` stays on the scrolling element; PR #354 does not touch this file.
 ## D-771 — Manual a11y pass, small aria/contrast fixes only (2026-11-20, Task 771)
