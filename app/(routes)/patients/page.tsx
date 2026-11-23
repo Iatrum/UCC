@@ -22,7 +22,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useMedplumAuth } from "@/lib/auth-medplum";
 import { describeFetchError, resolveLoadView, showStaleBanner } from "@/lib/load-state";
 
 const PAGE_SIZE = 25;
@@ -39,7 +38,6 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0); // Retry button re-runs the list load
-  const { loading: authLoading } = useMedplumAuth();
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState<number | null>(null);
@@ -58,18 +56,15 @@ export default function PatientsPage() {
   }, [searchQuery]);
 
   // Real clinic-scoped counts (server: _summary=count + _total=accurate)
+  // Both reads authenticate by session cookie on the server, so they start on mount instead of
+  // waiting for the browser auth round-trip (/api/auth/me) to finish (Task 791).
   useEffect(() => {
-    if (authLoading) return;
     getPatientStats()
       .then((s) => setStats((prev) => ({ ...prev, total: s.total ?? -1, new: s.newThisMonth ?? -1 })))
       .catch((err) => console.error('Error loading patient stats:', err));
-  }, [authLoading]);
+  }, []);
 
   useEffect(() => {
-    if (authLoading) {
-      return;
-    }
-
     let cancelled = false;
     async function loadPatients() {
       setLoading(true);
@@ -118,7 +113,7 @@ export default function PatientsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, page, debouncedQuery, reloadKey]);
+  }, [page, debouncedQuery, reloadKey]);
 
   // Search is server-side; the list is already filtered.
   const filteredPatients = patients;
