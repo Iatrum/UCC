@@ -1,6 +1,6 @@
 # Task 806 — Signed Referral Letter preview
 
-**Verified-not-reproducible** on `origin/dev` at `eba7551` by code review and a focused unit check with synthetic documents. The original nine-second browser observation remains unexplained.
+**Shared preview path verified; original browser delay unverified.** On `origin/dev` at `eba7551`, code review and a focused unit check with synthetic documents verified the shared signed-document preview path. The original nine-second browser observation and its cause remain UNVERIFIED: the unit cases do not cover row clicks or elapsed browser time, and #356's Chromium check used intercepted requests.
 
 - [PR #356](https://github.com/Iatrum/UCC/pull/356/files) at `7aa1784` updates loading announcements, busy state, and stale-response handling in the same patient document viewer. Its review records a successful Chromium check of signed Referral Letter previews.
 - In `app/(routes)/patients/[id]/referral-mc-section.tsx`, one `signedDocuments.map` binds all three row buttons to `openSignedDocumentViewer`. The handler sets `viewingSigned` before awaiting template or organization data, which opens the shared dialog and starts its loading state. `lib/clinical-documents.ts` recognizes `referral`, `mc`, and `time-chit` in the signed Procedure note, with fallbacks to catalogue ID or name. [Next.js 16](https://nextjs.org/docs/app/guides/upgrading/version-16) · [React event handlers](https://react.dev/learn/responding-to-events) · [FHIR R4 Procedure](https://hl7.org/fhir/R4/procedure.html)
