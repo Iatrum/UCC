@@ -130,6 +130,8 @@ admin module list), and the `isModuleEnabledForClinic("time-chit")` gates are go
 composer and `lib/fhir/time-chit-guard.ts`. The guard still requires a clinic scope and validates details.
 Legacy org extensions listing `"time-chit"` are harmless: `normalizeEnabledModuleIds` drops unknown ids.
 Earlier notes (PLAN/REVIEW/research for Task 140) describing a default-off module are historical.
+- 2026-11-20 D-748: UX item 18 (bare spinner in MC viewer) was already fixed in Task 506; `role="status"` on the message is the accessible busy signal, so no `aria-busy` or new test added. Docs-only PR, no code change.
+- 2026-11-20 D-749: The Task 506 text resolves the original bare spinner finding. The patient viewer now includes loading in the initial dialog description, keeps a polite status mounted for retry, and marks the preview region busy. The latest request owns preview state, so closing and reopening a dialog cannot display an older document. Scope is the patient Documents tab.
 
 ## D-738 — Close the imaging billing defect within C4 (2026-11-20)
 
@@ -170,6 +172,13 @@ placed inside a code fence in the issue body, because an AI triager may read the
 ## D-751 — Enforce the feedback body cap while reading it (2026-11-20)
 
 Reuse the bounded JSON reader for the 1,600,000-byte cap. Key the 30-request window by the Vercel client address or the address appended by the trusted self-hosted ingress. The five-request window is keyed by authenticated clinic and profile. Both windows are process-local. GitHub renders report text in literal code blocks. Automated triage must treat it as untrusted input.
+## D-746 — Phone layout fixes use min-w-0 / grid-cols-1 and phone-only tap size (2026-11-20, Task 746)
+
+Grid and flex children default to `min-width:auto`, so one long unbroken name (a subdomain, an organisation name) widened the whole admin card past the screen. We add `grid-cols-1` (which is `minmax(0,1fr)`) and `min-w-0` instead of hiding overflow, and let headers `flex-wrap`. Small controls get `min-h-10 sm:min-h-0` so only phones change (the 40px target); desktop sizing is untouched. Not changed on purpose: the sidebar/admin rail (out of scope), tables that scroll sideways inside their own box, and `truncate`d text that already has a title. Details: `.ai/research/task-746.md`.
+
+## D-747 — Phone-only sizing must reset at the breakpoint where the base component changes (2026-11-20, Task 747)
+
+Review of D-746: the shared `Button` has `h-11 md:h-8` (sm). An unconditional `min-h-9` on a button changes desktop (32px -> 36px). Rule: a phone min-height on a `Button` is `min-h-11 md:min-h-0` (not `sm:`, since the component switches at `md`); on raw `<button>`s `min-h-10 sm:min-h-0` is fine. Admin pages need an admin session for pixel comparison; until then review them by class. Pre-existing: `admin.spec.ts` create-form rows fail identically on `origin/dev` in this dev environment (not caused by Task 746).
 
 ## D-734 — dashboard-load-errors failures were not reproducible; no change (2026-11-20, Task 734)
 
@@ -197,5 +206,14 @@ The profile header showed a green "None" for patients with an empty allergy list
 
 ## D-20261123 — No filler work; few themed PRs (2026-11-23, Hidayat)
 Too many small PRs caused constant merge conflicts and conflict-fix tasks. Decision: agents only do needed work (real bugs, security, pilot blockers, measured perf). Docs-only, measurement-only, coverage-only, re-audit and review-of-review tasks are not queued. Open work is kept in at most 3-4 themed PRs (security, app fixes/perf, tests); follow-up commits go onto the matching combined branch instead of opening new PRs. Idle agents and unused quota are acceptable.
+## Task 767: table scroll hint in the shared Table
+Decision: add the hint once in `components/ui/table.tsx` (wrapper + `md:hidden` gradient overlay, state from scroll/ResizeObserver) so all tables get it. Why: smallest safe change, no per-page edits, nothing in the composer or nav touched. Rejected: sticky name column (can cover content on narrow screens, per-table work) and card layout below `sm` (needs a design decision, see #23/#33). The existing `data-slot=table-container` stays on the scrolling element; PR #354 does not touch this file.
+## D-771 — Manual a11y pass, small aria/contrast fixes only (2026-11-20, Task 771)
+axe-core is not a dependency, so no new package was added for one task; a manual checklist plus one Playwright DOM audit was used instead. Fixes are limited to aria labels, one colour class and two live-region roles. The sidebar collapse button, shared table, calendar and patient profile are deferred because they are out of scope or edited by open PRs (see `.ai/A11Y-FINDINGS.md`).
+## D-760 — "No allergy recorded" is not "no allergies" (2026-11-20, Task 760)
+The profile header showed a green "None" for patients with an empty allergy list, and the check-in page raised a red alert for explicit NKDA text. Decision: three states via `getAllergyStatus` (alert / none-known / not-recorded); not-recorded is grey and worded as such. Appointments tile counts were not changed (file owned by PR #354); only the list's empty-state wording was.
+
+- Task 814: re-verified open UX-FINDINGS items on dev eba7551. Only sidebar, dead purchasing panels, table scroll hint (#361/#362) and appointments tiles (#354) remain; the last two are skipped because open PRs edit those files. Fixed two real POCT page issues (hardcoded "Abnormal 0" tile removed; stat tiles compact on phones). See `.ai/research/task-814.md`.
 ## D-809 — Hydration perf: attack the shared baseline first, never the composer (2026-11-23, Task 809, plan only)
 Measured on origin/dev `eba7551` (production webpack build): ~320-340 KB gzip JS (29-32 files) loads on EVERY staff screen; route-specific code is only 1-40 KB, so no single page is heavy. About 78 KB of the baseline (zod+react-hook-form 35, `@medplum/core` 31, date-fns/cmdk/popover 12) is not executed on list/read screens. Decision: rank (1) stop those libs landing in the shared group, (2) drop the unused `MedplumClient` from the root provider, (3) server-render the patients list first page, before any per-page work. The tiptap/prosemirror stack (~250 KB gzip) is already dynamic on the profile and, with the sidebar/nav, is OUT OF SCOPE. No code changed. Plan: `.ai/plans/PLAN-task-809-hydration-perf.md`.
+- 2026-11-23 D-812 (Task 812, pilot A7): Extended the existing `time-chit-staff.spec.ts` instead of adding a new spec, so one staff walk covers issue, Documents, preview, print and foreign-clinic denial. The letterhead assertion compares with `/api/organization` (the record MC also prints), not the per-clinic Organization, because that is how the shared template works; changing it is a product decision, logged as an observation, not a bug fix. Ran against `next start` on :3812 using `http://localhost` (Secure cookies are not sent to 127.0.0.1 over http). No app code changed.

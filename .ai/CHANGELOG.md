@@ -29,6 +29,20 @@ Checked all 77 API routes (table in `.ai/research/task-797.md`). Fixed: a clinic
 Added unit tests for three under-tested areas: the appointment service (booking, reading, upcoming lists), the clinical catalog (lab/imaging prices and clinic isolation) and server-side clinic detection from the web address. No app behaviour changed and no bug was found. Notes with before/after numbers: `.ai/research/task-744.md`.
 ## 2026-11-20 — Task 769 tests slot generation across clinics
 The scheduling test now verifies that an attempt to generate slots for a schedule explicitly assigned to another clinic is refused before any records are written.
+## 2026-11-20 — Task 747: review of the phone layout pass (Task 746)
+Checked the Settings/Admin/Appointments/Analytics/Inventory phone fixes. On a laptop these pages look the same as before, and no menu or sidebar was touched. One small slip was fixed: the "Create Medplum client credentials" button on the admin Settings page would have become slightly taller on a laptop; it is back to its normal size. Report: `.ai/REVIEW-task746.md`.
+
+## 2026-11-20 — Task 746: Settings, Admin, Appointments, Analytics and Inventory fit a phone
+On a phone, the admin pages (Organisations, Branches, Users, Settings) no longer push buttons and names off the right edge, the Appointments calendar toggle (Month/Week/Day) is fully visible, the Analytics tabs and date ranges show every option without sideways scrolling, and the Inventory stock tiles are readable. Small buttons on these pages are taller on a phone so they are easier to tap. Desktop looks the same. No menu, feature or POCT/X-ray change. Notes and before/after screenshots: `.ai/research/task-746.md`.
+## 2026-11-20 — Task 749 review of Task 748
+The patient document viewer announces preview preparation, marks the preview area busy, and ignores responses from previews that staff have already closed. This covers signed MCs, Time Chits and Referral Letters, plus legacy referrals.
+
+## 2026-11-20 — Task 748: document viewer loading message (already fixed)
+Checked the MC, Time Chit and Referral viewers: each already shows "Preparing preview..." while the PDF loads (added in Task 506). The UX note was marked verified fixed. Docs only, no app change.
+## 2026-11-23 — Task 812: Time Chit checked end to end as a normal staff user
+A test now walks the Time Chit the way clinic staff do (not an admin, fake patient only): open the visit, issue the Time Chit, find it in the patient's documents, and check the preview and print view show the right patient, clinic name, doctor and time range. It also proves a user from another clinic cannot open it. Everything passed and no fault was found, so the app itself was not changed.
+## 2026-11-22 — Task 783: full browser gate re-run on current dev
+The full browser test suite (101 tests) ran against a production build and the fake-data dev server: 98 passed, 1 failed, 2 skipped. The two problems from Task 722 are gone. The one failure was a test timing problem, not an app bug: the test switched the X-ray module on and sent a study before the app's 5-second module cache caught up. The test now waits for that case only. No app behaviour changed. Details: `.ai/research/task-783.md`.
 
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
@@ -272,7 +286,12 @@ Validation: 36 unit tests (fake fixtures), TypeScript, and one full apply/rollba
 - Task 743 (review of 742): found the login redirect fix was incomplete. On the admin host a link like `/admin//evil.example` still turned into `//evil.example` after the `/admin` prefix was stripped. Fixed in `lib/admin-routes.ts` and guarded again in the login route. Normal admin and clinic redirects are unchanged. Tests added.
 - 2026-11-20 Task 745: Reviewed the Task 744 test PR. The tests check real behaviour (broke the clinic filters on purpose and tests failed). Tightened one weak check so it needs a real 'forbidden' error, and added a no-clinic case. Coverage numbers confirmed. Notes: .ai/REVIEW-task744.md
 
+## Task 767: scroll hint on tables (phone)
+On a phone, long tables (Queue, Patients, Appointments and every other table) now show a soft shadow on the right edge when there are more columns to swipe to. The shadow goes away once you reach the end. On tablets and desktop nothing changes. Names stay readable in the first column.
+- Task 771: accessibility pass on login, queue, patients, appointments. Screen readers now hear a name for the patients search box, the queue row menu button and the appointment status dropdown. Error text on the patients list is darker for readability, and two messages are announced automatically. No layout or behaviour change. Findings: `.ai/A11Y-FINDINGS.md`.
 - 2026-11-20 Task 760 (UX): Re-checked the open UX findings against today's app: nothing Medium/High is still open. Fixed three small things staff could misread: the patient page no longer shows a green "None" when allergies were never asked (it says "Allergies not recorded"); the check-in page no longer shows a red allergy alert for "No known drug allergies"; the empty Appointments list now explains that past bookings are counted in the tiles but not listed. Notes: .ai/research/task-760.md
 
 ## Task 801 — cross-review of PR #366 (Task 797)
 - Reviewed storagePath confinement, practitioner minimisation, error-echo removal; no blocking issue.
+## Task 814 (2026-11-23)
+- UX: POCT page no longer shows a hardcoded "Abnormal 0" tile; stat tiles are compact (3 in a row) on phones. UX-FINDINGS re-verified, notes in `.ai/research/task-814.md`.
