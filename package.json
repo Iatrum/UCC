@@ -32,7 +32,7 @@
     "staging:audit": "bun run scripts/staging/audit-exposure.ts"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.4.0",
+    "@hookform/resolvers": "^7.0.8",
     "@medplum/core": "^5.2.18",
     "@medplum/fhirtypes": "^5.2.18",
     "@radix-ui/react-alert-dialog": "^1.2.1",
