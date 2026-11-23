@@ -85,7 +85,7 @@ export default async function POCTPage() {
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 p-3 pb-2 sm:p-6 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Today&apos;s Tests</CardTitle>
+            <CardTitle className="min-w-0 text-xs font-medium sm:text-sm">Today&apos;s Tests</CardTitle>
             <TestTube className="hidden h-4 w-4 sm:block text-muted-foreground" />
           </CardHeader>
           <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
@@ -96,7 +96,7 @@ export default async function POCTPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 p-3 pb-2 sm:p-6 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="min-w-0 text-xs font-medium sm:text-sm">Pending</CardTitle>
             <Clock className="hidden h-4 w-4 sm:block text-yellow-500" />
           </CardHeader>
           <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
@@ -107,7 +107,7 @@ export default async function POCTPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 p-3 pb-2 sm:p-6 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
+            <CardTitle className="min-w-0 text-xs font-medium sm:text-sm">Completed</CardTitle>
             <CheckCircle className="hidden h-4 w-4 sm:block text-green-500" />
           </CardHeader>
           <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
