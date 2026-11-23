@@ -26,7 +26,7 @@ Legend: **DONE** = finished, with evidence. **CODE** = an agent can do it (small
 | A4 | `/api/labs/receive`: 400 on missing status, 404 on unknown/foreign order, no writes | DONE | Tasks 566/572; PILOT-CHECK #6 |
 | A5 | Admin/login redirect loop, rate-limit message, stock 500 | DONE | Task 412; PILOT-CHECK #9 |
 | A6 | Time Chit core, shares template with MC | DONE | D-527, Task 549 / #307 |
-| A7 | Time Chit walked once as a staff user (only unit/e2e specs so far) | CODE | Add it to a Playwright staff walk on dev (fake data); `tests/unit/time-chit.test.ts` exists |
+| A7 | Time Chit walked once as a staff user | DONE (dev, Task 812) | `e2e/tests/time-chit-staff.spec.ts` (non-admin, fake data) passes against a production build: issue from the visit, saved once, appears in Documents, preview + print show patient, letterhead, 09:00-10:30 (1.5 hours) and doctor, and a foreign-clinic user gets 403/404 (app API and raw FHIR). No bug found. Notes `.ai/research/task-812.md`. Observation: letterhead is the practice-level organisation (shared with MC) |
 | A8 | PILOT-CHECK #3: what "Revenue" means in analytics (ordered lines vs invoiced/paid) | OWNER | Product decision; then CODE to compute from Invoice totals. Do not change before the decision |
 | A9 | PILOT-CHECK #5: consultation fee price (default is RM 0.00) | OWNER | Clinic sets the price/default; then CODE (`app/(routes)/patients/[id]/patient-profile-workspace.tsx:79-83` (`unitPrice: 0`), `components/billing/bill-modal.tsx:154`) |
 | A10 | PILOT-CHECK #7: post-payment receipt view required? (today: toast + Bill preview) | OWNER | Clinic decision; then CODE if yes |

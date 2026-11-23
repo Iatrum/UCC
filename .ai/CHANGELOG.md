@@ -1,5 +1,8 @@
 # CHANGELOG (plain language)
 
+## 2026-11-23 — Task 812: Time Chit checked end to end as a normal staff user
+A test now walks the Time Chit the way clinic staff do (not an admin, fake patient only): open the visit, issue the Time Chit, find it in the patient's documents, and check the preview and print view show the right patient, clinic name, doctor and time range. It also proves a user from another clinic cannot open it. Everything passed and no fault was found, so the app itself was not changed.
+
 ## 2026-11-20 — Task 734: dashboard error-state tests checked, no fault found
 The dashboard Billing and Appointments "could not load" tests were reported as failing. Re-running them on the current dev branch (cold and warm, several times) they all pass, and the app correctly shows the error message with a Retry button instead of the "empty" text. The report most likely came from a branch that was created before an earlier test fix landed. No app or test change; notes only.
 ## 2026-11-20 — Tasks 732–733: CSRF check for clinic and preview URLs
