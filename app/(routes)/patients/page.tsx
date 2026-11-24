@@ -191,8 +191,9 @@ export default function PatientsPage() {
         </CardHeader>
         <CardContent>
           <div className="relative w-full mb-4">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Search aria-hidden="true" className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
+              aria-label="Search patients"
               placeholder="Search patients..."
               className="pl-9 pr-4 py-2 w-full rounded-md border border-input bg-transparent"
               value={searchQuery}
@@ -201,10 +202,10 @@ export default function PatientsPage() {
           </div>
           
           {/* Task 686: keep the previous rows while a search/page refetches or a refresh fails (spinner/error only when empty). */}
-          {view === "loading" && <p>Loading...</p>}
+          {view === "loading" && <p role="status">Loading...</p>}
           {view === "error" && (
             <div className="flex items-center gap-3" role="alert">
-              <p className="text-red-500">{error}</p>
+              <p className="text-red-700">{error}</p>
               <Button type="button" size="sm" variant="outline" onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
             </div>
           )}

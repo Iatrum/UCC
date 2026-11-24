@@ -109,7 +109,7 @@ Severity as in Part 1: **High** = can mislead staff on money, stock or clinical 
 16. **Purchasing code is dead weight.** `components/inventory/purchase-orders-panel.tsx` (731 lines) and `suppliers-panel.tsx` are not imported anywhere; `GET /api/purchases` and `GET /api/suppliers` still answer 200 while POST/PATCH/DELETE return 403 (`app/api/purchases/route.ts:81` vs `:105`). Not a user-facing bug, but when purchasing returns, the UI will need a fresh audit; until then document it as "off" in the Inventory help text or remove the panels.
 17. **Treatment drawer search box has no label or placeholder** (`14-treatment-drawer-empty-search.png`). A blank rounded box at the top of the drawer; screen readers announce nothing. Fix: placeholder "Search medicines, services, documents…" and `aria-label`. (Composer behaviour untouched; label only.)
     **VERIFIED FIXED (Task 545):** `order-composer.tsx:947` has placeholder "Search medicines, services, documents...".
-18. **MC viewer shows a bare spinner for several seconds** before the PDF preview (`referral-mc-section.tsx:804+`), with "Print / Save PDF" greyed and no text. Fix: "Preparing preview…". Also see the unconfirmed Referral row note above. **FIXED in Task 506 ("Preparing preview..."). Referral-row note: signed MC and Referral rows share one code path (`openSignedDocumentViewer`), so no code difference found; not reproduced, treated as automation timing. Task 574 re-verified from code (see `.ai/research/task-574.md`): the template route, renderer and viewer dialog are identical for all three kinds, so this was dev-mode (`next dev` cold compile) timing, not a bug. CLOSED.**
+18. **MC viewer shows a bare spinner for several seconds** before the PDF preview (`referral-mc-section.tsx:804+`), with "Print / Save PDF" greyed and no text. Fix: "Preparing preview…". Also see the unconfirmed Referral row note above. **FIXED in Task 506 ("Preparing preview..."). Referral-row note: signed MC and Referral rows share one code path (`openSignedDocumentViewer`), so no code difference found; not reproduced, treated as automation timing. Task 574 re-verified from code (see `.ai/research/task-574.md`): the template route, renderer and viewer dialog are identical for all three kinds, so this was dev-mode (`next dev` cold compile) timing, not a bug. CLOSED.** **VERIFIED (Tasks 748–749):** signed MCs, Time Chits, and Referral Letters share a patient dialog in `app/(routes)/patients/[id]/referral-mc-section.tsx`. That dialog and the legacy Referral dialog show “Preparing preview…” while preparing the HTML iframe and offer Retry on failure. Both have a busy preview region and a separate polite status. The checkout and composer previews also show loading text.
 19. **Patient header stats can contradict each other.** A seeded patient with "No visits" in the list shows "Last completed visit October 15, 2025 / Total visits 0" (`02-patient-profile.png`). Likely seed data, but the two numbers come from different sources; align or hide "Last completed visit" when total is 0.
     **FIXED (Task 446, verified in Task 508):** header says "Last consult" / "Total consults" from one list.
 20. **Document Templates is raw HTML/CSS** for MC and referral (`15-settings-document-templates.png`). It has a live preview labelled "fictional sample data", a collapsed "Available placeholders" list, and confirms for Save/Reset, which is good; but a clinic user editing a legal document in HTML can easily break printing. Fix (optional): "Preview with a real patient" and a one-line warning to keep placeholders intact.
@@ -218,7 +218,7 @@ Method: branch `ai/task-718-ux-phone` on `origin/dev` @ `b22d32e`; one `next dev
 
 ## Low (not changed)
 32. **The expanded sidebar takes 160px of 390px** on first load (`components/sidebar.tsx:103`, `w-40`; collapse state is not remembered), leaving ~230px for content. Nav, out of scope (extends #24).
-33. **Queue, Patients and Appointments tables scroll sideways on a phone** (`components/queue-table.tsx:307`, `ui/table.tsx`), with no scroll hint; the first column (name) is readable and actions are reachable by scrolling. Same pattern as #23: card layout below `sm` needs a design decision.
+33. **Queue, Patients and Appointments tables scroll sideways on a phone** (`components/queue-table.tsx:307`, `ui/table.tsx`), with no scroll hint; the first column (name) is readable and actions are reachable by scrolling. Same pattern as #23: card layout below `sm` needs a design decision. **PARTLY FIXED in Task 767:** the shared `Table` (`components/ui/table.tsx`) now shows a phone-only (below `md`) right-edge fade while more columns are off-screen; it vanishes at the end of the scroll. Tables still scroll sideways; card layout is still a design decision.
 34. **Analytics** hour-grid and range pickers scroll inside their own box on a phone (intended `overflow-x-auto`); readable. Appointments and the consultation page (outside the composer) had no overflow at 390px or 1366px.
 35. Consultation page, Lab tab and Documents tab: no overflow or clipped controls at 1366px or 390px once #26-#28 were applied. Lab/POCT results still appear only in the Lab tab.
 
@@ -239,6 +239,14 @@ Live walk (dev server :3760, killed after) plus code check. Details: `.ai/resear
 - **New 37. Check-in page red "Medical Alerts" banner for an NKDA entry: FIXED (Task 760).** Banner only for real allergies. Shared helper `lib/patients/allergy-status.ts`.
 - **New 38. Appointments tiles count past bookings while the list shows only upcoming: wording FIXED (Task 760)** in the list empty state. Tile logic (`appointments-root.tsx`) left alone because PR #354 edits that file; revisit after it merges.
 
+---
+
+# Task 814: re-verification on `origin/dev` @ `eba7551` (2026-11-23)
+
+- Still open (intentional): sidebar items #19/#24/#32; dead purchasing panels (Part 2 Low 16); table scroll hint #33 (open PRs #361/#362 edit those files); appointments tiles #38 (open PR #354 edits `appointments-root.tsx`).
+- **New 39. POCT "Abnormal 0" tile was hardcoded: FIXED (Task 814)**, removed; results stay in the Lab tab.
+- **New 40. POCT stat tiles stacked one per row on a phone: FIXED (Task 814)**, 3 compact tiles. Patients page has the same stacking, not touched (open PRs #362/#370).
+- Details and evidence: `.ai/research/task-814.md`.
 
 ---
 

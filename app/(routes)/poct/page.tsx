@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, TestTube, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, TestTube, Clock, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { getClinicPoctOrders, type PoctOrderSummary } from "@/lib/fhir/lab-service";
 import { resolveClinicIdFromServerScope } from "@/lib/server/clinic";
@@ -82,48 +82,37 @@ export default async function POCTPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Today&apos;s Tests</CardTitle>
-            <TestTube className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 p-3 pb-2 sm:p-6 sm:pb-2">
+            <CardTitle className="min-w-0 text-xs font-medium sm:text-sm">Today&apos;s Tests</CardTitle>
+            <TestTube className="hidden h-4 w-4 sm:block text-muted-foreground" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
             <div className="text-2xl font-bold">{todaysOrders.length}</div>
-            <p className="text-xs text-muted-foreground">Total tests ordered</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">Total tests ordered</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 p-3 pb-2 sm:p-6 sm:pb-2">
+            <CardTitle className="min-w-0 text-xs font-medium sm:text-sm">Pending</CardTitle>
+            <Clock className="hidden h-4 w-4 sm:block text-yellow-500" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
             <div className="text-2xl font-bold">{pending.length}</div>
-            <p className="text-xs text-muted-foreground">Awaiting results</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">Awaiting results</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 p-3 pb-2 sm:p-6 sm:pb-2">
+            <CardTitle className="min-w-0 text-xs font-medium sm:text-sm">Completed</CardTitle>
+            <CheckCircle className="hidden h-4 w-4 sm:block text-green-500" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
             <div className="text-2xl font-bold">{completed.length}</div>
-            <p className="text-xs text-muted-foreground">Results ready</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Abnormal</CardTitle>
-            <AlertCircle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">Require attention</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">Results ready</p>
           </CardContent>
         </Card>
       </div>

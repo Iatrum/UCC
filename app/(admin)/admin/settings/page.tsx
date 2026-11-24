@@ -39,18 +39,18 @@ export default async function AdminSettingsPage() {
           <CardDescription>Runtime configuration for this deployment.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <span className="text-muted-foreground">Base domain</span>
             <Badge variant="outline">{baseDomain}</Badge>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <span className="text-muted-foreground">Medplum API</span>
             {isHttpUrl(medplumApi) ? (
               <a
                 href={medplumApi}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono text-xs inline-flex items-center gap-1 hover:underline"
+                className="font-mono text-xs inline-flex min-h-10 items-center gap-1 break-all hover:underline sm:min-h-0"
               >
                 {medplumApi}
                 <ExternalLink className="h-3 w-3" />
@@ -59,14 +59,14 @@ export default async function AdminSettingsPage() {
               <span className="text-xs text-muted-foreground">Not configured</span>
             )}
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <span className="text-muted-foreground">Medplum Console</span>
             {isHttpUrl(medplumUi) ? (
               <a
                 href={medplumUi}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono text-xs inline-flex items-center gap-1 hover:underline"
+                className="font-mono text-xs inline-flex min-h-10 items-center gap-1 break-all hover:underline sm:min-h-0"
               >
                 {medplumUi}
                 <ExternalLink className="h-3 w-3" />
@@ -100,7 +100,7 @@ export default async function AdminSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="outline" size="sm" className="h-auto min-h-11 whitespace-normal text-left md:min-h-0" asChild>
             <Link href={adminPath("/create-medplum-client")}>
               Create Medplum client credentials
             </Link>

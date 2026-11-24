@@ -37,7 +37,7 @@ export default async function OrganisationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Organisations</h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -68,13 +68,13 @@ export default async function OrganisationPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {organisations.map((organisation) => {
             const branches = branchesByParentId.get(organisation.id) ?? [];
             return (
-            <Card key={organisation.id} className="flex flex-col">
+            <Card key={organisation.id} className="flex min-w-0 flex-col">
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     {organisation.logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element

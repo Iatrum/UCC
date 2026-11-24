@@ -7,7 +7,7 @@ import { formatClinicDate, mcDaysLabel } from "@/lib/clinic-dates";
 import { printHtml } from "@/lib/print-html";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { describeFetchError } from "@/lib/load-state";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Download, FileText, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ import { fetchOrganizationDetails, resolveOrganizationDetails, type Organization
 import type { ProcedureRecord } from "@/lib/models";
 
 const formatDateLabel = (value: Date | string | null | undefined): string | null => formatClinicDate(value) || null;
+const previewLoadingMessage = "Preparing preview...";
 
 interface ReferralMCSectionProps {
   patient: any;
@@ -138,6 +139,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
   const [organization, setOrganization] = useState<OrganizationDetails | null>(null);
   const [viewingHtml, setViewingHtml] = useState<string | null>(null);
   const [viewingHtmlLoading, setViewingHtmlLoading] = useState(false);
+  const previewRequest = useRef(0);
   // Task 686: a stalled/failed template load shows an inline error + Retry instead of a blank dialog.
   const [viewingHtmlError, setViewingHtmlError] = useState<string | null>(null);
   const signedDocuments = getSignedDocuments(consultations);
@@ -294,44 +296,44 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
     }, { rawKeys: ["clinicLogo", "referralBody", "mmcLine"] }));
   }
 
-  async function openSignedDocumentViewer(doc: SignedDocument) {
-    setViewingSigned(doc);
+  function closeDocumentViewer() {
+    previewRequest.current += 1;
+    setViewing(null);
+    setViewingSigned(null);
+    setViewingHtml(null);
+    setViewingHtmlLoading(false);
+  }
+
+  async function loadDocumentPreview(buildHtml: () => Promise<string>) {
+    const request = ++previewRequest.current;
     setViewingHtml(null);
     setViewingHtmlError(null);
     setViewingHtmlLoading(true);
     try {
-      const html = await buildDocumentHtml(doc);
-      setViewingHtml(html);
-    } catch (err: any) {
-      setViewingHtmlError(describeFetchError(err, "Could not load document preview."));
+      const html = await buildHtml();
+      if (request === previewRequest.current) setViewingHtml(html);
+    } catch (error) {
+      if (request !== previewRequest.current) return;
+      const message = describeFetchError(error, "Could not load document preview.");
+      setViewingHtmlError(message);
       toast({
         title: "Preview failed",
-        description: err?.message || "Could not load document preview.",
+        description: message,
         variant: "destructive",
       });
     } finally {
-      setViewingHtmlLoading(false);
+      if (request === previewRequest.current) setViewingHtmlLoading(false);
     }
   }
 
-  async function openLegacyReferralViewer(r: Referral) {
+  function openSignedDocumentViewer(doc: SignedDocument) {
+    setViewingSigned(doc);
+    return loadDocumentPreview(() => buildDocumentHtml(doc));
+  }
+
+  function openLegacyReferralViewer(r: Referral) {
     setViewing(r);
-    setViewingHtml(null);
-    setViewingHtmlError(null);
-    setViewingHtmlLoading(true);
-    try {
-      const html = await buildLegacyReferralHtml(r);
-      setViewingHtml(html);
-    } catch (err: any) {
-      setViewingHtmlError(describeFetchError(err, "Could not load document preview."));
-      toast({
-        title: "Preview failed",
-        description: err?.message || "Could not load document preview.",
-        variant: "destructive",
-      });
-    } finally {
-      setViewingHtmlLoading(false);
-    }
+    return loadDocumentPreview(() => buildLegacyReferralHtml(r));
   }
 
   return (
@@ -517,12 +519,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       {/* View signed document — HTML template iframe */}
       <Dialog
         open={!!viewingSigned}
-        onOpenChange={(open) => {
-          if (!open) {
-            setViewingSigned(null);
-            setViewingHtml(null);
-          }
-        }}
+        onOpenChange={(open) => { if (!open) closeDocumentViewer(); }}
       >
         <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">
           <div className="flex h-[90dvh] flex-col">
@@ -532,14 +529,16 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               </DialogTitle>
               <DialogDescription>
                 {viewingSigned ? formatDateLabel(viewingSigned.date) : ""}
+                {viewingHtmlLoading && <span className="sr-only"> {previewLoadingMessage}</span>}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 px-2 py-2 sm:px-6 sm:py-4">
+            <span className="sr-only" role="status">{viewingHtmlLoading ? previewLoadingMessage : ""}</span>
+            <div className="min-h-0 flex-1 px-2 py-2 sm:px-6 sm:py-4" aria-busy={viewingHtmlLoading}>
               {viewingHtmlLoading && (
-                <div className="flex h-full items-center justify-center">
+                <div className="flex h-full items-center justify-center" aria-hidden="true">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{previewLoadingMessage}</span>
                 </div>
               )}
               {!viewingHtmlLoading && !viewingHtml && viewingHtmlError && (
@@ -560,10 +559,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
             <div className="flex justify-end gap-2 border-t px-4 py-3 sm:px-6 sm:py-4">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setViewingSigned(null);
-                  setViewingHtml(null);
-                }}
+                onClick={closeDocumentViewer}
               >
                 Close
               </Button>
@@ -581,12 +577,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
       {/* View legacy FHIR referral — HTML template iframe */}
       <Dialog
         open={!!viewing}
-        onOpenChange={(open) => {
-          if (!open) {
-            setViewing(null);
-            setViewingHtml(null);
-          }
-        }}
+        onOpenChange={(open) => { if (!open) closeDocumentViewer(); }}
       >
         <DialogContent className="w-[95vw] overflow-hidden p-0 sm:max-w-5xl">
           <div className="flex h-[90dvh] flex-col">
@@ -594,14 +585,16 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
               <DialogTitle>Referral Letter</DialogTitle>
               <DialogDescription>
                 {viewing ? `${viewing.specialty} — ${viewing.facility}` : ""}
+                {viewingHtmlLoading && <span className="sr-only"> {previewLoadingMessage}</span>}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 px-2 py-2 sm:px-6 sm:py-4">
+            <span className="sr-only" role="status">{viewingHtmlLoading ? previewLoadingMessage : ""}</span>
+            <div className="min-h-0 flex-1 px-2 py-2 sm:px-6 sm:py-4" aria-busy={viewingHtmlLoading}>
               {viewingHtmlLoading && (
-                <div className="flex h-full items-center justify-center">
+                <div className="flex h-full items-center justify-center" aria-hidden="true">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground" role="status">Preparing preview...</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{previewLoadingMessage}</span>
                 </div>
               )}
               {!viewingHtmlLoading && !viewingHtml && viewingHtmlError && (
@@ -622,10 +615,7 @@ export default function ReferralMCSection({ patient, consultations = [] }: Refer
             <div className="flex justify-end gap-2 border-t px-4 py-3 sm:px-6 sm:py-4">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setViewing(null);
-                  setViewingHtml(null);
-                }}
+                onClick={closeDocumentViewer}
               >
                 Close
               </Button>
