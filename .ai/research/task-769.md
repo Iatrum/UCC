@@ -1,0 +1,10 @@
+# Task 769 — Foreign-clinic slot generation test
+
+Fetched `origin/dev` at `51805cf` (PR #349). The baseline unit suite passed all 1,320 tests. The original assertion expected `does not belong`, and #349 aligned it with `Schedule unavailable in current clinic`. The service checks both the clinic encoded in the schedule's practitioner identifier and the clinic tenant marker before slot generation. It throws `ForbiddenError` when either check fails. The route maps that error to a generic HTTP 403. Keep the current service wording and assert the error type and zero writes for a fixture explicitly tagged to another clinic. The neighboring tests already cover missing clinic markers. Open PR #355 edits the slot-generation route and a separate test file.
+
+- FHIR R4 defines `Schedule.identifier` and the `Slot.schedule` reference. UCC uses its own clinic identifier to enforce ownership. [Schedule](https://hl7.org/fhir/R4/schedule.html) · [Slot](https://hl7.org/fhir/R4/slot.html)
+- Medplum documents system-qualified identifier searches and the requested version. [Basic search](https://www2.medplum.com/docs/search/basic-search) · [Medplum 5.2.8](https://github.com/medplum/medplum/releases/tag/v5.2.8)
+- Next.js documents TypeScript checks and React documents v19. Use the repo's existing lint script and run the default TypeScript project check separately. [Next.js TypeScript](https://nextjs.org/docs/app/api-reference/config/typescript) · [React 19](https://react.dev/blog/2024/12/05/react-19)
+- DICOM covers imaging information exchange. This test exercises FHIR appointment slot generation. [DICOM PS3.1 scope](https://dicom.nema.org/medical/dicom/current/output/chtml/part01/chapter_1.html)
+
+The historical assertion reproduced the reported mismatch in a disposable copy of the test. It expected `does not belong` and received `Schedule unavailable in current clinic`. On both the fetched baseline and the patched branch, `bun test tests/unit` passed 1,320 tests, `tsc --noEmit` passed, and `bun run lint` passed. This task used the requested unit and static checks without a dev server or Playwright.

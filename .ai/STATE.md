@@ -1,5 +1,11 @@
 # STATE (updated by Dev each round)
 
+## Work policy from 2026-11-23 (Hidayat, 11:16 MYT): no filler, few themed PRs
+- Only needed work: real bugs, security, pilot blockers, perf fixes with measured before/after. No docs-only, measurement-only, coverage-for-its-own-sake, re-audit or review-of-review tasks. If nothing is needed, agents stay idle; unused quota is fine.
+- Keep at most one open PR per theme (security, app fixes/perf/tests). New work goes onto the matching combined branch, not a new PR.
+- 23 Nov consolidation: Hidayat merged #364 and #367-#373 himself; the 11 PRs still open were folded into 2 draft PRs (`ai/combined-security-20261123`, `ai/combined-app-fixes-20261123`, which also carries the e2e test changes). #357 was left open because it edits the protected consultation draft hook. Filler tasks moved to `ai-runner/held/filler-cancelled-20261123/`.
+- Dependency audit (Task 810, 23 Nov): 4 `bun audit` findings, none reachable, no safe patch-level fix; re-check when firebase / firebase-admin / typescript-eslint release.
+
 Task 5 (16 Nov): dev AccessPolicy topology applied; focused POCT 8/8 and integrated unit 154/154. Draft PR [#251](https://github.com/Iatrum/UCC/pull/251); final full gate pending. Details and retained checkpoints: `.ai/progress-task5.md`. Production is manual only.
 
 - 2026-11-16 Task 351: independently reviewed Task 350 PR #247 in /home/dev/ucc-task351. Fixed export cross-clinic reads/weak account matching, raw-REST mapper boundary, absent-clinic bypass, billing Task/invoice and consultation guard gaps, triage child identifiers (two loops). Unit 57/57 + isolated route tests 3/3 + lint PASS; mutation tests prove guards/query scope matter. Full gate infrastructure FAIL (hardcoded unwritable /workspace paths; no browser/baseline results). Verdict HOLD for workflow validation, .ai/REVIEW-task350.md. Normal pushes to existing Task 350 branch explicitly authorized; no merge/force-push, no server started, existing :3210 and production untouched. Usage meter unavailable.

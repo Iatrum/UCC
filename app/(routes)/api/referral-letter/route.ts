@@ -37,6 +37,6 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("[referral-letter] Unexpected error", error);
     const status = error?.code === "MISSING_API_KEY" ? 500 : 500;
-    return new Response(JSON.stringify({ error: error?.message || "Unexpected error" }), { status });
+    return new Response(JSON.stringify({ error: "Unexpected error" }), { status });
   }
 }

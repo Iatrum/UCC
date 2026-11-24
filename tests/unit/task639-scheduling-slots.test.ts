@@ -83,12 +83,20 @@ describe('generateSlotsForSchedule', () => {
     expect(m.writes).toHaveLength(0);
   });
 
-  it('refuses a schedule that belongs to another clinic', async () => {
+  it.each([
+    { label: 'both identifiers are foreign', practitionerClinic: CLINIC_B, tenantClinic: CLINIC_B },
+    { label: 'only the practitioner identifier is foreign', practitionerClinic: CLINIC_B, tenantClinic: CLINIC_A },
+    { label: 'only the tenant marker is foreign', practitionerClinic: CLINIC_A, tenantClinic: CLINIC_B },
+  ])('refuses slot generation when $label', async ({ practitionerClinic, tenantClinic }) => {
     const m = setup([{
       resourceType: 'Schedule', id: 's-foreign',
-      identifier: [{ system: SCHED_SYS, value: `${CLINIC_B}:dr1` }],
+      identifier: [
+        { system: SCHED_SYS, value: `${practitionerClinic}:dr1` },
+        { system: 'clinic', value: tenantClinic },
+      ],
     }]);
-    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toThrow('unavailable in current clinic');
+    await expect(gen(m, '2030-06-03T01:00:00.000Z', '2030-06-03T02:00:00.000Z', 30, 's-foreign')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(m.searches.some(({ type }) => type === 'Slot')).toBe(false);
     expect(m.writes).toHaveLength(0);
   });
 

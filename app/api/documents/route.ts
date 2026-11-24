@@ -6,6 +6,7 @@ import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth'
 import { handleRouteError } from '@/lib/server/route-helpers';
 import { getAdminStorageBucket } from '@/lib/firebase-admin';
 import { STORAGE_PATH_EXTENSION_URL } from '@/lib/fhir/structure-definitions';
+import { isPatientDocumentStoragePath } from '@/lib/fhir/document-storage-path';
 
 export const runtime = 'nodejs';
 
@@ -119,6 +120,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: patientId, title, url, contentType' }, { status: 400 });
     }
 
+    // Task 797: the path is later deleted with the Admin SDK, so a client may only name a file in this patient's folder.
+    if (storagePath !== undefined && storagePath !== null && !isPatientDocumentStoragePath(String(patientId), storagePath)) {
+      return NextResponse.json({ error: 'Invalid storagePath' }, { status: 400 });
+    }
+
     const patient = await getPatientFromMedplum(patientId, clinicId, medplum);
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
@@ -196,7 +202,10 @@ export async function DELETE(request: NextRequest) {
     await assertStoredResourceInClinic(medplum, doc as any, clinicId, 'Document');
 
     const storagePath = (doc as any).extension?.find((ext: any) => ext.url === STORAGE_PATH_EXTENSION_URL)?.valueString;
-    if (storagePath) {
+    // Defence in depth (Task 797): records saved before the POST check may carry a foreign path; never delete outside this patient's folder.
+    if (storagePath && !isPatientDocumentStoragePath(patientId, storagePath)) {
+      console.warn('Refusing to delete a Storage object outside the patient documents folder; removing DocumentReference only.');
+    } else if (storagePath) {
       try {
         await getAdminStorageBucket().file(storagePath).delete({ ignoreNotFound: true });
       } catch (error) {
