@@ -1,5 +1,7 @@
 "use client";
 
+import { toast } from "sonner";
+
 import { readExistingInvoiceNumber } from "@/lib/billing/invoice-lookup";
 import { checkoutSubtotal, displayInvoiceNumber, hasBillableItems, NO_BILLABLE_ITEMS_MESSAGE } from "@/lib/billing/checkout-guards";
 import {
@@ -590,6 +592,12 @@ export default function CheckoutClient({ consultationId, patientId }: CheckoutCl
         throw new Error(payload.error || "Failed to complete checkout.");
       }
 
+      if (payload.queueUpdateFailed) {
+        setCompletionError("Invoice saved, but the queue could not be closed. Retry Complete visitation.");
+        return;
+      }
+
+      toast.success("Visitation completed");
       const notice = buildStockNotice(payload);
       try {
         if (notice) window.sessionStorage.setItem(CHECKOUT_NOTICE_STORAGE_KEY, JSON.stringify(notice));

@@ -1,5 +1,7 @@
 "use client";
 
+import { toast as sonnerToast } from "sonner";
+
 import { Fragment, FormEvent, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearSignAttemptKey, signAttemptKey } from "@/lib/sign-attempt-key";
 import { useConsultationDraft } from "@/lib/hooks/use-consultation-draft";
@@ -70,6 +72,7 @@ type ProfileConsultation = {
   patientId: string;
   date?: string | null;
   chiefComplaint: string;
+  checkInComplaint?: string;
   diagnosis: string;
   notes?: string;
   progressNote?: string | null;
@@ -450,10 +453,7 @@ export default function PatientProfileWorkspace({
         prescriptions: [],
       });
 
-      toast({
-        title: "Consult Signed",
-        description: "Clinical notes and diagnosis were saved. Treatment is ready.",
-      });
+      sonnerToast.success("Consult signed");
       if (queueStatus && queueStatus !== "completed") {
         setQueueStatus("meds_and_bills");
       }
@@ -867,7 +867,7 @@ export default function PatientProfileWorkspace({
                               >
                                 <TableCell className="font-medium">{formatDisplayDate(consultation.date)}</TableCell>
                                 <TableCell>Consultation</TableCell>
-                                <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultationPreviewText(consultation.chiefComplaint)}</TableCell>
+                                <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultation.checkInComplaint || "—"}</TableCell>
                                 <TableCell className="min-w-[160px] max-w-[200px] truncate">{consultation.diagnosis}</TableCell>
                                 <TableCell>{consultation.prescriptions?.length || 0} items</TableCell>
                                 <TableCell className="text-right">

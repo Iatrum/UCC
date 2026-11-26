@@ -47,6 +47,26 @@ export interface TreatmentPlanEntry {
   updatedAt: string;
 }
 
+/** Repeat catalog picks increment the same billable line. Documents are issued individually. */
+export function addTreatmentCatalogEntry(
+  entries: TreatmentPlanEntry[],
+  candidate: TreatmentPlanEntry,
+): { entries: TreatmentPlanEntry[]; entry: TreatmentPlanEntry } {
+  const existing = candidate.tab !== "documents" && candidate.catalogRef
+    ? entries.find((entry) => entry.tab === candidate.tab && entry.catalogRef === candidate.catalogRef)
+    : undefined;
+  if (!existing) return { entries: [...entries, candidate], entry: candidate };
+
+  const quantity = existing.quantity + 1;
+  const entry = {
+    ...existing,
+    quantity,
+    lineTotal: Number((quantity * existing.unitPrice).toFixed(2)),
+    updatedAt: candidate.updatedAt,
+  };
+  return { entries: entries.map((item) => item.id === entry.id ? entry : item), entry };
+}
+
 export interface TreatmentPlanSummary {
   subtotal: number;
   total: number;

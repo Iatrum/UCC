@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { request } from '@playwright/test';
 import { BASE, USER, PASSWORD } from './lib/env';
+import { loginClinicContext } from './lib/clinic-login';
 // One API login per run (Medplum rate-limits auth ~5/min/IP and the app reports that as "Incorrect email or password").
 // Also seeds idempotent fake catalog fixtures the workflow needs.
 export default async function globalSetup() {
@@ -11,7 +12,7 @@ export default async function globalSetup() {
   const ctx = await request.newContext({ baseURL: BASE });
   let ok = false;
   for (let i = 0; i < 3 && !ok; i++) {
-    const response = await ctx.post('/api/auth/login', { data: { email: USER, password: PASSWORD } });
+    const response = await loginClinicContext(ctx, { email: USER, password: PASSWORD });
     ok = response.ok();
     if (!ok && i < 2) {
       // The shared dev Medplum may have a longer auth cooldown than the old fixed 65 s retry.

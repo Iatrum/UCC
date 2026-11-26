@@ -1,6 +1,7 @@
 "use client";
 
 import { getCatalogSearchState } from "@/lib/orders/catalog-search-state";
+import { addTreatmentCatalogEntry } from "@/lib/treatment-plan";
 import { mergeUnsavedEntries, planWriteOutcome } from "@/lib/plan-save-state";
 import { useUnsavedWork } from "@/lib/hooks/use-unsaved-work";
 
@@ -212,6 +213,7 @@ export function OrderComposer({
   const [loadAttempt, setLoadAttempt] = React.useState(0);
   const [failedSaves, setFailedSaves] = React.useState<Record<string, () => Promise<void>>>({});
   const failedSavesRef = React.useRef(failedSaves);
+  const pendingEntriesRef = React.useRef(new Map<string, TreatmentPlanEntryInput>());
   // Latest-value ref kept in sync during render on purpose: moving it to an effect would change timing seen by in-flight saves.
   // eslint-disable-next-line react-hooks/refs
   failedSavesRef.current = failedSaves;
@@ -505,6 +507,7 @@ export function OrderComposer({
         return;
       }
       const pendingKey = entry.id || `${entry.tab}:${entry.catalogRef || entry.name}`;
+      pendingEntriesRef.current.set(pendingKey, entry);
       setSavingIds((prev) => ({ ...prev, [pendingKey]: (prev[pendingKey] || 0) + 1 }));
       try {
         const response = await queuedFetch("/api/consultations/plan", {
@@ -529,14 +532,19 @@ export function OrderComposer({
           delete next[pendingKey];
           return next;
         });
+        if (pendingEntriesRef.current.get(pendingKey) === entry) pendingEntriesRef.current.delete(pendingKey);
         publishPlan(
           mergeUnsavedEntries(
-            data.plan.entries as TreatmentPlanEntry[],
+            (data.plan.entries as TreatmentPlanEntry[]).filter((item) => !removedIdsRef.current.has(item.id)),
             entriesRef.current,
-            new Set(Object.keys(failedSavesRef.current).filter((id) => id !== pendingKey))
+            new Set([
+              ...Object.keys(failedSavesRef.current).filter((id) => id !== pendingKey),
+              ...pendingEntriesRef.current.keys(),
+            ])
           )
         );
       } catch (error) {
+        if (pendingEntriesRef.current.get(pendingKey) !== entry || removedIdsRef.current.has(pendingKey)) return;
         // Keep the doctor's item on screen: status says "Failed to save", Sign stays disabled, Retry replays it.
         // Retry replays this call; the self-reference is resolved at call time, after initialisation.
         // eslint-disable-next-line react-hooks/immutability
@@ -547,6 +555,7 @@ export function OrderComposer({
           variant: "destructive",
         });
       } finally {
+        if (pendingEntriesRef.current.get(pendingKey) === entry) pendingEntriesRef.current.delete(pendingKey);
         setSavingIds((prev) => {
           const next = { ...prev };
           if (next[pendingKey] > 1) next[pendingKey]--;
@@ -574,21 +583,11 @@ export function OrderComposer({
         createdAt: nowIso,
         updatedAt: nowIso,
       };
-      const prev = entries;
-      publishPlan([...prev, optimistic]);
-      await persistEntry(
-        {
-          id: optimistic.id,
-          tab: optimistic.tab,
-          catalogRef: optimistic.catalogRef,
-          name: optimistic.name,
-          quantity: optimistic.quantity,
-          unitPrice: optimistic.unitPrice,
-          meta: optimistic.meta,
-        }
-      );
+      const result = addTreatmentCatalogEntry(entriesRef.current, optimistic);
+      publishPlan(result.entries);
+      await persistEntry(result.entry);
     },
-    [entries, persistEntry, publishPlan]
+    [persistEntry, publishPlan]
   );
 
   const removeEntry = React.useCallback(
@@ -636,9 +635,12 @@ export function OrderComposer({
         });
         publishPlan(
           mergeUnsavedEntries(
-            data.plan.entries as TreatmentPlanEntry[],
+            (data.plan.entries as TreatmentPlanEntry[]).filter((item) => !removedIdsRef.current.has(item.id)),
             entriesRef.current,
-            new Set(Object.keys(failedSavesRef.current).filter((id) => id !== pendingKey))
+            new Set([
+              ...Object.keys(failedSavesRef.current).filter((id) => id !== pendingKey),
+              ...pendingEntriesRef.current.keys(),
+            ])
           )
         );
       } catch (error) {

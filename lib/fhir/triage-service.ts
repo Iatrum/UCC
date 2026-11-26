@@ -1,11 +1,11 @@
 import { TriageData, VitalSigns, QueueStatus } from '../types';
-import { assertPatientInClinic } from './write-containment';
+import { assertPatientInClinic, hasOnlyClinicIdentifiers } from './write-containment';
 import { MedplumClient } from '@medplum/core';
-import type { Observation } from '@medplum/fhirtypes';
+import type { Encounter, Observation } from '@medplum/fhirtypes';
 import { getAdminMedplum } from '@/lib/server/medplum-admin';
 import { fhirPatientToPatientData, getPatientFromMedplum, SavedPatient } from './patient-service';
 import { validateFhirResource, logValidation } from './validation';
-import { NotFoundError } from '@/lib/server/route-helpers';
+import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignResourceToClinicTenant,
@@ -58,6 +58,7 @@ interface TriageSummary {
   registrationAt?: string;
   performedBy?: string;
   encounterId?: string;
+  checkInComplaint?: string;
 }
 
 const VITAL_CODES: Record<
@@ -138,7 +139,7 @@ function queueStatusFromEncounter(encounterStatus?: string): QueueStatus {
   }
 }
 
-function encounterStatusFromQueue(status: QueueStatus | null): string | undefined {
+function encounterStatusFromQueue(status: QueueStatus | null): Encounter['status'] | undefined {
   switch (status) {
     case 'arrived':
       return 'arrived';
@@ -408,7 +409,7 @@ export async function saveTriageEncounter(
   const existingStartedToday = existing?.queueAddedAt
     ? new Date(existing.queueAddedAt) >= todayMidnight
     : false;
-  const reusableEncounter = existingStartedToday ? existing : null;
+  const reusableEncounter = existingStartedToday && existing?.queueStatus !== 'completed' ? existing : null;
 
   const queueStatus: QueueStatus = triageData.visitIntent === 'otc' ? 'meds_and_bills' : 'waiting';
   const triageAtIso =
@@ -434,15 +435,17 @@ export async function saveTriageEncounter(
   let encounterId: string;
 
   if (reusableEncounter?.id) {
-    const encounter = await client.readResource('Encounter', reusableEncounter.id) as any;
+    const encounter = await client.readResource('Encounter', reusableEncounter.id, { cache: 'no-cache' });
     assertEncounterBelongsToClinic(encounter, clinicTenant);
+    if (toTriageSummary(encounter).queueStatus === 'completed') throw new ConflictError('This visit just completed. Submit again to start a new visit.');
     const otherExtensions =
       (encounter.extension || []).filter((ext: any) => ext.url !== TRIAGE_ENCOUNTER_EXTENSION_URL);
 
     const updatedEncounter = await client.updateResource(withClinicIdentifier(
       {
         ...encounter,
-        status: 'triaged',
+        status: 'triaged' as const,
+        reasonCode: [{ text: triagePayload.chiefComplaint }],
         period: {
           ...(encounter.period || {}),
           start: encounter.period?.start || triageAtIso,
@@ -459,13 +462,14 @@ export async function saveTriageEncounter(
         extension: [...otherExtensions, buildTriageExtension(triagePayload, triageAtIso, queueStatus)],
       },
       clinicId
-    ));
+    ), encounterUpdateOptions(encounter));
     await assignResourceToClinicTenant(client, 'Encounter', updatedEncounter, clinicTenant);
     encounterId = updatedEncounter.id!;
   } else {
     const encounter = await validateAndCreate(client, {
       resourceType: 'Encounter',
-      status: 'triaged',
+      status: 'triaged' as const,
+      reasonCode: [{ text: triagePayload.chiefComplaint }],
       class: {
         system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
         code: 'AMB',
@@ -550,6 +554,7 @@ export async function checkInPatientInTriage(
   const encounter = await validateAndCreate(client, {
     resourceType: 'Encounter',
     status: 'arrived',
+    reasonCode: chiefComplaint ? [{ text: chiefComplaint }] : undefined,
     class: {
       system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
       code: 'AMB',
@@ -625,11 +630,21 @@ export async function updateQueueStatusForPatient(
   patientId: string,
   status: QueueStatus | null,
   medplum?: MedplumClient,
-  clinicId?: string
+  clinicId?: string,
+  visitId?: string,
 ): Promise<void> {
   const client = medplum ?? (await getAdminMedplum());
   const clinicTenant = await resolveClinicTenant(client, clinicId);
-  const existing = await getActiveTriageEncounter(patientId, client, clinicId);
+  const visit = visitId && clinicId
+    ? await client.searchOne('Encounter', {
+        _id: visitId, subject: `Patient/${patientId}`, identifier: `clinic|${clinicId}`,
+      }, { cache: 'no-cache' })
+    : undefined;
+  if (visitId && (!visit || !clinicId || !hasOnlyClinicIdentifiers(visit, clinicId) ||
+    !isTriageEncounter(visit) || visit.subject?.reference !== `Patient/${patientId}`)) {
+    throw new NotFoundError('Visit not found.');
+  }
+  const existing = visit ? toTriageSummary(visit) : await getActiveTriageEncounter(patientId, client, clinicId);
 
   if (!existing) {
     if (status === 'arrived') {
@@ -639,8 +654,9 @@ export async function updateQueueStatusForPatient(
     throw new Error('No active triage encounter found');
   }
 
-  const encounter = await client.readResource('Encounter', existing.id) as any;
+  const encounter = visit ?? await client.readResource('Encounter', existing.id, { cache: 'no-cache' });
   assertEncounterBelongsToClinic(encounter, clinicTenant);
+  if ((visitId || status === 'completed') && toTriageSummary(encounter).queueStatus === 'completed') return;
   const newStatus = encounterStatusFromQueue(status);
   if (!newStatus) {
     // If clearing status, mark encounter finished and drop queue extension fields
@@ -699,8 +715,43 @@ export async function updateQueueStatusForPatient(
       extension: newExtensions,
     },
     clinicId
-  ));
+  ), encounterUpdateOptions(encounter));
   await assignResourceToClinicTenant(client, 'Encounter', updatedEncounter, clinicTenant);
+}
+
+function encounterUpdateOptions(encounter: Encounter) {
+  const version = encounter.meta?.versionId;
+  return version ? { headers: { 'If-Match': `W/"${version}"` } } : undefined;
+}
+
+export async function completeQueueVisit(
+  client: MedplumClient, clinicId: string, patientId: string, consultationId: string,
+): Promise<void> {
+  const consultation = await client.readResource('Encounter', consultationId, { cache: 'no-cache' });
+  if (!hasOnlyClinicIdentifiers(consultation, clinicId) || consultation.subject?.reference !== `Patient/${patientId}`) {
+    throw new NotFoundError('Consultation not found.');
+  }
+  let visitId = consultation.partOf?.reference?.match(/^Encounter\/([A-Za-z0-9.-]+)$/)?.[1];
+  if (isTriageEncounter(consultation)) visitId = consultationId; // OTC checkout
+  if (!visitId && consultation.period?.start) {
+    // Legacy consultations have no parent. Never close a visit that began after they were signed.
+    const signedAt = Date.parse(consultation.period.start);
+    const dayStart = new Date(signedAt).setHours(0, 0, 0, 0);
+    const visits = await client.searchResources('Encounter', {
+      subject: `Patient/${patientId}`,
+      identifier: `clinic|${clinicId}`,
+      status: 'arrived,triaged,in-progress,finished',
+      date: `le${consultation.period.start}`,
+      _sort: '-date',
+      _count: '20',
+    }, { cache: 'no-cache' });
+    visitId = visits.find((visit) => {
+      const startedAt = Date.parse(visit.period?.start ?? '');
+      return isTriageEncounter(visit) && visit.subject?.reference === `Patient/${patientId}` &&
+        hasOnlyClinicIdentifiers(visit, clinicId) && startedAt >= dayStart && startedAt <= signedAt;
+    })?.id;
+  }
+  if (visitId) await updateQueueStatusForPatient(patientId, 'completed', client, clinicId, visitId);
 }
 
 export async function getActiveTriageEncounter(
@@ -718,23 +769,29 @@ export async function getActiveTriageEncounter(
       subject: `Patient/${patientId}`,
       status: 'arrived,triaged,in-progress,finished',
       _count: '10',
-      _sort: '-_lastUpdated',
+      _sort: '-date',
       ...(clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
-    }),
+    }, { cache: 'no-cache' }),
   ]);
 
   if (!encounters?.length) return null;
-  const encounter: any = (encounters as any[]).find((enc: any) =>
-    enc.extension?.some((ext: any) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL) &&
-    resourceMatchesClinicTenant(enc, clinicTenant?.clinicId)
-  );
-  if (!encounter) return null;
+  const encounter = encounters.find((enc) => isTriageEncounter(enc) &&
+    resourceMatchesClinicTenant(enc, clinicTenant?.clinicId));
+  return encounter ? toTriageSummary(encounter) : null;
+}
+
+function isTriageEncounter(encounter: Encounter): boolean {
+  return Boolean(encounter.extension?.some((ext) => ext.url === TRIAGE_ENCOUNTER_EXTENSION_URL));
+}
+
+function toTriageSummary(encounter: Encounter): TriageSummary & { id: string } {
   const parsed = parseTriageExtension(encounter.extension);
 
   return {
     ...parsed,
     encounterId: encounter.id,
-    id: encounter.id,
+    id: encounter.id!,
+    checkInComplaint: encounter.reasonCode?.[0]?.text ?? parsed.triage?.chiefComplaint,
     queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
     queueAddedAt: parsed.queueAddedAt
       ? new Date(parsed.queueAddedAt).toISOString()
@@ -829,8 +886,17 @@ export async function getTriageQueueForToday(
     }
   });
 
+  // Allocate positions in check-in order, including completed visits. Sorting the active
+  // rows by urgency or removing a completed row must not recycle its number.
+  const visits = validEncounters
+    .filter((encounter) => isTriageEncounter(encounter) || encounter.status !== 'finished' && !encounter.partOf)
+    .sort((a, b) => String(a.period?.start ?? '').localeCompare(String(b.period?.start ?? '')) ||
+      String(a.id).localeCompare(String(b.id)));
   const results = await Promise.allSettled(
-    validEncounters.map(async (encounter) => {
+    visits.map(async (encounter, index) => {
+      const parsed = parseTriageExtension(encounter.extension);
+      const queueStatus = parsed.queueStatus ?? queueStatusFromEncounter(encounter.status);
+      if (!queueStatus || queueStatus === 'completed') return null;
       const subjectRef: string = encounter.subject?.reference || '';
       const patientId = subjectRef.replace('Patient/', '');
       if (!patientId) return null;
@@ -840,15 +906,15 @@ export async function getTriageQueueForToday(
         (await getPatientFromMedplum(patientId, clinicId, client, { includeMedicalHistory: false }));
       if (!patient) return null;
 
-      const parsed = parseTriageExtension(encounter.extension);
       const queueAddedAtIso = (parsed.queueAddedAt ?? encounter.period?.start ?? null)
         ? new Date(parsed.queueAddedAt ?? encounter.period?.start).toISOString()
         : null;
       return {
         ...patient,
         triage: parsed.triage,
-        queueStatus: parsed.queueStatus ?? queueStatusFromEncounter(encounter.status),
+        queueStatus,
         queueAddedAt: queueAddedAtIso,
+        queueNumber: index + 1,
         visitIntent: parsed.visitIntent,
         payerType: parsed.payerType,
         paymentMethod: parsed.paymentMethod,
@@ -876,13 +942,6 @@ export async function getTriageQueueForToday(
         return byPatientId;
       }
 
-      const existingIsCompleted = existing.queueStatus === 'completed';
-      const patientIsCompleted = patient.queueStatus === 'completed';
-      if (existingIsCompleted !== patientIsCompleted) {
-        byPatientId.set(patient.id, existingIsCompleted ? patient : existing);
-        return byPatientId;
-      }
-
       const existingTime = existing.queueAddedAt ? new Date(existing.queueAddedAt).getTime() : 0;
       const patientTime = patient.queueAddedAt ? new Date(patient.queueAddedAt).getTime() : 0;
       byPatientId.set(patient.id, patientTime >= existingTime ? patient : existing);
@@ -891,7 +950,6 @@ export async function getTriageQueueForToday(
   );
 
   return uniquePatients
-    .filter((p) => p.queueStatus && p.queueStatus !== 'completed')
     .sort((a, b) => {
       const aTriaged = Boolean((a as any).triage?.isTriaged);
       const bTriaged = Boolean((b as any).triage?.isTriaged);

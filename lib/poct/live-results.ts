@@ -25,7 +25,7 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
   let socket: WebSocket | undefined;
   let token: string | undefined;
   let connecting = false;
-  // Task 659: 503 = subscription backend not configured. Stop re-trying every poll; the tab keeps polling results.
+  // The optional subscription backend may be unavailable. Results continue polling.
   // A manual refresh() clears it so staff can re-check.
   let liveUnavailable = false;
   let loading = false;
@@ -110,9 +110,13 @@ export function startLabResultUpdates({ patientId, encounterId, onResults, onErr
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patientId, encounterId }), signal: abort.signal, cache: 'no-store',
       });
+      if (response.status === 204 || response.status === 503) {
+        liveUnavailable = true;
+        setLive(false);
+        return;
+      }
       if (!response.ok) {
         setLive(false);
-        if (response.status === 503) liveUnavailable = true;
         if (response.status === 403) await load();
         return;
       }

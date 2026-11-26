@@ -41,6 +41,7 @@ export interface Patient {
   updatedAt?: Date | string;
   queueStatus?: QueueStatus;
   queueAddedAt?: Date | string | null;
+  queueNumber?: number;
   visitIntent?: string;
   payerType?: string;
   paymentMethod?: string;

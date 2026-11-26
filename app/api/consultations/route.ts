@@ -14,7 +14,6 @@ import {
   SIGN_KEY_PATTERN,
 } from '@/lib/fhir/consultation-service';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
-import { getTriageForPatient, updateQueueStatusForPatient } from '@/lib/fhir/triage-service';
 import { clampRecentLimit } from '@/lib/fhir/recent-limit';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
@@ -74,15 +73,6 @@ export async function POST(request: NextRequest) {
     );
 
     console.log(`✅ Consultation saved to Medplum: ${encounterId}`);
-
-    try {
-      const triage = await getTriageForPatient(patientId, medplum, clinicId ?? undefined);
-      if (triage.queueStatus && triage.queueStatus !== 'completed') {
-        await updateQueueStatusForPatient(patientId, 'meds_and_bills', medplum, clinicId ?? undefined);
-      }
-    } catch (queueError) {
-      console.error('[consultations] Consultation saved but queue status update failed for patient', patientId, queueError);
-    }
 
     return NextResponse.json({
       success: true,

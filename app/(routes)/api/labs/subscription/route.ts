@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Parameters, Subscription } from '@medplum/fhirtypes';
 import { requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError, ForbiddenError } from '@/lib/server/route-helpers';
+import { listPoctAnalysers } from '@/lib/fhir/poct-device';
 import { isModuleEnabledForClinic } from '@/lib/module-registry';
 
 export const runtime = 'nodejs';
@@ -31,6 +32,11 @@ export async function POST(request: NextRequest) {
       const encounter = await medplum.searchOne('Encounter', { _id: encounterId, identifier: `clinic|${clinicId}` }, { cache: 'no-cache' });
       if (encounter?.subject?.reference !== `Patient/${patientId}`) throw new ForbiddenError('Encounter unavailable in current clinic');
     }
+    const polling = () => new NextResponse(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+    if (!pacsEnabled) {
+      const analysers = await listPoctAnalysers(clinicId).catch(() => []);
+      if (!analysers.some((analyser) => analyser.online)) return polling();
+    }
     const params = new URLSearchParams({ subject: `Patient/${patientId}`, identifier: `clinic|${clinicId}` });
     if (encounterId) params.set('encounter', `Encounter/${encounterId}`);
     // Uses Medplum's in-memory WebSocket Subscription flow (verified in pinned SDK).
@@ -52,7 +58,7 @@ export async function POST(request: NextRequest) {
     } catch {
       // Unsupported project flag or unavailable socket service: the Lab tab polls.
       // Binding responses/errors can contain credentials; never log them.
-      return NextResponse.json({ error: 'Live updates unavailable' }, { status: 503 });
+      return polling();
     }
   } catch (error) {
     return handleRouteError(error, 'POST /api/labs/subscription');

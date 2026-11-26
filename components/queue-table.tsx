@@ -320,7 +320,7 @@ export default function QueueTable({ patients, onQueueUpdate }: QueueTableProps)
         <TableBody>
           {patients.map((patient, index) => (
             <TableRow key={patient.id}>
-              <TableCell className="font-medium text-center">{(index + 1).toString().padStart(3, '0')}</TableCell>
+              <TableCell className="font-medium text-center">{(patient.queueNumber ?? index + 1).toString().padStart(3, '0')}</TableCell>
               <TableCell className="font-medium">
                 <Link
                   href={`/patients/${patient.id}`}

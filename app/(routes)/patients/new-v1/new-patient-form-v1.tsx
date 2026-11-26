@@ -1,5 +1,7 @@
 "use client";
 
+import { toast as sonnerToast } from "sonner";
+
 import { RegistrationDobInput } from "@/components/patients/registration-dob-input";
 import { registrationFieldSchemas } from "@/lib/patients/registration-schema";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -161,12 +163,7 @@ export default function NewPatientFormV1({
 
       const result = await savePatientThroughIntakePilot(patientData);
 
-      toast({
-        title: "Success",
-        description: `Registration saved. QuestionnaireResponse: ${
-          result.questionnaireResponseId ?? "n/a"
-        }`,
-      });
+      sonnerToast.success("Patient registered");
 
       if (initialVisitIntent === "otc") {
         const params = new URLSearchParams({

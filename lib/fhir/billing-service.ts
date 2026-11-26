@@ -1,7 +1,7 @@
 import type { MedplumClient } from "@medplum/core";
 import type { Extension, Invoice, InvoiceLineItem } from "@medplum/fhirtypes";
 import { randomUUID } from "crypto";
-import { updateQueueStatusForPatient } from "@/lib/fhir/triage-service";
+import { completeQueueVisit } from "@/lib/fhir/triage-service";
 import { createReviewFollowUpForCheckout } from "@/lib/fhir/communication-service";
 import {
   CLINIC_IDENTIFIER_SYSTEM,
@@ -451,7 +451,7 @@ export async function completeCheckoutInvoice(
   }
 
   try {
-    await updateQueueStatusForPatient(input.patientId, "completed", medplum, input.clinicId);
+    await completeQueueVisit(medplum, input.clinicId, input.patientId, input.consultationId);
   } catch (err) {
     console.error("[billing-service] Invoice saved but queue status update failed for patient", input.patientId, err);
     const message = err instanceof Error ? err.message : "Queue status update failed";

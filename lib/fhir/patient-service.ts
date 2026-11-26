@@ -21,6 +21,7 @@ import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
 import {
   CLINIC_IDENTIFIER_SYSTEM,
   assignPatientToClinicTenant,
+  assignResourceToClinicTenant,
   resolveClinicTenant,
   resolveClinicTenantMemo,
   resourceMatchesClinicTenant,
@@ -59,6 +60,7 @@ export interface SavedPatient extends PatientData {
   triage?: TriageData;
   queueStatus?: QueueStatus | null;
   queueAddedAt?: Date | string | null;
+  queueNumber?: number;
   visitIntent?: string;
   payerType?: string;
   paymentMethod?: string;
@@ -436,18 +438,19 @@ export async function savePatientToMedplum(
     for (const allergy of patientData.medicalHistory.allergies) {
       if (!allergy.trim()) continue;
 
-      const allergyResource = await validateAndCreate<AllergyIntolerance>(client, {
+      const allergyResource = await validateAndCreate<AllergyIntolerance>(client, withClinicIdentifier<AllergyIntolerance>({
         resourceType: 'AllergyIntolerance',
         patient: { reference: `Patient/${savedPatient.id}` },
-        code: { text: allergy },
+        code: { text: allergy.trim() },
         clinicalStatus: {
           coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical', code: 'active' }],
         },
         verificationStatus: {
           coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: 'confirmed' }],
         },
-      });
-      
+      }, clinicId));
+      await assignResourceToClinicTenant(client, 'AllergyIntolerance', allergyResource, clinicTenant);
+
       // Create Provenance for audit trail (non-blocking)
       if (allergyResource.id) {
         try {
@@ -547,6 +550,25 @@ export async function savePatientToMedplumWithAdmin(
 /**
  * Get a patient from Medplum by ID
  */
+async function loadPatientAllergies(
+  client: MedplumClient,
+  patientId: string,
+  clinicId: string | null | undefined,
+  tenantPromise: ReturnType<typeof resolveClinicTenantMemo>,
+): Promise<string[]> {
+  const patient = `Patient/${patientId}`;
+  const tenant = await tenantPromise;
+  const allergies = await client.searchResources('AllergyIntolerance', {
+    patient,
+    ...(tenant ? { _compartment: tenant.accountReference }
+      : clinicId ? { identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}` } : {}),
+  });
+  return allergies
+    .filter((allergy) => allergy.patient?.reference === patient &&
+      !allergy.identifier?.some((id) => id.system === CLINIC_IDENTIFIER_SYSTEM && clinicId && id.value !== clinicId))
+    .map((allergy) => allergy.code?.text || allergy.code?.coding?.[0]?.display || 'Unknown allergy');
+}
+
 export async function getPatientFromMedplum(
   patientId: string,
   clinicId?: string | null,
@@ -568,16 +590,16 @@ export async function getPatientFromMedplum(
     const patientData = fhirPatientToPatientData(fhirPatient);
 
     if (includeMedicalHistory) {
-      // The history searches only need the (clinic-checked) patient id, so they run alongside the tenant
-      // lookup instead of after it (Task 593). The tenant is still awaited before anything is returned.
+      // Keep the patient-scoped history searches concurrent. Allergies wait for the clinic account
+      // so we can include compartment-owned records created before allergy identifiers were added.
       const [, allergies, conditions, medications, recentEncounters] = await Promise.all([
         tenantPromise,
-        client.searchResources('AllergyIntolerance', { patient: `Patient/${patientId}` }),
+        loadPatientAllergies(client, patientId, clinicId, tenantPromise),
         client.searchResources('Condition', { subject: `Patient/${patientId}` }),
         client.searchResources('MedicationStatement', { subject: `Patient/${patientId}` }),
         client.searchResources('Encounter', { subject: `Patient/${patientId}`, status: 'finished', _sort: '-date', _count: '1' }),
       ]);
-      patientData.medicalHistory!.allergies = allergies.map((a: AllergyIntolerance) => (a as any).code?.text || 'Unknown allergy');
+      patientData.medicalHistory!.allergies = allergies;
       patientData.medicalHistory!.conditions = conditions.filter((c: Condition) => !(c as any).encounter).map((c: Condition) => (c as any).code?.text || 'Unknown condition');
       patientData.medicalHistory!.medications = medications.map((m: MedicationStatement) => (m as any).medicationCodeableConcept?.text || 'Unknown medication');
       const visitDate = recentEncounters.length > 0 ? (recentEncounters[0] as any)?.period?.start : null;
