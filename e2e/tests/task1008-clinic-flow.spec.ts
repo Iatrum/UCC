@@ -42,6 +42,7 @@ test('fake clinic visit from registration through checkout, re-check-in and uplo
     const url = new URL(route.request().url());
     return url.origin === target.origin ? route.continue() : route.abort();
   });
+  await page.context().routeWebSocket((url) => url.host !== target.host, (socket) => socket.close());
   const session = await loginClinicContext(page.request, login!);
   expect(session.status(), 'Clinic login HTTP status').toBe(200);
 
