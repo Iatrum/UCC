@@ -7,6 +7,7 @@ import { orderProcedureStatus } from '@/lib/fhir/order-procedure-status';
 import { isSignedDocumentNote, signedDocumentMutationError } from '@/lib/clinical-documents';
 import { auditSignedDocument } from './signed-document-audit';
 import { ConflictError, NotFoundError } from '@/lib/server/route-helpers';
+import { getActiveTriageEncounter, updateQueueStatusForPatient } from './triage-service';
 import { investigationBillItems } from './investigation-billing';
 /**
  * Consultation Service - Medplum as Source of Truth
@@ -85,6 +86,7 @@ export interface SavedConsultation extends ConsultationData {
   id: string; // Encounter ID
   patientName?: string;
   createdAt: Date;
+  checkInComplaint?: string;
 }
 
 const SIGN_ENTRY_IDENTIFIER_SYSTEM = 'https://ucc.emr/order/sign-entry';
@@ -370,9 +372,13 @@ async function saveConsultationOnce(
   if (prior && prior.subject?.reference !== patientReference) {
     throw new ConflictError('This sign request key was already used for a different patient.');
   }
+  const triage = prior ? null : await getActiveTriageEncounter(patient.id!, client, clinicId);
+  const visit = triage?.queueStatus && triage.queueStatus !== 'completed' ? triage : null;
   const encounterResource = withServiceProvider(withClinicIdentifiers({
       resourceType: 'Encounter',
       status: 'finished',
+      partOf: visit ? { reference: `Encounter/${visit.id}` } : undefined,
+      reasonCode: visit?.checkInComplaint ? [{ text: visit.checkInComplaint }] : undefined,
       class: {
         system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
         code: 'AMB',
@@ -586,6 +592,15 @@ async function saveConsultationOnce(
     console.warn(`⚠️  Failed to create Provenance (non-blocking):`, error);
   }
 
+  const visitId = encounter.partOf?.reference?.match(/^Encounter\/([A-Za-z0-9.-]+)$/)?.[1];
+  if (visitId) {
+    try {
+      await updateQueueStatusForPatient(patient.id!, 'meds_and_bills', client, clinicId, visitId);
+    } catch {
+      console.error('[consultations] Consultation saved but queue status update failed');
+    }
+  }
+
   console.log(`✅ Consultation saved to Medplum: ${encounter.id}`);
   return encounter.id!;
 }
@@ -636,7 +651,8 @@ export async function getConsultationFromMedplum(
       id: encounter.id!,
       patientId: firebasePatientId,
       patientName: encounter.subject?.display,
-      chiefComplaint: (chiefComplaint as any)?.valueString || '',
+      chiefComplaint: chiefComplaint?.valueString || '',
+      checkInComplaint: encounter.partOf ? encounter.reasonCode?.[0]?.text : undefined,
       diagnosis: conditions[0] ? ((conditions[0] as any).code?.text || '') : '',
       notes: (clinicalNotes as any)?.valueString,
       progressNote: (progressNote as any)?.valueString,
@@ -708,7 +724,8 @@ export function buildSavedConsultation(
     id: encounter.id!,
     patientId: firebasePatientId,
     patientName: encounter.subject?.display,
-    chiefComplaint: (chiefComplaint as any)?.valueString || '',
+    chiefComplaint: chiefComplaint?.valueString || '',
+    checkInComplaint: encounter.partOf ? encounter.reasonCode?.[0]?.text : undefined,
     diagnosis: conditions[0] ? ((conditions[0] as any).code?.text || '') : '',
     notes: (clinicalNotes as any)?.valueString,
     progressNote: (progressNote as any)?.valueString,

@@ -64,6 +64,7 @@ describe("getTriageQueueForToday pagination", () => {
     const client = makeClient(enc, pts);
     const q = await getTriageQueueForToday(200, client, "clinic-a");
     expect(q.map((p) => p.id)).toEqual(["p-clinic-a-300"]);
+    expect(q[0].queueNumber).toBe(251);
     expect(client.stats.gets).toBeGreaterThan(0);
   });
 

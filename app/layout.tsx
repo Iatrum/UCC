@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import Toaster from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { MedplumAuthProvider } from "@/lib/auth-medplum";
 import { getHostFromHeaders } from "@/lib/server/subdomain-host";
 import { headers } from "next/headers";
@@ -58,6 +59,7 @@ export default async function RootLayout({
             <MedplumAuthProvider>
               {children}
               <Toaster />
+              <SonnerToaster />
             </MedplumAuthProvider>
           </ThemeProvider>
         )}

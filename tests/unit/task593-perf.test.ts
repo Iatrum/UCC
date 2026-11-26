@@ -86,13 +86,14 @@ describe('getPatientFromMedplum (Task 593)', () => {
     return { c, calls };
   }
 
-  it('runs the history searches alongside the tenant lookup', async () => {
+  it('runs history searches alongside tenancy and uses the resolved compartment for allergies', async () => {
     const { c, calls } = client('demo');
     const pending = getPatientFromMedplum('p1', 'demo', c);
     await sleep(25); // Patient read (5 ms) done; tenant search (60 ms) still in flight
-    expect(calls).toContain('search:AllergyIntolerance');
     expect(calls).toContain('search:Encounter');
+    expect(calls).not.toContain('search:AllergyIntolerance');
     expect((await pending)?.fullName).toBe('Fake Patient');
+    expect(calls).toContain('search:AllergyIntolerance');
   });
 
   it('returns null (no unhandled rejection) when the Patient read fails first', async () => {

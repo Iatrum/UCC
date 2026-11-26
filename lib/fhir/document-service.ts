@@ -6,11 +6,12 @@
 
 import { MedplumClient } from '@medplum/core';
 import type { DocumentReference } from '@medplum/fhirtypes';
+import { isPatientDocumentStoragePath } from './document-storage-path';
 import { STORAGE_PATH_EXTENSION_URL } from './structure-definitions';
 import { validateFhirResource, logValidation } from './validation';
 import { createProvenanceForResource } from './provenance-service';
-import { resolveClinicTenant, withClinicIdentifier } from './clinic-tenancy';
-import { assertPatientInClinic, assertResourceInClinic } from './write-containment';
+import { CLINIC_IDENTIFIER_SYSTEM, resolveClinicTenant, withClinicIdentifier } from './clinic-tenancy';
+import { assertPatientInClinic, assertResourceInClinic, hasOnlyClinicIdentifiers } from './write-containment';
 
 export interface DocumentRegistration {
   patientId: string; // FHIR Patient ID
@@ -116,13 +117,16 @@ export async function createPatientDocument(medplum: MedplumClient, doc: Documen
 /**
  * List patient documents stored as DocumentReference resources.
  */
-export async function listPatientDocuments(medplum: MedplumClient, patientId: string): Promise<PatientDocumentSummary[]> {
+export async function listPatientDocuments(medplum: MedplumClient, patientId: string, clinicId: string): Promise<PatientDocumentSummary[]> {
+  const subject = `Patient/${patientId}`;
   const docs = (await medplum.searchResources('DocumentReference', {
-    subject: `Patient/${patientId}`,
+    subject,
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
     _sort: '-date',
   })) as DocumentReference[];
 
   return docs
+    .filter((doc) => doc.subject?.reference === subject && hasOnlyClinicIdentifiers(doc, clinicId))
     .map((doc) => {
       const attachment = doc.content?.[0]?.attachment;
       const storagePath = doc.extension?.find((ext) => ext.url === STORAGE_PATH_EXTENSION_URL) as
@@ -139,7 +143,7 @@ export async function listPatientDocuments(medplum: MedplumClient, patientId: st
         storagePath: storagePath?.valueString,
       };
     })
-    .filter((d) => Boolean(d.url));
+    .filter((d) => Boolean(d.url) && (!d.storagePath || isPatientDocumentStoragePath(patientId, d.storagePath)));
 }
 
 /**

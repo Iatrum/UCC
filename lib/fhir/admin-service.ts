@@ -5,6 +5,7 @@
 import { invalidateModuleIdsMemo } from "@/lib/server/module-ids-memo";
 import type { MedplumClient } from "@medplum/core";
 import type { AccessPolicy, BundleEntry, HealthcareService, Organization, Practitioner, ProjectMembership } from "@medplum/fhirtypes";
+import { isSafeFhirId } from "@/lib/server/clinic-id";
 import { ConflictError } from "@/lib/server/route-helpers";
 import { getAdminMedplum } from "@/lib/server/medplum-admin";
 import {
@@ -497,6 +498,61 @@ function practitionerDisplayName(p: Practitioner): string {
       .join(" ") ||
     "Unknown"
   );
+}
+
+/** Booking picker for the clinic already authorized by requireClinicAuth. */
+export async function getClinicPractitionerOptions(
+  medplum: MedplumClient,
+  clinicId: string
+): Promise<{ id: string; name: string }[]> {
+  const taggedOrganization = await medplum.searchOne("Organization", {
+    identifier: `${CLINIC_IDENTIFIER_SYSTEM}|${clinicId}`,
+  });
+  let organizationId = taggedOrganization?.identifier?.some((identifier) =>
+    identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value === clinicId
+  ) ? taggedOrganization.id : undefined;
+
+  // The login flow uses the Organization id when a legacy clinic has no slug.
+  if (!organizationId) {
+    const legacyOrganization = await medplum.searchOne("Organization", { _id: clinicId });
+    if (legacyOrganization?.id === clinicId && !legacyOrganization.identifier?.some((identifier) =>
+      identifier.system === CLINIC_IDENTIFIER_SYSTEM && identifier.value
+    )) {
+      organizationId = legacyOrganization.id;
+    }
+  }
+  if (!organizationId) return [];
+
+  const organizationReference = `Organization/${organizationId}`;
+  const practitionerIds = new Set<string>();
+  for await (const roles of medplum.searchResourcePages("PractitionerRole", {
+    organization: organizationReference,
+    _count: "100",
+  })) {
+    for (const role of roles) {
+      if (role.active === false || role.organization?.reference !== organizationReference) continue;
+      const reference = role.practitioner?.reference;
+      const id = reference?.slice("Practitioner/".length);
+      if (reference?.startsWith("Practitioner/") && isSafeFhirId(id)) practitionerIds.add(id);
+    }
+  }
+
+  const ids = Array.from(practitionerIds);
+  const options = new Map<string, { id: string; name: string }>();
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = new Set(ids.slice(offset, offset + 100));
+    for await (const practitioners of medplum.searchResourcePages("Practitioner", {
+      _id: Array.from(batch).join(","),
+      _count: String(batch.size),
+    })) {
+      for (const practitioner of practitioners) {
+        if (practitioner.id && batch.has(practitioner.id) && practitioner.active !== false) {
+          options.set(practitioner.id, { id: practitioner.id, name: practitionerDisplayName(practitioner) });
+        }
+      }
+    }
+  }
+  return Array.from(options.values());
 }
 
 /** Resolve the managed project from the authenticated service identity. */

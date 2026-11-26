@@ -10,7 +10,7 @@ export type AllergyStatus =
 
 export function getAllergyStatus(allergies: readonly string[] | null | undefined): AllergyStatus {
   const entries = (allergies ?? []).map((a) => (a ?? "").trim()).filter(Boolean);
-  const real = entries.filter((a) => !/^no known/i.test(a));
+  const real = entries.filter((a) => !/^(?:none|no allergies|no known allergies)$/i.test(a) && !/^no known/i.test(a));
   if (real.length > 0) return { kind: "alert", allergies: real };
   if (entries.length > 0) return { kind: "none-known" };
   return { kind: "not-recorded" };

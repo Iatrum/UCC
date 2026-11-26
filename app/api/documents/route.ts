@@ -4,7 +4,7 @@ import { assertStoredResourceInClinic } from '@/lib/fhir/write-containment';
 import { getPatientFromMedplum } from '@/lib/fhir/patient-service';
 import { getCurrentProfile, requireClinicAuth } from '@/lib/server/medplum-auth';
 import { handleRouteError } from '@/lib/server/route-helpers';
-import { getAdminStorageBucket } from '@/lib/firebase-admin';
+import { isSafeFhirId } from '@/lib/server/clinic-id';
 import { STORAGE_PATH_EXTENSION_URL } from '@/lib/fhir/structure-definitions';
 import { isPatientDocumentStoragePath } from '@/lib/fhir/document-storage-path';
 
@@ -38,13 +38,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing patientId' }, { status: 400 });
     }
 
+    if (!isSafeFhirId(patientId)) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
+    }
     const patient = await getPatientFromMedplum(patientId, clinicId, medplum, { includeMedicalHistory: false });
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
 
-    const docs = await listPatientDocuments(medplum, patientId);
-    return NextResponse.json({ success: true, documents: docs });
+    try {
+      const documents = await listPatientDocuments(medplum, patientId, clinicId);
+      return NextResponse.json({ success: true, documents });
+    } catch {
+      console.warn('[GET /api/documents] Document metadata search failed');
+      return NextResponse.json({ error: 'Uploaded files are temporarily unavailable. Please try again.' }, { status: 503 });
+    }
   } catch (error) {
     return handleRouteError(error, 'GET /api/documents');
   }
@@ -72,7 +80,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
 
-      const bucket = getAdminStorageBucket();
+      const bucket = await import('@/lib/firebase-admin')
+        .then(({ getAdminStorageBucket }) => getAdminStorageBucket())
+        .catch(() => null);
+      if (!bucket) {
+        console.warn('[POST /api/documents] Firebase Storage initialization failed');
+        return NextResponse.json({ error: 'File uploads are temporarily unavailable.' }, { status: 503 });
+      }
       const documents = [];
 
       for (const file of files) {
@@ -207,9 +221,10 @@ export async function DELETE(request: NextRequest) {
       console.warn('Refusing to delete a Storage object outside the patient documents folder; removing DocumentReference only.');
     } else if (storagePath) {
       try {
+        const { getAdminStorageBucket } = await import('@/lib/firebase-admin');
         await getAdminStorageBucket().file(storagePath).delete({ ignoreNotFound: true });
-      } catch (error) {
-        console.warn('Failed to delete Firebase Storage object for document; removing DocumentReference anyway.', error);
+      } catch {
+        console.warn('Failed to delete Firebase Storage object for document; removing DocumentReference anyway.');
       }
     }
 

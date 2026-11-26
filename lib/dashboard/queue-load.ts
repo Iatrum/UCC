@@ -4,7 +4,7 @@ export const QUEUE_TIMEOUT_MS = 10000;
 
 export type QueuePatient = Pick<
   Patient,
-  'id' | 'fullName' | 'nric' | 'visitIntent' | 'payerType' | 'assignedClinician' | 'queueAddedAt' | 'queueStatus'
+  'id' | 'fullName' | 'nric' | 'visitIntent' | 'payerType' | 'assignedClinician' | 'queueAddedAt' | 'queueStatus' | 'queueNumber'
 > & { triage?: Pick<NonNullable<Patient['triage']>, 'chiefComplaint' | 'isTriaged'> };
 
 export type QueueLoadResult =

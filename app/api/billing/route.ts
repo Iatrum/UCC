@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
       // Task 504: surface stock problems to staff now, not only as a billing-exception Task.
       stockUnresolved: result.stock?.unresolved ?? [],
       stockError: result.dispenseError ?? null,
+      queueUpdateFailed: Boolean(result.queueUpdateError),
     });
   } catch (error) {
     if (isClientFixableBillingError(error)) {

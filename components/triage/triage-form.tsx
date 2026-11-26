@@ -1,5 +1,7 @@
 "use client";
 
+import { toast as sonnerToast } from "sonner";
+
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -132,16 +134,11 @@ export default function TriageForm({ patient, stayAfterSubmit = false }: TriageF
         throw new Error("Failed to submit triage");
       }
 
-      toast({
-        title: stayAfterSubmit ? "Check-in details saved" : "Check-in complete",
-        description: stayAfterSubmit
-          ? `${patient.fullName}'s visit details were updated.`
-          : `${patient.fullName} has been checked in and added to the queue.`,
-      });
+      const encounterId = !stayAfterSubmit && visitIntent === "otc" ? (await response.json()).encounterId : undefined;
+      sonnerToast.success(stayAfterSubmit ? "Check-in details saved" : "Check-in complete");
 
       if (!stayAfterSubmit) {
         if (visitIntent === "otc") {
-          const { encounterId } = await response.json();
           router.push(`/orders/checkout/${encounterId}?patientId=${patient.id}`);
         } else {
           router.push("/dashboard");

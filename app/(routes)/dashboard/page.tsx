@@ -15,8 +15,8 @@ async function getInitialQueue(
       getTriageQueueForToday(200, medplum, clinicId),
       setTimeout(QUEUE_TIMEOUT_MS, null, { signal: deadline.signal }),
     ]);
-    return patients?.map(({ id, fullName, nric, visitIntent, payerType, assignedClinician, queueAddedAt, queueStatus, triage }) => ({
-      id, fullName, nric, visitIntent, payerType, assignedClinician, queueAddedAt, queueStatus,
+    return patients?.map(({ id, fullName, nric, visitIntent, payerType, assignedClinician, queueAddedAt, queueStatus, queueNumber, triage }) => ({
+      id, fullName, nric, visitIntent, payerType, assignedClinician, queueAddedAt, queueStatus, queueNumber,
       triage: triage ? { chiefComplaint: triage.chiefComplaint, isTriaged: triage.isTriaged } : undefined,
     })) ?? null;
   } catch {

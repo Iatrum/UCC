@@ -101,10 +101,10 @@ describe("checkout totals validation", () => {
     });
   }
 
-  test("a missing queue entry is reported but never blocks the saved invoice", async () => {
+  test("a consultation with no linked or historical visit can still be checked out", async () => {
     const r = await run();
     expect(r.invoice.id).toBeDefined();
-    expect(r.queueUpdateError).toMatch(/No active triage encounter/);
+    expect(r.queueUpdateError).toBeUndefined();
   });
 
   test("every payment method is accepted", async () => {
