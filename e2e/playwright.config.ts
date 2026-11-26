@@ -5,7 +5,10 @@ const R = process.env.UCC_REPORTS || '/workspace/ai-logs/e2e-reports';
 export default defineConfig({
   testDir: './tests',
   // Admin audit is opt-in (UCC_ADMIN_E2E=1): it adds a login + heavy pages that push Next dev over its heap cap mid-suite.
-  testIgnore: process.env.UCC_ADMIN_E2E ? [] : ['**/admin.spec.ts'], globalSetup: './global-setup.ts', workers: 1, fullyParallel: false, retries: 0,
+  // Task 1008 has a dedicated runner and requires the app behavior in PR #379.
+  testIgnore: ['**/task1008-clinic-flow.spec.ts', ...(process.env.UCC_ADMIN_E2E ? [] : ['**/admin.spec.ts'])],
+  globalSetup: './global-setup.ts', workers: 1, fullyParallel: false, retries: 0,
+  globalTimeout: 40 * 60_000,
   timeout: 15 * 60_000, expect: { timeout: 30_000 },
   outputDir: R + '/artifacts',
   reporter: [['list'], ['json', { outputFile: R + '/results.json' }], ['html', { outputFolder: R + '/html', open: 'never' }]],

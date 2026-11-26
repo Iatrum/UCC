@@ -32,15 +32,21 @@ RES=${UCC_REPORTS:-$LOG_ROOT/e2e-reports}/results.json; rm -f "$RES"
 # Dev data hygiene: /api/queue caps at 200 encounters/day; leftover fake fixtures would hide the workflow test patient.
 UCC_EVIDENCE=$UCC_EVIDENCE timeout 10m npx tsx scripts/prune-fake-queue.ts > "$OUT/prune.log" 2>&1 || echo "prune-fake-queue failed (see prune.log)" | tee -a "$OUT/summary.txt"
 if [ "${UCC_E2E_BATCHED:-0}" = "1" ]; then
-  timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-40m}" node scripts/run-batched.mjs > "$OUT/e2e.log" 2>&1
+  timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-50m}" node scripts/run-batched.mjs > "$OUT/e2e.log" 2>&1
 elif [ "${UCC_LOW_MEMORY_GATE:-0}" = 1 ]; then
   # Driver owns one dev server at a time and reclaims its compiler heap between groups.
-  timeout --kill-after=30s 40m node scripts/run-low-memory.mjs > "$OUT/e2e.log" 2>&1
+  timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-50m}" node scripts/run-low-memory.mjs > "$OUT/e2e.log" 2>&1
 else
   timeout 20m node scripts/warmup.mjs > "$OUT/warmup.log" 2>&1
-  timeout "${UCC_E2E_TIMEOUT:-20m}" npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1
+  # Playwright's 40-minute global deadline leaves time for reporters before this watchdog.
+  timeout --kill-after=30s "${UCC_E2E_TIMEOUT:-42m}" npx playwright test --workers=1 > "$OUT/e2e.log" 2>&1
 fi
-echo "e2e-exit: $? (baseline has expected failures)" | tee -a "$OUT/summary.txt"
+E2E_EXIT=$?
+echo "e2e-exit: $E2E_EXIT" | tee -a "$OUT/summary.txt"
+if [ "$E2E_EXIT" -ge 124 ]; then
+  echo "Playwright did not complete (exit $E2E_EXIT)" | tee -a "$OUT/summary.txt"
+  FAIL=1
+fi
 cp "$RES" "$OUT/results.json" 2>/dev/null || { echo "no results.json" | tee -a "$OUT/summary.txt"; FAIL=1; }
 node scripts/compare.mjs "$OUT/results.json" "$BASE" | tee -a "$OUT/summary.txt"; [ "${PIPESTATUS[0]}" -eq 0 ] || FAIL=1
 step clinics npx tsx scripts/clinic-check.ts

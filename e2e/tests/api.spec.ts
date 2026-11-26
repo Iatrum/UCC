@@ -81,9 +81,26 @@ test('security: /api/labs/receive requires auth or API key', async ({ playwright
   await anon.dispose();
 });
 
-test('read endpoints respond without 5xx (smoke)', async ({ request }) => {
+test('read endpoints respond without 5xx (smoke)', async ({ request, baseURL }, testInfo) => {
   const out: Record<string, number> = {};
-  for (const u of ['queue', 'orders/billable', 'catalogs', 'inventory', 'diagnoses', 'procedures', 'tasks', 'follow-up', 'practitioners', 'appointments', 'settings/insurers', 'health/deep', 'document-templates?type=mc', 'document-templates?type=referral'])
+  for (const u of ['queue', 'orders/billable', 'catalogs', 'inventory', 'diagnoses', 'procedures', 'tasks', 'follow-up', 'practitioners', 'appointments', 'settings/insurers', 'document-templates?type=mc', 'document-templates?type=referral'])
     out[u] = (await request.get('/api/' + u)).status();
-  log.smoke = out; expect(Object.values(out).every(s => s < 500), JSON.stringify(out)).toBeTruthy();
+  const readiness = await request.get('/api/health/deep');
+  log.smoke = { ...out, 'health/deep': readiness.status() };
+  expect(Object.values(out).every(s => s < 500), JSON.stringify(out)).toBeTruthy();
+
+  const target = new URL(baseURL!);
+  const local = (process.env.UCC_GATE_TARGET || 'local') === 'local'
+    && target.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(target.hostname);
+  if (local && readiness.status() === 503) {
+    // A local build may omit the deployment domain. A Medplum outage must still fail.
+    expect(await readiness.json()).toMatchObject({
+      status: 'degraded',
+      checks: { base_domain: 'missing', medplum_base_url: 'ok', medplum_connectivity: 'ok' },
+    });
+    testInfo.annotations.push({ type: 'local readiness', description: 'Deployment domain unset, Medplum reachable' });
+  } else {
+    expect(readiness.status(), 'Deep health readiness').toBe(200);
+    expect(await readiness.json()).toMatchObject({ status: 'ok', checks: { medplum_connectivity: 'ok' } });
+  }
 });
