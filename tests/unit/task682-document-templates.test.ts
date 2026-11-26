@@ -116,7 +116,7 @@ describe('Task 682: referral letter + shared document helpers', () => {
 
 describe('Task 682: DocumentReference service clinic scoping', () => {
   const ref = (clinic?: string, extra: any = {}) => ({
-    resourceType: 'DocumentReference', id: 'd1', status: 'current', identifier: clinic ? [{ system: 'clinic', value: clinic }] : undefined,
+    resourceType: 'DocumentReference', id: 'd1', status: 'current', subject: { reference: 'Patient/p1' }, identifier: clinic ? [{ system: 'clinic', value: clinic }] : undefined,
     content: [{ attachment: { title: 'Old', url: 'u' } }, { attachment: { title: 'Second', url: 'u2' } }], ...extra,
   });
   test('update/delete: foreign or untagged is 404 and writes nothing; no clinic is 403', async () => {
@@ -152,16 +152,16 @@ describe('Task 682: DocumentReference service clinic scoping', () => {
   });
   test('listPatientDocuments maps fields, extracts storage path, drops url-less entries', async () => {
     const search = mock(async () => [
-      ref('clinic-a', { id: 'a', date: '2026-05-01', author: [{ display: 'Dr A' }], extension: [{ url: STORAGE_PATH_EXTENSION_URL, valueString: 'clinics/a/x.pdf' }],
+      ref('clinic-a', { id: 'a', date: '2026-05-01', author: [{ display: 'Dr A' }], extension: [{ url: STORAGE_PATH_EXTENSION_URL, valueString: 'patients/p1/documents/x.pdf' }],
         content: [{ attachment: { url: 'https://f/x', title: 'X', contentType: 'application/pdf', size: 5, creation: '2026-05-02' } }] }),
       ref('clinic-a', { id: 'b', content: [{ attachment: { title: 'no url' } }] }),
       ref('clinic-a', { id: 'c', date: '2026-04-01', content: [{ attachment: { url: 'u' } }] }),
       ref('clinic-a', { id: 'd', content: [] }),
     ]);
-    const out = await listPatientDocuments({ searchResources: search } as any, 'p1');
-    expect(search.mock.calls[0][1]).toEqual({ subject: 'Patient/p1', _sort: '-date' });
+    const out = await listPatientDocuments({ searchResources: search } as any, 'p1', 'clinic-a');
+    expect(search.mock.calls[0][1]).toEqual({ subject: 'Patient/p1', identifier: 'clinic|clinic-a', _sort: '-date' });
     expect(out).toHaveLength(2);
-    expect(out[0]).toEqual({ id: 'a', title: 'X', url: 'https://f/x', contentType: 'application/pdf', size: 5, uploadedAt: '2026-05-02', uploadedBy: 'Dr A', storagePath: 'clinics/a/x.pdf' });
+    expect(out[0]).toEqual({ id: 'a', title: 'X', url: 'https://f/x', contentType: 'application/pdf', size: 5, uploadedAt: '2026-05-02', uploadedBy: 'Dr A', storagePath: 'patients/p1/documents/x.pdf' });
     expect(out[1]).toMatchObject({ id: 'c', title: 'Document', uploadedAt: '2026-04-01', storagePath: undefined });
   });
 });

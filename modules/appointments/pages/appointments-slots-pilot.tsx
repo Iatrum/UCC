@@ -27,8 +27,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { useMedplumAuth } from "@/lib/auth-medplum";
-import { getAllPatients, type Patient } from "@/lib/fhir/patient-client";
-import { getAllPractitioners, type PractitionerOption } from "@/lib/fhir/practitioner-client";
+import type { Patient } from "@/lib/fhir/patient-client";
+import type { PractitionerOption } from "@/lib/fhir/practitioner-client";
+import { loadAppointmentLookups, type AppointmentLookup } from "./appointment-lookups";
 import {
   generateSlots,
   getFreeSlots,
@@ -44,6 +45,8 @@ const visitTypes = [
 ];
 
 const DEFAULT_SLOT_DURATION_MINUTES = 30;
+const EMPTY_PATIENTS: Patient[] = [];
+const EMPTY_PRACTITIONERS: PractitionerOption[] = [];
 
 function buildDefaultScheduledAt(): Date {
   return new Date(Date.now() + 30 * 60 * 1000);
@@ -206,11 +209,12 @@ export default function AppointmentsSlotsPilotPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { loading: authLoading } = useMedplumAuth();
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [practitioners, setPractitioners] = useState<PractitionerOption[]>([]);
-  const [loadingPatients, setLoadingPatients] = useState(true);
-  const [loadingPractitioners, setLoadingPractitioners] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [patientLookup, setPatientLookup] = useState<AppointmentLookup<Patient> | null>(null);
+  const [clinicianLookup, setClinicianLookup] = useState<AppointmentLookup<PractitionerOption> | null>(null);
+  const patients = patientLookup?.options ?? EMPTY_PATIENTS;
+  const practitioners = clinicianLookup?.options ?? EMPTY_PRACTITIONERS;
+  const loadingPatients = authLoading || patientLookup === null;
+  const loadingPractitioners = authLoading || clinicianLookup === null;
   const [slots, setSlots] = useState<SchedulingSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [slotMessage, setSlotMessage] = useState<string | null>(null);
@@ -233,38 +237,7 @@ export default function AppointmentsSlotsPilotPage() {
 
   useEffect(() => {
     if (authLoading) return;
-
-    let cancelled = false;
-
-    async function loadLookupData() {
-      setLoadingPatients(true);
-      setLoadingPractitioners(true);
-      setLoadError(null);
-      try {
-        const [nextPatients, nextPractitioners] = await Promise.all([
-          getAllPatients(200),
-          getAllPractitioners(),
-        ]);
-        if (cancelled) return;
-        setPatients(nextPatients.slice().sort((a, b) => a.fullName.localeCompare(b.fullName)));
-        setPractitioners(nextPractitioners.slice().sort((a, b) => a.name.localeCompare(b.name)));
-      } catch (error) {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Failed to load patient and clinician lists";
-        setLoadError(message.includes("Authentication required") ? `${message} Try refreshing the page.` : message);
-      } finally {
-        if (!cancelled) {
-          setLoadingPatients(false);
-          setLoadingPractitioners(false);
-        }
-      }
-    }
-
-    void loadLookupData();
-
-    return () => {
-      cancelled = true;
-    };
+    return loadAppointmentLookups(setPatientLookup, setClinicianLookup);
   }, [authLoading]);
 
   const patientOptions = useMemo(
@@ -424,11 +397,11 @@ export default function AppointmentsSlotsPilotPage() {
           <CardDescription>Book a patient appointment with clinician availability checks.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loadError ? (
-            <div className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
-              {loadError}
+          {[patientLookup?.error, clinicianLookup?.error].map((error) => error && (
+            <div key={error} role="alert" className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
+              {error}
             </div>
-          ) : null}
+          ))}
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-8">
@@ -491,9 +464,9 @@ export default function AppointmentsSlotsPilotPage() {
                           <Stethoscope className="h-4 w-4 text-muted-foreground" /> Clinician
                         </FormLabel>
                         <FormControl>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value} disabled={loadingPractitioners || practitioners.length === 0}>
                             <SelectTrigger>
-                              <SelectValue placeholder={loadingPractitioners ? "Loading clinicians..." : "Select clinician"} />
+                              <SelectValue placeholder={loadingPractitioners ? "Loading clinicians..." : practitioners.length ? "Select clinician" : "No clinicians available"} />
                             </SelectTrigger>
                             <SelectContent>
                               {practitioners.map((practitioner) => (
