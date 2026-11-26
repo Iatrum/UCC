@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { test, expect, request } from '@playwright/test';
 import { MedplumClient } from '@medplum/core';
 import { BASE, MEDPLUM, MEDPLUM_ADMIN } from '../lib/env';
+import { hasLocalMedplumFixtureCredentials } from '../lib/medplum-fixture-env';
 import '../lib/ws-polyfill';
 import { createRequire } from 'node:module';
 // App sources are CommonJS-scoped; register TypeScript loading explicitly.
@@ -21,10 +22,9 @@ test.use({ storageState: { cookies: [], origins: [] }, trace: 'off', screenshot:
 test('phase 1 clinic reassignment, multi-clinic reads, Provenance and Encounter stamping', async () => {
   expect(BASE).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9]\d{3,4}$/);
   expect(MEDPLUM.replace(/\/$/, '')).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
-  // Direct service calls need the same local service credentials as Next.
-  // Load without printing values, then enforce the local endpoint before use.
-  process.loadEnvFile(new URL('../../.env.local', import.meta.url));
-  expect(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103').origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
+  test.skip(!hasLocalMedplumFixtureCredentials(), 'Set dev MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET for direct Medplum fixture calls');
+  process.env.MEDPLUM_BASE_URL ||= process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || MEDPLUM;
+  expect(new URL(process.env.MEDPLUM_BASE_URL).origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   const m: MedplumClient = await getAdminMedplum();
   const api = await request.newContext({ baseURL: BASE, storageState: { cookies: [], origins: [] } });
   const owned: Array<{ resourceType: any; id: string }> = [];

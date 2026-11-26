@@ -19,6 +19,8 @@ let completeCalls = 0;
 let stockResult: any;
 let dispenseError: string | undefined;
 
+const consultationService = await import("@/lib/fhir/consultation-service");
+
 mock.module("@/lib/server/medplum-auth", () => ({
   // Fake Medplum for the Task 504 consultation/patient ownership read (own clinic: pat-a / enc-a).
   requireClinicAuth: async () => ({
@@ -40,6 +42,7 @@ mock.module("@/lib/server/medplum-auth", () => ({
   getCurrentProfile: async () => null,
 }));
 mock.module("@/lib/fhir/consultation-service", () => ({
+  ...consultationService,
   getConsultationFromMedplum: async (id: string, clinicId: string) => {
     const c = consultations[id];
     return c && c.clinic === clinicId ? c : null;

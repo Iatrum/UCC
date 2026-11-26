@@ -7,6 +7,7 @@ import { test, expect } from '@playwright/test';
 import { MedplumClient } from '@medplum/core';
 import { createRequire } from 'node:module';
 import { BASE, MEDPLUM, MEDPLUM_ADMIN } from '../lib/env';
+import { hasLocalMedplumFixtureCredentials } from '../lib/medplum-fixture-env';
 import '../lib/ws-polyfill';
 
 const require = createRequire(import.meta.url);
@@ -24,10 +25,11 @@ test('staff membership CLI dry-run, apply, direct isolation, multi-clinic union 
   test.setTimeout(15 * 60_000);
   expect(BASE).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9]\d{3,4}$/);
   expect(MEDPLUM.replace(/\/$/, '')).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
-  process.loadEnvFile(new URL('../../.env.local', import.meta.url));
+  test.skip(!hasLocalMedplumFixtureCredentials(), 'Set dev MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET for direct Medplum fixture calls');
+  process.env.MEDPLUM_BASE_URL ||= process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || MEDPLUM;
   // Standalone runs (outside check-all.sh) have no /workspace; give the CLI a private fake-data backup dir.
   process.env.UCC_MEMBERSHIP_BACKUP_DIR ||= fs.mkdtempSync(`${os.tmpdir()}/ucc-membership-backup-`);
-  expect(new URL(process.env.MEDPLUM_BASE_URL || process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL!).origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
+  expect(new URL(process.env.MEDPLUM_BASE_URL).origin).toMatch(/^http:\/\/(?:localhost|127\.0\.0\.1):8113$/);
   // A prior spec can use the whole 5/min login budget.
   await new Promise(resolve => setTimeout(resolve, 65_000));
   const m: MedplumClient = await getAdminMedplum();
